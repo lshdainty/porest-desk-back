@@ -1,0 +1,58 @@
+server:
+  port: 8002
+
+spring:
+  datasource:
+    driver-class-name: org.mariadb.jdbc.Driver
+    url: ${DB_URL:jdbc:mariadb://localhost:3306/porest_desk}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDBDialect
+        default_batch_fetch_size: 100
+        format_sql: true
+    open-in-view: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 3
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+decorator:
+  datasource:
+    p6spy:
+      enable-logging: true
+      tracing:
+        include-parameter-values: true
+
+jwt:
+  secret: ${JWT_SECRET:desk-local-secret-key-must-be-at-least-256-bits-long-for-hs256}
+  access-token-expiration: ${JWT_ACCESS_EXPIRATION:3600000}
+  sso-secret: ${JWT_SSO_SECRET:sso-local-secret-key-must-be-at-least-256-bits-long-for-hs256}
+
+app:
+  sso:
+    base-url: ${SSO_API_URL:http://localhost:8001}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:3002}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui/index.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+logging:
+  level:
+    com.porest.desk: DEBUG
+    org.hibernate.SQL: DEBUG

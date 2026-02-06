@@ -1,0 +1,72 @@
+package com.porest.desk.calendar.service;
+
+import com.porest.desk.calendar.domain.CalendarEvent;
+import com.porest.desk.calendar.repository.CalendarEventRepository;
+import com.porest.desk.calendar.service.dto.CalendarAggregateDto;
+import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import com.porest.desk.timer.domain.TimerSession;
+import com.porest.desk.timer.repository.TimerSessionRepository;
+import com.porest.desk.timer.service.dto.TimerSessionServiceDto;
+import com.porest.desk.todo.domain.Todo;
+import com.porest.desk.todo.repository.TodoRepository;
+import com.porest.desk.todo.service.dto.TodoServiceDto;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional(readOnly = true)
+public class CalendarAggregateServiceImpl implements CalendarAggregateService {
+    private final CalendarEventRepository calendarEventRepository;
+    private final TodoRepository todoRepository;
+    private final ExpenseRepository expenseRepository;
+    private final TimerSessionRepository timerSessionRepository;
+
+    @Override
+    public CalendarAggregateDto.AggregateData getAggregateData(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        log.debug("캘린더 통합 데이터 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
+
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate.atTime(LocalTime.MAX);
+
+        // Calendar Events
+        List<CalendarEvent> calendarEvents = calendarEventRepository.findByUserAndDateRange(userRowId, startDateTime, endDateTime);
+        List<CalendarEventServiceDto.EventInfo> eventInfos = calendarEvents.stream()
+            .map(CalendarEventServiceDto.EventInfo::from)
+            .toList();
+
+        // Todos by dueDate
+        List<Todo> todos = todoRepository.findByUserAndDueDateBetween(userRowId, startDate, endDate);
+        List<TodoServiceDto.TodoInfo> todoInfos = todos.stream()
+            .map(TodoServiceDto.TodoInfo::from)
+            .toList();
+
+        // Expenses by expenseDate
+        List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
+        List<ExpenseServiceDto.ExpenseInfo> expenseInfos = expenses.stream()
+            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .toList();
+
+        // Timer sessions by startTime
+        List<TimerSession> timerSessions = timerSessionRepository.findByUser(userRowId, null, startDate, endDate);
+        List<TimerSessionServiceDto.SessionInfo> sessionInfos = timerSessions.stream()
+            .map(TimerSessionServiceDto.SessionInfo::from)
+            .toList();
+
+        log.debug("캘린더 통합 데이터 조회 완료: events={}, todos={}, expenses={}, timerSessions={}",
+            eventInfos.size(), todoInfos.size(), expenseInfos.size(), sessionInfos.size());
+
+        return new CalendarAggregateDto.AggregateData(eventInfos, todoInfos, expenseInfos, sessionInfos);
+    }
+}

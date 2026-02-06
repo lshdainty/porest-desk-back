@@ -1,0 +1,94 @@
+package com.porest.desk.dashboard.service;
+
+import com.porest.core.type.YNType;
+import com.porest.desk.calendar.domain.CalendarEvent;
+import com.porest.desk.calendar.repository.CalendarEventRepository;
+import com.porest.desk.dashboard.service.dto.DashboardServiceDto;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.memo.domain.Memo;
+import com.porest.desk.memo.repository.MemoRepository;
+import com.porest.desk.timer.domain.TimerSession;
+import com.porest.desk.timer.repository.TimerSessionRepository;
+import com.porest.desk.todo.domain.Todo;
+import com.porest.desk.todo.repository.TodoRepository;
+import com.porest.desk.todo.type.TodoStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+@Transactional(readOnly = true)
+public class DashboardServiceImpl implements DashboardService {
+    private final TodoRepository todoRepository;
+    private final CalendarEventRepository calendarEventRepository;
+    private final ExpenseRepository expenseRepository;
+    private final TimerSessionRepository timerSessionRepository;
+    private final MemoRepository memoRepository;
+
+    @Override
+    public DashboardServiceDto.DashboardSummary getDashboardSummary(Long userRowId) {
+        log.debug("대시보드 요약 조회: userRowId={}", userRowId);
+
+        LocalDate today = LocalDate.now();
+
+        // Todo summary
+        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null);
+        long pendingCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.PENDING).count();
+        long inProgressCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.IN_PROGRESS).count();
+        long completedCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.COMPLETED).count();
+        long todayDueCount = allTodos.stream().filter(t -> today.equals(t.getDueDate())).count();
+
+        // Calendar summary
+        LocalDateTime todayStart = today.atStartOfDay();
+        LocalDateTime todayEnd = today.atTime(LocalTime.MAX);
+        List<CalendarEvent> todayEvents = calendarEventRepository.findByUserAndDateRange(userRowId, todayStart, todayEnd);
+        LocalDateTime weekEnd = today.plusDays(7).atTime(LocalTime.MAX);
+        List<CalendarEvent> upcomingEvents = calendarEventRepository.findByUserAndDateRange(userRowId, todayStart, weekEnd);
+        LocalDate nextEventDate = upcomingEvents.stream()
+            .map(e -> e.getStartDate().toLocalDate())
+            .filter(d -> !d.isBefore(today))
+            .min(LocalDate::compareTo)
+            .orElse(null);
+
+        // Expense summary
+        List<Expense> todayExpenses = expenseRepository.findDailySummary(userRowId, today);
+        long todayIncome = todayExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
+        long todayExpenseAmount = todayExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
+        List<Expense> monthExpenses = expenseRepository.findMonthlySummary(userRowId, today.getYear(), today.getMonthValue());
+        long monthlyIncome = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
+        long monthlyExpenseAmount = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
+
+        // Timer summary
+        List<TimerSession> todaySessions = timerSessionRepository.findDailyStats(userRowId, today, today);
+        long todayFocusSeconds = todaySessions.stream().mapToLong(TimerSession::getDurationSeconds).sum();
+        LocalDate weekStart = today.minusDays(today.getDayOfWeek().getValue() - 1);
+        List<TimerSession> weekSessions = timerSessionRepository.findDailyStats(userRowId, weekStart, today);
+        long weeklyFocusSeconds = weekSessions.stream().mapToLong(TimerSession::getDurationSeconds).sum();
+
+        // Memo summary
+        List<Memo> allMemos = memoRepository.findAllByUser(userRowId, null, null);
+        long pinnedCount = allMemos.stream().filter(m -> m.getIsPinned() == YNType.Y).count();
+        String recentMemoTitle = allMemos.isEmpty() ? null : allMemos.get(0).getTitle();
+
+        // Build result
+        var todoSummary = new DashboardServiceDto.TodoSummary(allTodos.size(), pendingCount, inProgressCount, completedCount, todayDueCount);
+        var calendarSummary = new DashboardServiceDto.CalendarSummary(todayEvents.size(), upcomingEvents.size(), nextEventDate);
+        var expenseSummary = new DashboardServiceDto.ExpenseSummary(todayIncome, todayExpenseAmount, monthlyIncome, monthlyExpenseAmount);
+        var timerSummary = new DashboardServiceDto.TimerSummary(todayFocusSeconds, todaySessions.size(), weeklyFocusSeconds);
+        var memoSummary = new DashboardServiceDto.MemoSummary(allMemos.size(), pinnedCount, recentMemoTitle);
+
+        log.debug("대시보드 요약 조회 완료: userRowId={}", userRowId);
+
+        return new DashboardServiceDto.DashboardSummary(todoSummary, calendarSummary, expenseSummary, timerSummary, memoSummary);
+    }
+}

@@ -1,0 +1,18 @@
+package com.porest.desk.todo.service;
+
+import com.porest.desk.todo.service.dto.TodoServiceDto;
+import com.porest.desk.todo.type.TodoPriority;
+import com.porest.desk.todo.type.TodoStatus;
+
+import java.time.LocalDate;
+import java.util.List;
+
+public interface TodoService {
+    TodoServiceDto.TodoInfo createTodo(TodoServiceDto.CreateCommand command);
+    List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate);
+    TodoServiceDto.TodoInfo getTodo(Long todoId);
+    TodoServiceDto.TodoInfo updateTodo(Long todoId, TodoServiceDto.UpdateCommand command);
+    TodoServiceDto.TodoInfo toggleStatus(Long todoId);
+    void reorderTodos(Long userRowId, TodoServiceDto.ReorderCommand command);
+    void deleteTodo(Long todoId);
+}
