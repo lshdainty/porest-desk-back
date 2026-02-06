@@ -1,12 +1,11 @@
 package com.porest.desk.common.message;
 
-import com.porest.core.message.MessageKey;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 @Getter
 @RequiredArgsConstructor
-public enum DeskMessageKey implements MessageKey {
+public enum DeskMessageKey {
     // Success messages
     SUCCESS_CREATE("success.create"),
     SUCCESS_UPDATE("success.update"),

@@ -10,10 +10,6 @@ public class JwtUserPrincipal implements AuditorPrincipal {
     private final JwtClaimsPrincipal claims;
 
     @Override
-    public String getAuditorId() {
-        return claims.userId();
-    }
-
     public String getUserId() { return claims.userId(); }
     public String getUserName() { return claims.userName(); }
     public String getUserEmail() { return claims.userEmail(); }

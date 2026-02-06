@@ -17,7 +17,7 @@ public class LoginUserAuditorAware implements AuditorAware<String> {
             return Optional.of("system");
         }
         if (authentication.getPrincipal() instanceof AuditorPrincipal principal) {
-            return Optional.of(principal.getAuditorId());
+            return Optional.of(principal.getUserId());
         }
         return Optional.of(authentication.getName());
     }
