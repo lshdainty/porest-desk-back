@@ -3,8 +3,13 @@ package com.porest.desk.calendar.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.calendar.domain.CalendarEvent;
+import com.porest.desk.calendar.domain.EventLabel;
+import com.porest.desk.calendar.domain.EventReminder;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
+import com.porest.desk.calendar.repository.EventLabelRepository;
+import com.porest.desk.calendar.repository.EventReminderRepository;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -14,7 +19,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +30,8 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class CalendarEventServiceImpl implements CalendarEventService {
     private final CalendarEventRepository calendarEventRepository;
+    private final EventLabelRepository eventLabelRepository;
+    private final EventReminderRepository eventReminderRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -36,6 +46,12 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
         }
 
+        EventLabel label = null;
+        if (command.labelRowId() != null) {
+            label = eventLabelRepository.findById(command.labelRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
+        }
+
         CalendarEvent event = CalendarEvent.createEvent(
             user,
             command.title(),
@@ -44,13 +60,26 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             command.color(),
             command.startDate(),
             command.endDate(),
-            command.isAllDay()
+            command.isAllDay(),
+            label,
+            command.location(),
+            command.rrule()
         );
 
         calendarEventRepository.save(event);
+
+        List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
+        if (command.reminderMinutes() != null && !command.reminderMinutes().isEmpty()) {
+            for (Integer minutes : command.reminderMinutes()) {
+                EventReminder reminder = EventReminder.create(event, "NOTIFICATION", minutes);
+                eventReminderRepository.save(reminder);
+                reminderInfos.add(EventReminderServiceDto.ReminderInfo.from(reminder));
+            }
+        }
+
         log.info("캘린더 이벤트 등록 완료: eventId={}, userRowId={}", event.getRowId(), command.userRowId());
 
-        return CalendarEventServiceDto.EventInfo.from(event);
+        return CalendarEventServiceDto.EventInfo.from(event, reminderInfos);
     }
 
     @Override
@@ -63,8 +92,14 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
         List<CalendarEvent> events = calendarEventRepository.findByUserAndDateRange(userRowId, startDate, endDate);
 
+        List<Long> eventIds = events.stream().map(CalendarEvent::getRowId).toList();
+        Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
+
         return events.stream()
-            .map(CalendarEventServiceDto.EventInfo::from)
+            .map(event -> CalendarEventServiceDto.EventInfo.from(
+                event,
+                remindersMap.getOrDefault(event.getRowId(), List.of())
+            ))
             .toList();
     }
 
@@ -79,6 +114,12 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
         }
 
+        EventLabel label = null;
+        if (command.labelRowId() != null) {
+            label = eventLabelRepository.findById(command.labelRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
+        }
+
         event.updateEvent(
             command.title(),
             command.description(),
@@ -86,12 +127,30 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             command.color(),
             command.startDate(),
             command.endDate(),
-            command.isAllDay()
+            command.isAllDay(),
+            label,
+            command.location(),
+            command.rrule()
         );
+
+        List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
+        if (command.reminderMinutes() != null) {
+            eventReminderRepository.deleteByEventId(eventId);
+            for (Integer minutes : command.reminderMinutes()) {
+                EventReminder reminder = EventReminder.create(event, "NOTIFICATION", minutes);
+                eventReminderRepository.save(reminder);
+                reminderInfos.add(EventReminderServiceDto.ReminderInfo.from(reminder));
+            }
+        } else {
+            List<EventReminder> existing = eventReminderRepository.findByEventId(eventId);
+            reminderInfos = existing.stream()
+                .map(EventReminderServiceDto.ReminderInfo::from)
+                .toList();
+        }
 
         log.info("캘린더 이벤트 수정 완료: eventId={}", eventId);
 
-        return CalendarEventServiceDto.EventInfo.from(event);
+        return CalendarEventServiceDto.EventInfo.from(event, reminderInfos);
     }
 
     @Override
@@ -101,6 +160,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
         CalendarEvent event = findEventOrThrow(eventId);
         event.deleteEvent();
+        eventReminderRepository.deleteByEventId(eventId);
 
         log.info("캘린더 이벤트 삭제 완료: eventId={}", eventId);
     }
@@ -111,5 +171,14 @@ public class CalendarEventServiceImpl implements CalendarEventService {
                 log.warn("캘린더 이벤트 조회 실패 - 존재하지 않는 이벤트: eventId={}", eventId);
                 return new EntityNotFoundException(DeskErrorCode.CALENDAR_EVENT_NOT_FOUND);
             });
+    }
+
+    private Map<Long, List<EventReminderServiceDto.ReminderInfo>> loadRemindersMap(List<Long> eventIds) {
+        if (eventIds.isEmpty()) {
+            return Map.of();
+        }
+        return eventReminderRepository.findByEventIds(eventIds).stream()
+            .map(EventReminderServiceDto.ReminderInfo::from)
+            .collect(Collectors.groupingBy(EventReminderServiceDto.ReminderInfo::eventRowId));
     }
 }

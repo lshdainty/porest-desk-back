@@ -16,7 +16,10 @@ public class TodoServiceDto {
         String content,
         TodoPriority priority,
         String category,
-        LocalDate dueDate
+        LocalDate dueDate,
+        Long projectRowId,
+        Long parentRowId,
+        List<Long> tagIds
     ) {}
 
     public record UpdateCommand(
@@ -24,7 +27,9 @@ public class TodoServiceDto {
         String content,
         TodoPriority priority,
         String category,
-        LocalDate dueDate
+        LocalDate dueDate,
+        Long projectRowId,
+        List<Long> tagIds
     ) {}
 
     public record ReorderCommand(
@@ -47,10 +52,20 @@ public class TodoServiceDto {
         LocalDate dueDate,
         LocalDateTime completedAt,
         Integer sortOrder,
+        Long projectRowId,
+        String projectName,
+        Long parentRowId,
+        List<TagInfo> tags,
+        int subtaskCount,
+        int subtaskCompletedCount,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
         public static TodoInfo from(Todo todo) {
+            return from(todo, List.of(), 0, 0);
+        }
+
+        public static TodoInfo from(Todo todo, List<TagInfo> tags, int subtaskCount, int subtaskCompletedCount) {
             return new TodoInfo(
                 todo.getRowId(),
                 todo.getUser().getRowId(),
@@ -62,9 +77,30 @@ public class TodoServiceDto {
                 todo.getDueDate(),
                 todo.getCompletedAt(),
                 todo.getSortOrder(),
+                todo.getProject() != null ? todo.getProject().getRowId() : null,
+                todo.getProject() != null ? todo.getProject().getProjectName() : null,
+                todo.getParent() != null ? todo.getParent().getRowId() : null,
+                tags,
+                subtaskCount,
+                subtaskCompletedCount,
                 todo.getCreateAt(),
                 todo.getModifyAt()
             );
         }
     }
+
+    public record TagInfo(
+        Long rowId,
+        String tagName,
+        String color
+    ) {}
+
+    public record TodoStats(
+        long totalCount,
+        long pendingCount,
+        long inProgressCount,
+        long completedCount,
+        long todayDueCount,
+        long overDueCount
+    ) {}
 }

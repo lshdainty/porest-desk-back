@@ -1,6 +1,10 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.desk.asset.domain.Asset;
+import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.calendar.domain.CalendarEvent;
+import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseCategory;
@@ -8,6 +12,8 @@ import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.todo.domain.Todo;
+import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +33,9 @@ import java.util.stream.Collectors;
 public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
+    private final AssetRepository assetRepository;
+    private final CalendarEventRepository calendarEventRepository;
+    private final TodoRepository todoRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -40,15 +49,33 @@ public class ExpenseServiceImpl implements ExpenseService {
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
 
+        Asset asset = null;
+        if (command.assetRowId() != null) {
+            asset = assetRepository.findById(command.assetRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+        }
+
         Expense expense = Expense.createExpense(
-            user,
-            category,
+            user, category, asset,
             command.expenseType(),
             command.amount(),
             command.description(),
             command.expenseDate(),
+            command.merchant(),
             command.paymentMethod()
         );
+
+        if (command.calendarEventRowId() != null) {
+            CalendarEvent event = calendarEventRepository.findById(command.calendarEventRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.CALENDAR_EVENT_NOT_FOUND));
+            expense.setCalendarEvent(event);
+        }
+
+        if (command.todoRowId() != null) {
+            Todo todo = todoRepository.findById(command.todoRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_NOT_FOUND));
+            expense.setTodo(todo);
+        }
 
         expenseRepository.save(expense);
         log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
@@ -77,14 +104,37 @@ public class ExpenseServiceImpl implements ExpenseService {
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
 
+        Asset asset = null;
+        if (command.assetRowId() != null) {
+            asset = assetRepository.findById(command.assetRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+        }
+
         expense.updateExpense(
-            category,
+            category, asset,
             command.expenseType(),
             command.amount(),
             command.description(),
             command.expenseDate(),
+            command.merchant(),
             command.paymentMethod()
         );
+
+        if (command.calendarEventRowId() != null) {
+            CalendarEvent event = calendarEventRepository.findById(command.calendarEventRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.CALENDAR_EVENT_NOT_FOUND));
+            expense.setCalendarEvent(event);
+        } else {
+            expense.setCalendarEvent(null);
+        }
+
+        if (command.todoRowId() != null) {
+            Todo todo = todoRepository.findById(command.todoRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_NOT_FOUND));
+            expense.setTodo(todo);
+        } else {
+            expense.setTodo(null);
+        }
 
         log.info("지출 수정 완료: expenseId={}", expenseId);
 
@@ -159,6 +209,132 @@ public class ExpenseServiceImpl implements ExpenseService {
             .toList();
 
         return new ExpenseServiceDto.MonthlySummary(year, month, totalIncome, totalExpense, categoryBreakdown);
+    }
+
+    @Override
+    public ExpenseServiceDto.WeeklySummary getWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
+        log.debug("지출 주간 요약 조회: userRowId={}, weekStart={}, weekEnd={}", userRowId, weekStart, weekEnd);
+
+        List<Expense> expenses = expenseRepository.findWeeklySummary(userRowId, weekStart, weekEnd);
+
+        Long totalIncome = expenses.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
+            .mapToLong(Expense::getAmount)
+            .sum();
+
+        Long totalExpense = expenses.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+            .mapToLong(Expense::getAmount)
+            .sum();
+
+        return new ExpenseServiceDto.WeeklySummary(weekStart, weekEnd, totalIncome, totalExpense);
+    }
+
+    @Override
+    public ExpenseServiceDto.YearlySummary getYearlySummary(Long userRowId, Integer year) {
+        log.debug("지출 연간 요약 조회: userRowId={}, year={}", userRowId, year);
+
+        List<Expense> expenses = expenseRepository.findYearlySummary(userRowId, year);
+
+        Long totalIncome = expenses.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
+            .mapToLong(Expense::getAmount)
+            .sum();
+
+        Long totalExpense = expenses.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+            .mapToLong(Expense::getAmount)
+            .sum();
+
+        Map<Integer, List<Expense>> byMonth = expenses.stream()
+            .collect(Collectors.groupingBy(e -> e.getExpenseDate().getMonthValue()));
+
+        List<ExpenseServiceDto.MonthlyAmount> monthlyAmounts = byMonth.entrySet().stream()
+            .map(entry -> new ExpenseServiceDto.MonthlyAmount(
+                entry.getKey(),
+                entry.getValue().stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum(),
+                entry.getValue().stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum()
+            ))
+            .sorted((a, b) -> a.month().compareTo(b.month()))
+            .toList();
+
+        return new ExpenseServiceDto.YearlySummary(year, totalIncome, totalExpense, monthlyAmounts);
+    }
+
+    @Override
+    public List<ExpenseServiceDto.MerchantSummary> getMerchantSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        log.debug("거래처별 요약 조회: userRowId={}", userRowId);
+
+        List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
+
+        return expenses.stream()
+            .filter(e -> e.getMerchant() != null && !e.getMerchant().isBlank())
+            .collect(Collectors.groupingBy(Expense::getMerchant))
+            .entrySet().stream()
+            .map(entry -> new ExpenseServiceDto.MerchantSummary(
+                entry.getKey(),
+                entry.getValue().stream().mapToLong(Expense::getAmount).sum(),
+                entry.getValue().size()
+            ))
+            .sorted((a, b) -> Long.compare(b.totalAmount(), a.totalAmount()))
+            .toList();
+    }
+
+    @Override
+    public List<ExpenseServiceDto.AssetSummary> getAssetSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        log.debug("자산별 요약 조회: userRowId={}", userRowId);
+
+        List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
+
+        return expenses.stream()
+            .filter(e -> e.getAsset() != null)
+            .collect(Collectors.groupingBy(e -> e.getAsset().getRowId()))
+            .entrySet().stream()
+            .map(entry -> {
+                List<Expense> assetExpenses = entry.getValue();
+                Expense first = assetExpenses.get(0);
+                return new ExpenseServiceDto.AssetSummary(
+                    first.getAsset().getRowId(),
+                    first.getAsset().getAssetName(),
+                    assetExpenses.stream().mapToLong(Expense::getAmount).sum(),
+                    assetExpenses.size()
+                );
+            })
+            .sorted((a, b) -> Long.compare(b.totalAmount(), a.totalAmount()))
+            .toList();
+    }
+
+    @Override
+    public List<ExpenseServiceDto.ExpenseInfo> searchExpenses(ExpenseServiceDto.SearchCommand command) {
+        log.debug("지출 검색: userRowId={}, keyword={}", command.userRowId(), command.keyword());
+
+        List<Expense> expenses = expenseRepository.search(
+            command.userRowId(), command.categoryRowId(), command.assetRowId(),
+            command.expenseType(), command.keyword(), command.merchant(),
+            command.minAmount(), command.maxAmount(), command.startDate(), command.endDate()
+        );
+
+        return expenses.stream()
+            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .toList();
+    }
+
+    @Override
+    public List<ExpenseServiceDto.ExpenseInfo> getExpensesByCalendarEvent(Long calendarEventRowId) {
+        log.debug("일정 연결 지출 조회: calendarEventRowId={}", calendarEventRowId);
+
+        return expenseRepository.findByCalendarEvent(calendarEventRowId).stream()
+            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .toList();
+    }
+
+    @Override
+    public List<ExpenseServiceDto.ExpenseInfo> getExpensesByTodo(Long todoRowId) {
+        log.debug("할일 연결 지출 조회: todoRowId={}", todoRowId);
+
+        return expenseRepository.findByTodo(todoRowId).stream()
+            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .toList();
     }
 
     private Expense findExpenseOrThrow(Long expenseId) {

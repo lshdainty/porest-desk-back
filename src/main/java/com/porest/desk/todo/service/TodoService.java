@@ -9,10 +9,13 @@ import java.util.List;
 
 public interface TodoService {
     TodoServiceDto.TodoInfo createTodo(TodoServiceDto.CreateCommand command);
-    List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate);
+    List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId);
     TodoServiceDto.TodoInfo getTodo(Long todoId);
     TodoServiceDto.TodoInfo updateTodo(Long todoId, TodoServiceDto.UpdateCommand command);
     TodoServiceDto.TodoInfo toggleStatus(Long todoId);
     void reorderTodos(Long userRowId, TodoServiceDto.ReorderCommand command);
     void deleteTodo(Long todoId);
+    List<TodoServiceDto.TodoInfo> getSubtasks(Long parentRowId);
+    void updateTags(Long todoId, List<Long> tagIds);
+    TodoServiceDto.TodoStats getStats(Long userRowId);
 }

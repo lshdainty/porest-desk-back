@@ -2,6 +2,7 @@ package com.porest.desk.calendar.controller.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.type.CalendarEventType;
 
 import java.time.LocalDateTime;
@@ -16,7 +17,11 @@ public class CalendarEventApiDto {
         String color,
         LocalDateTime startDate,
         LocalDateTime endDate,
-        YNType isAllDay
+        YNType isAllDay,
+        Long labelRowId,
+        String location,
+        String rrule,
+        List<Integer> reminderMinutes
     ) {}
 
     public record UpdateRequest(
@@ -26,8 +31,30 @@ public class CalendarEventApiDto {
         String color,
         LocalDateTime startDate,
         LocalDateTime endDate,
-        YNType isAllDay
+        YNType isAllDay,
+        Long labelRowId,
+        String location,
+        String rrule,
+        List<Integer> reminderMinutes
     ) {}
+
+    public record ReminderResponse(
+        Long rowId,
+        Long eventRowId,
+        String reminderType,
+        Integer minutesBefore,
+        YNType isSent
+    ) {
+        public static ReminderResponse from(EventReminderServiceDto.ReminderInfo info) {
+            return new ReminderResponse(
+                info.rowId(),
+                info.eventRowId(),
+                info.reminderType(),
+                info.minutesBefore(),
+                info.isSent()
+            );
+        }
+    }
 
     public record Response(
         Long rowId,
@@ -39,10 +66,21 @@ public class CalendarEventApiDto {
         LocalDateTime startDate,
         LocalDateTime endDate,
         YNType isAllDay,
+        Long labelRowId,
+        String labelName,
+        String labelColor,
+        String location,
+        String rrule,
+        Long recurrenceId,
+        YNType isException,
+        List<ReminderResponse> reminders,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
         public static Response from(CalendarEventServiceDto.EventInfo info) {
+            List<ReminderResponse> reminderResponses = info.reminders() != null
+                ? info.reminders().stream().map(ReminderResponse::from).toList()
+                : List.of();
             return new Response(
                 info.rowId(),
                 info.userRowId(),
@@ -53,6 +91,14 @@ public class CalendarEventApiDto {
                 info.startDate(),
                 info.endDate(),
                 info.isAllDay(),
+                info.labelRowId(),
+                info.labelName(),
+                info.labelColor(),
+                info.location(),
+                info.rrule(),
+                info.recurrenceId(),
+                info.isException(),
+                reminderResponses,
                 info.createAt(),
                 info.modifyAt()
             );

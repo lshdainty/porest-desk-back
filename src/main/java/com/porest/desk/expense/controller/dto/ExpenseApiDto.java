@@ -11,20 +11,28 @@ public class ExpenseApiDto {
 
     public record CreateRequest(
         Long categoryRowId,
+        Long assetRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
         LocalDate expenseDate,
-        String paymentMethod
+        String merchant,
+        String paymentMethod,
+        Long calendarEventRowId,
+        Long todoRowId
     ) {}
 
     public record UpdateRequest(
         Long categoryRowId,
+        Long assetRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
         LocalDate expenseDate,
-        String paymentMethod
+        String merchant,
+        String paymentMethod,
+        Long calendarEventRowId,
+        Long todoRowId
     ) {}
 
     public record Response(
@@ -32,11 +40,16 @@ public class ExpenseApiDto {
         Long userRowId,
         Long categoryRowId,
         String categoryName,
+        Long assetRowId,
+        String assetName,
         ExpenseType expenseType,
         Long amount,
         String description,
         LocalDate expenseDate,
+        String merchant,
         String paymentMethod,
+        Long calendarEventRowId,
+        Long todoRowId,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -46,11 +59,16 @@ public class ExpenseApiDto {
                 info.userRowId(),
                 info.categoryRowId(),
                 info.categoryName(),
+                info.assetRowId(),
+                info.assetName(),
                 info.expenseType(),
                 info.amount(),
                 info.description(),
                 info.expenseDate(),
+                info.merchant(),
                 info.paymentMethod(),
+                info.calendarEventRowId(),
+                info.todoRowId(),
                 info.createAt(),
                 info.modifyAt()
             );
@@ -116,6 +134,64 @@ public class ExpenseApiDto {
                 breakdown.expenseType(),
                 breakdown.totalAmount()
             );
+        }
+    }
+
+    public record WeeklySummaryResponse(
+        LocalDate weekStart,
+        LocalDate weekEnd,
+        Long totalIncome,
+        Long totalExpense
+    ) {
+        public static WeeklySummaryResponse from(ExpenseServiceDto.WeeklySummary summary) {
+            return new WeeklySummaryResponse(
+                summary.weekStart(), summary.weekEnd(),
+                summary.totalIncome(), summary.totalExpense()
+            );
+        }
+    }
+
+    public record YearlySummaryResponse(
+        Integer year,
+        Long totalIncome,
+        Long totalExpense,
+        List<MonthlyAmountResponse> monthlyAmounts
+    ) {
+        public static YearlySummaryResponse from(ExpenseServiceDto.YearlySummary summary) {
+            return new YearlySummaryResponse(
+                summary.year(), summary.totalIncome(), summary.totalExpense(),
+                summary.monthlyAmounts().stream().map(MonthlyAmountResponse::from).toList()
+            );
+        }
+    }
+
+    public record MonthlyAmountResponse(Integer month, Long totalIncome, Long totalExpense) {
+        public static MonthlyAmountResponse from(ExpenseServiceDto.MonthlyAmount ma) {
+            return new MonthlyAmountResponse(ma.month(), ma.totalIncome(), ma.totalExpense());
+        }
+    }
+
+    public record MerchantSummaryResponse(String merchant, Long totalAmount, Integer count) {
+        public static MerchantSummaryResponse from(ExpenseServiceDto.MerchantSummary s) {
+            return new MerchantSummaryResponse(s.merchant(), s.totalAmount(), s.count());
+        }
+    }
+
+    public record MerchantSummaryListResponse(List<MerchantSummaryResponse> merchants) {
+        public static MerchantSummaryListResponse from(List<ExpenseServiceDto.MerchantSummary> list) {
+            return new MerchantSummaryListResponse(list.stream().map(MerchantSummaryResponse::from).toList());
+        }
+    }
+
+    public record AssetSummaryResponse(Long assetRowId, String assetName, Long totalAmount, Integer count) {
+        public static AssetSummaryResponse from(ExpenseServiceDto.AssetSummary s) {
+            return new AssetSummaryResponse(s.assetRowId(), s.assetName(), s.totalAmount(), s.count());
+        }
+    }
+
+    public record AssetSummaryListResponse(List<AssetSummaryResponse> assets) {
+        public static AssetSummaryListResponse from(List<ExpenseServiceDto.AssetSummary> list) {
+            return new AssetSummaryListResponse(list.stream().map(AssetSummaryResponse::from).toList());
         }
     }
 }

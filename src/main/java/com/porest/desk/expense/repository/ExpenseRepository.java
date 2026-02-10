@@ -12,6 +12,13 @@ public interface ExpenseRepository {
     List<Expense> findByUser(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<Expense> findDailySummary(Long userRowId, LocalDate date);
     List<Expense> findMonthlySummary(Long userRowId, Integer year, Integer month);
+    List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd);
+    List<Expense> findYearlySummary(Long userRowId, Integer year);
+    List<Expense> search(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType,
+                         String keyword, String merchant, Long minAmount, Long maxAmount,
+                         LocalDate startDate, LocalDate endDate);
+    List<Expense> findByCalendarEvent(Long calendarEventRowId);
+    List<Expense> findByTodo(Long todoRowId);
     Expense save(Expense expense);
     void delete(Expense expense);
 }

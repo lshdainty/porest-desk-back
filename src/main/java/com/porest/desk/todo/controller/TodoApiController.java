@@ -40,7 +40,10 @@ public class TodoApiController {
             request.content(),
             request.priority(),
             request.category(),
-            request.dueDate()
+            request.dueDate(),
+            request.projectRowId(),
+            request.parentRowId(),
+            request.tagIds()
         ));
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
@@ -52,9 +55,10 @@ public class TodoApiController {
             @RequestParam(required = false) TodoPriority priority,
             @RequestParam(required = false) String category,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long projectRowId) {
         List<TodoServiceDto.TodoInfo> infos = todoService.getTodos(
-            loginUser.getRowId(), status, priority, category, startDate, endDate
+            loginUser.getRowId(), status, priority, category, startDate, endDate, projectRowId
         );
         return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
     }
@@ -77,7 +81,9 @@ public class TodoApiController {
             request.content(),
             request.priority(),
             request.category(),
-            request.dueDate()
+            request.dueDate(),
+            request.projectRowId(),
+            request.tagIds()
         ));
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
@@ -107,5 +113,29 @@ public class TodoApiController {
             @PathVariable Long id) {
         todoService.deleteTodo(id);
         return ApiResponse.success();
+    }
+
+    @GetMapping("/todo/{id}/subtasks")
+    public ApiResponse<TodoApiDto.ListResponse> getSubtasks(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        List<TodoServiceDto.TodoInfo> infos = todoService.getSubtasks(id);
+        return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
+    }
+
+    @PatchMapping("/todo/{id}/tags")
+    public ApiResponse<Void> updateTags(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestBody TodoApiDto.TagUpdateRequest request) {
+        todoService.updateTags(id, request.tagIds());
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/todos/stats")
+    public ApiResponse<TodoApiDto.StatsResponse> getStats(
+            @LoginUser UserPrincipal loginUser) {
+        TodoServiceDto.TodoStats stats = todoService.getStats(loginUser.getRowId());
+        return ApiResponse.success(TodoApiDto.StatsResponse.from(stats));
     }
 }

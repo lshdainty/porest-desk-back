@@ -13,20 +13,28 @@ public class ExpenseServiceDto {
     public record CreateCommand(
         Long userRowId,
         Long categoryRowId,
+        Long assetRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
         LocalDate expenseDate,
-        String paymentMethod
+        String merchant,
+        String paymentMethod,
+        Long calendarEventRowId,
+        Long todoRowId
     ) {}
 
     public record UpdateCommand(
         Long categoryRowId,
+        Long assetRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
         LocalDate expenseDate,
-        String paymentMethod
+        String merchant,
+        String paymentMethod,
+        Long calendarEventRowId,
+        Long todoRowId
     ) {}
 
     public record ExpenseInfo(
@@ -34,11 +42,16 @@ public class ExpenseServiceDto {
         Long userRowId,
         Long categoryRowId,
         String categoryName,
+        Long assetRowId,
+        String assetName,
         ExpenseType expenseType,
         Long amount,
         String description,
         LocalDate expenseDate,
+        String merchant,
         String paymentMethod,
+        Long calendarEventRowId,
+        Long todoRowId,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -48,11 +61,16 @@ public class ExpenseServiceDto {
                 expense.getUser().getRowId(),
                 expense.getCategory().getRowId(),
                 expense.getCategory().getCategoryName(),
+                expense.getAsset() != null ? expense.getAsset().getRowId() : null,
+                expense.getAsset() != null ? expense.getAsset().getAssetName() : null,
                 expense.getExpenseType(),
                 expense.getAmount(),
                 expense.getDescription(),
                 expense.getExpenseDate(),
+                expense.getMerchant(),
                 expense.getPaymentMethod(),
+                expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
+                expense.getTodo() != null ? expense.getTodo().getRowId() : null,
                 expense.getCreateAt(),
                 expense.getModifyAt()
             );
@@ -78,5 +96,51 @@ public class ExpenseServiceDto {
         String categoryName,
         ExpenseType expenseType,
         Long totalAmount
+    ) {}
+
+    public record WeeklySummary(
+        LocalDate weekStart,
+        LocalDate weekEnd,
+        Long totalIncome,
+        Long totalExpense
+    ) {}
+
+    public record YearlySummary(
+        Integer year,
+        Long totalIncome,
+        Long totalExpense,
+        List<MonthlyAmount> monthlyAmounts
+    ) {}
+
+    public record MonthlyAmount(
+        Integer month,
+        Long totalIncome,
+        Long totalExpense
+    ) {}
+
+    public record MerchantSummary(
+        String merchant,
+        Long totalAmount,
+        Integer count
+    ) {}
+
+    public record AssetSummary(
+        Long assetRowId,
+        String assetName,
+        Long totalAmount,
+        Integer count
+    ) {}
+
+    public record SearchCommand(
+        Long userRowId,
+        Long categoryRowId,
+        Long assetRowId,
+        ExpenseType expenseType,
+        String keyword,
+        String merchant,
+        Long minAmount,
+        Long maxAmount,
+        LocalDate startDate,
+        LocalDate endDate
     ) {}
 }

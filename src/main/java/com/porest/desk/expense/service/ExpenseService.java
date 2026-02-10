@@ -13,4 +13,11 @@ public interface ExpenseService {
     void deleteExpense(Long expenseId);
     ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date);
     ExpenseServiceDto.MonthlySummary getMonthlySummary(Long userRowId, Integer year, Integer month);
+    ExpenseServiceDto.WeeklySummary getWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd);
+    ExpenseServiceDto.YearlySummary getYearlySummary(Long userRowId, Integer year);
+    List<ExpenseServiceDto.MerchantSummary> getMerchantSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
+    List<ExpenseServiceDto.AssetSummary> getAssetSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
+    List<ExpenseServiceDto.ExpenseInfo> searchExpenses(ExpenseServiceDto.SearchCommand command);
+    List<ExpenseServiceDto.ExpenseInfo> getExpensesByCalendarEvent(Long calendarEventRowId);
+    List<ExpenseServiceDto.ExpenseInfo> getExpensesByTodo(Long todoRowId);
 }

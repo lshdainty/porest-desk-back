@@ -15,7 +15,10 @@ public class TodoApiDto {
         String content,
         TodoPriority priority,
         String category,
-        LocalDate dueDate
+        LocalDate dueDate,
+        Long projectRowId,
+        Long parentRowId,
+        List<Long> tagIds
     ) {}
 
     public record UpdateRequest(
@@ -23,7 +26,9 @@ public class TodoApiDto {
         String content,
         TodoPriority priority,
         String category,
-        LocalDate dueDate
+        LocalDate dueDate,
+        Long projectRowId,
+        List<Long> tagIds
     ) {}
 
     public record ReorderRequest(
@@ -34,6 +39,10 @@ public class TodoApiDto {
             int sortOrder
         ) {}
     }
+
+    public record TagUpdateRequest(
+        List<Long> tagIds
+    ) {}
 
     public record Response(
         Long rowId,
@@ -46,6 +55,12 @@ public class TodoApiDto {
         LocalDate dueDate,
         LocalDateTime completedAt,
         Integer sortOrder,
+        Long projectRowId,
+        String projectName,
+        Long parentRowId,
+        List<TagResponse> tags,
+        int subtaskCount,
+        int subtaskCompletedCount,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -61,9 +76,25 @@ public class TodoApiDto {
                 info.dueDate(),
                 info.completedAt(),
                 info.sortOrder(),
+                info.projectRowId(),
+                info.projectName(),
+                info.parentRowId(),
+                info.tags() != null ? info.tags().stream().map(TagResponse::from).toList() : List.of(),
+                info.subtaskCount(),
+                info.subtaskCompletedCount(),
                 info.createAt(),
                 info.modifyAt()
             );
+        }
+    }
+
+    public record TagResponse(
+        Long rowId,
+        String tagName,
+        String color
+    ) {
+        public static TagResponse from(TodoServiceDto.TagInfo info) {
+            return new TagResponse(info.rowId(), info.tagName(), info.color());
         }
     }
 
@@ -75,6 +106,26 @@ public class TodoApiDto {
                 .map(Response::from)
                 .toList();
             return new ListResponse(responses);
+        }
+    }
+
+    public record StatsResponse(
+        long totalCount,
+        long pendingCount,
+        long inProgressCount,
+        long completedCount,
+        long todayDueCount,
+        long overDueCount
+    ) {
+        public static StatsResponse from(TodoServiceDto.TodoStats stats) {
+            return new StatsResponse(
+                stats.totalCount(),
+                stats.pendingCount(),
+                stats.inProgressCount(),
+                stats.completedCount(),
+                stats.todayDueCount(),
+                stats.overDueCount()
+            );
         }
     }
 }

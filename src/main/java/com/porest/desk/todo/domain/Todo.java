@@ -2,6 +2,7 @@ package com.porest.desk.todo.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
+import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.user.domain.User;
@@ -37,6 +38,22 @@ public class Todo extends AuditingFieldsWithIp {
     @JoinColumn(name = "user_row_id")
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "project_row_id")
+    private TodoProject project;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_row_id")
+    private Todo parent;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_row_id")
+    private UserGroup group;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assignee_row_id")
+    private User assignee;
+
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
@@ -67,7 +84,7 @@ public class Todo extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate) {
+    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoProject project, Todo parent) {
         Todo todo = new Todo();
         todo.user = user;
         todo.title = title;
@@ -76,17 +93,20 @@ public class Todo extends AuditingFieldsWithIp {
         todo.category = category;
         todo.status = TodoStatus.PENDING;
         todo.dueDate = dueDate;
+        todo.project = project;
+        todo.parent = parent;
         todo.sortOrder = 0;
         todo.isDeleted = YNType.N;
         return todo;
     }
 
-    public void updateTodo(String title, String content, TodoPriority priority, String category, LocalDate dueDate) {
+    public void updateTodo(String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoProject project) {
         this.title = title;
         this.content = content;
         this.priority = priority;
         this.category = category;
         this.dueDate = dueDate;
+        this.project = project;
     }
 
     public void toggleStatus() {
@@ -105,5 +125,13 @@ public class Todo extends AuditingFieldsWithIp {
 
     public void updateSortOrder(int sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public void setGroup(UserGroup group) {
+        this.group = group;
+    }
+
+    public void setAssignee(User assignee) {
+        this.assignee = assignee;
     }
 }

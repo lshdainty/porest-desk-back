@@ -42,6 +42,9 @@ public class User extends AuditingFieldsWithIp {
     @Column(name = "timezone", nullable = false, length = 50)
     private String timezone;
 
+    @Column(name = "month_start_day", nullable = false)
+    private Integer monthStartDay;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -52,6 +55,7 @@ public class User extends AuditingFieldsWithIp {
         user.userName = userName;
         user.userEmail = userEmail;
         user.timezone = "Asia/Seoul";
+        user.monthStartDay = 1;
         user.isDeleted = YNType.N;
         return user;
     }
@@ -67,6 +71,10 @@ public class User extends AuditingFieldsWithIp {
 
     public void updateTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public void updateMonthStartDay(Integer monthStartDay) {
+        this.monthStartDay = monthStartDay;
     }
 
     public void deleteUser() {

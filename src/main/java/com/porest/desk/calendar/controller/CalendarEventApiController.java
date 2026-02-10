@@ -39,7 +39,11 @@ public class CalendarEventApiController {
             request.color(),
             request.startDate(),
             request.endDate(),
-            request.isAllDay()
+            request.isAllDay(),
+            request.labelRowId(),
+            request.location(),
+            request.rrule(),
+            request.reminderMinutes()
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
     }
@@ -67,7 +71,11 @@ public class CalendarEventApiController {
             request.color(),
             request.startDate(),
             request.endDate(),
-            request.isAllDay()
+            request.isAllDay(),
+            request.labelRowId(),
+            request.location(),
+            request.rrule(),
+            request.reminderMinutes()
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
     }

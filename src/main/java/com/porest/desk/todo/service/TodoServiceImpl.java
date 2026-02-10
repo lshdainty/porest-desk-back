@@ -3,7 +3,13 @@ package com.porest.desk.todo.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.todo.domain.Todo;
+import com.porest.desk.todo.domain.TodoProject;
+import com.porest.desk.todo.domain.TodoTag;
+import com.porest.desk.todo.domain.TodoTagMapping;
+import com.porest.desk.todo.repository.TodoProjectRepository;
 import com.porest.desk.todo.repository.TodoRepository;
+import com.porest.desk.todo.repository.TodoTagMappingRepository;
+import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
@@ -16,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +31,9 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class TodoServiceImpl implements TodoService {
     private final TodoRepository todoRepository;
+    private final TodoProjectRepository todoProjectRepository;
+    private final TodoTagRepository todoTagRepository;
+    private final TodoTagMappingRepository todoTagMappingRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -33,29 +44,54 @@ public class TodoServiceImpl implements TodoService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
+        TodoProject project = null;
+        if (command.projectRowId() != null) {
+            project = todoProjectRepository.findById(command.projectRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_PROJECT_NOT_FOUND));
+        }
+
+        Todo parent = null;
+        if (command.parentRowId() != null) {
+            parent = findTodoOrThrow(command.parentRowId());
+        }
+
         Todo todo = Todo.createTodo(
-            user,
-            command.title(),
-            command.content(),
-            command.priority(),
-            command.category(),
-            command.dueDate()
+            user, command.title(), command.content(), command.priority(),
+            command.category(), command.dueDate(), project, parent
         );
 
         todoRepository.save(todo);
+
+        // Handle tags
+        if (command.tagIds() != null && !command.tagIds().isEmpty()) {
+            List<TodoTag> tags = todoTagRepository.findAllByIds(command.tagIds());
+            for (TodoTag tag : tags) {
+                todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
+            }
+        }
+
         log.info("할일 등록 완료: todoId={}, userRowId={}", todo.getRowId(), command.userRowId());
 
-        return TodoServiceDto.TodoInfo.from(todo);
+        return buildTodoInfo(todo);
     }
 
     @Override
-    public List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate) {
+    public List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId) {
         log.debug("할일 목록 조회: userRowId={}, status={}, priority={}", userRowId, status, priority);
 
-        List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate);
+        List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate, projectRowId);
+
+        // Batch load tags and subtask counts
+        List<Long> todoIds = todos.stream().map(Todo::getRowId).toList();
+        Map<Long, List<TodoServiceDto.TagInfo>> tagsMap = loadTagsMap(todoIds);
+        Map<Long, int[]> subtaskCountsMap = loadSubtaskCountsMap(todoIds);
 
         return todos.stream()
-            .map(TodoServiceDto.TodoInfo::from)
+            .map(todo -> {
+                List<TodoServiceDto.TagInfo> tags = tagsMap.getOrDefault(todo.getRowId(), List.of());
+                int[] counts = subtaskCountsMap.getOrDefault(todo.getRowId(), new int[]{0, 0});
+                return TodoServiceDto.TodoInfo.from(todo, tags, counts[0], counts[1]);
+            })
             .toList();
     }
 
@@ -65,7 +101,7 @@ public class TodoServiceImpl implements TodoService {
 
         Todo todo = findTodoOrThrow(todoId);
 
-        return TodoServiceDto.TodoInfo.from(todo);
+        return buildTodoInfo(todo);
     }
 
     @Override
@@ -75,17 +111,29 @@ public class TodoServiceImpl implements TodoService {
 
         Todo todo = findTodoOrThrow(todoId);
 
+        TodoProject project = null;
+        if (command.projectRowId() != null) {
+            project = todoProjectRepository.findById(command.projectRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_PROJECT_NOT_FOUND));
+        }
+
         todo.updateTodo(
-            command.title(),
-            command.content(),
-            command.priority(),
-            command.category(),
-            command.dueDate()
+            command.title(), command.content(), command.priority(),
+            command.category(), command.dueDate(), project
         );
+
+        // Update tags if provided
+        if (command.tagIds() != null) {
+            todoTagMappingRepository.deleteByTodoId(todoId);
+            List<TodoTag> tags = todoTagRepository.findAllByIds(command.tagIds());
+            for (TodoTag tag : tags) {
+                todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
+            }
+        }
 
         log.info("할일 수정 완료: todoId={}", todoId);
 
-        return TodoServiceDto.TodoInfo.from(todo);
+        return buildTodoInfo(todo);
     }
 
     @Override
@@ -98,7 +146,7 @@ public class TodoServiceImpl implements TodoService {
 
         log.info("할일 상태 토글 완료: todoId={}, newStatus={}", todoId, todo.getStatus());
 
-        return TodoServiceDto.TodoInfo.from(todo);
+        return buildTodoInfo(todo);
     }
 
     @Override
@@ -122,7 +170,67 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = findTodoOrThrow(todoId);
         todo.deleteTodo();
 
+        // Also delete subtasks
+        List<Todo> subtasks = todoRepository.findSubtasks(todoId);
+        for (Todo subtask : subtasks) {
+            subtask.deleteTodo();
+        }
+
         log.info("할일 삭제 완료: todoId={}", todoId);
+    }
+
+    @Override
+    public List<TodoServiceDto.TodoInfo> getSubtasks(Long parentRowId) {
+        log.debug("서브태스크 조회: parentRowId={}", parentRowId);
+
+        List<Todo> subtasks = todoRepository.findSubtasks(parentRowId);
+
+        List<Long> subtaskIds = subtasks.stream().map(Todo::getRowId).toList();
+        Map<Long, List<TodoServiceDto.TagInfo>> tagsMap = loadTagsMap(subtaskIds);
+
+        return subtasks.stream()
+            .map(todo -> TodoServiceDto.TodoInfo.from(todo, tagsMap.getOrDefault(todo.getRowId(), List.of()), 0, 0))
+            .toList();
+    }
+
+    @Override
+    @Transactional
+    public void updateTags(Long todoId, List<Long> tagIds) {
+        log.debug("태그 업데이트 시작: todoId={}, tagIds={}", todoId, tagIds);
+
+        Todo todo = findTodoOrThrow(todoId);
+        todoTagMappingRepository.deleteByTodoId(todoId);
+
+        if (tagIds != null && !tagIds.isEmpty()) {
+            List<TodoTag> tags = todoTagRepository.findAllByIds(tagIds);
+            for (TodoTag tag : tags) {
+                todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
+            }
+        }
+
+        log.info("태그 업데이트 완료: todoId={}", todoId);
+    }
+
+    @Override
+    public TodoServiceDto.TodoStats getStats(Long userRowId) {
+        log.debug("할일 통계 조회: userRowId={}", userRowId);
+
+        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null);
+
+        long totalCount = allTodos.size();
+        long pendingCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.PENDING).count();
+        long inProgressCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.IN_PROGRESS).count();
+        long completedCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.COMPLETED).count();
+
+        LocalDate today = LocalDate.now();
+        long todayDueCount = allTodos.stream()
+            .filter(t -> t.getDueDate() != null && t.getDueDate().isEqual(today))
+            .count();
+        long overDueCount = allTodos.stream()
+            .filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(today) && t.getStatus() != TodoStatus.COMPLETED)
+            .count();
+
+        return new TodoServiceDto.TodoStats(totalCount, pendingCount, inProgressCount, completedCount, todayDueCount, overDueCount);
     }
 
     private Todo findTodoOrThrow(Long todoId) {
@@ -131,5 +239,47 @@ public class TodoServiceImpl implements TodoService {
                 log.warn("할일 조회 실패 - 존재하지 않는 할일: todoId={}", todoId);
                 return new EntityNotFoundException(DeskErrorCode.TODO_NOT_FOUND);
             });
+    }
+
+    private TodoServiceDto.TodoInfo buildTodoInfo(Todo todo) {
+        List<TodoTagMapping> mappings = todoTagMappingRepository.findByTodoId(todo.getRowId());
+        List<TodoServiceDto.TagInfo> tags = mappings.stream()
+            .map(m -> new TodoServiceDto.TagInfo(m.getTag().getRowId(), m.getTag().getTagName(), m.getTag().getColor()))
+            .toList();
+
+        List<Todo> subtasks = todoRepository.findSubtasks(todo.getRowId());
+        int subtaskCount = subtasks.size();
+        int subtaskCompletedCount = (int) subtasks.stream().filter(s -> s.getStatus() == TodoStatus.COMPLETED).count();
+
+        return TodoServiceDto.TodoInfo.from(todo, tags, subtaskCount, subtaskCompletedCount);
+    }
+
+    private Map<Long, List<TodoServiceDto.TagInfo>> loadTagsMap(List<Long> todoIds) {
+        if (todoIds.isEmpty()) return Map.of();
+
+        List<TodoTagMapping> allMappings = todoTagMappingRepository.findByTodoIds(todoIds);
+        return allMappings.stream()
+            .collect(Collectors.groupingBy(
+                m -> m.getTodo().getRowId(),
+                Collectors.mapping(
+                    m -> new TodoServiceDto.TagInfo(m.getTag().getRowId(), m.getTag().getTagName(), m.getTag().getColor()),
+                    Collectors.toList()
+                )
+            ));
+    }
+
+    private Map<Long, int[]> loadSubtaskCountsMap(List<Long> todoIds) {
+        if (todoIds.isEmpty()) return Map.of();
+
+        return todoIds.stream()
+            .collect(Collectors.toMap(
+                id -> id,
+                id -> {
+                    List<Todo> subtasks = todoRepository.findSubtasks(id);
+                    int total = subtasks.size();
+                    int completed = (int) subtasks.stream().filter(s -> s.getStatus() == TodoStatus.COMPLETED).count();
+                    return new int[]{total, completed};
+                }
+            ));
     }
 }

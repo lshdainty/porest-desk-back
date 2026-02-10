@@ -34,10 +34,11 @@ public class TodoQueryDslRepository implements TodoRepository {
     }
 
     @Override
-    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate) {
+    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId) {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(todo.user.rowId.eq(userRowId));
         builder.and(todo.isDeleted.eq(YNType.N));
+        builder.and(todo.parent.isNull());
 
         if (status != null) {
             builder.and(todo.status.eq(status));
@@ -53,6 +54,9 @@ public class TodoQueryDslRepository implements TodoRepository {
         }
         if (endDate != null) {
             builder.and(todo.dueDate.loe(endDate));
+        }
+        if (projectRowId != null) {
+            builder.and(todo.project.rowId.eq(projectRowId));
         }
 
         return queryFactory.selectFrom(todo)
@@ -71,6 +75,22 @@ public class TodoQueryDslRepository implements TodoRepository {
                 todo.dueDate.loe(endDate)
             )
             .orderBy(todo.dueDate.asc(), todo.sortOrder.asc())
+            .fetch();
+    }
+
+    @Override
+    public List<Todo> findSubtasks(Long parentRowId) {
+        return queryFactory.selectFrom(todo)
+            .where(todo.parent.rowId.eq(parentRowId), todo.isDeleted.eq(YNType.N))
+            .orderBy(todo.sortOrder.asc(), todo.rowId.asc())
+            .fetch();
+    }
+
+    @Override
+    public List<Todo> findByProject(Long projectRowId) {
+        return queryFactory.selectFrom(todo)
+            .where(todo.project.rowId.eq(projectRowId), todo.isDeleted.eq(YNType.N), todo.parent.isNull())
+            .orderBy(todo.sortOrder.asc(), todo.rowId.desc())
             .fetch();
     }
 

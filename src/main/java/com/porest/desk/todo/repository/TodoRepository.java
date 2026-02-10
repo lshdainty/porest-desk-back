@@ -10,8 +10,10 @@ import java.util.Optional;
 
 public interface TodoRepository {
     Optional<Todo> findById(Long rowId);
-    List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate);
+    List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId);
     List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate);
+    List<Todo> findSubtasks(Long parentRowId);
+    List<Todo> findByProject(Long projectRowId);
     Todo save(Todo todo);
     void delete(Todo todo);
 }

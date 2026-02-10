@@ -35,11 +35,15 @@ public class ExpenseApiController {
         ExpenseServiceDto.ExpenseInfo info = expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.categoryRowId(),
+            request.assetRowId(),
             request.expenseType(),
             request.amount(),
             request.description(),
             request.expenseDate(),
-            request.paymentMethod()
+            request.merchant(),
+            request.paymentMethod(),
+            request.calendarEventRowId(),
+            request.todoRowId()
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
@@ -64,11 +68,15 @@ public class ExpenseApiController {
             @RequestBody ExpenseApiDto.UpdateRequest request) {
         ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, new ExpenseServiceDto.UpdateCommand(
             request.categoryRowId(),
+            request.assetRowId(),
             request.expenseType(),
             request.amount(),
             request.description(),
             request.expenseDate(),
-            request.paymentMethod()
+            request.merchant(),
+            request.paymentMethod(),
+            request.calendarEventRowId(),
+            request.todoRowId()
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
@@ -96,5 +104,75 @@ public class ExpenseApiController {
             @RequestParam Integer month) {
         ExpenseServiceDto.MonthlySummary summary = expenseService.getMonthlySummary(loginUser.getRowId(), year, month);
         return ApiResponse.success(ExpenseApiDto.MonthlySummaryResponse.from(summary));
+    }
+
+    @GetMapping("/expenses/summary/weekly")
+    public ApiResponse<ExpenseApiDto.WeeklySummaryResponse> getWeeklySummary(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStart,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekEnd) {
+        ExpenseServiceDto.WeeklySummary summary = expenseService.getWeeklySummary(loginUser.getRowId(), weekStart, weekEnd);
+        return ApiResponse.success(ExpenseApiDto.WeeklySummaryResponse.from(summary));
+    }
+
+    @GetMapping("/expenses/summary/yearly")
+    public ApiResponse<ExpenseApiDto.YearlySummaryResponse> getYearlySummary(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam Integer year) {
+        ExpenseServiceDto.YearlySummary summary = expenseService.getYearlySummary(loginUser.getRowId(), year);
+        return ApiResponse.success(ExpenseApiDto.YearlySummaryResponse.from(summary));
+    }
+
+    @GetMapping("/expenses/summary/by-merchant")
+    public ApiResponse<ExpenseApiDto.MerchantSummaryListResponse> getMerchantSummary(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        List<ExpenseServiceDto.MerchantSummary> summaries = expenseService.getMerchantSummary(loginUser.getRowId(), startDate, endDate);
+        return ApiResponse.success(ExpenseApiDto.MerchantSummaryListResponse.from(summaries));
+    }
+
+    @GetMapping("/expenses/summary/by-asset")
+    public ApiResponse<ExpenseApiDto.AssetSummaryListResponse> getAssetSummary(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        List<ExpenseServiceDto.AssetSummary> summaries = expenseService.getAssetSummary(loginUser.getRowId(), startDate, endDate);
+        return ApiResponse.success(ExpenseApiDto.AssetSummaryListResponse.from(summaries));
+    }
+
+    @GetMapping("/calendar/event/{eventId}/expenses")
+    public ApiResponse<ExpenseApiDto.ListResponse> getExpensesByCalendarEvent(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long eventId) {
+        List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.getExpensesByCalendarEvent(eventId);
+        return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
+    }
+
+    @GetMapping("/todo/{todoId}/expenses")
+    public ApiResponse<ExpenseApiDto.ListResponse> getExpensesByTodo(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long todoId) {
+        List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.getExpensesByTodo(todoId);
+        return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
+    }
+
+    @GetMapping("/expenses/search")
+    public ApiResponse<ExpenseApiDto.ListResponse> searchExpenses(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long assetId,
+            @RequestParam(required = false) ExpenseType expenseType,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String merchant,
+            @RequestParam(required = false) Long minAmount,
+            @RequestParam(required = false) Long maxAmount,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.searchExpenses(new ExpenseServiceDto.SearchCommand(
+            loginUser.getRowId(), categoryId, assetId, expenseType, keyword, merchant,
+            minAmount, maxAmount, startDate, endDate
+        ));
+        return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
     }
 }
