@@ -96,6 +96,88 @@ public class ExpenseJpaRepository implements ExpenseRepository {
     }
 
     @Override
+    public List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
+        return entityManager.createQuery(
+            "SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted AND e.expenseDate >= :weekStart AND e.expenseDate <= :weekEnd ORDER BY e.expenseDate DESC, e.rowId DESC", Expense.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .setParameter("weekStart", weekStart)
+            .setParameter("weekEnd", weekEnd)
+            .getResultList();
+    }
+
+    @Override
+    public List<Expense> findYearlySummary(Long userRowId, Integer year) {
+        LocalDate startDate = LocalDate.of(year, 1, 1);
+        LocalDate endDate = LocalDate.of(year, 12, 31);
+
+        return entityManager.createQuery(
+            "SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted AND e.expenseDate >= :startDate AND e.expenseDate <= :endDate ORDER BY e.expenseDate DESC, e.rowId DESC", Expense.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .setParameter("startDate", startDate)
+            .setParameter("endDate", endDate)
+            .getResultList();
+    }
+
+    @Override
+    public List<Expense> search(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType,
+                                String keyword, String merchant, Long minAmount, Long maxAmount,
+                                LocalDate startDate, LocalDate endDate) {
+        StringBuilder jpql = new StringBuilder("SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted");
+        List<String> conditions = new ArrayList<>();
+
+        if (categoryRowId != null) conditions.add(" AND e.category.rowId = :categoryRowId");
+        if (assetRowId != null) conditions.add(" AND e.asset.rowId = :assetRowId");
+        if (expenseType != null) conditions.add(" AND e.expenseType = :expenseType");
+        if (keyword != null) conditions.add(" AND (e.description LIKE :keyword OR e.merchant LIKE :keyword)");
+        if (merchant != null) conditions.add(" AND e.merchant = :merchant");
+        if (minAmount != null) conditions.add(" AND e.amount >= :minAmount");
+        if (maxAmount != null) conditions.add(" AND e.amount <= :maxAmount");
+        if (startDate != null) conditions.add(" AND e.expenseDate >= :startDate");
+        if (endDate != null) conditions.add(" AND e.expenseDate <= :endDate");
+
+        for (String condition : conditions) {
+            jpql.append(condition);
+        }
+        jpql.append(" ORDER BY e.expenseDate DESC, e.rowId DESC");
+
+        TypedQuery<Expense> query = entityManager.createQuery(jpql.toString(), Expense.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N);
+
+        if (categoryRowId != null) query.setParameter("categoryRowId", categoryRowId);
+        if (assetRowId != null) query.setParameter("assetRowId", assetRowId);
+        if (expenseType != null) query.setParameter("expenseType", expenseType);
+        if (keyword != null) query.setParameter("keyword", "%" + keyword + "%");
+        if (merchant != null) query.setParameter("merchant", merchant);
+        if (minAmount != null) query.setParameter("minAmount", minAmount);
+        if (maxAmount != null) query.setParameter("maxAmount", maxAmount);
+        if (startDate != null) query.setParameter("startDate", startDate);
+        if (endDate != null) query.setParameter("endDate", endDate);
+
+        return query.getResultList();
+    }
+
+    @Override
+    public List<Expense> findByCalendarEvent(Long calendarEventRowId) {
+        return entityManager.createQuery(
+            "SELECT e FROM Expense e WHERE e.calendarEvent.rowId = :calendarEventRowId AND e.isDeleted = :isDeleted ORDER BY e.rowId DESC", Expense.class)
+            .setParameter("calendarEventRowId", calendarEventRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public List<Expense> findByTodo(Long todoRowId) {
+        return entityManager.createQuery(
+            "SELECT e FROM Expense e WHERE e.todo.rowId = :todoRowId AND e.isDeleted = :isDeleted ORDER BY e.rowId DESC", Expense.class)
+            .setParameter("todoRowId", todoRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
     public Expense save(Expense entity) {
         if (entity.getRowId() == null) {
             entityManager.persist(entity);

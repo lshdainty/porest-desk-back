@@ -3,6 +3,8 @@ package com.porest.desk.dashboard.controller.dto;
 import com.porest.desk.dashboard.service.dto.DashboardServiceDto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 
 public class DashboardApiDto {
     public record SummaryResponse(
@@ -10,7 +12,10 @@ public class DashboardApiDto {
         CalendarSummary calendarSummary,
         ExpenseSummary expenseSummary,
         TimerSummary timerSummary,
-        MemoSummary memoSummary
+        MemoSummary memoSummary,
+        List<UpcomingEvent> upcomingEvents,
+        List<RecentTodo> recentTodos,
+        List<DailyExpenseTrend> expenseTrend
     ) {
         public static SummaryResponse from(DashboardServiceDto.DashboardSummary summary) {
             return new SummaryResponse(
@@ -18,7 +23,10 @@ public class DashboardApiDto {
                 CalendarSummary.from(summary.calendarSummary()),
                 ExpenseSummary.from(summary.expenseSummary()),
                 TimerSummary.from(summary.timerSummary()),
-                MemoSummary.from(summary.memoSummary())
+                MemoSummary.from(summary.memoSummary()),
+                summary.upcomingEvents().stream().map(UpcomingEvent::from).toList(),
+                summary.recentTodos().stream().map(RecentTodo::from).toList(),
+                summary.expenseTrend().stream().map(DailyExpenseTrend::from).toList()
             );
         }
     }
@@ -50,6 +58,24 @@ public class DashboardApiDto {
     public record MemoSummary(long totalCount, long pinnedCount, String recentMemoTitle) {
         public static MemoSummary from(DashboardServiceDto.MemoSummary s) {
             return new MemoSummary(s.totalCount(), s.pinnedCount(), s.recentMemoTitle());
+        }
+    }
+
+    public record UpcomingEvent(Long rowId, String title, String eventType, String color, LocalDateTime startDate, long daysUntil) {
+        public static UpcomingEvent from(DashboardServiceDto.UpcomingEvent e) {
+            return new UpcomingEvent(e.rowId(), e.title(), e.eventType(), e.color(), e.startDate(), e.daysUntil());
+        }
+    }
+
+    public record RecentTodo(Long rowId, String title, String priority, String status, LocalDate dueDate) {
+        public static RecentTodo from(DashboardServiceDto.RecentTodo t) {
+            return new RecentTodo(t.rowId(), t.title(), t.priority(), t.status(), t.dueDate());
+        }
+    }
+
+    public record DailyExpenseTrend(LocalDate date, long income, long expense) {
+        public static DailyExpenseTrend from(DashboardServiceDto.DailyExpenseTrend t) {
+            return new DailyExpenseTrend(t.date(), t.income(), t.expense());
         }
     }
 }

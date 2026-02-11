@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="true">
+    <conversionRule conversionWord="clr" class="org.springframework.boot.logging.logback.ColorConverter" />
+
+    <!-- 로그 파일 경로 (환경변수 또는 기본값) -->
+    <property name="LOG_PATH" value="${LOG_PATH:-/home/porest/porest-desk/logs}" />
+    <property name="LOG_FILE_NAME" value="application" />
+
+    <!-- 로컬 콘솔에도 로그 출력 -->
+    <appender name="consoleAppender" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%highlight(%-5level) %yellow(%d{yyyy-MM-dd HH:mm:ss.SSS}) %magenta(%-8(%X{requestId})) %cyan(%logger{0}) %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Loki로 로그 전송 설정 (dev, prod 환경만) -->
+    <springProfile name="dev,prod">
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${LOKI_URL:-http://loki:3100/loki/api/v1/push}</url>
+            </http>
+            <labels>
+                app = porest-desk
+                host = ${HOSTNAME}
+                level = %level
+                env = prod
+            </labels>
+            <message>
+                <pattern>%-5level %d{yyyy-MM-dd HH:mm:ss.SSS} %-8(%X{requestId}) %logger{0} %msg%n</pattern>
+            </message>
+        </appender>
+
+        <!-- 파일 로그 (Rolling) -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/${LOG_FILE_NAME}.log</file>
+            <encoder>
+                <pattern>%-5level %d{yyyy-MM-dd HH:mm:ss.SSS} %-8(%X{requestId}) %logger{0} %msg%n</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <!-- 일별 + 크기별 로테이션, 오래된 파일은 gz 압축 -->
+                <fileNamePattern>${LOG_PATH}/${LOG_FILE_NAME}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <!-- 단일 파일 최대 크기 -->
+                <maxFileSize>10MB</maxFileSize>
+                <!-- 보관 기간 (일) -->
+                <maxHistory>30</maxHistory>
+                <!-- 전체 로그 파일 최대 용량 -->
+                <totalSizeCap>1GB</totalSizeCap>
+            </rollingPolicy>
+        </appender>
+
+        <root level="info">
+            <appender-ref ref="consoleAppender"/>
+            <appender-ref ref="LOKI"/>
+            <appender-ref ref="FILE"/>
+        </root>
+    </springProfile>
+
+    <!-- 로컬 환경 (Loki 미사용) -->
+    <springProfile name="local">
+        <root level="info">
+            <appender-ref ref="consoleAppender"/>
+        </root>
+    </springProfile>
+</configuration>

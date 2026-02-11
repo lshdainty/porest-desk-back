@@ -22,7 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -42,7 +47,7 @@ public class DashboardServiceImpl implements DashboardService {
         LocalDate today = LocalDate.now();
 
         // Todo summary
-        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null);
+        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null);
         long pendingCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.PENDING).count();
         long inProgressCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.IN_PROGRESS).count();
         long completedCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.COMPLETED).count();
@@ -80,6 +85,56 @@ public class DashboardServiceImpl implements DashboardService {
         long pinnedCount = allMemos.stream().filter(m -> m.getIsPinned() == YNType.Y).count();
         String recentMemoTitle = allMemos.isEmpty() ? null : allMemos.get(0).getTitle();
 
+        // Upcoming events (next 7 days, max 5)
+        List<DashboardServiceDto.UpcomingEvent> upcomingEventList = upcomingEvents.stream()
+            .filter(e -> !e.getStartDate().toLocalDate().isBefore(today))
+            .sorted(Comparator.comparing(CalendarEvent::getStartDate))
+            .limit(5)
+            .map(e -> new DashboardServiceDto.UpcomingEvent(
+                e.getRowId(),
+                e.getTitle(),
+                e.getEventType().name(),
+                e.getColor(),
+                e.getStartDate(),
+                ChronoUnit.DAYS.between(today, e.getStartDate().toLocalDate())
+            ))
+            .toList();
+
+        // Recent todos (incomplete, sorted by due date, max 5)
+        List<DashboardServiceDto.RecentTodo> recentTodoList = allTodos.stream()
+            .filter(t -> t.getStatus() != TodoStatus.COMPLETED)
+            .sorted(Comparator.comparing(Todo::getDueDate, Comparator.nullsLast(Comparator.naturalOrder())))
+            .limit(5)
+            .map(t -> new DashboardServiceDto.RecentTodo(
+                t.getRowId(),
+                t.getTitle(),
+                t.getPriority().name(),
+                t.getStatus().name(),
+                t.getDueDate()
+            ))
+            .toList();
+
+        // Expense trend (last 30 days, daily income/expense)
+        LocalDate trendStart = today.minusDays(29);
+        List<Expense> trendExpenses = expenseRepository.findByUser(userRowId, null, null, trendStart, today);
+        Map<LocalDate, long[]> dailyMap = new TreeMap<>();
+        for (LocalDate d = trendStart; !d.isAfter(today); d = d.plusDays(1)) {
+            dailyMap.put(d, new long[]{0, 0});
+        }
+        for (Expense e : trendExpenses) {
+            long[] amounts = dailyMap.get(e.getExpenseDate());
+            if (amounts != null) {
+                if (e.getExpenseType() == ExpenseType.INCOME) {
+                    amounts[0] += e.getAmount();
+                } else {
+                    amounts[1] += e.getAmount();
+                }
+            }
+        }
+        List<DashboardServiceDto.DailyExpenseTrend> expenseTrendList = dailyMap.entrySet().stream()
+            .map(entry -> new DashboardServiceDto.DailyExpenseTrend(entry.getKey(), entry.getValue()[0], entry.getValue()[1]))
+            .toList();
+
         // Build result
         var todoSummary = new DashboardServiceDto.TodoSummary(allTodos.size(), pendingCount, inProgressCount, completedCount, todayDueCount);
         var calendarSummary = new DashboardServiceDto.CalendarSummary(todayEvents.size(), upcomingEvents.size(), nextEventDate);
@@ -89,6 +144,9 @@ public class DashboardServiceImpl implements DashboardService {
 
         log.debug("대시보드 요약 조회 완료: userRowId={}", userRowId);
 
-        return new DashboardServiceDto.DashboardSummary(todoSummary, calendarSummary, expenseSummary, timerSummary, memoSummary);
+        return new DashboardServiceDto.DashboardSummary(
+            todoSummary, calendarSummary, expenseSummary, timerSummary, memoSummary,
+            upcomingEventList, recentTodoList, expenseTrendList
+        );
     }
 }

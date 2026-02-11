@@ -1,6 +1,8 @@
 package com.porest.desk.dashboard.service.dto;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
 
 public class DashboardServiceDto {
     public record DashboardSummary(
@@ -8,7 +10,10 @@ public class DashboardServiceDto {
         CalendarSummary calendarSummary,
         ExpenseSummary expenseSummary,
         TimerSummary timerSummary,
-        MemoSummary memoSummary
+        MemoSummary memoSummary,
+        List<UpcomingEvent> upcomingEvents,
+        List<RecentTodo> recentTodos,
+        List<DailyExpenseTrend> expenseTrend
     ) {}
 
     public record TodoSummary(
@@ -42,5 +47,28 @@ public class DashboardServiceDto {
         long totalCount,
         long pinnedCount,
         String recentMemoTitle
+    ) {}
+
+    public record UpcomingEvent(
+        Long rowId,
+        String title,
+        String eventType,
+        String color,
+        LocalDateTime startDate,
+        long daysUntil
+    ) {}
+
+    public record RecentTodo(
+        Long rowId,
+        String title,
+        String priority,
+        String status,
+        LocalDate dueDate
+    ) {}
+
+    public record DailyExpenseTrend(
+        LocalDate date,
+        long income,
+        long expense
     ) {}
 }

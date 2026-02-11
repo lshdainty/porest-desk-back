@@ -11,6 +11,8 @@ gradle-app.setting
 /src/main/generated/
 
 ### Security & Local Config ###
+.env.*
+!.env.example
 **/application-local.yml
 **/application-secret.properties
 **/application-oauth.yml
