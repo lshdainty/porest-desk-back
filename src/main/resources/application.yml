@@ -17,6 +17,12 @@ spring:
       idle-timeout: ${HIKARI_IDLE_TIMEOUT:600000}
       max-lifetime: ${HIKARI_MAX_LIFETIME:1800000}
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION:60000}
+    p6spy:
+      enable-logging: ${P6SPY_ENABLED:true}
+      multiline: true
+      logging: slf4j
+      tracing:
+        include-parameter-values: true
 
   # JPA 설정
   jpa:
@@ -49,14 +55,6 @@ spring:
       include-exception: ${ERROR_EXCEPTION:false}
       include-binding-errors: ${ERROR_BINDING:never}
 
-# P6Spy 설정
-decorator:
-  datasource:
-    p6spy:
-      enable-logging: ${P6SPY_ENABLED:true}
-      tracing:
-        include-parameter-values: true
-
 # 서버 설정
 server:
   port: ${SERVER_PORT:8002}
@@ -68,6 +66,8 @@ logging:
   level:
     com.porest.desk: ${LOG_LEVEL:info}
     org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE:info}
+    org.hibernate.type.descriptor.sql.BasicBinder: ${LOG_LEVEL_HIBERNATE_BINDER:info}
+    p6spy: info
     root: ${LOG_LEVEL_ROOT:info}
 
 # JWT 설정

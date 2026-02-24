@@ -49,8 +49,9 @@ public class User extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static User createUser(String userId, String userName, String userEmail) {
+    public static User createUser(Long ssoUserRowId, String userId, String userName, String userEmail) {
         User user = new User();
+        user.ssoUserRowId = ssoUserRowId;
         user.userId = userId;
         user.userName = userName;
         user.userEmail = userEmail;
@@ -60,7 +61,8 @@ public class User extends AuditingFieldsWithIp {
         return user;
     }
 
-    public void updateFromSso(String userName, String userEmail) {
+    public void updateFromSso(Long ssoUserRowId, String userName, String userEmail) {
+        this.ssoUserRowId = ssoUserRowId;
         this.userName = userName;
         this.userEmail = userEmail;
     }
