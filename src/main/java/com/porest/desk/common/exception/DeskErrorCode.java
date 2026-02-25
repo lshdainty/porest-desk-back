@@ -67,10 +67,6 @@ public enum DeskErrorCode implements ErrorCodeProvider {
 
     // File
     FILE_NOT_FOUND("FILE_001", "error.notfound.file", HttpStatus.NOT_FOUND),
-
-    // Album
-    ALBUM_NOT_FOUND("ALBUM_001", "error.notfound.album", HttpStatus.NOT_FOUND),
-    ALBUM_PHOTO_NOT_FOUND("ALBUM_002", "error.notfound.album.photo", HttpStatus.NOT_FOUND),
     ;
 
     private final String code;
