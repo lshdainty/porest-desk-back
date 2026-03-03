@@ -31,17 +31,19 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(exception -> exception.authenticationEntryPoint(customAuthenticationEntryPoint))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(
-                    "/api/v1/auth/exchange",
-                    "/actuator/**",
-                    "/api-docs/**",
-                    "/swagger-ui/**",
-                    "/swagger-ui.html"
-                ).permitAll()
-                .anyRequest().authenticated()
-            )
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            // TODO: SSO 인증 임시 비활성화 - 작업 완료 후 반드시 원복할 것
+            // .authorizeHttpRequests(auth -> auth
+            //     .requestMatchers(
+            //         "/api/v1/auth/exchange",
+            //         "/actuator/**",
+            //         "/api-docs/**",
+            //         "/swagger-ui/**",
+            //         "/swagger-ui.html"
+            //     ).permitAll()
+            //     .anyRequest().authenticated()
+            // )
+            // .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 
         return http.build();
     }

@@ -32,6 +32,12 @@ public class LoginUserArgumentResolver implements HandlerMethodArgumentResolver 
                 .userEmail(principal.getUserEmail())
                 .build();
         }
-        return null;
+        // TODO: SSO 인증 임시 비활성화 - 작업 완료 후 반드시 원복할 것 (return null로 변경)
+        return UserPrincipal.builder()
+            .rowId(0L)
+            .userId("dev")
+            .userName("개발자")
+            .userEmail("dev@dev.com")
+            .build();
     }
 }
