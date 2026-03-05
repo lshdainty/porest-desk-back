@@ -47,4 +47,14 @@ public class ExpenseCategoryJpaRepository implements ExpenseCategoryRepository {
     public void delete(ExpenseCategory entity) {
         entity.deleteCategory();
     }
+
+    @Override
+    public boolean hasChildren(Long categoryRowId) {
+        Long count = entityManager.createQuery(
+            "SELECT COUNT(c) FROM ExpenseCategory c WHERE c.parent.rowId = :parentRowId AND c.isDeleted = :isDeleted", Long.class)
+            .setParameter("parentRowId", categoryRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getSingleResult();
+        return count > 0;
+    }
 }

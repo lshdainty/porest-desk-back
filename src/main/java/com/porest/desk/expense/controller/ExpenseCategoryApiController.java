@@ -33,7 +33,8 @@ public class ExpenseCategoryApiController {
             request.categoryName(),
             request.icon(),
             request.color(),
-            request.expenseType()
+            request.expenseType(),
+            request.parentRowId()
         ));
         return ApiResponse.success(ExpenseCategoryApiDto.Response.from(info));
     }

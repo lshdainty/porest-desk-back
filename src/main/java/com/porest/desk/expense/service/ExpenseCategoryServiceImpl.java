@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
@@ -13,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -30,12 +33,26 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
+        ExpenseCategory parent = null;
+        if (command.parentRowId() != null) {
+            parent = findCategoryOrThrow(command.parentRowId());
+
+            if (parent.getParent() != null) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+            }
+
+            if (parent.getExpenseType() != command.expenseType()) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+            }
+        }
+
         ExpenseCategory category = ExpenseCategory.createCategory(
             user,
             command.categoryName(),
             command.icon(),
             command.color(),
-            command.expenseType()
+            command.expenseType(),
+            parent
         );
 
         expenseCategoryRepository.save(category);
@@ -50,8 +67,13 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
         List<ExpenseCategory> categories = expenseCategoryRepository.findAllByUser(userRowId);
 
+        Set<Long> parentIds = categories.stream()
+            .filter(c -> c.getParent() != null)
+            .map(c -> c.getParent().getRowId())
+            .collect(Collectors.toSet());
+
         return categories.stream()
-            .map(ExpenseCategoryServiceDto.CategoryInfo::from)
+            .map(c -> ExpenseCategoryServiceDto.CategoryInfo.fromWithHasChildren(c, parentIds.contains(c.getRowId())))
             .toList();
     }
 
@@ -80,6 +102,11 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         log.debug("지출 카테고리 삭제 시작: categoryId={}", categoryId);
 
         ExpenseCategory category = findCategoryOrThrow(categoryId);
+
+        if (expenseCategoryRepository.hasChildren(categoryId)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_HAS_CHILDREN);
+        }
+
         category.deleteCategory();
 
         log.info("지출 카테고리 삭제 완료: categoryId={}", categoryId);

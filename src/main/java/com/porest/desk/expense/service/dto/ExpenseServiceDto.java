@@ -94,6 +94,8 @@ public class ExpenseServiceDto {
     public record CategoryBreakdown(
         Long categoryRowId,
         String categoryName,
+        Long parentCategoryRowId,
+        String parentCategoryName,
         ExpenseType expenseType,
         Long totalAmount
     ) {}

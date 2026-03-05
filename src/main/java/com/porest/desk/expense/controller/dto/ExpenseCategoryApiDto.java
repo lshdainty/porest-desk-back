@@ -12,7 +12,8 @@ public class ExpenseCategoryApiDto {
         String categoryName,
         String icon,
         String color,
-        ExpenseType expenseType
+        ExpenseType expenseType,
+        Long parentRowId
     ) {}
 
     public record UpdateRequest(
@@ -30,6 +31,8 @@ public class ExpenseCategoryApiDto {
         String color,
         ExpenseType expenseType,
         Integer sortOrder,
+        Long parentRowId,
+        boolean hasChildren,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -42,6 +45,8 @@ public class ExpenseCategoryApiDto {
                 info.color(),
                 info.expenseType(),
                 info.sortOrder(),
+                info.parentRowId(),
+                info.hasChildren(),
                 info.createAt(),
                 info.modifyAt()
             );

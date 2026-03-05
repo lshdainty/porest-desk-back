@@ -124,6 +124,8 @@ public class ExpenseApiDto {
     public record CategoryBreakdownResponse(
         Long categoryRowId,
         String categoryName,
+        Long parentCategoryRowId,
+        String parentCategoryName,
         ExpenseType expenseType,
         Long totalAmount
     ) {
@@ -131,6 +133,8 @@ public class ExpenseApiDto {
             return new CategoryBreakdownResponse(
                 breakdown.categoryRowId(),
                 breakdown.categoryName(),
+                breakdown.parentCategoryRowId(),
+                breakdown.parentCategoryName(),
                 breakdown.expenseType(),
                 breakdown.totalAmount()
             );

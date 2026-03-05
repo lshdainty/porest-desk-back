@@ -14,10 +14,14 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "expense_category")
@@ -32,6 +36,13 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_row_id")
     private User user;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_row_id")
+    private ExpenseCategory parent;
+
+    @OneToMany(mappedBy = "parent")
+    private List<ExpenseCategory> children = new ArrayList<>();
 
     @Column(name = "category_name", nullable = false, length = 50)
     private String categoryName;
@@ -53,13 +64,14 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static ExpenseCategory createCategory(User user, String categoryName, String icon, String color, ExpenseType expenseType) {
+    public static ExpenseCategory createCategory(User user, String categoryName, String icon, String color, ExpenseType expenseType, ExpenseCategory parent) {
         ExpenseCategory category = new ExpenseCategory();
         category.user = user;
         category.categoryName = categoryName;
         category.icon = icon;
         category.color = color;
         category.expenseType = expenseType;
+        category.parent = parent;
         category.sortOrder = 0;
         category.isDeleted = YNType.N;
         return category;
@@ -69,7 +81,9 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
         this.categoryName = categoryName;
         this.icon = icon;
         this.color = color;
-        this.sortOrder = sortOrder;
+        if (sortOrder != null) {
+            this.sortOrder = sortOrder;
+        }
     }
 
     public void deleteCategory() {

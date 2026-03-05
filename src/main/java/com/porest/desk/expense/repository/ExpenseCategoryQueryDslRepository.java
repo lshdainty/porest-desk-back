@@ -54,4 +54,15 @@ public class ExpenseCategoryQueryDslRepository implements ExpenseCategoryReposit
     public void delete(ExpenseCategory entity) {
         entity.deleteCategory();
     }
+
+    @Override
+    public boolean hasChildren(Long categoryRowId) {
+        return queryFactory.selectOne()
+            .from(expenseCategory)
+            .where(
+                expenseCategory.parent.rowId.eq(categoryRowId),
+                expenseCategory.isDeleted.eq(YNType.N)
+            )
+            .fetchFirst() != null;
+    }
 }

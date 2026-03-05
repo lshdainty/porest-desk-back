@@ -10,4 +10,5 @@ public interface ExpenseCategoryRepository {
     List<ExpenseCategory> findAllByUser(Long userRowId);
     ExpenseCategory save(ExpenseCategory expenseCategory);
     void delete(ExpenseCategory expenseCategory);
+    boolean hasChildren(Long categoryRowId);
 }

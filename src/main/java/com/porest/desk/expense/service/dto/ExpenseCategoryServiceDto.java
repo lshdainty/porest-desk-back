@@ -12,7 +12,8 @@ public class ExpenseCategoryServiceDto {
         String categoryName,
         String icon,
         String color,
-        ExpenseType expenseType
+        ExpenseType expenseType,
+        Long parentRowId
     ) {}
 
     public record UpdateCommand(
@@ -30,6 +31,8 @@ public class ExpenseCategoryServiceDto {
         String color,
         ExpenseType expenseType,
         Integer sortOrder,
+        Long parentRowId,
+        boolean hasChildren,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -42,6 +45,24 @@ public class ExpenseCategoryServiceDto {
                 category.getColor(),
                 category.getExpenseType(),
                 category.getSortOrder(),
+                category.getParent() != null ? category.getParent().getRowId() : null,
+                false,
+                category.getCreateAt(),
+                category.getModifyAt()
+            );
+        }
+
+        public static CategoryInfo fromWithHasChildren(ExpenseCategory category, boolean hasChildren) {
+            return new CategoryInfo(
+                category.getRowId(),
+                category.getUser().getRowId(),
+                category.getCategoryName(),
+                category.getIcon(),
+                category.getColor(),
+                category.getExpenseType(),
+                category.getSortOrder(),
+                category.getParent() != null ? category.getParent().getRowId() : null,
+                hasChildren,
                 category.getCreateAt(),
                 category.getModifyAt()
             );

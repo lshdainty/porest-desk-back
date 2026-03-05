@@ -47,6 +47,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_BUDGET_NOT_FOUND("EXP_003", "error.notfound.expense.budget", HttpStatus.NOT_FOUND),
     EXPENSE_TEMPLATE_NOT_FOUND("EXP_004", "error.notfound.expense.template", HttpStatus.NOT_FOUND),
     RECURRING_TRANSACTION_NOT_FOUND("EXP_005", "error.notfound.recurring.transaction", HttpStatus.NOT_FOUND),
+    EXPENSE_CATEGORY_MAX_DEPTH("EXP_006", "error.expense.category.max.depth", HttpStatus.BAD_REQUEST),
+    EXPENSE_CATEGORY_HAS_CHILDREN("EXP_007", "error.expense.category.has.children", HttpStatus.BAD_REQUEST),
+    EXPENSE_CATEGORY_TYPE_MISMATCH("EXP_008", "error.expense.category.type.mismatch", HttpStatus.BAD_REQUEST),
+    EXPENSE_CATEGORY_NOT_LEAF("EXP_009", "error.expense.category.not.leaf", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),

@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.calendar.domain.CalendarEvent;
@@ -48,6 +49,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+
+        if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+        }
 
         Asset asset = null;
         if (command.assetRowId() != null) {
@@ -199,9 +204,12 @@ public class ExpenseServiceImpl implements ExpenseService {
                 Long totalAmount = categoryExpenses.stream()
                     .mapToLong(Expense::getAmount)
                     .sum();
+                ExpenseCategory parentCategory = first.getCategory().getParent();
                 return new ExpenseServiceDto.CategoryBreakdown(
                     first.getCategory().getRowId(),
                     first.getCategory().getCategoryName(),
+                    parentCategory != null ? parentCategory.getRowId() : null,
+                    parentCategory != null ? parentCategory.getCategoryName() : null,
                     first.getExpenseType(),
                     totalAmount
                 );
