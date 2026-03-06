@@ -7,13 +7,12 @@ import com.porest.desk.dashboard.service.dto.DashboardServiceDto;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.type.ExpenseType;
-import com.porest.desk.memo.domain.Memo;
-import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.timer.domain.TimerSession;
 import com.porest.desk.timer.repository.TimerSessionRepository;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,7 +37,6 @@ public class DashboardServiceImpl implements DashboardService {
     private final CalendarEventRepository calendarEventRepository;
     private final ExpenseRepository expenseRepository;
     private final TimerSessionRepository timerSessionRepository;
-    private final MemoRepository memoRepository;
 
     @Override
     public DashboardServiceDto.DashboardSummary getDashboardSummary(Long userRowId) {
@@ -47,11 +45,12 @@ public class DashboardServiceImpl implements DashboardService {
         LocalDate today = LocalDate.now();
 
         // Todo summary
-        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null);
-        long pendingCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.PENDING).count();
-        long inProgressCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.IN_PROGRESS).count();
-        long completedCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.COMPLETED).count();
-        long todayDueCount = allTodos.stream().filter(t -> today.equals(t.getDueDate())).count();
+        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null, null);
+        List<Todo> taskTodos = allTodos.stream().filter(t -> t.getType() == TodoType.TASK).toList();
+        long pendingCount = taskTodos.stream().filter(t -> t.getStatus() == TodoStatus.PENDING).count();
+        long inProgressCount = taskTodos.stream().filter(t -> t.getStatus() == TodoStatus.IN_PROGRESS).count();
+        long completedCount = taskTodos.stream().filter(t -> t.getStatus() == TodoStatus.COMPLETED).count();
+        long todayDueCount = taskTodos.stream().filter(t -> today.equals(t.getDueDate())).count();
 
         // Calendar summary
         LocalDateTime todayStart = today.atStartOfDay();
@@ -80,10 +79,10 @@ public class DashboardServiceImpl implements DashboardService {
         List<TimerSession> weekSessions = timerSessionRepository.findDailyStats(userRowId, weekStart, today);
         long weeklyFocusSeconds = weekSessions.stream().mapToLong(TimerSession::getDurationSeconds).sum();
 
-        // Memo summary
-        List<Memo> allMemos = memoRepository.findAllByUser(userRowId, null, null);
-        long pinnedCount = allMemos.stream().filter(m -> m.getIsPinned() == YNType.Y).count();
-        String recentMemoTitle = allMemos.isEmpty() ? null : allMemos.get(0).getTitle();
+        // Memo summary (based on todo type=NOTE)
+        List<Todo> noteTodos = allTodos.stream().filter(t -> t.getType() == TodoType.NOTE).toList();
+        long pinnedCount = noteTodos.stream().filter(t -> t.getIsPinned() == YNType.Y).count();
+        String recentMemoTitle = noteTodos.isEmpty() ? null : noteTodos.get(0).getTitle();
 
         // Upcoming events (next 7 days, max 5)
         List<DashboardServiceDto.UpcomingEvent> upcomingEventList = upcomingEvents.stream()
@@ -100,8 +99,8 @@ public class DashboardServiceImpl implements DashboardService {
             ))
             .toList();
 
-        // Recent todos (incomplete, sorted by due date, max 5)
-        List<DashboardServiceDto.RecentTodo> recentTodoList = allTodos.stream()
+        // Recent todos (incomplete TASK type only, sorted by due date, max 5)
+        List<DashboardServiceDto.RecentTodo> recentTodoList = taskTodos.stream()
             .filter(t -> t.getStatus() != TodoStatus.COMPLETED)
             .sorted(Comparator.comparing(Todo::getDueDate, Comparator.nullsLast(Comparator.naturalOrder())))
             .limit(5)
@@ -136,11 +135,11 @@ public class DashboardServiceImpl implements DashboardService {
             .toList();
 
         // Build result
-        var todoSummary = new DashboardServiceDto.TodoSummary(allTodos.size(), pendingCount, inProgressCount, completedCount, todayDueCount);
+        var todoSummary = new DashboardServiceDto.TodoSummary(taskTodos.size(), pendingCount, inProgressCount, completedCount, todayDueCount);
         var calendarSummary = new DashboardServiceDto.CalendarSummary(todayEvents.size(), upcomingEvents.size(), nextEventDate);
         var expenseSummary = new DashboardServiceDto.ExpenseSummary(todayIncome, todayExpenseAmount, monthlyIncome, monthlyExpenseAmount);
         var timerSummary = new DashboardServiceDto.TimerSummary(todayFocusSeconds, todaySessions.size(), weeklyFocusSeconds);
-        var memoSummary = new DashboardServiceDto.MemoSummary(allMemos.size(), pinnedCount, recentMemoTitle);
+        var memoSummary = new DashboardServiceDto.MemoSummary(noteTodos.size(), pinnedCount, recentMemoTitle);
 
         log.debug("대시보드 요약 조회 완료: userRowId={}", userRowId);
 

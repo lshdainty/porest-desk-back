@@ -8,6 +8,7 @@ import com.porest.desk.todo.service.TodoService;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -43,7 +44,8 @@ public class TodoApiController {
             request.dueDate(),
             request.projectRowId(),
             request.parentRowId(),
-            request.tagIds()
+            request.tagIds(),
+            request.type()
         ));
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
@@ -56,9 +58,10 @@ public class TodoApiController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam(required = false) Long projectRowId) {
+            @RequestParam(required = false) Long projectRowId,
+            @RequestParam(required = false) TodoType type) {
         List<TodoServiceDto.TodoInfo> infos = todoService.getTodos(
-            loginUser.getRowId(), status, priority, category, startDate, endDate, projectRowId
+            loginUser.getRowId(), status, priority, category, startDate, endDate, projectRowId, type
         );
         return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
     }
@@ -93,6 +96,14 @@ public class TodoApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
         TodoServiceDto.TodoInfo info = todoService.toggleStatus(id, loginUser.getRowId());
+        return ApiResponse.success(TodoApiDto.Response.from(info));
+    }
+
+    @PatchMapping("/todo/{id}/pin")
+    public ApiResponse<TodoApiDto.Response> togglePin(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        TodoServiceDto.TodoInfo info = todoService.togglePin(id, loginUser.getRowId());
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
 

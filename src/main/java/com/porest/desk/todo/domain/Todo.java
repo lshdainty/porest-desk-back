@@ -5,6 +5,7 @@ import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -54,10 +55,14 @@ public class Todo extends AuditingFieldsWithIp {
     @JoinColumn(name = "assignee_row_id")
     private User assignee;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false, length = 20)
+    private TodoType type;
+
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
-    @Column(name = "content", columnDefinition = "TEXT")
+    @Column(name = "content", columnDefinition = "LONGTEXT")
     private String content;
 
     @Enumerated(EnumType.STRING)
@@ -81,12 +86,17 @@ public class Todo extends AuditingFieldsWithIp {
     private Integer sortOrder;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "is_pinned", nullable = false, length = 1)
+    private YNType isPinned;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoProject project, Todo parent) {
+    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoProject project, Todo parent, TodoType type) {
         Todo todo = new Todo();
         todo.user = user;
+        todo.type = type != null ? type : TodoType.TASK;
         todo.title = title;
         todo.content = content;
         todo.priority = priority;
@@ -96,6 +106,7 @@ public class Todo extends AuditingFieldsWithIp {
         todo.project = project;
         todo.parent = parent;
         todo.sortOrder = 0;
+        todo.isPinned = YNType.N;
         todo.isDeleted = YNType.N;
         return todo;
     }
@@ -116,6 +127,14 @@ public class Todo extends AuditingFieldsWithIp {
         } else {
             this.status = TodoStatus.COMPLETED;
             this.completedAt = LocalDateTime.now();
+        }
+    }
+
+    public void togglePin() {
+        if (this.isPinned == YNType.Y) {
+            this.isPinned = YNType.N;
+        } else {
+            this.isPinned = YNType.Y;
         }
     }
 

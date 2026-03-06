@@ -14,6 +14,7 @@ import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -58,9 +59,15 @@ public class TodoServiceImpl implements TodoService {
             validateTodoOwnership(parent, command.userRowId());
         }
 
+        TodoType type = command.type() != null ? command.type() : TodoType.TASK;
+        TodoPriority priority = command.priority();
+        if (type == TodoType.NOTE) {
+            priority = TodoPriority.LOW;
+        }
+
         Todo todo = Todo.createTodo(
-            user, command.title(), command.content(), command.priority(),
-            command.category(), command.dueDate(), project, parent
+            user, command.title(), command.content(), priority,
+            command.category(), command.dueDate(), project, parent, type
         );
 
         todoRepository.save(todo);
@@ -73,16 +80,16 @@ public class TodoServiceImpl implements TodoService {
             }
         }
 
-        log.info("할일 등록 완료: todoId={}, userRowId={}", todo.getRowId(), command.userRowId());
+        log.info("할일 등록 완료: todoId={}, userRowId={}, type={}", todo.getRowId(), command.userRowId(), type);
 
         return buildTodoInfo(todo);
     }
 
     @Override
-    public List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId) {
-        log.debug("할일 목록 조회: userRowId={}, status={}, priority={}", userRowId, status, priority);
+    public List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type) {
+        log.debug("할일 목록 조회: userRowId={}, status={}, priority={}, type={}", userRowId, status, priority, type);
 
-        List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate, projectRowId);
+        List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate, projectRowId, type);
 
         // Batch load tags and subtask counts
         List<Long> todoIds = todos.stream().map(Todo::getRowId).toList();
@@ -151,6 +158,20 @@ public class TodoServiceImpl implements TodoService {
         todo.toggleStatus();
 
         log.info("할일 상태 토글 완료: todoId={}, newStatus={}", todoId, todo.getStatus());
+
+        return buildTodoInfo(todo);
+    }
+
+    @Override
+    @Transactional
+    public TodoServiceDto.TodoInfo togglePin(Long todoId, Long userRowId) {
+        log.debug("할일 고정 토글 시작: todoId={}", todoId);
+
+        Todo todo = findTodoOrThrow(todoId);
+        validateTodoOwnership(todo, userRowId);
+        todo.togglePin();
+
+        log.info("할일 고정 토글 완료: todoId={}, isPinned={}", todoId, todo.getIsPinned());
 
         return buildTodoInfo(todo);
     }
@@ -226,22 +247,23 @@ public class TodoServiceImpl implements TodoService {
     public TodoServiceDto.TodoStats getStats(Long userRowId) {
         log.debug("할일 통계 조회: userRowId={}", userRowId);
 
-        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null);
+        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null, null);
 
-        long totalCount = allTodos.size();
-        long pendingCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.PENDING).count();
-        long inProgressCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.IN_PROGRESS).count();
-        long completedCount = allTodos.stream().filter(t -> t.getStatus() == TodoStatus.COMPLETED).count();
+        long totalCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK).count();
+        long pendingCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK && t.getStatus() == TodoStatus.PENDING).count();
+        long inProgressCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK && t.getStatus() == TodoStatus.IN_PROGRESS).count();
+        long completedCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK && t.getStatus() == TodoStatus.COMPLETED).count();
+        long noteCount = allTodos.stream().filter(t -> t.getType() == TodoType.NOTE).count();
 
         LocalDate today = LocalDate.now();
         long todayDueCount = allTodos.stream()
-            .filter(t -> t.getDueDate() != null && t.getDueDate().isEqual(today))
+            .filter(t -> t.getType() == TodoType.TASK && t.getDueDate() != null && t.getDueDate().isEqual(today))
             .count();
         long overDueCount = allTodos.stream()
-            .filter(t -> t.getDueDate() != null && t.getDueDate().isBefore(today) && t.getStatus() != TodoStatus.COMPLETED)
+            .filter(t -> t.getType() == TodoType.TASK && t.getDueDate() != null && t.getDueDate().isBefore(today) && t.getStatus() != TodoStatus.COMPLETED)
             .count();
 
-        return new TodoServiceDto.TodoStats(totalCount, pendingCount, inProgressCount, completedCount, todayDueCount, overDueCount);
+        return new TodoServiceDto.TodoStats(totalCount, pendingCount, inProgressCount, completedCount, todayDueCount, overDueCount, noteCount);
     }
 
     private void validateTodoOwnership(Todo todo, Long userRowId) {

@@ -1,8 +1,10 @@
 package com.porest.desk.todo.service.dto;
 
+import com.porest.core.type.YNType;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -19,7 +21,8 @@ public class TodoServiceDto {
         LocalDate dueDate,
         Long projectRowId,
         Long parentRowId,
-        List<Long> tagIds
+        List<Long> tagIds,
+        TodoType type
     ) {}
 
     public record UpdateCommand(
@@ -44,6 +47,7 @@ public class TodoServiceDto {
     public record TodoInfo(
         Long rowId,
         Long userRowId,
+        TodoType type,
         String title,
         String content,
         TodoPriority priority,
@@ -52,6 +56,7 @@ public class TodoServiceDto {
         LocalDate dueDate,
         LocalDateTime completedAt,
         Integer sortOrder,
+        YNType isPinned,
         Long projectRowId,
         String projectName,
         Long parentRowId,
@@ -69,6 +74,7 @@ public class TodoServiceDto {
             return new TodoInfo(
                 todo.getRowId(),
                 todo.getUser().getRowId(),
+                todo.getType(),
                 todo.getTitle(),
                 todo.getContent(),
                 todo.getPriority(),
@@ -77,6 +83,7 @@ public class TodoServiceDto {
                 todo.getDueDate(),
                 todo.getCompletedAt(),
                 todo.getSortOrder(),
+                todo.getIsPinned(),
                 todo.getProject() != null ? todo.getProject().getRowId() : null,
                 todo.getProject() != null ? todo.getProject().getProjectName() : null,
                 todo.getParent() != null ? todo.getParent().getRowId() : null,
@@ -101,6 +108,7 @@ public class TodoServiceDto {
         long inProgressCount,
         long completedCount,
         long todayDueCount,
-        long overDueCount
+        long overDueCount,
+        long noteCount
     ) {}
 }

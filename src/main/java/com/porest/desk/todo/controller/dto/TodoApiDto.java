@@ -1,7 +1,9 @@
 package com.porest.desk.todo.controller.dto;
 
+import com.porest.core.type.YNType;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
 
 import java.time.LocalDate;
@@ -18,7 +20,8 @@ public class TodoApiDto {
         LocalDate dueDate,
         Long projectRowId,
         Long parentRowId,
-        List<Long> tagIds
+        List<Long> tagIds,
+        TodoType type
     ) {}
 
     public record UpdateRequest(
@@ -47,6 +50,7 @@ public class TodoApiDto {
     public record Response(
         Long rowId,
         Long userRowId,
+        TodoType type,
         String title,
         String content,
         TodoPriority priority,
@@ -55,6 +59,7 @@ public class TodoApiDto {
         LocalDate dueDate,
         LocalDateTime completedAt,
         Integer sortOrder,
+        YNType isPinned,
         Long projectRowId,
         String projectName,
         Long parentRowId,
@@ -68,6 +73,7 @@ public class TodoApiDto {
             return new Response(
                 info.rowId(),
                 info.userRowId(),
+                info.type(),
                 info.title(),
                 info.content(),
                 info.priority(),
@@ -76,6 +82,7 @@ public class TodoApiDto {
                 info.dueDate(),
                 info.completedAt(),
                 info.sortOrder(),
+                info.isPinned(),
                 info.projectRowId(),
                 info.projectName(),
                 info.parentRowId(),
@@ -115,7 +122,8 @@ public class TodoApiDto {
         long inProgressCount,
         long completedCount,
         long todayDueCount,
-        long overDueCount
+        long overDueCount,
+        long noteCount
     ) {
         public static StatsResponse from(TodoServiceDto.TodoStats stats) {
             return new StatsResponse(
@@ -124,7 +132,8 @@ public class TodoApiDto {
                 stats.inProgressCount(),
                 stats.completedCount(),
                 stats.todayDueCount(),
-                stats.overDueCount()
+                stats.overDueCount(),
+                stats.noteCount()
             );
         }
     }

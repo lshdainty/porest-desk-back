@@ -4,6 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import lombok.RequiredArgsConstructor;
@@ -30,10 +31,13 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
-    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId) {
+    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type) {
         StringBuilder jpql = new StringBuilder("SELECT t FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted");
         List<String> conditions = new ArrayList<>();
 
+        if (type != null) {
+            conditions.add(" AND t.type = :type");
+        }
         if (status != null) {
             conditions.add(" AND t.status = :status");
         }
@@ -62,6 +66,9 @@ public class TodoJpaRepository implements TodoRepository {
             .setParameter("userRowId", userRowId)
             .setParameter("isDeleted", YNType.N);
 
+        if (type != null) {
+            query.setParameter("type", type);
+        }
         if (status != null) {
             query.setParameter("status", status);
         }

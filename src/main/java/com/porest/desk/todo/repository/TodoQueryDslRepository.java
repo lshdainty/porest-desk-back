@@ -5,6 +5,7 @@ import com.porest.desk.todo.domain.QTodo;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
@@ -34,12 +35,15 @@ public class TodoQueryDslRepository implements TodoRepository {
     }
 
     @Override
-    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId) {
+    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type) {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(todo.user.rowId.eq(userRowId));
         builder.and(todo.isDeleted.eq(YNType.N));
         builder.and(todo.parent.isNull());
 
+        if (type != null) {
+            builder.and(todo.type.eq(type));
+        }
         if (status != null) {
             builder.and(todo.status.eq(status));
         }
