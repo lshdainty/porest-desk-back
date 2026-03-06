@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -45,12 +46,14 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            validateCategoryOwnership(category, command.userRowId());
         }
 
         Asset asset = null;
         if (command.assetRowId() != null) {
             asset = assetRepository.findById(command.assetRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+            validateAssetOwnership(asset, command.userRowId());
         }
 
         ExpenseTemplate template = ExpenseTemplate.createTemplate(
@@ -76,10 +79,11 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
     @Override
     @Transactional
-    public ExpenseTemplateServiceDto.TemplateInfo updateTemplate(Long templateId, ExpenseTemplateServiceDto.UpdateCommand command) {
+    public ExpenseTemplateServiceDto.TemplateInfo updateTemplate(Long templateId, Long userRowId, ExpenseTemplateServiceDto.UpdateCommand command) {
         log.debug("경비 템플릿 수정 시작: templateId={}", templateId);
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
+        validateTemplateOwnership(template, userRowId);
 
         ExpenseCategory category = null;
         if (command.categoryRowId() != null) {
@@ -106,10 +110,11 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
     @Override
     @Transactional
-    public void deleteTemplate(Long templateId) {
+    public void deleteTemplate(Long templateId, Long userRowId) {
         log.debug("경비 템플릿 삭제 시작: templateId={}", templateId);
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
+        validateTemplateOwnership(template, userRowId);
         template.deleteTemplate();
 
         log.info("경비 템플릿 삭제 완료: templateId={}", templateId);
@@ -117,10 +122,11 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
     @Override
     @Transactional
-    public ExpenseServiceDto.ExpenseInfo useTemplate(Long templateId, LocalDate expenseDate) {
+    public ExpenseServiceDto.ExpenseInfo useTemplate(Long templateId, Long userRowId, LocalDate expenseDate) {
         log.debug("경비 템플릿 사용: templateId={}, expenseDate={}", templateId, expenseDate);
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
+        validateTemplateOwnership(template, userRowId);
 
         Expense expense = Expense.createExpense(
             template.getUser(),
@@ -140,6 +146,30 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         log.info("경비 템플릿 사용 완료: templateId={}, expenseId={}", templateId, expense.getRowId());
 
         return ExpenseServiceDto.ExpenseInfo.from(expense);
+    }
+
+    private void validateTemplateOwnership(ExpenseTemplate template, Long userRowId) {
+        if (!template.getUser().getRowId().equals(userRowId)) {
+            log.warn("경비 템플릿 소유권 검증 실패 - templateId={}, ownerRowId={}, requestUserRowId={}",
+                template.getRowId(), template.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
+        if (!category.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
+                category.getRowId(), category.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateAssetOwnership(Asset asset, Long userRowId) {
+        if (!asset.getUser().getRowId().equals(userRowId)) {
+            log.warn("자산 소유권 검증 실패 - assetId={}, ownerRowId={}, requestUserRowId={}",
+                asset.getRowId(), asset.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
     }
 
     private ExpenseTemplate findTemplateOrThrow(Long templateId) {

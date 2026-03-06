@@ -1,6 +1,7 @@
 package com.porest.desk.asset.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetRepository;
@@ -66,19 +67,21 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public AssetServiceDto.AssetInfo getAsset(Long assetId) {
+    public AssetServiceDto.AssetInfo getAsset(Long assetId, Long userRowId) {
         log.debug("자산 상세 조회: assetId={}", assetId);
 
         Asset asset = findAssetOrThrow(assetId);
+        validateAssetOwnership(asset, userRowId);
         return AssetServiceDto.AssetInfo.from(asset);
     }
 
     @Override
     @Transactional
-    public AssetServiceDto.AssetInfo updateAsset(Long assetId, AssetServiceDto.UpdateAssetCommand command) {
+    public AssetServiceDto.AssetInfo updateAsset(Long assetId, Long userRowId, AssetServiceDto.UpdateAssetCommand command) {
         log.debug("자산 수정 시작: assetId={}", assetId);
 
         Asset asset = findAssetOrThrow(assetId);
+        validateAssetOwnership(asset, userRowId);
         asset.updateAsset(
             command.assetName(),
             command.assetType(),
@@ -97,10 +100,11 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public void deleteAsset(Long assetId) {
+    public void deleteAsset(Long assetId, Long userRowId) {
         log.debug("자산 삭제 시작: assetId={}", assetId);
 
         Asset asset = findAssetOrThrow(assetId);
+        validateAssetOwnership(asset, userRowId);
         asset.deleteAsset();
 
         log.info("자산 삭제 완료: assetId={}", assetId);
@@ -152,7 +156,9 @@ public class AssetServiceImpl implements AssetService {
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
         Asset fromAsset = findAssetOrThrow(command.fromAssetRowId());
+        validateAssetOwnership(fromAsset, command.userRowId());
         Asset toAsset = findAssetOrThrow(command.toAssetRowId());
+        validateAssetOwnership(toAsset, command.userRowId());
 
         AssetTransfer transfer = AssetTransfer.createTransfer(
             user, fromAsset, toAsset,
@@ -181,7 +187,7 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public void deleteTransfer(Long transferId) {
+    public void deleteTransfer(Long transferId, Long userRowId) {
         log.debug("자산 이체 삭제 시작: transferId={}", transferId);
 
         AssetTransfer transfer = assetTransferRepository.findById(transferId)
@@ -189,6 +195,7 @@ public class AssetServiceImpl implements AssetService {
                 log.warn("자산 이체 조회 실패: transferId={}", transferId);
                 return new EntityNotFoundException(DeskErrorCode.ASSET_TRANSFER_NOT_FOUND);
             });
+        validateTransferOwnership(transfer, userRowId);
 
         // 잔액 복원
         Asset fromAsset = transfer.getFromAsset();
@@ -198,6 +205,22 @@ public class AssetServiceImpl implements AssetService {
 
         transfer.deleteTransfer();
         log.info("자산 이체 삭제 완료: transferId={}", transferId);
+    }
+
+    private void validateAssetOwnership(Asset asset, Long userRowId) {
+        if (!asset.getUser().getRowId().equals(userRowId)) {
+            log.warn("자산 소유권 검증 실패 - assetId={}, ownerRowId={}, requestUserRowId={}",
+                asset.getRowId(), asset.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.ASSET_ACCESS_DENIED);
+        }
+    }
+
+    private void validateTransferOwnership(AssetTransfer transfer, Long userRowId) {
+        if (!transfer.getUser().getRowId().equals(userRowId)) {
+            log.warn("자산 이체 소유권 검증 실패 - transferId={}, ownerRowId={}, requestUserRowId={}",
+                transfer.getRowId(), transfer.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.ASSET_ACCESS_DENIED);
+        }
     }
 
     private Asset findAssetOrThrow(Long assetId) {

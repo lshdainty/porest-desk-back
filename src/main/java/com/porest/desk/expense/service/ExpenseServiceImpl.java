@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
@@ -49,6 +50,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+        validateCategoryOwnership(category, command.userRowId());
 
         if (expenseCategoryRepository.hasChildren(category.getRowId())) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
@@ -58,6 +60,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         if (command.assetRowId() != null) {
             asset = assetRepository.findById(command.assetRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+            validateAssetOwnership(asset, command.userRowId());
         }
 
         Expense expense = Expense.createExpense(
@@ -101,10 +104,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional
-    public ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, ExpenseServiceDto.UpdateCommand command) {
+    public ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command) {
         log.debug("지출 수정 시작: expenseId={}", expenseId);
 
         Expense expense = findExpenseOrThrow(expenseId);
+        validateExpenseOwnership(expense, userRowId);
 
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
@@ -148,10 +152,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     @Transactional
-    public void deleteExpense(Long expenseId) {
+    public void deleteExpense(Long expenseId, Long userRowId) {
         log.debug("지출 삭제 시작: expenseId={}", expenseId);
 
         Expense expense = findExpenseOrThrow(expenseId);
+        validateExpenseOwnership(expense, userRowId);
         expense.deleteExpense();
 
         log.info("지출 삭제 완료: expenseId={}", expenseId);
@@ -343,6 +348,30 @@ public class ExpenseServiceImpl implements ExpenseService {
         return expenseRepository.findByTodo(todoRowId).stream()
             .map(ExpenseServiceDto.ExpenseInfo::from)
             .toList();
+    }
+
+    private void validateExpenseOwnership(Expense expense, Long userRowId) {
+        if (!expense.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 소유권 검증 실패 - expenseId={}, ownerRowId={}, requestUserRowId={}",
+                expense.getRowId(), expense.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
+        if (!category.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
+                category.getRowId(), category.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateAssetOwnership(Asset asset, Long userRowId) {
+        if (!asset.getUser().getRowId().equals(userRowId)) {
+            log.warn("자산 소유권 검증 실패 - assetId={}, ownerRowId={}, requestUserRowId={}",
+                asset.getRowId(), asset.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
     }
 
     private Expense findExpenseOrThrow(Long expenseId) {

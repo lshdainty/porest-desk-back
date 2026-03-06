@@ -53,7 +53,7 @@ public class TodoProjectApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody TodoProjectApiDto.UpdateRequest request) {
-        TodoProjectServiceDto.ProjectInfo info = todoProjectService.updateProject(id,
+        TodoProjectServiceDto.ProjectInfo info = todoProjectService.updateProject(id, loginUser.getRowId(),
             new TodoProjectServiceDto.UpdateCommand(
                 request.projectName(),
                 request.description(),
@@ -79,7 +79,7 @@ public class TodoProjectApiController {
     public ApiResponse<Void> deleteProject(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        todoProjectService.deleteProject(id);
+        todoProjectService.deleteProject(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

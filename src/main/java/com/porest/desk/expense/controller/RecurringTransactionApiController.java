@@ -54,7 +54,7 @@ public class RecurringTransactionApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody RecurringTransactionApiDto.UpdateRequest request) {
-        RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.updateRecurring(id,
+        RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.updateRecurring(id, loginUser.getRowId(),
             new RecurringTransactionServiceDto.UpdateCommand(
                 request.categoryRowId(), request.assetRowId(),
                 request.expenseType(), request.amount(), request.description(),
@@ -71,7 +71,7 @@ public class RecurringTransactionApiController {
     public ApiResponse<Void> deleteRecurring(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        recurringTransactionService.deleteRecurring(id);
+        recurringTransactionService.deleteRecurring(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -79,7 +79,7 @@ public class RecurringTransactionApiController {
     public ApiResponse<RecurringTransactionApiDto.Response> toggleActive(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.toggleActive(id);
+        RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.toggleActive(id, loginUser.getRowId());
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));
     }
 }

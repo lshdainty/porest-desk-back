@@ -1,6 +1,7 @@
 package com.porest.desk.group.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -60,11 +61,12 @@ public class EventCommentServiceImpl implements EventCommentService {
 
     @Override
     @Transactional
-    public EventCommentServiceDto.CommentInfo updateComment(EventCommentServiceDto.UpdateCommand command) {
+    public EventCommentServiceDto.CommentInfo updateComment(Long userRowId, EventCommentServiceDto.UpdateCommand command) {
         log.debug("일정 댓글 수정: commentRowId={}", command.commentRowId());
 
         EventComment comment = eventCommentRepository.findById(command.commentRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_COMMENT_NOT_FOUND));
+        validateCommentOwnership(comment, userRowId);
 
         comment.updateContent(command.content());
         eventCommentRepository.save(comment);
@@ -75,14 +77,23 @@ public class EventCommentServiceImpl implements EventCommentService {
 
     @Override
     @Transactional
-    public void deleteComment(Long commentRowId) {
+    public void deleteComment(Long commentRowId, Long userRowId) {
         log.debug("일정 댓글 삭제: commentRowId={}", commentRowId);
 
         EventComment comment = eventCommentRepository.findById(commentRowId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_COMMENT_NOT_FOUND));
+        validateCommentOwnership(comment, userRowId);
 
         comment.deleteComment();
         eventCommentRepository.save(comment);
         log.info("일정 댓글 삭제 완료: commentId={}", commentRowId);
+    }
+
+    private void validateCommentOwnership(EventComment comment, Long userRowId) {
+        if (!comment.getUser().getRowId().equals(userRowId)) {
+            log.warn("일정 댓글 소유권 검증 실패 - commentId={}, ownerRowId={}, requestUserRowId={}",
+                comment.getRowId(), comment.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EVENT_COMMENT_ACCESS_DENIED);
+        }
     }
 }

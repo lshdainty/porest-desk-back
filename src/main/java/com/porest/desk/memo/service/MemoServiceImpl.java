@@ -1,6 +1,7 @@
 package com.porest.desk.memo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.memo.domain.Memo;
 import com.porest.desk.memo.domain.MemoFolder;
@@ -40,6 +41,7 @@ public class MemoServiceImpl implements MemoService {
                     log.warn("메모 폴더 조회 실패 - 존재하지 않는 폴더: folderId={}", command.folderId());
                     return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
                 });
+            validateFolderOwnership(folder, command.userRowId());
         }
 
         Memo memo = Memo.createMemo(user, folder, command.title(), command.content());
@@ -62,20 +64,22 @@ public class MemoServiceImpl implements MemoService {
     }
 
     @Override
-    public MemoServiceDto.MemoInfo getMemo(Long memoId) {
+    public MemoServiceDto.MemoInfo getMemo(Long memoId, Long userRowId) {
         log.debug("메모 상세 조회: memoId={}", memoId);
 
         Memo memo = findMemoOrThrow(memoId);
+        validateMemoOwnership(memo, userRowId);
 
         return MemoServiceDto.MemoInfo.from(memo);
     }
 
     @Override
     @Transactional
-    public MemoServiceDto.MemoInfo updateMemo(Long memoId, MemoServiceDto.UpdateCommand command) {
+    public MemoServiceDto.MemoInfo updateMemo(Long memoId, Long userRowId, MemoServiceDto.UpdateCommand command) {
         log.debug("메모 수정 시작: memoId={}", memoId);
 
         Memo memo = findMemoOrThrow(memoId);
+        validateMemoOwnership(memo, userRowId);
 
         MemoFolder folder = null;
         if (command.folderId() != null) {
@@ -95,10 +99,11 @@ public class MemoServiceImpl implements MemoService {
 
     @Override
     @Transactional
-    public MemoServiceDto.MemoInfo togglePin(Long memoId) {
+    public MemoServiceDto.MemoInfo togglePin(Long memoId, Long userRowId) {
         log.debug("메모 핀 토글 시작: memoId={}", memoId);
 
         Memo memo = findMemoOrThrow(memoId);
+        validateMemoOwnership(memo, userRowId);
         memo.togglePin();
 
         log.info("메모 핀 토글 완료: memoId={}, isPinned={}", memoId, memo.getIsPinned());
@@ -108,13 +113,30 @@ public class MemoServiceImpl implements MemoService {
 
     @Override
     @Transactional
-    public void deleteMemo(Long memoId) {
+    public void deleteMemo(Long memoId, Long userRowId) {
         log.debug("메모 삭제 시작: memoId={}", memoId);
 
         Memo memo = findMemoOrThrow(memoId);
+        validateMemoOwnership(memo, userRowId);
         memo.deleteMemo();
 
         log.info("메모 삭제 완료: memoId={}", memoId);
+    }
+
+    private void validateMemoOwnership(Memo memo, Long userRowId) {
+        if (!memo.getUser().getRowId().equals(userRowId)) {
+            log.warn("메모 소유권 검증 실패 - memoId={}, ownerRowId={}, requestUserRowId={}",
+                memo.getRowId(), memo.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.MEMO_ACCESS_DENIED);
+        }
+    }
+
+    private void validateFolderOwnership(MemoFolder folder, Long userRowId) {
+        if (!folder.getUser().getRowId().equals(userRowId)) {
+            log.warn("메모 폴더 소유권 검증 실패 - folderId={}, ownerRowId={}, requestUserRowId={}",
+                folder.getRowId(), folder.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.MEMO_ACCESS_DENIED);
+        }
     }
 
     private Memo findMemoOrThrow(Long memoId) {

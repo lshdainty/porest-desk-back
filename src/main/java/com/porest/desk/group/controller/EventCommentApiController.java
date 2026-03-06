@@ -56,7 +56,7 @@ public class EventCommentApiController {
             commentId,
             request.content()
         );
-        EventCommentServiceDto.CommentInfo info = eventCommentService.updateComment(command);
+        EventCommentServiceDto.CommentInfo info = eventCommentService.updateComment(loginUser.getRowId(), command);
         return ApiResponse.success(EventCommentApiDto.Response.from(info));
     }
 
@@ -64,7 +64,7 @@ public class EventCommentApiController {
     public ApiResponse<Void> deleteComment(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long commentId) {
-        eventCommentService.deleteComment(commentId);
+        eventCommentService.deleteComment(commentId, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

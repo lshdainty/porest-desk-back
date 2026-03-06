@@ -7,7 +7,7 @@ import java.util.List;
 public interface TodoProjectService {
     TodoProjectServiceDto.ProjectInfo createProject(TodoProjectServiceDto.CreateCommand command);
     List<TodoProjectServiceDto.ProjectInfo> getProjects(Long userRowId);
-    TodoProjectServiceDto.ProjectInfo updateProject(Long projectId, TodoProjectServiceDto.UpdateCommand command);
+    TodoProjectServiceDto.ProjectInfo updateProject(Long projectId, Long userRowId, TodoProjectServiceDto.UpdateCommand command);
     void reorderProjects(Long userRowId, TodoProjectServiceDto.ReorderCommand command);
-    void deleteProject(Long projectId);
+    void deleteProject(Long projectId, Long userRowId);
 }

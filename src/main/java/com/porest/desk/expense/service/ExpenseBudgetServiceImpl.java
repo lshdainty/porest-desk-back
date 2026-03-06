@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
@@ -37,6 +38,7 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            validateCategoryOwnership(category, command.userRowId());
         }
 
         ExpenseBudget budget = ExpenseBudget.createBudget(
@@ -66,13 +68,30 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
 
     @Override
     @Transactional
-    public void deleteBudget(Long budgetId) {
+    public void deleteBudget(Long budgetId, Long userRowId) {
         log.debug("예산 삭제 시작: budgetId={}", budgetId);
 
         ExpenseBudget budget = findBudgetOrThrow(budgetId);
+        validateBudgetOwnership(budget, userRowId);
         expenseBudgetRepository.delete(budget);
 
         log.info("예산 삭제 완료: budgetId={}", budgetId);
+    }
+
+    private void validateBudgetOwnership(ExpenseBudget budget, Long userRowId) {
+        if (!budget.getUser().getRowId().equals(userRowId)) {
+            log.warn("예산 소유권 검증 실패 - budgetId={}, ownerRowId={}, requestUserRowId={}",
+                budget.getRowId(), budget.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
+        if (!category.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
+                category.getRowId(), category.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
     }
 
     private ExpenseBudget findBudgetOrThrow(Long budgetId) {

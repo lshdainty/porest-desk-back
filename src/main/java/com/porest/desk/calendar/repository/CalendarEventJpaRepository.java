@@ -37,6 +37,15 @@ public class CalendarEventJpaRepository implements CalendarEventRepository {
     }
 
     @Override
+    public List<CalendarEvent> findByCalendarId(Long calendarRowId) {
+        return entityManager.createQuery(
+            "SELECT e FROM CalendarEvent e WHERE e.calendar.rowId = :calendarRowId AND e.isDeleted = :isDeleted", CalendarEvent.class)
+            .setParameter("calendarRowId", calendarRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
     public CalendarEvent save(CalendarEvent entity) {
         if (entity.getRowId() == null) {
             entityManager.persist(entity);

@@ -1,6 +1,7 @@
 package com.porest.desk.todo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.todo.domain.TodoTag;
 import com.porest.desk.todo.repository.TodoTagRepository;
@@ -49,10 +50,11 @@ public class TodoTagServiceImpl implements TodoTagService {
 
     @Override
     @Transactional
-    public TodoTagServiceDto.TagInfo updateTag(Long tagId, TodoTagServiceDto.UpdateCommand command) {
+    public TodoTagServiceDto.TagInfo updateTag(Long tagId, Long userRowId, TodoTagServiceDto.UpdateCommand command) {
         log.debug("태그 수정 시작: tagId={}", tagId);
 
         TodoTag tag = findTagOrThrow(tagId);
+        validateTagOwnership(tag, userRowId);
         tag.updateTag(command.tagName(), command.color());
 
         log.info("태그 수정 완료: tagId={}", tagId);
@@ -62,13 +64,22 @@ public class TodoTagServiceImpl implements TodoTagService {
 
     @Override
     @Transactional
-    public void deleteTag(Long tagId) {
+    public void deleteTag(Long tagId, Long userRowId) {
         log.debug("태그 삭제 시작: tagId={}", tagId);
 
         TodoTag tag = findTagOrThrow(tagId);
+        validateTagOwnership(tag, userRowId);
         tag.deleteTag();
 
         log.info("태그 삭제 완료: tagId={}", tagId);
+    }
+
+    private void validateTagOwnership(TodoTag tag, Long userRowId) {
+        if (!tag.getUser().getRowId().equals(userRowId)) {
+            log.warn("태그 소유권 검증 실패 - tagId={}, ownerRowId={}, requestUserRowId={}",
+                tag.getRowId(), tag.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
+        }
     }
 
     private TodoTag findTagOrThrow(Long tagId) {

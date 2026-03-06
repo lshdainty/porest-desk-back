@@ -1,6 +1,7 @@
 package com.porest.desk.dutchpay.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.dutchpay.domain.DutchPay;
 import com.porest.desk.dutchpay.domain.DutchPayParticipant;
@@ -68,22 +69,22 @@ public class DutchPayServiceImpl implements DutchPayService {
     }
 
     @Override
-    public DutchPayServiceDto.DutchPayInfo getDutchPay(Long dutchPayId) {
+    public DutchPayServiceDto.DutchPayInfo getDutchPay(Long dutchPayId, Long userRowId) {
         log.debug("더치페이 상세 조회: dutchPayId={}", dutchPayId);
 
-        DutchPay dutchPay = dutchPayRepository.findById(dutchPayId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_NOT_FOUND));
+        DutchPay dutchPay = findDutchPayOrThrow(dutchPayId);
+        validateDutchPayOwnership(dutchPay, userRowId);
 
         return DutchPayServiceDto.DutchPayInfo.from(dutchPay);
     }
 
     @Override
     @Transactional
-    public DutchPayServiceDto.DutchPayInfo updateDutchPay(Long dutchPayId, DutchPayServiceDto.UpdateCommand command) {
+    public DutchPayServiceDto.DutchPayInfo updateDutchPay(Long dutchPayId, Long userRowId, DutchPayServiceDto.UpdateCommand command) {
         log.debug("더치페이 수정 시작: dutchPayId={}", dutchPayId);
 
-        DutchPay dutchPay = dutchPayRepository.findById(dutchPayId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_NOT_FOUND));
+        DutchPay dutchPay = findDutchPayOrThrow(dutchPayId);
+        validateDutchPayOwnership(dutchPay, userRowId);
 
         dutchPay.updateDutchPay(
             command.title(),
@@ -113,11 +114,11 @@ public class DutchPayServiceImpl implements DutchPayService {
 
     @Override
     @Transactional
-    public void deleteDutchPay(Long dutchPayId) {
+    public void deleteDutchPay(Long dutchPayId, Long userRowId) {
         log.debug("더치페이 삭제 시작: dutchPayId={}", dutchPayId);
 
-        DutchPay dutchPay = dutchPayRepository.findById(dutchPayId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_NOT_FOUND));
+        DutchPay dutchPay = findDutchPayOrThrow(dutchPayId);
+        validateDutchPayOwnership(dutchPay, userRowId);
 
         dutchPay.deleteDutchPay();
         dutchPayRepository.save(dutchPay);
@@ -127,11 +128,11 @@ public class DutchPayServiceImpl implements DutchPayService {
 
     @Override
     @Transactional
-    public DutchPayServiceDto.DutchPayInfo markParticipantPaid(Long dutchPayId, Long participantId) {
+    public DutchPayServiceDto.DutchPayInfo markParticipantPaid(Long dutchPayId, Long userRowId, Long participantId) {
         log.debug("참가자 정산 처리: dutchPayId={}, participantId={}", dutchPayId, participantId);
 
-        DutchPay dutchPay = dutchPayRepository.findById(dutchPayId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_NOT_FOUND));
+        DutchPay dutchPay = findDutchPayOrThrow(dutchPayId);
+        validateDutchPayOwnership(dutchPay, userRowId);
 
         DutchPayParticipant participant = dutchPay.getParticipants().stream()
             .filter(p -> p.getRowId().equals(participantId))
@@ -149,11 +150,11 @@ public class DutchPayServiceImpl implements DutchPayService {
 
     @Override
     @Transactional
-    public DutchPayServiceDto.DutchPayInfo settleAll(Long dutchPayId) {
+    public DutchPayServiceDto.DutchPayInfo settleAll(Long dutchPayId, Long userRowId) {
         log.debug("더치페이 전체 정산: dutchPayId={}", dutchPayId);
 
-        DutchPay dutchPay = dutchPayRepository.findById(dutchPayId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_NOT_FOUND));
+        DutchPay dutchPay = findDutchPayOrThrow(dutchPayId);
+        validateDutchPayOwnership(dutchPay, userRowId);
 
         dutchPay.settleAll();
         dutchPayRepository.save(dutchPay);
@@ -161,5 +162,21 @@ public class DutchPayServiceImpl implements DutchPayService {
         log.info("더치페이 전체 정산 완료: dutchPayId={}", dutchPayId);
 
         return DutchPayServiceDto.DutchPayInfo.from(dutchPay);
+    }
+
+    private void validateDutchPayOwnership(DutchPay dutchPay, Long userRowId) {
+        if (!dutchPay.getUser().getRowId().equals(userRowId)) {
+            log.warn("더치페이 소유권 검증 실패 - dutchPayId={}, ownerRowId={}, requestUserRowId={}",
+                dutchPay.getRowId(), dutchPay.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.DUTCHPAY_ACCESS_DENIED);
+        }
+    }
+
+    private DutchPay findDutchPayOrThrow(Long dutchPayId) {
+        return dutchPayRepository.findById(dutchPayId)
+            .orElseThrow(() -> {
+                log.warn("더치페이 조회 실패 - 존재하지 않는 더치페이: dutchPayId={}", dutchPayId);
+                return new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_NOT_FOUND);
+            });
     }
 }

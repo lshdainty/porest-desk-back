@@ -27,19 +27,27 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     TODO_NOT_FOUND("TODO_001", "error.notfound.todo", HttpStatus.NOT_FOUND),
     TODO_PROJECT_NOT_FOUND("TODO_002", "error.notfound.todo.project", HttpStatus.NOT_FOUND),
     TODO_TAG_NOT_FOUND("TODO_003", "error.notfound.todo.tag", HttpStatus.NOT_FOUND),
+    TODO_ACCESS_DENIED("TODO_004", "error.todo.access.denied", HttpStatus.FORBIDDEN),
 
     // Calendar
     CALENDAR_EVENT_NOT_FOUND("CAL_001", "error.notfound.calendar.event", HttpStatus.NOT_FOUND),
     CALENDAR_INVALID_DATE_RANGE("CAL_002", "error.calendar.invalid.date.range", HttpStatus.BAD_REQUEST),
     EVENT_LABEL_NOT_FOUND("CAL_003", "error.notfound.event.label", HttpStatus.NOT_FOUND),
     EVENT_REMINDER_NOT_FOUND("CAL_004", "error.notfound.event.reminder", HttpStatus.NOT_FOUND),
+    USER_CALENDAR_NOT_FOUND("CAL_005", "error.notfound.user.calendar", HttpStatus.NOT_FOUND),
+    USER_CALENDAR_DEFAULT_DELETE("CAL_006", "error.calendar.default.delete", HttpStatus.BAD_REQUEST),
+    CALENDAR_ACCESS_DENIED("CAL_007", "error.calendar.access.denied", HttpStatus.FORBIDDEN),
+    CALENDAR_EVENT_ACCESS_DENIED("CAL_008", "error.calendar.event.access.denied", HttpStatus.FORBIDDEN),
+    EVENT_LABEL_ACCESS_DENIED("CAL_009", "error.event.label.access.denied", HttpStatus.FORBIDDEN),
 
     // Memo
     MEMO_NOT_FOUND("MEMO_001", "error.notfound.memo", HttpStatus.NOT_FOUND),
     MEMO_FOLDER_NOT_FOUND("MEMO_002", "error.notfound.memo.folder", HttpStatus.NOT_FOUND),
+    MEMO_ACCESS_DENIED("MEMO_003", "error.memo.access.denied", HttpStatus.FORBIDDEN),
 
     // Timer
     TIMER_SESSION_NOT_FOUND("TIMER_001", "error.notfound.timer.session", HttpStatus.NOT_FOUND),
+    TIMER_ACCESS_DENIED("TIMER_002", "error.timer.access.denied", HttpStatus.FORBIDDEN),
 
     // Expense
     EXPENSE_NOT_FOUND("EXP_001", "error.notfound.expense", HttpStatus.NOT_FOUND),
@@ -51,26 +59,32 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_CATEGORY_HAS_CHILDREN("EXP_007", "error.expense.category.has.children", HttpStatus.BAD_REQUEST),
     EXPENSE_CATEGORY_TYPE_MISMATCH("EXP_008", "error.expense.category.type.mismatch", HttpStatus.BAD_REQUEST),
     EXPENSE_CATEGORY_NOT_LEAF("EXP_009", "error.expense.category.not.leaf", HttpStatus.BAD_REQUEST),
+    EXPENSE_ACCESS_DENIED("EXP_010", "error.expense.access.denied", HttpStatus.FORBIDDEN),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),
     ASSET_TRANSFER_NOT_FOUND("ASSET_002", "error.notfound.asset.transfer", HttpStatus.NOT_FOUND),
     ASSET_TRANSFER_SAME_ASSET("ASSET_003", "error.asset.transfer.same", HttpStatus.BAD_REQUEST),
+    ASSET_ACCESS_DENIED("ASSET_004", "error.asset.access.denied", HttpStatus.FORBIDDEN),
 
     // Dutch Pay
     DUTCH_PAY_NOT_FOUND("DUTCH_001", "error.notfound.dutch.pay", HttpStatus.NOT_FOUND),
     DUTCH_PAY_PARTICIPANT_NOT_FOUND("DUTCH_002", "error.notfound.dutch.pay.participant", HttpStatus.NOT_FOUND),
+    DUTCHPAY_ACCESS_DENIED("DUTCH_003", "error.dutchpay.access.denied", HttpStatus.FORBIDDEN),
 
     // Notification
     NOTIFICATION_NOT_FOUND("NOTI_001", "error.notfound.notification", HttpStatus.NOT_FOUND),
+    NOTIFICATION_ACCESS_DENIED("NOTI_002", "error.notification.access.denied", HttpStatus.FORBIDDEN),
 
     // Group
     GROUP_NOT_FOUND("GROUP_001", "error.notfound.group", HttpStatus.NOT_FOUND),
     GROUP_MEMBER_NOT_FOUND("GROUP_002", "error.notfound.group.member", HttpStatus.NOT_FOUND),
     EVENT_COMMENT_NOT_FOUND("GROUP_003", "error.notfound.event.comment", HttpStatus.NOT_FOUND),
+    EVENT_COMMENT_ACCESS_DENIED("GROUP_004", "error.event.comment.access.denied", HttpStatus.FORBIDDEN),
 
     // File
     FILE_NOT_FOUND("FILE_001", "error.notfound.file", HttpStatus.NOT_FOUND),
+    FILE_ACCESS_DENIED("FILE_002", "error.file.access.denied", HttpStatus.FORBIDDEN),
     ;
 
     private final String code;

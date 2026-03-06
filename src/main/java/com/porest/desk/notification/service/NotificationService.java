@@ -8,7 +8,7 @@ public interface NotificationService {
     NotificationServiceDto.NotificationInfo createNotification(NotificationServiceDto.CreateCommand command);
     List<NotificationServiceDto.NotificationInfo> getNotifications(Long userRowId);
     Long getUnreadCount(Long userRowId);
-    void markRead(Long notificationId);
+    void markRead(Long notificationId, Long userRowId);
     void markAllRead(Long userRowId);
-    void deleteNotification(Long notificationId);
+    void deleteNotification(Long notificationId, Long userRowId);
 }

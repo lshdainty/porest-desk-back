@@ -48,8 +48,10 @@ public class FileApiController {
     }
 
     @GetMapping("/files/{id}")
-    public ResponseEntity<Resource> downloadFile(@PathVariable Long id) throws MalformedURLException {
-        FileServiceDto.FileInfo info = fileAttachmentService.getFile(id);
+    public ResponseEntity<Resource> downloadFile(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) throws MalformedURLException {
+        FileServiceDto.FileInfo info = fileAttachmentService.getFile(id, loginUser.getRowId());
         Path filePath = fileStorageService.load(info.filePath());
         Resource resource = new UrlResource(filePath.toUri());
 
@@ -71,7 +73,7 @@ public class FileApiController {
     public ApiResponse<Void> deleteFile(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        fileAttachmentService.deleteFile(id);
+        fileAttachmentService.deleteFile(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

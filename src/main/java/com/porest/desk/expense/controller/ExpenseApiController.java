@@ -66,7 +66,7 @@ public class ExpenseApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody ExpenseApiDto.UpdateRequest request) {
-        ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, new ExpenseServiceDto.UpdateCommand(
+        ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, loginUser.getRowId(), new ExpenseServiceDto.UpdateCommand(
             request.categoryRowId(),
             request.assetRowId(),
             request.expenseType(),
@@ -85,7 +85,7 @@ public class ExpenseApiController {
     public ApiResponse<Void> deleteExpense(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        expenseService.deleteExpense(id);
+        expenseService.deleteExpense(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 

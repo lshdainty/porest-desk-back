@@ -48,7 +48,7 @@ public class MemoFolderApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody MemoApiDto.FolderUpdateRequest request) {
-        MemoServiceDto.FolderInfo info = memoFolderService.updateFolder(id, new MemoServiceDto.FolderUpdateCommand(
+        MemoServiceDto.FolderInfo info = memoFolderService.updateFolder(id, loginUser.getRowId(), new MemoServiceDto.FolderUpdateCommand(
             request.parentId(),
             request.folderName(),
             request.sortOrder()
@@ -60,7 +60,7 @@ public class MemoFolderApiController {
     public ApiResponse<Void> deleteFolder(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        memoFolderService.deleteFolder(id);
+        memoFolderService.deleteFolder(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

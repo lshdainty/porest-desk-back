@@ -21,7 +21,8 @@ public class CalendarEventServiceDto {
         Long labelRowId,
         String location,
         String rrule,
-        List<Integer> reminderMinutes
+        List<Integer> reminderMinutes,
+        Long calendarRowId
     ) {}
 
     public record UpdateCommand(
@@ -35,7 +36,8 @@ public class CalendarEventServiceDto {
         Long labelRowId,
         String location,
         String rrule,
-        List<Integer> reminderMinutes
+        List<Integer> reminderMinutes,
+        Long calendarRowId
     ) {}
 
     public record EventInfo(
@@ -56,6 +58,9 @@ public class CalendarEventServiceDto {
         Long recurrenceId,
         YNType isException,
         List<EventReminderServiceDto.ReminderInfo> reminders,
+        Long calendarRowId,
+        String calendarName,
+        String calendarColor,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -82,6 +87,9 @@ public class CalendarEventServiceDto {
                 event.getRecurrenceId(),
                 event.getIsException(),
                 reminders,
+                event.getCalendar() != null ? event.getCalendar().getRowId() : null,
+                event.getCalendar() != null ? event.getCalendar().getCalendarName() : null,
+                event.getCalendar() != null ? event.getCalendar().getColor() : null,
                 event.getCreateAt(),
                 event.getModifyAt()
             );

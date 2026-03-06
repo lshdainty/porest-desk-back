@@ -77,6 +77,10 @@ public class CalendarEvent extends AuditingFieldsWithIp {
     private YNType isException;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "calendar_row_id")
+    private UserCalendar calendar;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_row_id")
     private UserGroup group;
 
@@ -86,7 +90,7 @@ public class CalendarEvent extends AuditingFieldsWithIp {
 
     public static CalendarEvent createEvent(User user, String title, String description,
             CalendarEventType eventType, String color, LocalDateTime startDate, LocalDateTime endDate,
-            YNType isAllDay, EventLabel label, String location, String rrule) {
+            YNType isAllDay, EventLabel label, String location, String rrule, UserCalendar calendar) {
         CalendarEvent event = new CalendarEvent();
         event.user = user;
         event.title = title;
@@ -99,6 +103,7 @@ public class CalendarEvent extends AuditingFieldsWithIp {
         event.label = label;
         event.location = location;
         event.rrule = rrule;
+        event.calendar = calendar;
         event.isException = YNType.N;
         event.isDeleted = YNType.N;
         return event;
@@ -125,6 +130,10 @@ public class CalendarEvent extends AuditingFieldsWithIp {
 
     public void markAsException() {
         this.isException = YNType.Y;
+    }
+
+    public void setCalendar(UserCalendar calendar) {
+        this.calendar = calendar;
     }
 
     public void setGroup(UserGroup group) {

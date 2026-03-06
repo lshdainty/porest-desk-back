@@ -44,6 +44,16 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
     }
 
     @Override
+    public List<CalendarEvent> findByCalendarId(Long calendarRowId) {
+        return queryFactory.selectFrom(calendarEvent)
+            .where(
+                calendarEvent.calendar.rowId.eq(calendarRowId),
+                calendarEvent.isDeleted.eq(YNType.N)
+            )
+            .fetch();
+    }
+
+    @Override
     public CalendarEvent save(CalendarEvent entity) {
         if (entity.getRowId() == null) {
             entityManager.persist(entity);

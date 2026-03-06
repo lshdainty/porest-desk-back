@@ -59,7 +59,7 @@ public class DutchPayApiController {
     public ApiResponse<DutchPayApiDto.Response> getDutchPay(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        DutchPayServiceDto.DutchPayInfo info = dutchPayService.getDutchPay(id);
+        DutchPayServiceDto.DutchPayInfo info = dutchPayService.getDutchPay(id, loginUser.getRowId());
         return ApiResponse.success(DutchPayApiDto.Response.from(info));
     }
 
@@ -74,7 +74,7 @@ public class DutchPayApiController {
                 .toList()
             : List.of();
 
-        DutchPayServiceDto.DutchPayInfo info = dutchPayService.updateDutchPay(id, new DutchPayServiceDto.UpdateCommand(
+        DutchPayServiceDto.DutchPayInfo info = dutchPayService.updateDutchPay(id, loginUser.getRowId(), new DutchPayServiceDto.UpdateCommand(
             request.title(),
             request.description(),
             request.totalAmount(),
@@ -90,7 +90,7 @@ public class DutchPayApiController {
     public ApiResponse<Void> deleteDutchPay(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        dutchPayService.deleteDutchPay(id);
+        dutchPayService.deleteDutchPay(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -99,7 +99,7 @@ public class DutchPayApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @PathVariable Long participantId) {
-        DutchPayServiceDto.DutchPayInfo info = dutchPayService.markParticipantPaid(id, participantId);
+        DutchPayServiceDto.DutchPayInfo info = dutchPayService.markParticipantPaid(id, loginUser.getRowId(), participantId);
         return ApiResponse.success(DutchPayApiDto.Response.from(info));
     }
 
@@ -107,7 +107,7 @@ public class DutchPayApiController {
     public ApiResponse<DutchPayApiDto.Response> settleAll(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        DutchPayServiceDto.DutchPayInfo info = dutchPayService.settleAll(id);
+        DutchPayServiceDto.DutchPayInfo info = dutchPayService.settleAll(id, loginUser.getRowId());
         return ApiResponse.success(DutchPayApiDto.Response.from(info));
     }
 }

@@ -7,6 +7,6 @@ import java.util.List;
 public interface TodoTagService {
     TodoTagServiceDto.TagInfo createTag(TodoTagServiceDto.CreateCommand command);
     List<TodoTagServiceDto.TagInfo> getTags(Long userRowId);
-    TodoTagServiceDto.TagInfo updateTag(Long tagId, TodoTagServiceDto.UpdateCommand command);
-    void deleteTag(Long tagId);
+    TodoTagServiceDto.TagInfo updateTag(Long tagId, Long userRowId, TodoTagServiceDto.UpdateCommand command);
+    void deleteTag(Long tagId, Long userRowId);
 }

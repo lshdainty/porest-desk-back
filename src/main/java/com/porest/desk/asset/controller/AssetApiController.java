@@ -53,7 +53,7 @@ public class AssetApiController {
     public ApiResponse<AssetApiDto.AssetResponse> getAsset(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        AssetServiceDto.AssetInfo info = assetService.getAsset(id);
+        AssetServiceDto.AssetInfo info = assetService.getAsset(id, loginUser.getRowId());
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
 
@@ -62,7 +62,7 @@ public class AssetApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody AssetApiDto.UpdateAssetRequest request) {
-        AssetServiceDto.AssetInfo info = assetService.updateAsset(id, new AssetServiceDto.UpdateAssetCommand(
+        AssetServiceDto.AssetInfo info = assetService.updateAsset(id, loginUser.getRowId(), new AssetServiceDto.UpdateAssetCommand(
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.icon(), request.color(),
             request.institution(), request.memo(), request.isIncludedInTotal()
@@ -74,7 +74,7 @@ public class AssetApiController {
     public ApiResponse<Void> deleteAsset(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        assetService.deleteAsset(id);
+        assetService.deleteAsset(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -124,7 +124,7 @@ public class AssetApiController {
     public ApiResponse<Void> deleteTransfer(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        assetService.deleteTransfer(id);
+        assetService.deleteTransfer(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

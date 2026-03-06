@@ -1,6 +1,7 @@
 package com.porest.desk.file.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.file.domain.FileAttachment;
 import com.porest.desk.file.repository.FileAttachmentRepository;
@@ -59,9 +60,10 @@ public class FileAttachmentServiceImpl implements FileAttachmentService {
     }
 
     @Override
-    public FileServiceDto.FileInfo getFile(Long fileId) {
+    public FileServiceDto.FileInfo getFile(Long fileId, Long userRowId) {
         FileAttachment attachment = fileAttachmentRepository.findById(fileId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.FILE_NOT_FOUND));
+        validateFileOwnership(attachment, userRowId);
         return FileServiceDto.FileInfo.from(attachment);
     }
 
@@ -74,11 +76,12 @@ public class FileAttachmentServiceImpl implements FileAttachmentService {
 
     @Override
     @Transactional
-    public void deleteFile(Long fileId) {
+    public void deleteFile(Long fileId, Long userRowId) {
         log.debug("파일 삭제 시작: fileId={}", fileId);
 
         FileAttachment attachment = fileAttachmentRepository.findById(fileId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.FILE_NOT_FOUND));
+        validateFileOwnership(attachment, userRowId);
 
         attachment.deleteFile();
 
@@ -89,5 +92,13 @@ public class FileAttachmentServiceImpl implements FileAttachmentService {
         }
 
         log.info("파일 삭제 완료: fileId={}", fileId);
+    }
+
+    private void validateFileOwnership(FileAttachment attachment, Long userRowId) {
+        if (!attachment.getUser().getRowId().equals(userRowId)) {
+            log.warn("파일 소유권 검증 실패 - fileId={}, ownerRowId={}, requestUserRowId={}",
+                attachment.getRowId(), attachment.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.FILE_ACCESS_DENIED);
+        }
     }
 }

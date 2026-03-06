@@ -1,6 +1,7 @@
 package com.porest.desk.todo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.todo.domain.TodoProject;
 import com.porest.desk.todo.repository.TodoProjectRepository;
@@ -51,10 +52,11 @@ public class TodoProjectServiceImpl implements TodoProjectService {
 
     @Override
     @Transactional
-    public TodoProjectServiceDto.ProjectInfo updateProject(Long projectId, TodoProjectServiceDto.UpdateCommand command) {
+    public TodoProjectServiceDto.ProjectInfo updateProject(Long projectId, Long userRowId, TodoProjectServiceDto.UpdateCommand command) {
         log.debug("프로젝트 수정 시작: projectId={}", projectId);
 
         TodoProject project = findProjectOrThrow(projectId);
+        validateProjectOwnership(project, userRowId);
         project.updateProject(command.projectName(), command.description(), command.color(), command.icon());
 
         log.info("프로젝트 수정 완료: projectId={}", projectId);
@@ -77,13 +79,22 @@ public class TodoProjectServiceImpl implements TodoProjectService {
 
     @Override
     @Transactional
-    public void deleteProject(Long projectId) {
+    public void deleteProject(Long projectId, Long userRowId) {
         log.debug("프로젝트 삭제 시작: projectId={}", projectId);
 
         TodoProject project = findProjectOrThrow(projectId);
+        validateProjectOwnership(project, userRowId);
         project.deleteProject();
 
         log.info("프로젝트 삭제 완료: projectId={}", projectId);
+    }
+
+    private void validateProjectOwnership(TodoProject project, Long userRowId) {
+        if (!project.getUser().getRowId().equals(userRowId)) {
+            log.warn("프로젝트 소유권 검증 실패 - projectId={}, ownerRowId={}, requestUserRowId={}",
+                project.getRowId(), project.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
+        }
     }
 
     private TodoProject findProjectOrThrow(Long projectId) {

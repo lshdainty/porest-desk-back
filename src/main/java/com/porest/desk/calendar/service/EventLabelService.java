@@ -7,6 +7,6 @@ import java.util.List;
 public interface EventLabelService {
     EventLabelServiceDto.LabelInfo createLabel(EventLabelServiceDto.CreateCommand command);
     List<EventLabelServiceDto.LabelInfo> getLabels(Long userRowId);
-    EventLabelServiceDto.LabelInfo updateLabel(Long labelId, EventLabelServiceDto.UpdateCommand command);
-    void deleteLabel(Long labelId);
+    EventLabelServiceDto.LabelInfo updateLabel(Long labelId, Long userRowId, EventLabelServiceDto.UpdateCommand command);
+    void deleteLabel(Long labelId, Long userRowId);
 }

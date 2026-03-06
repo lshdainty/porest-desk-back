@@ -53,7 +53,7 @@ public class ExpenseBudgetApiController {
     public ApiResponse<Void> deleteBudget(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        expenseBudgetService.deleteBudget(id);
+        expenseBudgetService.deleteBudget(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

@@ -1,15 +1,19 @@
 package com.porest.desk.calendar.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.domain.EventReminder;
+import com.porest.desk.calendar.domain.UserCalendar;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.repository.EventReminderRepository;
+import com.porest.desk.calendar.repository.UserCalendarRepository;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
+import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -32,6 +36,8 @@ public class CalendarEventServiceImpl implements CalendarEventService {
     private final CalendarEventRepository calendarEventRepository;
     private final EventLabelRepository eventLabelRepository;
     private final EventReminderRepository eventReminderRepository;
+    private final UserCalendarRepository userCalendarRepository;
+    private final UserCalendarService userCalendarService;
     private final UserRepository userRepository;
 
     @Override
@@ -52,6 +58,17 @@ public class CalendarEventServiceImpl implements CalendarEventService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
         }
 
+        UserCalendar calendar = null;
+        if (command.calendarRowId() != null) {
+            calendar = userCalendarRepository.findById(command.calendarRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+            validateCalendarOwnership(calendar, command.userRowId());
+        } else {
+            UserCalendarServiceDto.CalendarInfo defaultInfo = userCalendarService.getOrCreateDefault(command.userRowId());
+            calendar = userCalendarRepository.findById(defaultInfo.rowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+        }
+
         CalendarEvent event = CalendarEvent.createEvent(
             user,
             command.title(),
@@ -63,7 +80,8 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             command.isAllDay(),
             label,
             command.location(),
-            command.rrule()
+            command.rrule(),
+            calendar
         );
 
         calendarEventRepository.save(event);
@@ -105,10 +123,11 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
     @Override
     @Transactional
-    public CalendarEventServiceDto.EventInfo updateEvent(Long eventId, CalendarEventServiceDto.UpdateCommand command) {
+    public CalendarEventServiceDto.EventInfo updateEvent(Long eventId, Long userRowId, CalendarEventServiceDto.UpdateCommand command) {
         log.debug("캘린더 이벤트 수정 시작: eventId={}", eventId);
 
         CalendarEvent event = findEventOrThrow(eventId);
+        validateEventOwnership(event, userRowId);
 
         if (command.startDate().isAfter(command.endDate())) {
             throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
@@ -133,6 +152,13 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             command.rrule()
         );
 
+        if (command.calendarRowId() != null) {
+            UserCalendar calendar = userCalendarRepository.findById(command.calendarRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+            validateCalendarOwnership(calendar, event.getUser().getRowId());
+            event.setCalendar(calendar);
+        }
+
         List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
         if (command.reminderMinutes() != null) {
             eventReminderRepository.deleteByEventId(eventId);
@@ -155,14 +181,31 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
     @Override
     @Transactional
-    public void deleteEvent(Long eventId) {
+    public void deleteEvent(Long eventId, Long userRowId) {
         log.debug("캘린더 이벤트 삭제 시작: eventId={}", eventId);
 
         CalendarEvent event = findEventOrThrow(eventId);
+        validateEventOwnership(event, userRowId);
         event.deleteEvent();
         eventReminderRepository.deleteByEventId(eventId);
 
         log.info("캘린더 이벤트 삭제 완료: eventId={}", eventId);
+    }
+
+    private void validateEventOwnership(CalendarEvent event, Long userRowId) {
+        if (!event.getUser().getRowId().equals(userRowId)) {
+            log.warn("캘린더 이벤트 소유권 검증 실패 - eventId={}, ownerRowId={}, requestUserRowId={}",
+                event.getRowId(), event.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
+        }
+    }
+
+    private void validateCalendarOwnership(UserCalendar calendar, Long userRowId) {
+        if (!calendar.getUser().getRowId().equals(userRowId)) {
+            log.warn("캘린더 소유권 검증 실패 - calendarId={}, ownerRowId={}, requestUserRowId={}",
+                calendar.getRowId(), calendar.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.CALENDAR_ACCESS_DENIED);
+        }
     }
 
     private CalendarEvent findEventOrThrow(Long eventId) {

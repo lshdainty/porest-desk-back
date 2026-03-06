@@ -1,6 +1,7 @@
 package com.porest.desk.todo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.domain.TodoProject;
@@ -48,11 +49,13 @@ public class TodoServiceImpl implements TodoService {
         if (command.projectRowId() != null) {
             project = todoProjectRepository.findById(command.projectRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_PROJECT_NOT_FOUND));
+            validateProjectOwnership(project, command.userRowId());
         }
 
         Todo parent = null;
         if (command.parentRowId() != null) {
             parent = findTodoOrThrow(command.parentRowId());
+            validateTodoOwnership(parent, command.userRowId());
         }
 
         Todo todo = Todo.createTodo(
@@ -96,20 +99,22 @@ public class TodoServiceImpl implements TodoService {
     }
 
     @Override
-    public TodoServiceDto.TodoInfo getTodo(Long todoId) {
+    public TodoServiceDto.TodoInfo getTodo(Long todoId, Long userRowId) {
         log.debug("할일 상세 조회: todoId={}", todoId);
 
         Todo todo = findTodoOrThrow(todoId);
+        validateTodoOwnership(todo, userRowId);
 
         return buildTodoInfo(todo);
     }
 
     @Override
     @Transactional
-    public TodoServiceDto.TodoInfo updateTodo(Long todoId, TodoServiceDto.UpdateCommand command) {
+    public TodoServiceDto.TodoInfo updateTodo(Long todoId, Long userRowId, TodoServiceDto.UpdateCommand command) {
         log.debug("할일 수정 시작: todoId={}", todoId);
 
         Todo todo = findTodoOrThrow(todoId);
+        validateTodoOwnership(todo, userRowId);
 
         TodoProject project = null;
         if (command.projectRowId() != null) {
@@ -138,10 +143,11 @@ public class TodoServiceImpl implements TodoService {
 
     @Override
     @Transactional
-    public TodoServiceDto.TodoInfo toggleStatus(Long todoId) {
+    public TodoServiceDto.TodoInfo toggleStatus(Long todoId, Long userRowId) {
         log.debug("할일 상태 토글 시작: todoId={}", todoId);
 
         Todo todo = findTodoOrThrow(todoId);
+        validateTodoOwnership(todo, userRowId);
         todo.toggleStatus();
 
         log.info("할일 상태 토글 완료: todoId={}, newStatus={}", todoId, todo.getStatus());
@@ -164,10 +170,11 @@ public class TodoServiceImpl implements TodoService {
 
     @Override
     @Transactional
-    public void deleteTodo(Long todoId) {
+    public void deleteTodo(Long todoId, Long userRowId) {
         log.debug("할일 삭제 시작: todoId={}", todoId);
 
         Todo todo = findTodoOrThrow(todoId);
+        validateTodoOwnership(todo, userRowId);
         todo.deleteTodo();
 
         // Also delete subtasks
@@ -180,8 +187,11 @@ public class TodoServiceImpl implements TodoService {
     }
 
     @Override
-    public List<TodoServiceDto.TodoInfo> getSubtasks(Long parentRowId) {
+    public List<TodoServiceDto.TodoInfo> getSubtasks(Long parentRowId, Long userRowId) {
         log.debug("서브태스크 조회: parentRowId={}", parentRowId);
+
+        Todo parentTodo = findTodoOrThrow(parentRowId);
+        validateTodoOwnership(parentTodo, userRowId);
 
         List<Todo> subtasks = todoRepository.findSubtasks(parentRowId);
 
@@ -195,10 +205,11 @@ public class TodoServiceImpl implements TodoService {
 
     @Override
     @Transactional
-    public void updateTags(Long todoId, List<Long> tagIds) {
+    public void updateTags(Long todoId, Long userRowId, List<Long> tagIds) {
         log.debug("태그 업데이트 시작: todoId={}, tagIds={}", todoId, tagIds);
 
         Todo todo = findTodoOrThrow(todoId);
+        validateTodoOwnership(todo, userRowId);
         todoTagMappingRepository.deleteByTodoId(todoId);
 
         if (tagIds != null && !tagIds.isEmpty()) {
@@ -231,6 +242,22 @@ public class TodoServiceImpl implements TodoService {
             .count();
 
         return new TodoServiceDto.TodoStats(totalCount, pendingCount, inProgressCount, completedCount, todayDueCount, overDueCount);
+    }
+
+    private void validateTodoOwnership(Todo todo, Long userRowId) {
+        if (!todo.getUser().getRowId().equals(userRowId)) {
+            log.warn("할일 소유권 검증 실패 - todoId={}, ownerRowId={}, requestUserRowId={}",
+                todo.getRowId(), todo.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
+        }
+    }
+
+    private void validateProjectOwnership(TodoProject project, Long userRowId) {
+        if (!project.getUser().getRowId().equals(userRowId)) {
+            log.warn("프로젝트 소유권 검증 실패 - projectId={}, ownerRowId={}, requestUserRowId={}",
+                project.getRowId(), project.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
+        }
     }
 
     private Todo findTodoOrThrow(Long todoId) {

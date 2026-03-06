@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -46,12 +47,14 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            validateCategoryOwnership(category, command.userRowId());
         }
 
         Asset asset = null;
         if (command.assetRowId() != null) {
             asset = assetRepository.findById(command.assetRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+            validateAssetOwnership(asset, command.userRowId());
         }
 
         LocalDate nextExecutionDate = calculateNextExecutionDate(
@@ -85,10 +88,11 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     @Override
     @Transactional
-    public RecurringTransactionServiceDto.RecurringInfo updateRecurring(Long recurringId, RecurringTransactionServiceDto.UpdateCommand command) {
+    public RecurringTransactionServiceDto.RecurringInfo updateRecurring(Long recurringId, Long userRowId, RecurringTransactionServiceDto.UpdateCommand command) {
         log.debug("반복 거래 수정 시작: recurringId={}", recurringId);
 
         RecurringTransaction recurring = findRecurringOrThrow(recurringId);
+        validateRecurringOwnership(recurring, userRowId);
 
         ExpenseCategory category = null;
         if (command.categoryRowId() != null) {
@@ -123,10 +127,11 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     @Override
     @Transactional
-    public void deleteRecurring(Long recurringId) {
+    public void deleteRecurring(Long recurringId, Long userRowId) {
         log.debug("반복 거래 삭제 시작: recurringId={}", recurringId);
 
         RecurringTransaction recurring = findRecurringOrThrow(recurringId);
+        validateRecurringOwnership(recurring, userRowId);
         recurring.deleteRecurring();
 
         log.info("반복 거래 삭제 완료: recurringId={}", recurringId);
@@ -134,10 +139,11 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     @Override
     @Transactional
-    public RecurringTransactionServiceDto.RecurringInfo toggleActive(Long recurringId) {
+    public RecurringTransactionServiceDto.RecurringInfo toggleActive(Long recurringId, Long userRowId) {
         log.debug("반복 거래 활성/비활성 토글: recurringId={}", recurringId);
 
         RecurringTransaction recurring = findRecurringOrThrow(recurringId);
+        validateRecurringOwnership(recurring, userRowId);
         recurring.toggleActive();
 
         log.info("반복 거래 토글 완료: recurringId={}, isActive={}", recurringId, recurring.getIsActive());
@@ -248,6 +254,30 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             }
             case YEARLY -> date;
         };
+    }
+
+    private void validateRecurringOwnership(RecurringTransaction recurring, Long userRowId) {
+        if (!recurring.getUser().getRowId().equals(userRowId)) {
+            log.warn("반복 거래 소유권 검증 실패 - recurringId={}, ownerRowId={}, requestUserRowId={}",
+                recurring.getRowId(), recurring.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
+        if (!category.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
+                category.getRowId(), category.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    private void validateAssetOwnership(Asset asset, Long userRowId) {
+        if (!asset.getUser().getRowId().equals(userRowId)) {
+            log.warn("자산 소유권 검증 실패 - assetId={}, ownerRowId={}, requestUserRowId={}",
+                asset.getRowId(), asset.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
     }
 
     private RecurringTransaction findRecurringOrThrow(Long recurringId) {

@@ -1,6 +1,7 @@
 package com.porest.desk.calendar.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.service.dto.EventLabelServiceDto;
@@ -50,7 +51,7 @@ public class EventLabelServiceImpl implements EventLabelService {
 
     @Override
     @Transactional
-    public EventLabelServiceDto.LabelInfo updateLabel(Long labelId, EventLabelServiceDto.UpdateCommand command) {
+    public EventLabelServiceDto.LabelInfo updateLabel(Long labelId, Long userRowId, EventLabelServiceDto.UpdateCommand command) {
         log.debug("일정 라벨 수정 시작: labelId={}", labelId);
 
         EventLabel label = eventLabelRepository.findById(labelId)
@@ -58,6 +59,7 @@ public class EventLabelServiceImpl implements EventLabelService {
                 log.warn("일정 라벨 조회 실패: labelId={}", labelId);
                 return new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND);
             });
+        validateLabelOwnership(label, userRowId);
 
         label.updateLabel(command.labelName(), command.color());
         log.info("일정 라벨 수정 완료: labelId={}", labelId);
@@ -66,7 +68,7 @@ public class EventLabelServiceImpl implements EventLabelService {
 
     @Override
     @Transactional
-    public void deleteLabel(Long labelId) {
+    public void deleteLabel(Long labelId, Long userRowId) {
         log.debug("일정 라벨 삭제 시작: labelId={}", labelId);
 
         EventLabel label = eventLabelRepository.findById(labelId)
@@ -74,8 +76,17 @@ public class EventLabelServiceImpl implements EventLabelService {
                 log.warn("일정 라벨 조회 실패: labelId={}", labelId);
                 return new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND);
             });
+        validateLabelOwnership(label, userRowId);
 
         label.deleteLabel();
         log.info("일정 라벨 삭제 완료: labelId={}", labelId);
+    }
+
+    private void validateLabelOwnership(EventLabel label, Long userRowId) {
+        if (!label.getUser().getRowId().equals(userRowId)) {
+            log.warn("일정 라벨 소유권 검증 실패 - labelId={}, ownerRowId={}, requestUserRowId={}",
+                label.getRowId(), label.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EVENT_LABEL_ACCESS_DENIED);
+        }
     }
 }

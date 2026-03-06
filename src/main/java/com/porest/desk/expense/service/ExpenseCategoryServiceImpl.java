@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.ExpenseCategory;
@@ -36,6 +37,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         ExpenseCategory parent = null;
         if (command.parentRowId() != null) {
             parent = findCategoryOrThrow(command.parentRowId());
+            validateCategoryOwnership(parent, command.userRowId());
 
             if (parent.getParent() != null) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
@@ -79,10 +81,11 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional
-    public ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, ExpenseCategoryServiceDto.UpdateCommand command) {
+    public ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, Long userRowId, ExpenseCategoryServiceDto.UpdateCommand command) {
         log.debug("지출 카테고리 수정 시작: categoryId={}", categoryId);
 
         ExpenseCategory category = findCategoryOrThrow(categoryId);
+        validateCategoryOwnership(category, userRowId);
 
         category.updateCategory(
             command.categoryName(),
@@ -98,10 +101,11 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
     @Override
     @Transactional
-    public void deleteCategory(Long categoryId) {
+    public void deleteCategory(Long categoryId, Long userRowId) {
         log.debug("지출 카테고리 삭제 시작: categoryId={}", categoryId);
 
         ExpenseCategory category = findCategoryOrThrow(categoryId);
+        validateCategoryOwnership(category, userRowId);
 
         if (expenseCategoryRepository.hasChildren(categoryId)) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_HAS_CHILDREN);
@@ -110,6 +114,14 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         category.deleteCategory();
 
         log.info("지출 카테고리 삭제 완료: categoryId={}", categoryId);
+    }
+
+    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
+        if (!category.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
+                category.getRowId(), category.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
     }
 
     private ExpenseCategory findCategoryOrThrow(Long categoryId) {

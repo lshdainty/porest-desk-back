@@ -1,6 +1,7 @@
 package com.porest.desk.notification.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.notification.domain.Notification;
 import com.porest.desk.notification.repository.NotificationRepository;
@@ -61,11 +62,12 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     @Transactional
-    public void markRead(Long notificationId) {
+    public void markRead(Long notificationId, Long userRowId) {
         log.debug("알림 읽음 처리: notificationId={}", notificationId);
 
         Notification notification = notificationRepository.findById(notificationId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.NOTIFICATION_NOT_FOUND));
+        validateNotificationOwnership(notification, userRowId);
 
         notification.markRead();
         notificationRepository.save(notification);
@@ -80,13 +82,22 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     @Transactional
-    public void deleteNotification(Long notificationId) {
+    public void deleteNotification(Long notificationId, Long userRowId) {
         log.debug("알림 삭제: notificationId={}", notificationId);
 
         Notification notification = notificationRepository.findById(notificationId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.NOTIFICATION_NOT_FOUND));
+        validateNotificationOwnership(notification, userRowId);
 
         notification.deleteNotification();
         notificationRepository.save(notification);
+    }
+
+    private void validateNotificationOwnership(Notification notification, Long userRowId) {
+        if (!notification.getUser().getRowId().equals(userRowId)) {
+            log.warn("알림 소유권 검증 실패 - notificationId={}, ownerRowId={}, requestUserRowId={}",
+                notification.getRowId(), notification.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.NOTIFICATION_ACCESS_DENIED);
+        }
     }
 }

@@ -43,7 +43,8 @@ public class CalendarEventApiController {
             request.labelRowId(),
             request.location(),
             request.rrule(),
-            request.reminderMinutes()
+            request.reminderMinutes(),
+            request.calendarRowId()
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
     }
@@ -64,7 +65,7 @@ public class CalendarEventApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody CalendarEventApiDto.UpdateRequest request) {
-        CalendarEventServiceDto.EventInfo info = calendarEventService.updateEvent(id, new CalendarEventServiceDto.UpdateCommand(
+        CalendarEventServiceDto.EventInfo info = calendarEventService.updateEvent(id, loginUser.getRowId(), new CalendarEventServiceDto.UpdateCommand(
             request.title(),
             request.description(),
             request.eventType(),
@@ -75,7 +76,8 @@ public class CalendarEventApiController {
             request.labelRowId(),
             request.location(),
             request.rrule(),
-            request.reminderMinutes()
+            request.reminderMinutes(),
+            request.calendarRowId()
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
     }
@@ -84,7 +86,7 @@ public class CalendarEventApiController {
     public ApiResponse<Void> deleteEvent(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        calendarEventService.deleteEvent(id);
+        calendarEventService.deleteEvent(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

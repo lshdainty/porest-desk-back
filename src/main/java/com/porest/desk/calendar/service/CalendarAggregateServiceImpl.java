@@ -2,8 +2,10 @@ package com.porest.desk.calendar.service;
 
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
+import com.porest.desk.calendar.repository.EventReminderRepository;
 import com.porest.desk.calendar.service.dto.CalendarAggregateDto;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
@@ -22,6 +24,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +33,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class CalendarAggregateServiceImpl implements CalendarAggregateService {
     private final CalendarEventRepository calendarEventRepository;
+    private final EventReminderRepository eventReminderRepository;
     private final TodoRepository todoRepository;
     private final ExpenseRepository expenseRepository;
     private final TimerSessionRepository timerSessionRepository;
@@ -42,8 +47,15 @@ public class CalendarAggregateServiceImpl implements CalendarAggregateService {
 
         // Calendar Events
         List<CalendarEvent> calendarEvents = calendarEventRepository.findByUserAndDateRange(userRowId, startDateTime, endDateTime);
+
+        List<Long> eventIds = calendarEvents.stream().map(CalendarEvent::getRowId).toList();
+        Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
+
         List<CalendarEventServiceDto.EventInfo> eventInfos = calendarEvents.stream()
-            .map(CalendarEventServiceDto.EventInfo::from)
+            .map(event -> CalendarEventServiceDto.EventInfo.from(
+                event,
+                remindersMap.getOrDefault(event.getRowId(), List.of())
+            ))
             .toList();
 
         // Todos by dueDate
@@ -68,5 +80,14 @@ public class CalendarAggregateServiceImpl implements CalendarAggregateService {
             eventInfos.size(), todoInfos.size(), expenseInfos.size(), sessionInfos.size());
 
         return new CalendarAggregateDto.AggregateData(eventInfos, todoInfos, expenseInfos, sessionInfos);
+    }
+
+    private Map<Long, List<EventReminderServiceDto.ReminderInfo>> loadRemindersMap(List<Long> eventIds) {
+        if (eventIds.isEmpty()) {
+            return Map.of();
+        }
+        return eventReminderRepository.findByEventIds(eventIds).stream()
+            .map(EventReminderServiceDto.ReminderInfo::from)
+            .collect(Collectors.groupingBy(EventReminderServiceDto.ReminderInfo::eventRowId));
     }
 }

@@ -1,6 +1,7 @@
 package com.porest.desk.timer.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.timer.domain.TimerSession;
 import com.porest.desk.timer.repository.TimerSessionRepository;
@@ -74,13 +75,22 @@ public class TimerSessionServiceImpl implements TimerSessionService {
 
     @Override
     @Transactional
-    public void deleteSession(Long sessionId) {
+    public void deleteSession(Long sessionId, Long userRowId) {
         log.debug("타이머 세션 삭제 시작: sessionId={}", sessionId);
 
         TimerSession session = findSessionOrThrow(sessionId);
+        validateSessionOwnership(session, userRowId);
         timerSessionRepository.delete(session);
 
         log.info("타이머 세션 삭제 완료: sessionId={}", sessionId);
+    }
+
+    private void validateSessionOwnership(TimerSession session, Long userRowId) {
+        if (!session.getUser().getRowId().equals(userRowId)) {
+            log.warn("타이머 세션 소유권 검증 실패 - sessionId={}, ownerRowId={}, requestUserRowId={}",
+                session.getRowId(), session.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.TIMER_ACCESS_DENIED);
+        }
     }
 
     private TimerSession findSessionOrThrow(Long sessionId) {

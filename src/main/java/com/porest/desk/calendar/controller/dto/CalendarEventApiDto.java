@@ -21,7 +21,8 @@ public class CalendarEventApiDto {
         Long labelRowId,
         String location,
         String rrule,
-        List<Integer> reminderMinutes
+        List<Integer> reminderMinutes,
+        Long calendarRowId
     ) {}
 
     public record UpdateRequest(
@@ -35,7 +36,8 @@ public class CalendarEventApiDto {
         Long labelRowId,
         String location,
         String rrule,
-        List<Integer> reminderMinutes
+        List<Integer> reminderMinutes,
+        Long calendarRowId
     ) {}
 
     public record ReminderResponse(
@@ -74,6 +76,9 @@ public class CalendarEventApiDto {
         Long recurrenceId,
         YNType isException,
         List<ReminderResponse> reminders,
+        Long calendarRowId,
+        String calendarName,
+        String calendarColor,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -99,6 +104,9 @@ public class CalendarEventApiDto {
                 info.recurrenceId(),
                 info.isException(),
                 reminderResponses,
+                info.calendarRowId(),
+                info.calendarName(),
+                info.calendarColor(),
                 info.createAt(),
                 info.modifyAt()
             );

@@ -48,7 +48,7 @@ public class EventLabelApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody EventLabelApiDto.UpdateRequest request) {
-        EventLabelServiceDto.LabelInfo info = eventLabelService.updateLabel(id, new EventLabelServiceDto.UpdateCommand(
+        EventLabelServiceDto.LabelInfo info = eventLabelService.updateLabel(id, loginUser.getRowId(), new EventLabelServiceDto.UpdateCommand(
             request.labelName(),
             request.color()
         ));
@@ -59,7 +59,7 @@ public class EventLabelApiController {
     public ApiResponse<Void> deleteLabel(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        eventLabelService.deleteLabel(id);
+        eventLabelService.deleteLabel(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

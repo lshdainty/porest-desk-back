@@ -50,7 +50,7 @@ public class TodoTagApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody TodoTagApiDto.UpdateRequest request) {
-        TodoTagServiceDto.TagInfo info = todoTagService.updateTag(id,
+        TodoTagServiceDto.TagInfo info = todoTagService.updateTag(id, loginUser.getRowId(),
             new TodoTagServiceDto.UpdateCommand(request.tagName(), request.color())
         );
         return ApiResponse.success(TodoTagApiDto.Response.from(info));
@@ -60,7 +60,7 @@ public class TodoTagApiController {
     public ApiResponse<Void> deleteTag(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        todoTagService.deleteTag(id);
+        todoTagService.deleteTag(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

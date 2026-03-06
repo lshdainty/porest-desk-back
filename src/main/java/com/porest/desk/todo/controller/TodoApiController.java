@@ -67,7 +67,7 @@ public class TodoApiController {
     public ApiResponse<TodoApiDto.Response> getTodo(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        TodoServiceDto.TodoInfo info = todoService.getTodo(id);
+        TodoServiceDto.TodoInfo info = todoService.getTodo(id, loginUser.getRowId());
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
 
@@ -76,7 +76,7 @@ public class TodoApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody TodoApiDto.UpdateRequest request) {
-        TodoServiceDto.TodoInfo info = todoService.updateTodo(id, new TodoServiceDto.UpdateCommand(
+        TodoServiceDto.TodoInfo info = todoService.updateTodo(id, loginUser.getRowId(), new TodoServiceDto.UpdateCommand(
             request.title(),
             request.content(),
             request.priority(),
@@ -92,7 +92,7 @@ public class TodoApiController {
     public ApiResponse<TodoApiDto.Response> toggleStatus(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        TodoServiceDto.TodoInfo info = todoService.toggleStatus(id);
+        TodoServiceDto.TodoInfo info = todoService.toggleStatus(id, loginUser.getRowId());
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
 
@@ -111,7 +111,7 @@ public class TodoApiController {
     public ApiResponse<Void> deleteTodo(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        todoService.deleteTodo(id);
+        todoService.deleteTodo(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -119,7 +119,7 @@ public class TodoApiController {
     public ApiResponse<TodoApiDto.ListResponse> getSubtasks(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        List<TodoServiceDto.TodoInfo> infos = todoService.getSubtasks(id);
+        List<TodoServiceDto.TodoInfo> infos = todoService.getSubtasks(id, loginUser.getRowId());
         return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
     }
 
@@ -128,7 +128,7 @@ public class TodoApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody TodoApiDto.TagUpdateRequest request) {
-        todoService.updateTags(id, request.tagIds());
+        todoService.updateTags(id, loginUser.getRowId(), request.tagIds());
         return ApiResponse.success();
     }
 

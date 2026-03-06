@@ -51,7 +51,7 @@ public class ExpenseCategoryApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody ExpenseCategoryApiDto.UpdateRequest request) {
-        ExpenseCategoryServiceDto.CategoryInfo info = expenseCategoryService.updateCategory(id, new ExpenseCategoryServiceDto.UpdateCommand(
+        ExpenseCategoryServiceDto.CategoryInfo info = expenseCategoryService.updateCategory(id, loginUser.getRowId(), new ExpenseCategoryServiceDto.UpdateCommand(
             request.categoryName(),
             request.icon(),
             request.color(),
@@ -64,7 +64,7 @@ public class ExpenseCategoryApiController {
     public ApiResponse<Void> deleteCategory(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        expenseCategoryService.deleteCategory(id);
+        expenseCategoryService.deleteCategory(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

@@ -54,7 +54,7 @@ public class MemoApiController {
     public ApiResponse<MemoApiDto.Response> getMemo(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        MemoServiceDto.MemoInfo info = memoService.getMemo(id);
+        MemoServiceDto.MemoInfo info = memoService.getMemo(id, loginUser.getRowId());
         return ApiResponse.success(MemoApiDto.Response.from(info));
     }
 
@@ -63,7 +63,7 @@ public class MemoApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody MemoApiDto.UpdateRequest request) {
-        MemoServiceDto.MemoInfo info = memoService.updateMemo(id, new MemoServiceDto.UpdateCommand(
+        MemoServiceDto.MemoInfo info = memoService.updateMemo(id, loginUser.getRowId(), new MemoServiceDto.UpdateCommand(
             request.folderId(),
             request.title(),
             request.content()
@@ -75,7 +75,7 @@ public class MemoApiController {
     public ApiResponse<MemoApiDto.Response> togglePin(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        MemoServiceDto.MemoInfo info = memoService.togglePin(id);
+        MemoServiceDto.MemoInfo info = memoService.togglePin(id, loginUser.getRowId());
         return ApiResponse.success(MemoApiDto.Response.from(info));
     }
 
@@ -83,7 +83,7 @@ public class MemoApiController {
     public ApiResponse<Void> deleteMemo(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        memoService.deleteMemo(id);
+        memoService.deleteMemo(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

@@ -1,6 +1,7 @@
 package com.porest.desk.memo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
+import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.memo.domain.MemoFolder;
 import com.porest.desk.memo.repository.MemoFolderRepository;
@@ -37,6 +38,7 @@ public class MemoFolderServiceImpl implements MemoFolderService {
                     log.warn("메모 상위 폴더 조회 실패 - 존재하지 않는 폴더: parentId={}", command.parentId());
                     return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
                 });
+            validateFolderOwnership(parent, command.userRowId());
         }
 
         MemoFolder folder = MemoFolder.createFolder(user, parent, command.folderName());
@@ -60,10 +62,11 @@ public class MemoFolderServiceImpl implements MemoFolderService {
 
     @Override
     @Transactional
-    public MemoServiceDto.FolderInfo updateFolder(Long folderId, MemoServiceDto.FolderUpdateCommand command) {
+    public MemoServiceDto.FolderInfo updateFolder(Long folderId, Long userRowId, MemoServiceDto.FolderUpdateCommand command) {
         log.debug("메모 폴더 수정 시작: folderId={}", folderId);
 
         MemoFolder folder = findFolderOrThrow(folderId);
+        validateFolderOwnership(folder, userRowId);
 
         MemoFolder parent = null;
         if (command.parentId() != null) {
@@ -83,13 +86,22 @@ public class MemoFolderServiceImpl implements MemoFolderService {
 
     @Override
     @Transactional
-    public void deleteFolder(Long folderId) {
+    public void deleteFolder(Long folderId, Long userRowId) {
         log.debug("메모 폴더 삭제 시작: folderId={}", folderId);
 
         MemoFolder folder = findFolderOrThrow(folderId);
+        validateFolderOwnership(folder, userRowId);
         folder.deleteFolder();
 
         log.info("메모 폴더 삭제 완료: folderId={}", folderId);
+    }
+
+    private void validateFolderOwnership(MemoFolder folder, Long userRowId) {
+        if (!folder.getUser().getRowId().equals(userRowId)) {
+            log.warn("메모 폴더 소유권 검증 실패 - folderId={}, ownerRowId={}, requestUserRowId={}",
+                folder.getRowId(), folder.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.MEMO_ACCESS_DENIED);
+        }
     }
 
     private MemoFolder findFolderOrThrow(Long folderId) {

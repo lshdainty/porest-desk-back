@@ -7,6 +7,6 @@ import java.util.List;
 public interface ExpenseCategoryService {
     ExpenseCategoryServiceDto.CategoryInfo createCategory(ExpenseCategoryServiceDto.CreateCommand command);
     List<ExpenseCategoryServiceDto.CategoryInfo> getCategories(Long userRowId);
-    ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, ExpenseCategoryServiceDto.UpdateCommand command);
-    void deleteCategory(Long categoryId);
+    ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, Long userRowId, ExpenseCategoryServiceDto.UpdateCommand command);
+    void deleteCategory(Long categoryId, Long userRowId);
 }

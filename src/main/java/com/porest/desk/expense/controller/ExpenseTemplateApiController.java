@@ -52,7 +52,7 @@ public class ExpenseTemplateApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody ExpenseTemplateApiDto.UpdateRequest request) {
-        ExpenseTemplateServiceDto.TemplateInfo info = expenseTemplateService.updateTemplate(id,
+        ExpenseTemplateServiceDto.TemplateInfo info = expenseTemplateService.updateTemplate(id, loginUser.getRowId(),
             new ExpenseTemplateServiceDto.UpdateCommand(
                 request.templateName(), request.categoryRowId(), request.assetRowId(),
                 request.expenseType(), request.amount(), request.description(),
@@ -66,7 +66,7 @@ public class ExpenseTemplateApiController {
     public ApiResponse<Void> deleteTemplate(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        expenseTemplateService.deleteTemplate(id);
+        expenseTemplateService.deleteTemplate(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -75,7 +75,7 @@ public class ExpenseTemplateApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody ExpenseTemplateApiDto.UseRequest request) {
-        ExpenseServiceDto.ExpenseInfo info = expenseTemplateService.useTemplate(id, request.expenseDate());
+        ExpenseServiceDto.ExpenseInfo info = expenseTemplateService.useTemplate(id, loginUser.getRowId(), request.expenseDate());
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
 }

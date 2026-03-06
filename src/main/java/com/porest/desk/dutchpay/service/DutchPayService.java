@@ -7,9 +7,9 @@ import java.util.List;
 public interface DutchPayService {
     DutchPayServiceDto.DutchPayInfo createDutchPay(DutchPayServiceDto.CreateCommand command);
     List<DutchPayServiceDto.DutchPayInfo> getDutchPays(Long userRowId);
-    DutchPayServiceDto.DutchPayInfo getDutchPay(Long dutchPayId);
-    DutchPayServiceDto.DutchPayInfo updateDutchPay(Long dutchPayId, DutchPayServiceDto.UpdateCommand command);
-    void deleteDutchPay(Long dutchPayId);
-    DutchPayServiceDto.DutchPayInfo markParticipantPaid(Long dutchPayId, Long participantId);
-    DutchPayServiceDto.DutchPayInfo settleAll(Long dutchPayId);
+    DutchPayServiceDto.DutchPayInfo getDutchPay(Long dutchPayId, Long userRowId);
+    DutchPayServiceDto.DutchPayInfo updateDutchPay(Long dutchPayId, Long userRowId, DutchPayServiceDto.UpdateCommand command);
+    void deleteDutchPay(Long dutchPayId, Long userRowId);
+    DutchPayServiceDto.DutchPayInfo markParticipantPaid(Long dutchPayId, Long userRowId, Long participantId);
+    DutchPayServiceDto.DutchPayInfo settleAll(Long dutchPayId, Long userRowId);
 }

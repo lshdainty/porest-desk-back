@@ -72,7 +72,7 @@ public class TimerSessionApiController {
     public ApiResponse<Void> deleteSession(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        timerSessionService.deleteSession(id);
+        timerSessionService.deleteSession(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

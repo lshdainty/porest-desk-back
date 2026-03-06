@@ -41,7 +41,7 @@ public class NotificationApiController {
     public ApiResponse<Void> markRead(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        notificationService.markRead(id);
+        notificationService.markRead(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -56,7 +56,7 @@ public class NotificationApiController {
     public ApiResponse<Void> deleteNotification(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        notificationService.deleteNotification(id);
+        notificationService.deleteNotification(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }
