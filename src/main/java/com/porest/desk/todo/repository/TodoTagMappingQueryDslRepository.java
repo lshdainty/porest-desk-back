@@ -21,6 +21,7 @@ public class TodoTagMappingQueryDslRepository implements TodoTagMappingRepositor
     @Override
     public List<TodoTagMapping> findByTodoId(Long todoRowId) {
         return queryFactory.selectFrom(mapping)
+            .leftJoin(mapping.tag).fetchJoin()
             .where(mapping.todo.rowId.eq(todoRowId))
             .fetch();
     }
@@ -28,6 +29,7 @@ public class TodoTagMappingQueryDslRepository implements TodoTagMappingRepositor
     @Override
     public List<TodoTagMapping> findByTodoIds(List<Long> todoRowIds) {
         return queryFactory.selectFrom(mapping)
+            .leftJoin(mapping.tag).fetchJoin()
             .where(mapping.todo.rowId.in(todoRowIds))
             .fetch();
     }

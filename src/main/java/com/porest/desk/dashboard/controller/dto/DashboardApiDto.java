@@ -78,4 +78,7 @@ public class DashboardApiDto {
             return new DailyExpenseTrend(t.date(), t.income(), t.expense());
         }
     }
+
+    public record UpdateLayoutRequest(String dashboard) {}
+    public record LayoutResponse(String dashboard) {}
 }

@@ -24,6 +24,7 @@ public class EventCommentQueryDslRepository implements EventCommentRepository {
     public Optional<EventComment> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(comment)
+                .leftJoin(comment.user).fetchJoin()
                 .where(comment.rowId.eq(rowId), comment.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
@@ -32,6 +33,7 @@ public class EventCommentQueryDslRepository implements EventCommentRepository {
     @Override
     public List<EventComment> findAllByEvent(Long eventRowId) {
         return queryFactory.selectFrom(comment)
+            .leftJoin(comment.user).fetchJoin()
             .where(comment.event.rowId.eq(eventRowId), comment.isDeleted.eq(YNType.N))
             .orderBy(comment.createAt.asc())
             .fetch();

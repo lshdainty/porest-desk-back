@@ -25,6 +25,9 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
     public Optional<CalendarEvent> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(calendarEvent)
+                .leftJoin(calendarEvent.user).fetchJoin()
+                .leftJoin(calendarEvent.label).fetchJoin()
+                .leftJoin(calendarEvent.calendar).fetchJoin()
                 .where(calendarEvent.rowId.eq(rowId), calendarEvent.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
@@ -33,6 +36,8 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
     @Override
     public List<CalendarEvent> findByUserAndDateRange(Long userRowId, LocalDateTime startDate, LocalDateTime endDate) {
         return queryFactory.selectFrom(calendarEvent)
+            .leftJoin(calendarEvent.label).fetchJoin()
+            .leftJoin(calendarEvent.calendar).fetchJoin()
             .where(
                 calendarEvent.user.rowId.eq(userRowId),
                 calendarEvent.isDeleted.eq(YNType.N),
@@ -46,6 +51,9 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
     @Override
     public List<CalendarEvent> findByCalendarId(Long calendarRowId) {
         return queryFactory.selectFrom(calendarEvent)
+            .leftJoin(calendarEvent.user).fetchJoin()
+            .leftJoin(calendarEvent.label).fetchJoin()
+            .leftJoin(calendarEvent.calendar).fetchJoin()
             .where(
                 calendarEvent.calendar.rowId.eq(calendarRowId),
                 calendarEvent.isDeleted.eq(YNType.N)

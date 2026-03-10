@@ -32,6 +32,7 @@ public class ExpenseCategoryQueryDslRepository implements ExpenseCategoryReposit
     @Override
     public List<ExpenseCategory> findAllByUser(Long userRowId) {
         return queryFactory.selectFrom(expenseCategory)
+            .leftJoin(expenseCategory.parent).fetchJoin()
             .where(
                 expenseCategory.user.rowId.eq(userRowId),
                 expenseCategory.isDeleted.eq(YNType.N)

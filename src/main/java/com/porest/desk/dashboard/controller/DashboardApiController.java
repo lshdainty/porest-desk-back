@@ -8,6 +8,8 @@ import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,5 +24,20 @@ public class DashboardApiController {
             @LoginUser UserPrincipal loginUser) {
         DashboardServiceDto.DashboardSummary summary = dashboardService.getDashboardSummary(loginUser.getRowId());
         return ApiResponse.success(DashboardApiDto.SummaryResponse.from(summary));
+    }
+
+    @GetMapping("/dashboard/layout")
+    public ApiResponse<DashboardApiDto.LayoutResponse> getDashboardLayout(
+            @LoginUser UserPrincipal loginUser) {
+        String dashboard = dashboardService.getDashboardLayout(loginUser.getRowId());
+        return ApiResponse.success(new DashboardApiDto.LayoutResponse(dashboard));
+    }
+
+    @PatchMapping("/dashboard/layout")
+    public ApiResponse<DashboardApiDto.LayoutResponse> updateDashboardLayout(
+            @LoginUser UserPrincipal loginUser,
+            @RequestBody DashboardApiDto.UpdateLayoutRequest request) {
+        String dashboard = dashboardService.updateDashboardLayout(loginUser.getRowId(), request.dashboard());
+        return ApiResponse.success(new DashboardApiDto.LayoutResponse(dashboard));
     }
 }

@@ -24,6 +24,7 @@ public class DutchPayQueryDslRepository implements DutchPayRepository {
     public Optional<DutchPay> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(dutchPay)
+                .leftJoin(dutchPay.participants).fetchJoin()
                 .where(dutchPay.rowId.eq(rowId), dutchPay.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
@@ -32,8 +33,10 @@ public class DutchPayQueryDslRepository implements DutchPayRepository {
     @Override
     public List<DutchPay> findAllByUser(Long userRowId) {
         return queryFactory.selectFrom(dutchPay)
+            .leftJoin(dutchPay.participants).fetchJoin()
             .where(dutchPay.user.rowId.eq(userRowId), dutchPay.isDeleted.eq(YNType.N))
             .orderBy(dutchPay.dutchPayDate.desc(), dutchPay.rowId.desc())
+            .distinct()
             .fetch();
     }
 

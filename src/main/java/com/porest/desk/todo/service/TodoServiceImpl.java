@@ -247,23 +247,12 @@ public class TodoServiceImpl implements TodoService {
     public TodoServiceDto.TodoStats getStats(Long userRowId) {
         log.debug("할일 통계 조회: userRowId={}", userRowId);
 
-        List<Todo> allTodos = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null, null);
-
-        long totalCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK).count();
-        long pendingCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK && t.getStatus() == TodoStatus.PENDING).count();
-        long inProgressCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK && t.getStatus() == TodoStatus.IN_PROGRESS).count();
-        long completedCount = allTodos.stream().filter(t -> t.getType() == TodoType.TASK && t.getStatus() == TodoStatus.COMPLETED).count();
-        long noteCount = allTodos.stream().filter(t -> t.getType() == TodoType.NOTE).count();
-
         LocalDate today = LocalDate.now();
-        long todayDueCount = allTodos.stream()
-            .filter(t -> t.getType() == TodoType.TASK && t.getDueDate() != null && t.getDueDate().isEqual(today))
-            .count();
-        long overDueCount = allTodos.stream()
-            .filter(t -> t.getType() == TodoType.TASK && t.getDueDate() != null && t.getDueDate().isBefore(today) && t.getStatus() != TodoStatus.COMPLETED)
-            .count();
+        // 단일 집계 쿼리로 모든 카운트를 한번에 조회 (전체 엔티티 로드 대신)
+        long[] stats = todoRepository.countStatsByUser(userRowId, today);
+        // [0]=totalTask, [1]=pending, [2]=inProgress, [3]=completed, [4]=todayDue, [5]=overDue, [6]=noteCount, [7]=pinnedNoteCount
 
-        return new TodoServiceDto.TodoStats(totalCount, pendingCount, inProgressCount, completedCount, todayDueCount, overDueCount, noteCount);
+        return new TodoServiceDto.TodoStats(stats[0], stats[1], stats[2], stats[3], stats[4], stats[5], stats[6]);
     }
 
     private void validateTodoOwnership(Todo todo, Long userRowId) {
@@ -291,16 +280,17 @@ public class TodoServiceImpl implements TodoService {
     }
 
     private TodoServiceDto.TodoInfo buildTodoInfo(Todo todo) {
+        // 태그 조회 (findByTodoId는 이미 fetchJoin 적용됨)
         List<TodoTagMapping> mappings = todoTagMappingRepository.findByTodoId(todo.getRowId());
         List<TodoServiceDto.TagInfo> tags = mappings.stream()
             .map(m -> new TodoServiceDto.TagInfo(m.getTag().getRowId(), m.getTag().getTagName(), m.getTag().getColor()))
             .toList();
 
-        List<Todo> subtasks = todoRepository.findSubtasks(todo.getRowId());
-        int subtaskCount = subtasks.size();
-        int subtaskCompletedCount = (int) subtasks.stream().filter(s -> s.getStatus() == TodoStatus.COMPLETED).count();
+        // 서브태스크 카운트를 배치 쿼리로 조회 (엔티티 전체 로드 대신 count만)
+        Map<Long, int[]> counts = todoRepository.findSubtaskCountsByParentIds(List.of(todo.getRowId()));
+        int[] subtaskCounts = counts.getOrDefault(todo.getRowId(), new int[]{0, 0});
 
-        return TodoServiceDto.TodoInfo.from(todo, tags, subtaskCount, subtaskCompletedCount);
+        return TodoServiceDto.TodoInfo.from(todo, tags, subtaskCounts[0], subtaskCounts[1]);
     }
 
     private Map<Long, List<TodoServiceDto.TagInfo>> loadTagsMap(List<Long> todoIds) {
@@ -320,15 +310,6 @@ public class TodoServiceImpl implements TodoService {
     private Map<Long, int[]> loadSubtaskCountsMap(List<Long> todoIds) {
         if (todoIds.isEmpty()) return Map.of();
 
-        return todoIds.stream()
-            .collect(Collectors.toMap(
-                id -> id,
-                id -> {
-                    List<Todo> subtasks = todoRepository.findSubtasks(id);
-                    int total = subtasks.size();
-                    int completed = (int) subtasks.stream().filter(s -> s.getStatus() == TodoStatus.COMPLETED).count();
-                    return new int[]{total, completed};
-                }
-            ));
+        return todoRepository.findSubtaskCountsByParentIds(todoIds);
     }
 }

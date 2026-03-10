@@ -27,6 +27,7 @@ public class TimerSessionQueryDslRepository implements TimerSessionRepository {
     public Optional<TimerSession> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(timerSession)
+                .leftJoin(timerSession.user).fetchJoin()
                 .where(timerSession.rowId.eq(rowId))
                 .fetchOne()
         );
@@ -48,6 +49,7 @@ public class TimerSessionQueryDslRepository implements TimerSessionRepository {
         }
 
         return queryFactory.selectFrom(timerSession)
+            .leftJoin(timerSession.user).fetchJoin()
             .where(builder)
             .orderBy(timerSession.startTime.desc())
             .fetch();

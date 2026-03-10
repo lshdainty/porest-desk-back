@@ -27,6 +27,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     public Optional<Expense> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(expense)
+                .leftJoin(expense.category).fetchJoin()
+                .leftJoin(expense.asset).fetchJoin()
                 .where(expense.rowId.eq(rowId), expense.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
@@ -52,6 +54,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
         }
 
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(builder)
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();
@@ -60,6 +64,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     @Override
     public List<Expense> findDailySummary(Long userRowId, LocalDate date) {
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
@@ -75,6 +81,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
         LocalDate endDate = startDate.plusMonths(1).minusDays(1);
 
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
@@ -88,6 +96,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     @Override
     public List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
@@ -104,6 +114,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
         LocalDate endDate = LocalDate.of(year, 12, 31);
 
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
@@ -151,6 +163,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
         }
 
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(builder)
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();
@@ -159,6 +173,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     @Override
     public List<Expense> findByCalendarEvent(Long calendarEventRowId) {
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(
                 expense.calendarEvent.rowId.eq(calendarEventRowId),
                 expense.isDeleted.eq(YNType.N)
@@ -170,6 +186,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     @Override
     public List<Expense> findByTodo(Long todoRowId) {
         return queryFactory.selectFrom(expense)
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
             .where(
                 expense.todo.rowId.eq(todoRowId),
                 expense.isDeleted.eq(YNType.N)

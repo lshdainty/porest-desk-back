@@ -33,6 +33,7 @@ public class UserGroupMemberQueryDslRepository implements UserGroupMemberReposit
     public Optional<UserGroupMember> findByGroupAndUser(Long groupRowId, Long userRowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(member)
+                .leftJoin(member.user).fetchJoin()
                 .where(
                     member.group.rowId.eq(groupRowId),
                     member.user.rowId.eq(userRowId),
@@ -45,6 +46,7 @@ public class UserGroupMemberQueryDslRepository implements UserGroupMemberReposit
     @Override
     public List<UserGroupMember> findAllByGroup(Long groupRowId) {
         return queryFactory.selectFrom(member)
+            .leftJoin(member.user).fetchJoin()
             .where(member.group.rowId.eq(groupRowId), member.isDeleted.eq(YNType.N))
             .orderBy(member.joinedAt.asc())
             .fetch();

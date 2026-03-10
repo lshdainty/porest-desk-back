@@ -12,7 +12,9 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository("todoJpaRepository")
@@ -118,6 +120,65 @@ public class TodoJpaRepository implements TodoRepository {
             .setParameter("startDate", startDate)
             .setParameter("endDate", endDate)
             .getResultList();
+    }
+
+    @Override
+    public Map<Long, int[]> findSubtaskCountsByParentIds(List<Long> parentIds) {
+        Map<Long, int[]> result = new HashMap<>();
+        if (parentIds.isEmpty()) return result;
+
+        List<Object[]> rows = entityManager.createQuery(
+            "SELECT t.parent.rowId, COUNT(t), SUM(CASE WHEN t.status = :completed THEN 1 ELSE 0 END) " +
+            "FROM Todo t WHERE t.parent.rowId IN :parentIds AND t.isDeleted = :isDeleted GROUP BY t.parent.rowId", Object[].class)
+            .setParameter("parentIds", parentIds)
+            .setParameter("completed", TodoStatus.COMPLETED)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+
+        for (Object[] row : rows) {
+            Long parentId = (Long) row[0];
+            int total = ((Number) row[1]).intValue();
+            int completed = ((Number) row[2]).intValue();
+            result.put(parentId, new int[]{total, completed});
+        }
+
+        return result;
+    }
+
+    @Override
+    public long[] countStatsByUser(Long userRowId, LocalDate today) {
+        Object[] row = entityManager.createQuery(
+            "SELECT " +
+            "SUM(CASE WHEN t.type = :task THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :task AND t.status = :pending THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :task AND t.status = :inProgress THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :task AND t.status = :completed THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :task AND t.dueDate = :today THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :task AND t.dueDate < :today AND t.status != :completed THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :note THEN 1 ELSE 0 END), " +
+            "SUM(CASE WHEN t.type = :note AND t.isPinned = :yes THEN 1 ELSE 0 END) " +
+            "FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted AND t.parent IS NULL", Object[].class)
+            .setParameter("task", TodoType.TASK)
+            .setParameter("note", TodoType.NOTE)
+            .setParameter("pending", TodoStatus.PENDING)
+            .setParameter("inProgress", TodoStatus.IN_PROGRESS)
+            .setParameter("completed", TodoStatus.COMPLETED)
+            .setParameter("today", today)
+            .setParameter("yes", com.porest.core.type.YNType.Y)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getSingleResult();
+
+        if (row == null) {
+            return new long[]{0, 0, 0, 0, 0, 0, 0, 0};
+        }
+
+        long[] stats = new long[8];
+        for (int i = 0; i < 8; i++) {
+            Number val = (Number) row[i];
+            stats[i] = val != null ? val.longValue() : 0;
+        }
+        return stats;
     }
 
     @Override
