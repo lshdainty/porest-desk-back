@@ -2,8 +2,10 @@ package com.porest.desk.group.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.group.domain.GroupType;
 import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.group.domain.UserGroupMember;
+import com.porest.desk.group.repository.GroupTypeRepository;
 import com.porest.desk.group.repository.UserGroupMemberRepository;
 import com.porest.desk.group.repository.UserGroupRepository;
 import com.porest.desk.group.service.dto.UserGroupServiceDto;
@@ -24,6 +26,7 @@ import java.util.List;
 public class UserGroupServiceImpl implements UserGroupService {
     private final UserGroupRepository userGroupRepository;
     private final UserGroupMemberRepository userGroupMemberRepository;
+    private final GroupTypeRepository groupTypeRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -34,7 +37,13 @@ public class UserGroupServiceImpl implements UserGroupService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        UserGroup group = UserGroup.createGroup(command.groupName(), command.description(), command.groupType());
+        GroupType groupType = null;
+        if (command.groupTypeId() != null) {
+            groupType = groupTypeRepository.findById(command.groupTypeId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_TYPE_NOT_FOUND));
+        }
+
+        UserGroup group = UserGroup.createGroup(command.groupName(), command.description(), groupType);
         userGroupRepository.save(group);
 
         UserGroupMember ownerMember = UserGroupMember.create(group, user, GroupRole.OWNER);
@@ -73,7 +82,13 @@ public class UserGroupServiceImpl implements UserGroupService {
         UserGroup group = userGroupRepository.findById(command.groupRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
 
-        group.updateGroup(command.groupName(), command.description(), command.groupType());
+        GroupType groupType = null;
+        if (command.groupTypeId() != null) {
+            groupType = groupTypeRepository.findById(command.groupTypeId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_TYPE_NOT_FOUND));
+        }
+
+        group.updateGroup(command.groupName(), command.description(), groupType);
         userGroupRepository.save(group);
 
         log.info("그룹 수정 완료: groupId={}", group.getRowId());

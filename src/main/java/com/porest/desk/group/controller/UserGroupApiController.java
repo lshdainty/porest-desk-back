@@ -33,7 +33,7 @@ public class UserGroupApiController {
             loginUser.getRowId(),
             request.groupName(),
             request.description(),
-            request.groupType()
+            request.groupTypeId()
         );
         UserGroupServiceDto.GroupInfo info = userGroupService.createGroup(command);
         return ApiResponse.success(UserGroupApiDto.Response.from(info));
@@ -63,7 +63,7 @@ public class UserGroupApiController {
             id,
             request.groupName(),
             request.description(),
-            request.groupType()
+            request.groupTypeId()
         );
         UserGroupServiceDto.GroupInfo info = userGroupService.updateGroup(command);
         return ApiResponse.success(UserGroupApiDto.Response.from(info));

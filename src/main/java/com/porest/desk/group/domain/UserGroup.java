@@ -2,15 +2,17 @@ package com.porest.desk.group.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
-import com.porest.desk.group.type.GroupType;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
@@ -37,8 +39,8 @@ public class UserGroup extends AuditingFieldsWithIp {
     @Column(name = "description", length = 500)
     private String description;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "group_type", nullable = false, length = 20)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_type_id")
     private GroupType groupType;
 
     @Column(name = "invite_code", length = 20, unique = true)

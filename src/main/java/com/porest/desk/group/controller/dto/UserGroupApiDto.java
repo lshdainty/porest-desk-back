@@ -2,7 +2,6 @@ package com.porest.desk.group.controller.dto;
 
 import com.porest.desk.group.service.dto.UserGroupServiceDto;
 import com.porest.desk.group.type.GroupRole;
-import com.porest.desk.group.type.GroupType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -12,13 +11,13 @@ public class UserGroupApiDto {
     public record CreateRequest(
         String groupName,
         String description,
-        GroupType groupType
+        Long groupTypeId
     ) {}
 
     public record UpdateRequest(
         String groupName,
         String description,
-        GroupType groupType
+        Long groupTypeId
     ) {}
 
     public record JoinRequest(
@@ -33,7 +32,9 @@ public class UserGroupApiDto {
         Long rowId,
         String groupName,
         String description,
-        GroupType groupType,
+        Long groupTypeId,
+        String groupTypeName,
+        String groupTypeColor,
         String inviteCode,
         int memberCount,
         LocalDateTime createAt
@@ -43,7 +44,9 @@ public class UserGroupApiDto {
                 info.rowId(),
                 info.groupName(),
                 info.description(),
-                info.groupType(),
+                info.groupTypeId(),
+                info.groupTypeName(),
+                info.groupTypeColor(),
                 info.inviteCode(),
                 info.memberCount(),
                 info.createAt()
@@ -55,7 +58,9 @@ public class UserGroupApiDto {
         Long rowId,
         String groupName,
         String description,
-        GroupType groupType,
+        Long groupTypeId,
+        String groupTypeName,
+        String groupTypeColor,
         String inviteCode,
         List<MemberResponse> members,
         LocalDateTime createAt
@@ -65,7 +70,9 @@ public class UserGroupApiDto {
                 info.rowId(),
                 info.groupName(),
                 info.description(),
-                info.groupType(),
+                info.groupTypeId(),
+                info.groupTypeName(),
+                info.groupTypeColor(),
                 info.inviteCode(),
                 info.members().stream().map(MemberResponse::from).toList(),
                 info.createAt()

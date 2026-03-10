@@ -4,7 +4,6 @@ import com.porest.core.type.YNType;
 import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.group.domain.UserGroupMember;
 import com.porest.desk.group.type.GroupRole;
-import com.porest.desk.group.type.GroupType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,21 +14,23 @@ public class UserGroupServiceDto {
         Long userRowId,
         String groupName,
         String description,
-        GroupType groupType
+        Long groupTypeId
     ) {}
 
     public record UpdateCommand(
         Long groupRowId,
         String groupName,
         String description,
-        GroupType groupType
+        Long groupTypeId
     ) {}
 
     public record GroupInfo(
         Long rowId,
         String groupName,
         String description,
-        GroupType groupType,
+        Long groupTypeId,
+        String groupTypeName,
+        String groupTypeColor,
         String inviteCode,
         int memberCount,
         LocalDateTime createAt
@@ -42,7 +43,9 @@ public class UserGroupServiceDto {
                 group.getRowId(),
                 group.getGroupName(),
                 group.getDescription(),
-                group.getGroupType(),
+                group.getGroupType() != null ? group.getGroupType().getRowId() : null,
+                group.getGroupType() != null ? group.getGroupType().getTypeName() : null,
+                group.getGroupType() != null ? group.getGroupType().getColor() : null,
                 group.getInviteCode(),
                 (int) activeMembers,
                 group.getCreateAt()
@@ -54,7 +57,9 @@ public class UserGroupServiceDto {
         Long rowId,
         String groupName,
         String description,
-        GroupType groupType,
+        Long groupTypeId,
+        String groupTypeName,
+        String groupTypeColor,
         String inviteCode,
         List<MemberInfo> members,
         LocalDateTime createAt
@@ -64,7 +69,9 @@ public class UserGroupServiceDto {
                 group.getRowId(),
                 group.getGroupName(),
                 group.getDescription(),
-                group.getGroupType(),
+                group.getGroupType() != null ? group.getGroupType().getRowId() : null,
+                group.getGroupType() != null ? group.getGroupType().getTypeName() : null,
+                group.getGroupType() != null ? group.getGroupType().getColor() : null,
                 group.getInviteCode(),
                 members.stream().map(MemberInfo::from).toList(),
                 group.getCreateAt()
