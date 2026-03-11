@@ -263,11 +263,42 @@ public class ExpenseServiceImpl implements ExpenseService {
             .collect(Collectors.groupingBy(e -> e.getExpenseDate().getMonthValue()));
 
         List<ExpenseServiceDto.MonthlyAmount> monthlyAmounts = byMonth.entrySet().stream()
-            .map(entry -> new ExpenseServiceDto.MonthlyAmount(
-                entry.getKey(),
-                entry.getValue().stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum(),
-                entry.getValue().stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum()
-            ))
+            .map(entry -> {
+                List<Expense> monthExpenses = entry.getValue();
+
+                Long monthIncome = monthExpenses.stream()
+                    .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
+                    .mapToLong(Expense::getAmount)
+                    .sum();
+
+                Long monthExpense = monthExpenses.stream()
+                    .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+                    .mapToLong(Expense::getAmount)
+                    .sum();
+
+                List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = monthExpenses.stream()
+                    .collect(Collectors.groupingBy(e -> e.getCategory().getRowId(), Collectors.toList()))
+                    .entrySet().stream()
+                    .map(catEntry -> {
+                        List<Expense> categoryExpenses = catEntry.getValue();
+                        Expense first = categoryExpenses.get(0);
+                        Long totalAmount = categoryExpenses.stream()
+                            .mapToLong(Expense::getAmount)
+                            .sum();
+                        ExpenseCategory parentCategory = first.getCategory().getParent();
+                        return new ExpenseServiceDto.CategoryBreakdown(
+                            first.getCategory().getRowId(),
+                            first.getCategory().getCategoryName(),
+                            parentCategory != null ? parentCategory.getRowId() : null,
+                            parentCategory != null ? parentCategory.getCategoryName() : null,
+                            first.getExpenseType(),
+                            totalAmount
+                        );
+                    })
+                    .toList();
+
+                return new ExpenseServiceDto.MonthlyAmount(entry.getKey(), monthIncome, monthExpense, categoryBreakdown);
+            })
             .sorted((a, b) -> a.month().compareTo(b.month()))
             .toList();
 

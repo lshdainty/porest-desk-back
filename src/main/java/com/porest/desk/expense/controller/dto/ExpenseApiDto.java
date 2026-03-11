@@ -169,9 +169,17 @@ public class ExpenseApiDto {
         }
     }
 
-    public record MonthlyAmountResponse(Integer month, Long totalIncome, Long totalExpense) {
+    public record MonthlyAmountResponse(
+        Integer month,
+        Long totalIncome,
+        Long totalExpense,
+        List<CategoryBreakdownResponse> categoryBreakdown
+    ) {
         public static MonthlyAmountResponse from(ExpenseServiceDto.MonthlyAmount ma) {
-            return new MonthlyAmountResponse(ma.month(), ma.totalIncome(), ma.totalExpense());
+            List<CategoryBreakdownResponse> breakdowns = ma.categoryBreakdown() != null
+                ? ma.categoryBreakdown().stream().map(CategoryBreakdownResponse::from).toList()
+                : List.of();
+            return new MonthlyAmountResponse(ma.month(), ma.totalIncome(), ma.totalExpense(), breakdowns);
         }
     }
 

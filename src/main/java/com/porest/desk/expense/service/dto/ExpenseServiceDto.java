@@ -117,7 +117,8 @@ public class ExpenseServiceDto {
     public record MonthlyAmount(
         Integer month,
         Long totalIncome,
-        Long totalExpense
+        Long totalExpense,
+        List<CategoryBreakdown> categoryBreakdown
     ) {}
 
     public record MerchantSummary(
