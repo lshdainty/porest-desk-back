@@ -10,5 +10,6 @@ public interface CalendarEventRepository {
     Optional<CalendarEvent> findById(Long rowId);
     List<CalendarEvent> findByUserAndDateRange(Long userRowId, LocalDateTime startDate, LocalDateTime endDate);
     List<CalendarEvent> findByCalendarId(Long calendarRowId);
+    List<CalendarEvent> findByGroupsAndDateRange(List<Long> groupRowIds, LocalDateTime startDate, LocalDateTime endDate);
     CalendarEvent save(CalendarEvent calendarEvent);
 }

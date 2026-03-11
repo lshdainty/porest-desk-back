@@ -10,6 +10,7 @@ import java.util.Optional;
 public interface ExpenseRepository {
     Optional<Expense> findById(Long rowId);
     List<Expense> findByUser(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
+    List<Expense> findByGroups(List<Long> groupRowIds, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<Expense> findDailySummary(Long userRowId, LocalDate date);
     List<Expense> findMonthlySummary(Long userRowId, Integer year, Integer month);
     List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd);

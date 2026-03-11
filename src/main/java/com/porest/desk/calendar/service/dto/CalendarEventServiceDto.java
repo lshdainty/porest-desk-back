@@ -22,7 +22,8 @@ public class CalendarEventServiceDto {
         String location,
         String rrule,
         List<Integer> reminderMinutes,
-        Long calendarRowId
+        Long calendarRowId,
+        Long groupRowId
     ) {}
 
     public record UpdateCommand(
@@ -37,7 +38,8 @@ public class CalendarEventServiceDto {
         String location,
         String rrule,
         List<Integer> reminderMinutes,
-        Long calendarRowId
+        Long calendarRowId,
+        Long groupRowId
     ) {}
 
     public record EventInfo(
@@ -61,6 +63,8 @@ public class CalendarEventServiceDto {
         Long calendarRowId,
         String calendarName,
         String calendarColor,
+        Long groupRowId,
+        String groupName,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -90,6 +94,8 @@ public class CalendarEventServiceDto {
                 event.getCalendar() != null ? event.getCalendar().getRowId() : null,
                 event.getCalendar() != null ? event.getCalendar().getCalendarName() : null,
                 event.getCalendar() != null ? event.getCalendar().getColor() : null,
+                event.getGroup() != null ? event.getGroup().getRowId() : null,
+                event.getGroup() != null ? event.getGroup().getGroupName() : null,
                 event.getCreateAt(),
                 event.getModifyAt()
             );

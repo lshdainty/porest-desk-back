@@ -18,6 +18,7 @@ public interface ExpenseService {
     List<ExpenseServiceDto.MerchantSummary> getMerchantSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<ExpenseServiceDto.AssetSummary> getAssetSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<ExpenseServiceDto.ExpenseInfo> searchExpenses(ExpenseServiceDto.SearchCommand command);
+    List<ExpenseServiceDto.ExpenseInfo> getGroupExpenses(Long userRowId, Long groupId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<ExpenseServiceDto.ExpenseInfo> getExpensesByCalendarEvent(Long calendarEventRowId);
     List<ExpenseServiceDto.ExpenseInfo> getExpensesByTodo(Long todoRowId);
 }

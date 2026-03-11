@@ -10,4 +10,5 @@ public interface CalendarEventService {
     List<CalendarEventServiceDto.EventInfo> getEvents(Long userRowId, LocalDateTime startDate, LocalDateTime endDate);
     CalendarEventServiceDto.EventInfo updateEvent(Long eventId, Long userRowId, CalendarEventServiceDto.UpdateCommand command);
     void deleteEvent(Long eventId, Long userRowId);
+    List<CalendarEventServiceDto.EventInfo> getGroupEvents(Long userRowId, Long groupId, LocalDateTime startDate, LocalDateTime endDate);
 }

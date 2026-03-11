@@ -15,6 +15,10 @@ import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.group.domain.UserGroup;
+import com.porest.desk.group.domain.UserGroupMember;
+import com.porest.desk.group.repository.UserGroupRepository;
+import com.porest.desk.group.service.GroupMembershipValidator;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +43,8 @@ public class CalendarEventServiceImpl implements CalendarEventService {
     private final UserCalendarRepository userCalendarRepository;
     private final UserCalendarService userCalendarService;
     private final UserRepository userRepository;
+    private final GroupMembershipValidator groupMembershipValidator;
+    private final UserGroupRepository userGroupRepository;
 
     @Override
     @Transactional
@@ -86,6 +92,13 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
         calendarEventRepository.save(event);
 
+        if (command.groupRowId() != null) {
+            groupMembershipValidator.validateMembership(command.groupRowId(), command.userRowId());
+            UserGroup group = userGroupRepository.findById(command.groupRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
+            event.setGroup(group);
+        }
+
         List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
         if (command.reminderMinutes() != null && !command.reminderMinutes().isEmpty()) {
             for (Integer minutes : command.reminderMinutes()) {
@@ -108,12 +121,23 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
         }
 
-        List<CalendarEvent> events = calendarEventRepository.findByUserAndDateRange(userRowId, startDate, endDate);
+        List<CalendarEvent> personalEvents = calendarEventRepository.findByUserAndDateRange(userRowId, startDate, endDate);
 
-        List<Long> eventIds = events.stream().map(CalendarEvent::getRowId).toList();
+        List<Long> groupIds = groupMembershipValidator.getUserGroupIds(userRowId);
+        List<CalendarEvent> groupEvents = calendarEventRepository.findByGroupsAndDateRange(groupIds, startDate, endDate);
+
+        // Merge (deduplicate: user's own group events already in personalEvents)
+        java.util.Set<Long> personalEventIds = personalEvents.stream().map(CalendarEvent::getRowId).collect(java.util.stream.Collectors.toSet());
+        List<CalendarEvent> allEvents = new java.util.ArrayList<>(personalEvents);
+        groupEvents.stream()
+            .filter(e -> !personalEventIds.contains(e.getRowId()))
+            .forEach(allEvents::add);
+        allEvents.sort(java.util.Comparator.comparing(CalendarEvent::getStartDate));
+
+        List<Long> eventIds = allEvents.stream().map(CalendarEvent::getRowId).toList();
         Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
 
-        return events.stream()
+        return allEvents.stream()
             .map(event -> CalendarEventServiceDto.EventInfo.from(
                 event,
                 remindersMap.getOrDefault(event.getRowId(), List.of())
@@ -159,6 +183,15 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             event.setCalendar(calendar);
         }
 
+        if (command.groupRowId() != null) {
+            UserGroup group = userGroupRepository.findById(command.groupRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
+            groupMembershipValidator.validateMembership(command.groupRowId(), event.getUser().getRowId());
+            event.setGroup(group);
+        } else {
+            event.setGroup(null);
+        }
+
         List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
         if (command.reminderMinutes() != null) {
             eventReminderRepository.deleteByEventId(eventId);
@@ -192,7 +225,34 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         log.info("캘린더 이벤트 삭제 완료: eventId={}", eventId);
     }
 
+    @Override
+    public List<CalendarEventServiceDto.EventInfo> getGroupEvents(Long userRowId, Long groupId, LocalDateTime startDate, LocalDateTime endDate) {
+        groupMembershipValidator.validateMembership(groupId, userRowId);
+
+        List<CalendarEvent> events = calendarEventRepository.findByGroupsAndDateRange(List.of(groupId), startDate, endDate);
+
+        List<Long> eventIds = events.stream().map(CalendarEvent::getRowId).toList();
+        Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
+
+        return events.stream()
+            .map(event -> CalendarEventServiceDto.EventInfo.from(
+                event,
+                remindersMap.getOrDefault(event.getRowId(), List.of())
+            ))
+            .toList();
+    }
+
     private void validateEventOwnership(CalendarEvent event, Long userRowId) {
+        if (event.getGroup() != null) {
+            // Group event: check membership and role
+            UserGroupMember member = groupMembershipValidator.validateMembership(
+                event.getGroup().getRowId(), userRowId);
+            if (!groupMembershipValidator.canEditOrDelete(member, event.getUser().getRowId(), userRowId)) {
+                throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
+            }
+            return;
+        }
+        // Personal event: owner only
         if (!event.getUser().getRowId().equals(userRowId)) {
             log.warn("캘린더 이벤트 소유권 검증 실패 - eventId={}, ownerRowId={}, requestUserRowId={}",
                 event.getRowId(), event.getUser().getRowId(), userRowId);

@@ -29,6 +29,7 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             queryFactory.selectFrom(expense)
                 .leftJoin(expense.category).fetchJoin()
                 .leftJoin(expense.asset).fetchJoin()
+                .leftJoin(expense.group).fetchJoin()
                 .where(expense.rowId.eq(rowId), expense.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
@@ -56,6 +57,38 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
         return queryFactory.selectFrom(expense)
             .leftJoin(expense.category).fetchJoin()
             .leftJoin(expense.asset).fetchJoin()
+            .leftJoin(expense.group).fetchJoin()
+            .where(builder)
+            .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
+            .fetch();
+    }
+
+    @Override
+    public List<Expense> findByGroups(List<Long> groupRowIds, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
+        if (groupRowIds.isEmpty()) return List.of();
+
+        BooleanBuilder builder = new BooleanBuilder();
+        builder.and(expense.group.rowId.in(groupRowIds));
+        builder.and(expense.isDeleted.eq(YNType.N));
+
+        if (categoryRowId != null) {
+            builder.and(expense.category.rowId.eq(categoryRowId));
+        }
+        if (expenseType != null) {
+            builder.and(expense.expenseType.eq(expenseType));
+        }
+        if (startDate != null) {
+            builder.and(expense.expenseDate.goe(startDate));
+        }
+        if (endDate != null) {
+            builder.and(expense.expenseDate.loe(endDate));
+        }
+
+        return queryFactory.selectFrom(expense)
+            .leftJoin(expense.user).fetchJoin()
+            .leftJoin(expense.category).fetchJoin()
+            .leftJoin(expense.asset).fetchJoin()
+            .leftJoin(expense.group).fetchJoin()
             .where(builder)
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();

@@ -5,6 +5,7 @@ import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
@@ -73,6 +74,10 @@ public class Expense extends AuditingFieldsWithIp {
     @JoinColumn(name = "todo_row_id")
     private Todo todo;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_row_id")
+    private UserGroup group;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -113,6 +118,10 @@ public class Expense extends AuditingFieldsWithIp {
 
     public void setTodo(Todo todo) {
         this.todo = todo;
+    }
+
+    public void setGroup(UserGroup group) {
+        this.group = group;
     }
 
     public void deleteExpense() {

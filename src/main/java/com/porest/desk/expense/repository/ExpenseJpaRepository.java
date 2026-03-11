@@ -72,6 +72,38 @@ public class ExpenseJpaRepository implements ExpenseRepository {
     }
 
     @Override
+    public List<Expense> findByGroups(List<Long> groupRowIds, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
+        if (groupRowIds.isEmpty()) return List.of();
+
+        StringBuilder jpql = new StringBuilder("SELECT e FROM Expense e WHERE e.group.rowId IN :groupRowIds AND e.isDeleted = :isDeleted");
+
+        if (categoryRowId != null) {
+            jpql.append(" AND e.category.rowId = :categoryRowId");
+        }
+        if (expenseType != null) {
+            jpql.append(" AND e.expenseType = :expenseType");
+        }
+        if (startDate != null) {
+            jpql.append(" AND e.expenseDate >= :startDate");
+        }
+        if (endDate != null) {
+            jpql.append(" AND e.expenseDate <= :endDate");
+        }
+        jpql.append(" ORDER BY e.expenseDate DESC, e.rowId DESC");
+
+        TypedQuery<Expense> query = entityManager.createQuery(jpql.toString(), Expense.class)
+            .setParameter("groupRowIds", groupRowIds)
+            .setParameter("isDeleted", YNType.N);
+
+        if (categoryRowId != null) query.setParameter("categoryRowId", categoryRowId);
+        if (expenseType != null) query.setParameter("expenseType", expenseType);
+        if (startDate != null) query.setParameter("startDate", startDate);
+        if (endDate != null) query.setParameter("endDate", endDate);
+
+        return query.getResultList();
+    }
+
+    @Override
     public List<Expense> findDailySummary(Long userRowId, LocalDate date) {
         return entityManager.createQuery(
             "SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted AND e.expenseDate = :date ORDER BY e.rowId DESC", Expense.class)

@@ -28,6 +28,7 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
                 .leftJoin(calendarEvent.user).fetchJoin()
                 .leftJoin(calendarEvent.label).fetchJoin()
                 .leftJoin(calendarEvent.calendar).fetchJoin()
+                .leftJoin(calendarEvent.group).fetchJoin()
                 .where(calendarEvent.rowId.eq(rowId), calendarEvent.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
@@ -38,6 +39,7 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
         return queryFactory.selectFrom(calendarEvent)
             .leftJoin(calendarEvent.label).fetchJoin()
             .leftJoin(calendarEvent.calendar).fetchJoin()
+            .leftJoin(calendarEvent.group).fetchJoin()
             .where(
                 calendarEvent.user.rowId.eq(userRowId),
                 calendarEvent.isDeleted.eq(YNType.N),
@@ -58,6 +60,24 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
                 calendarEvent.calendar.rowId.eq(calendarRowId),
                 calendarEvent.isDeleted.eq(YNType.N)
             )
+            .fetch();
+    }
+
+    @Override
+    public List<CalendarEvent> findByGroupsAndDateRange(List<Long> groupRowIds, LocalDateTime startDate, LocalDateTime endDate) {
+        if (groupRowIds.isEmpty()) return List.of();
+        return queryFactory.selectFrom(calendarEvent)
+            .leftJoin(calendarEvent.user).fetchJoin()
+            .leftJoin(calendarEvent.label).fetchJoin()
+            .leftJoin(calendarEvent.calendar).fetchJoin()
+            .leftJoin(calendarEvent.group).fetchJoin()
+            .where(
+                calendarEvent.group.rowId.in(groupRowIds),
+                calendarEvent.isDeleted.eq(YNType.N),
+                calendarEvent.startDate.loe(endDate),
+                calendarEvent.endDate.goe(startDate)
+            )
+            .orderBy(calendarEvent.startDate.asc())
             .fetch();
     }
 
