@@ -3,6 +3,7 @@ package com.porest.desk.notification.repository;
 import com.porest.core.type.YNType;
 import com.porest.desk.notification.domain.Notification;
 import com.porest.desk.notification.domain.QNotification;
+import com.porest.desk.notification.type.ReferenceType;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,19 @@ public class NotificationQueryDslRepository implements NotificationRepository {
                 notification.isDeleted.eq(YNType.N)
             )
             .fetchOne();
+    }
+
+    @Override
+    public boolean existsByUserAndReferenceAndCreatedAfter(Long userRowId, ReferenceType referenceType, Long referenceId, LocalDateTime after) {
+        return queryFactory.selectFrom(notification)
+            .where(
+                notification.user.rowId.eq(userRowId),
+                notification.referenceType.eq(referenceType),
+                notification.referenceId.eq(referenceId),
+                notification.isDeleted.eq(YNType.N),
+                notification.createAt.goe(after)
+            )
+            .fetchFirst() != null;
     }
 
     @Override

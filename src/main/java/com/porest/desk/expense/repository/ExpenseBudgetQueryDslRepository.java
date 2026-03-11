@@ -48,6 +48,18 @@ public class ExpenseBudgetQueryDslRepository implements ExpenseBudgetRepository 
     }
 
     @Override
+    public List<ExpenseBudget> findAllByYearAndMonth(Integer year, Integer month) {
+        return queryFactory.selectFrom(expenseBudget)
+            .leftJoin(expenseBudget.user).fetchJoin()
+            .leftJoin(expenseBudget.category).fetchJoin()
+            .where(
+                expenseBudget.budgetYear.eq(year),
+                expenseBudget.budgetMonth.eq(month)
+            )
+            .fetch();
+    }
+
+    @Override
     public Optional<ExpenseBudget> findByUserAndCategory(Long userRowId, Long categoryRowId, Integer year, Integer month) {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(expenseBudget.user.rowId.eq(userRowId));

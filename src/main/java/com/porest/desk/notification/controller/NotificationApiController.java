@@ -3,16 +3,19 @@ package com.porest.desk.notification.controller;
 import com.porest.core.controller.ApiResponse;
 import com.porest.desk.notification.controller.dto.NotificationApiDto;
 import com.porest.desk.notification.service.NotificationService;
+import com.porest.desk.notification.service.SseEmitterService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -21,6 +24,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NotificationApiController {
     private final NotificationService notificationService;
+    private final SseEmitterService sseEmitterService;
+
+    @GetMapping(value = "/notifications/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter subscribe(@LoginUser UserPrincipal loginUser) {
+        return sseEmitterService.subscribe(loginUser.getRowId());
+    }
 
     @GetMapping("/notifications")
     public ApiResponse<NotificationApiDto.ListResponse> getNotifications(

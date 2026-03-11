@@ -39,7 +39,8 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     private static final List<String> EXCLUDED_PATHS = Arrays.asList(
             "/actuator/health",
             "/actuator/prometheus",
-            "/favicon.ico"
+            "/favicon.ico",
+            "/api/v1/notifications/stream"
     );
 
     @Override

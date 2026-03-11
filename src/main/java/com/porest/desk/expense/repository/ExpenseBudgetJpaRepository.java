@@ -49,6 +49,15 @@ public class ExpenseBudgetJpaRepository implements ExpenseBudgetRepository {
     }
 
     @Override
+    public List<ExpenseBudget> findAllByYearAndMonth(Integer year, Integer month) {
+        return entityManager.createQuery(
+            "SELECT b FROM ExpenseBudget b LEFT JOIN FETCH b.user LEFT JOIN FETCH b.category WHERE b.budgetYear = :year AND b.budgetMonth = :month", ExpenseBudget.class)
+            .setParameter("year", year)
+            .setParameter("month", month)
+            .getResultList();
+    }
+
+    @Override
     public Optional<ExpenseBudget> findByUserAndCategory(Long userRowId, Long categoryRowId, Integer year, Integer month) {
         String jpql;
         if (categoryRowId != null) {

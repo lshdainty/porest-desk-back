@@ -25,6 +25,7 @@ public interface TodoRepository {
      */
     long[] countStatsByUser(Long userRowId, LocalDate today);
 
+    List<Todo> findDueTodosForReminder(LocalDate startDate, LocalDate endDate);
     Todo save(Todo todo);
     void delete(Todo todo);
 }

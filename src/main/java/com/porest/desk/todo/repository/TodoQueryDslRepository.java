@@ -201,6 +201,20 @@ public class TodoQueryDslRepository implements TodoRepository {
     }
 
     @Override
+    public List<Todo> findDueTodosForReminder(LocalDate startDate, LocalDate endDate) {
+        return queryFactory.selectFrom(todo)
+            .leftJoin(todo.user).fetchJoin()
+            .where(
+                todo.isDeleted.eq(YNType.N),
+                todo.status.ne(TodoStatus.COMPLETED),
+                todo.dueDate.goe(startDate),
+                todo.dueDate.loe(endDate),
+                todo.type.eq(TodoType.TASK)
+            )
+            .fetch();
+    }
+
+    @Override
     public Todo save(Todo entity) {
         if (entity.getRowId() == null) {
             entityManager.persist(entity);

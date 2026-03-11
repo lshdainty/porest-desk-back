@@ -22,6 +22,7 @@ import java.util.List;
 public class NotificationServiceImpl implements NotificationService {
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final SseEmitterService sseEmitterService;
 
     @Override
     @Transactional
@@ -43,7 +44,10 @@ public class NotificationServiceImpl implements NotificationService {
         notificationRepository.save(notification);
         log.info("알림 생성 완료: notificationId={}", notification.getRowId());
 
-        return NotificationServiceDto.NotificationInfo.from(notification);
+        NotificationServiceDto.NotificationInfo info = NotificationServiceDto.NotificationInfo.from(notification);
+        sseEmitterService.sendNotification(command.userRowId(), info);
+
+        return info;
     }
 
     @Override

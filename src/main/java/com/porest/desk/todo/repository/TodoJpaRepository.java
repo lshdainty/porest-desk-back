@@ -123,6 +123,17 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
+    public List<Todo> findDueTodosForReminder(LocalDate startDate, LocalDate endDate) {
+        return entityManager.createQuery(
+            "SELECT t FROM Todo t WHERE t.isDeleted = :isDeleted AND t.status != :completed AND t.dueDate >= :startDate AND t.dueDate <= :endDate ORDER BY t.dueDate ASC", Todo.class)
+            .setParameter("isDeleted", YNType.N)
+            .setParameter("completed", TodoStatus.COMPLETED)
+            .setParameter("startDate", startDate)
+            .setParameter("endDate", endDate)
+            .getResultList();
+    }
+
+    @Override
     public Map<Long, int[]> findSubtaskCountsByParentIds(List<Long> parentIds) {
         Map<Long, int[]> result = new HashMap<>();
         if (parentIds.isEmpty()) return result;
