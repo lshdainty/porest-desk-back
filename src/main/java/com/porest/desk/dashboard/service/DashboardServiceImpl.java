@@ -8,8 +8,6 @@ import com.porest.desk.dashboard.service.dto.DashboardServiceDto;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.type.ExpenseType;
-import com.porest.desk.timer.domain.TimerSession;
-import com.porest.desk.timer.repository.TimerSessionRepository;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.type.TodoStatus;
@@ -38,7 +36,6 @@ public class DashboardServiceImpl implements DashboardService {
     private final TodoRepository todoRepository;
     private final CalendarEventRepository calendarEventRepository;
     private final ExpenseRepository expenseRepository;
-    private final TimerSessionRepository timerSessionRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -94,16 +91,6 @@ public class DashboardServiceImpl implements DashboardService {
         long monthlyIncome = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
         long monthlyExpenseAmount = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
 
-        // Timer summary — 1주일 범위 한번만 쿼리, 오늘은 메모리에서 필터
-        LocalDate weekStart = today.minusDays(today.getDayOfWeek().getValue() - 1);
-        List<TimerSession> weekSessions = timerSessionRepository.findDailyStats(userRowId, weekStart, today);
-        long weeklyFocusSeconds = weekSessions.stream().mapToLong(TimerSession::getDurationSeconds).sum();
-
-        List<TimerSession> todaySessions = weekSessions.stream()
-            .filter(s -> s.getStartTime().toLocalDate().equals(today))
-            .toList();
-        long todayFocusSeconds = todaySessions.stream().mapToLong(TimerSession::getDurationSeconds).sum();
-
         // Upcoming events (next 7 days, max 5)
         List<DashboardServiceDto.UpcomingEvent> upcomingEventList = upcomingEvents.stream()
             .filter(e -> !e.getStartDate().toLocalDate().isBefore(today))
@@ -144,13 +131,12 @@ public class DashboardServiceImpl implements DashboardService {
         var todoSummary = new DashboardServiceDto.TodoSummary(stats[0], stats[1], stats[2], stats[3], stats[4]);
         var calendarSummary = new DashboardServiceDto.CalendarSummary(todayEventCount, upcomingEvents.size(), nextEventDate);
         var expenseSummary = new DashboardServiceDto.ExpenseSummary(todayIncome, todayExpenseAmount, monthlyIncome, monthlyExpenseAmount);
-        var timerSummary = new DashboardServiceDto.TimerSummary(todayFocusSeconds, todaySessions.size(), weeklyFocusSeconds);
         var memoSummary = new DashboardServiceDto.MemoSummary(stats[6], stats[7], recentMemoTitle);
 
         log.debug("대시보드 요약 조회 완료: userRowId={}", userRowId);
 
         return new DashboardServiceDto.DashboardSummary(
-            todoSummary, calendarSummary, expenseSummary, timerSummary, memoSummary,
+            todoSummary, calendarSummary, expenseSummary, memoSummary,
             upcomingEventList, recentTodoList, expenseTrendList
         );
     }

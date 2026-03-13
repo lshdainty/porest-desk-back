@@ -22,9 +22,6 @@ public enum DeskMessageKey {
     MEMO_PINNED("memo.pinned"),
     MEMO_UNPINNED("memo.unpinned"),
 
-    // Timer
-    TIMER_SESSION_SAVED("timer.session.saved"),
-
     // Expense
     EXPENSE_RECORDED("expense.recorded"),
     ;

@@ -45,10 +45,6 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     MEMO_FOLDER_NOT_FOUND("MEMO_002", "error.notfound.memo.folder", HttpStatus.NOT_FOUND),
     MEMO_ACCESS_DENIED("MEMO_003", "error.memo.access.denied", HttpStatus.FORBIDDEN),
 
-    // Timer
-    TIMER_SESSION_NOT_FOUND("TIMER_001", "error.notfound.timer.session", HttpStatus.NOT_FOUND),
-    TIMER_ACCESS_DENIED("TIMER_002", "error.timer.access.denied", HttpStatus.FORBIDDEN),
-
     // Expense
     EXPENSE_NOT_FOUND("EXP_001", "error.notfound.expense", HttpStatus.NOT_FOUND),
     EXPENSE_CATEGORY_NOT_FOUND("EXP_002", "error.notfound.expense.category", HttpStatus.NOT_FOUND),

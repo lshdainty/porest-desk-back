@@ -13,7 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -54,10 +56,17 @@ public class HolidayServiceImpl implements HolidayService {
         }
 
         // 반복 공휴일 조회 - 조회 범위 내 연도에 가상 엔트리 생성
+        // 동일한 (월, 일, 공휴일명)이 여러 연도에 존재할 수 있으므로 중복 제거
         List<Holiday> recurring = holidayRepository.findAllRecurring();
+        Set<String> processedRecurring = new HashSet<>();
         for (Holiday h : recurring) {
             int month = h.getHolidayDate().getMonthValue();
             int day = h.getHolidayDate().getDayOfMonth();
+            String key = month + "-" + day + "-" + h.getHolidayName();
+
+            if (!processedRecurring.add(key)) {
+                continue; // 이미 처리된 (월, 일, 공휴일명) 조합은 건너뜀
+            }
 
             for (int year = startDate.getYear(); year <= endDate.getYear(); year++) {
                 try {

@@ -11,7 +11,6 @@ public class DashboardApiDto {
         TodoSummary todoSummary,
         CalendarSummary calendarSummary,
         ExpenseSummary expenseSummary,
-        TimerSummary timerSummary,
         MemoSummary memoSummary,
         List<UpcomingEvent> upcomingEvents,
         List<RecentTodo> recentTodos,
@@ -22,7 +21,6 @@ public class DashboardApiDto {
                 TodoSummary.from(summary.todoSummary()),
                 CalendarSummary.from(summary.calendarSummary()),
                 ExpenseSummary.from(summary.expenseSummary()),
-                TimerSummary.from(summary.timerSummary()),
                 MemoSummary.from(summary.memoSummary()),
                 summary.upcomingEvents().stream().map(UpcomingEvent::from).toList(),
                 summary.recentTodos().stream().map(RecentTodo::from).toList(),
@@ -46,12 +44,6 @@ public class DashboardApiDto {
     public record ExpenseSummary(long todayIncome, long todayExpense, long monthlyIncome, long monthlyExpense) {
         public static ExpenseSummary from(DashboardServiceDto.ExpenseSummary s) {
             return new ExpenseSummary(s.todayIncome(), s.todayExpense(), s.monthlyIncome(), s.monthlyExpense());
-        }
-    }
-
-    public record TimerSummary(long todayFocusSeconds, long todaySessionCount, long weeklyFocusSeconds) {
-        public static TimerSummary from(DashboardServiceDto.TimerSummary s) {
-            return new TimerSummary(s.todayFocusSeconds(), s.todaySessionCount(), s.weeklyFocusSeconds());
         }
     }
 

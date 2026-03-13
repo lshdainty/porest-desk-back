@@ -9,7 +9,6 @@ public class DashboardServiceDto {
         TodoSummary todoSummary,
         CalendarSummary calendarSummary,
         ExpenseSummary expenseSummary,
-        TimerSummary timerSummary,
         MemoSummary memoSummary,
         List<UpcomingEvent> upcomingEvents,
         List<RecentTodo> recentTodos,
@@ -35,12 +34,6 @@ public class DashboardServiceDto {
         long todayExpense,
         long monthlyIncome,
         long monthlyExpense
-    ) {}
-
-    public record TimerSummary(
-        long todayFocusSeconds,
-        long todaySessionCount,
-        long weeklyFocusSeconds
     ) {}
 
     public record MemoSummary(
