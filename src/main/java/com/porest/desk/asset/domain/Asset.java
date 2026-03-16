@@ -99,7 +99,7 @@ public class Asset extends AuditingFieldsWithIp {
         this.color = color;
         this.institution = institution;
         this.memo = memo;
-        this.isIncludedInTotal = isIncludedInTotal;
+        this.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : this.isIncludedInTotal;
     }
 
     public void updateBalance(Long balance) {

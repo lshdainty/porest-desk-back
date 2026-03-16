@@ -18,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,6 +36,7 @@ public class NotificationTriggerScheduler {
     private final TodoRepository todoRepository;
 
     @Scheduled(fixedRate = 60000)
+    @Transactional
     public void checkEventReminders() {
         List<EventReminder> reminders = eventReminderRepository.findUnsentDueReminders(LocalDateTime.now());
 
@@ -50,7 +52,6 @@ public class NotificationTriggerScheduler {
                 );
                 notificationService.createNotification(command);
                 reminder.markSent();
-                eventReminderRepository.save(reminder);
                 log.info("이벤트 리마인더 알림 전송 완료: reminderId={}, eventId={}",
                     reminder.getRowId(), reminder.getEvent().getRowId());
             } catch (Exception e) {
