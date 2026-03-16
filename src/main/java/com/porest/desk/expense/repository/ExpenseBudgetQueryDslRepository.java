@@ -81,11 +81,7 @@ public class ExpenseBudgetQueryDslRepository implements ExpenseBudgetRepository 
 
     @Override
     public ExpenseBudget save(ExpenseBudget entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

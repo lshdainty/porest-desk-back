@@ -42,11 +42,7 @@ public class MemoFolderQueryDslRepository implements MemoFolderRepository {
 
     @Override
     public MemoFolder save(MemoFolder entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

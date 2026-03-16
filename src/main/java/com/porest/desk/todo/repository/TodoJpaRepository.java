@@ -194,11 +194,7 @@ public class TodoJpaRepository implements TodoRepository {
 
     @Override
     public Todo save(Todo entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

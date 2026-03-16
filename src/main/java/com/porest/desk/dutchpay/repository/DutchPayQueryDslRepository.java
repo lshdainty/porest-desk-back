@@ -42,11 +42,7 @@ public class DutchPayQueryDslRepository implements DutchPayRepository {
 
     @Override
     public DutchPay save(DutchPay entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

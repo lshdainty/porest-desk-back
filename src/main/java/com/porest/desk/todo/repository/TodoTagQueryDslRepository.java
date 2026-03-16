@@ -46,11 +46,7 @@ public class TodoTagQueryDslRepository implements TodoTagRepository {
 
     @Override
     public TodoTag save(TodoTag entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

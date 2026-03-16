@@ -83,11 +83,7 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
 
     @Override
     public CalendarEvent save(CalendarEvent entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }

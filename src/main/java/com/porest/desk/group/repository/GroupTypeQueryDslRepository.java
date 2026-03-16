@@ -42,11 +42,7 @@ public class GroupTypeQueryDslRepository implements GroupTypeRepository {
 
     @Override
     public GroupType save(GroupType entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }

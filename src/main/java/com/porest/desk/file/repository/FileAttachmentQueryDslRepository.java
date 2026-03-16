@@ -55,11 +55,7 @@ public class FileAttachmentQueryDslRepository implements FileAttachmentRepositor
 
     @Override
     public FileAttachment save(FileAttachment entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }

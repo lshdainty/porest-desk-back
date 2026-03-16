@@ -39,11 +39,7 @@ public class AssetQueryDslRepository implements AssetRepository {
 
     @Override
     public Asset save(Asset entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

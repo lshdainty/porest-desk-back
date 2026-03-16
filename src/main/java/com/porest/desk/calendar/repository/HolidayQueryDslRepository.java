@@ -56,11 +56,7 @@ public class HolidayQueryDslRepository implements HolidayRepository {
 
     @Override
     public Holiday save(Holiday entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }

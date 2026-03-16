@@ -52,11 +52,7 @@ public class AssetTransferQueryDslRepository implements AssetTransferRepository 
 
     @Override
     public AssetTransfer save(AssetTransfer entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

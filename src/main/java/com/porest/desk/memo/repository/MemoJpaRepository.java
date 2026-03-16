@@ -59,11 +59,7 @@ public class MemoJpaRepository implements MemoRepository {
 
     @Override
     public Memo save(Memo entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

@@ -39,11 +39,7 @@ public class TodoProjectQueryDslRepository implements TodoProjectRepository {
 
     @Override
     public TodoProject save(TodoProject entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

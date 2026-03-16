@@ -35,11 +35,7 @@ public class ExpenseCategoryJpaRepository implements ExpenseCategoryRepository {
 
     @Override
     public ExpenseCategory save(ExpenseCategory entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

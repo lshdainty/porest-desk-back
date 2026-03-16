@@ -54,11 +54,7 @@ public class UserGroupMemberQueryDslRepository implements UserGroupMemberReposit
 
     @Override
     public UserGroupMember save(UserGroupMember entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }

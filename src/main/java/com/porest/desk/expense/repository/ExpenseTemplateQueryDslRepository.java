@@ -42,11 +42,7 @@ public class ExpenseTemplateQueryDslRepository implements ExpenseTemplateReposit
 
     @Override
     public ExpenseTemplate save(ExpenseTemplate entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

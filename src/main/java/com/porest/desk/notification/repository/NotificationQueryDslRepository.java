@@ -67,11 +67,7 @@ public class NotificationQueryDslRepository implements NotificationRepository {
 
     @Override
     public Notification save(Notification entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 

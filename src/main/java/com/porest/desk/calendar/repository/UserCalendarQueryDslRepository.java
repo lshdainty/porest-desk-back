@@ -52,11 +52,7 @@ public class UserCalendarQueryDslRepository implements UserCalendarRepository {
 
     @Override
     public UserCalendar save(UserCalendar entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }

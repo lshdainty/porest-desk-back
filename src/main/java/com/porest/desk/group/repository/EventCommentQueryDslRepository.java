@@ -41,11 +41,7 @@ public class EventCommentQueryDslRepository implements EventCommentRepository {
 
     @Override
     public EventComment save(EventComment entity) {
-        if (entity.getRowId() == null) {
-            entityManager.persist(entity);
-        } else {
-            entityManager.merge(entity);
-        }
+        entityManager.persist(entity);
         return entity;
     }
 }
