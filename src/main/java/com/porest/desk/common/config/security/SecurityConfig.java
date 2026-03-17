@@ -1,5 +1,6 @@
 package com.porest.desk.common.config.security;
 
+import com.porest.desk.common.config.properties.AppProperties;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
 import com.porest.desk.security.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -23,6 +25,7 @@ import java.util.List;
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
+    private final AppProperties appProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -31,19 +34,18 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(exception -> exception.authenticationEntryPoint(customAuthenticationEntryPoint))
-            // TODO: SSO 인증 임시 비활성화 - 작업 완료 후 반드시 원복할 것
-            // .authorizeHttpRequests(auth -> auth
-            //     .requestMatchers(
-            //         "/api/v1/auth/exchange",
-            //         "/actuator/**",
-            //         "/api-docs/**",
-            //         "/swagger-ui/**",
-            //         "/swagger-ui.html"
-            //     ).permitAll()
-            //     .anyRequest().authenticated()
-            // )
-            // .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(
+                    "/api/v1/auth/exchange",
+                    "/api/v1/auth/logout",
+                    "/actuator/**",
+                    "/api-docs/**",
+                    "/swagger-ui/**",
+                    "/swagger-ui.html"
+                ).permitAll()
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -51,7 +53,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("*"));
+        String allowedOrigins = appProperties.getCors().getAllowedOrigins();
+        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);

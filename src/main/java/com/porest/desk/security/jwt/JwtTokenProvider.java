@@ -59,6 +59,19 @@ public class JwtTokenProvider {
             .getPayload();
     }
 
+    public long getRemainingExpiration(String token) {
+        try {
+            Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+            return claims.getExpiration().getTime() - System.currentTimeMillis();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     public boolean isTokenValid(String token) {
         try {
             Jwts.parser()
