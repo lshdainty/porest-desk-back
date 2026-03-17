@@ -50,11 +50,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             long remainingMs = jwtTokenProvider.getRemainingExpiration(token);
             if (remainingMs > 0 && remainingMs < RENEWAL_THRESHOLD_MS) {
                 String newToken = jwtTokenProvider.createAccessToken(
-                    claims.getUserId(), claims.getUserName(),
-                    claims.getUserEmail(), claims.getUserRowId()
+                    claims.userId(), claims.userName(),
+                    claims.userEmail(), claims.userRowId()
                 );
                 renewAccessTokenCookie(response, newToken);
-                log.debug("Token renewed for user: {}", claims.getUserId());
+                log.debug("Token renewed for user: {}", claims.userId());
             }
         }
 
