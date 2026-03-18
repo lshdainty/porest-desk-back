@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Date;
 
 @Slf4j
@@ -57,6 +58,20 @@ public class JwtTokenProvider {
             .build()
             .parseSignedClaims(ssoToken)
             .getPayload();
+    }
+
+    public String createServiceToken(String userId) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + 60000); // 1분 유효
+        SecretKey ssoKey = Keys.hmacShaKeyFor(jwtProperties.getSsoSecret().getBytes(StandardCharsets.UTF_8));
+        return Jwts.builder()
+            .subject(userId)
+            .issuedAt(now)
+            .expiration(expiry)
+            .claim("type", "access")            // SSO JwtAuthenticationFilter의 isAccessToken() 통과 필수
+            .claim("services", Collections.emptyList()) // getServices() NPE 방지
+            .signWith(ssoKey)
+            .compact();
     }
 
     public long getRemainingExpiration(String token) {

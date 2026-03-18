@@ -1,0 +1,34 @@
+package com.porest.desk.user.controller;
+
+import com.porest.core.controller.ApiResponse;
+import com.porest.desk.security.annotation.LoginUser;
+import com.porest.desk.security.principal.UserPrincipal;
+import com.porest.desk.user.controller.dto.UserApiDto;
+import com.porest.desk.user.service.UserService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/users")
+@RequiredArgsConstructor
+public class UserApiController {
+
+    private final UserService userService;
+
+    @PatchMapping("/me/password")
+    public ApiResponse<Void> changePassword(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody UserApiDto.ChangePasswordReq request) {
+        userService.changePassword(
+                loginUser.getUserId(),
+                request.getCurrentPassword(),
+                request.getNewPassword(),
+                request.getConfirmPassword()
+        );
+        return ApiResponse.success(null);
+    }
+}
