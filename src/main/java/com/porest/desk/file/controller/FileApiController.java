@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.nio.file.Path;
 import java.util.List;
@@ -55,14 +54,18 @@ public class FileApiController {
         Path filePath = fileStorageService.load(info.filePath());
         Resource resource = new UrlResource(filePath.toUri());
 
+        // Content-Disposition 헤더 인젝션 방지: CRLF 및 특수문자 제거
+        String safeFilename = sanitizeFilename(info.originalName());
+
         return ResponseEntity.ok()
             .contentType(MediaType.parseMediaType(info.contentType()))
-            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + info.originalName() + "\"")
+            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + safeFilename + "\"")
             .body(resource);
     }
 
     @GetMapping("/files")
     public ApiResponse<FileApiDto.ListResponse> getFilesByReference(
+            @LoginUser UserPrincipal loginUser,
             @RequestParam ReferenceType referenceType,
             @RequestParam Long referenceRowId) {
         List<FileServiceDto.FileInfo> infos = fileAttachmentService.getFilesByReference(referenceType, referenceRowId);
@@ -75,5 +78,14 @@ public class FileApiController {
             @PathVariable Long id) {
         fileAttachmentService.deleteFile(id, loginUser.getRowId());
         return ApiResponse.success();
+    }
+
+    /**
+     * Content-Disposition 헤더 인젝션 방지용 파일명 정제<br>
+     * CR(\r), LF(\n), 큰따옴표("), 역슬래시(\) 제거
+     */
+    private String sanitizeFilename(String filename) {
+        if (filename == null) return "download";
+        return filename.replaceAll("[\\r\\n\"\\\\]", "_");
     }
 }

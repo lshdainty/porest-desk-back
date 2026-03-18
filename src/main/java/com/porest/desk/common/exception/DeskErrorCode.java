@@ -87,6 +87,8 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // File
     FILE_NOT_FOUND("FILE_001", "error.notfound.file", HttpStatus.NOT_FOUND),
     FILE_ACCESS_DENIED("FILE_002", "error.file.access.denied", HttpStatus.FORBIDDEN),
+    FILE_INVALID_TYPE("FILE_003", "error.file.invalid.type", HttpStatus.BAD_REQUEST),
+    FILE_TOO_LARGE("FILE_004", "error.file.too.large", HttpStatus.BAD_REQUEST),
     ;
 
     private final String code;
