@@ -3,6 +3,9 @@ spring:
     import: optional:file:.env.${SPRING_PROFILES_ACTIVE:local}[.properties]
   application:
     name: porest-desk
+  messages:
+    basename: message/core-messages,message/messages
+    encoding: utf-8
 
   # DB 설정
   datasource:
