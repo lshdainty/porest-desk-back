@@ -1,6 +1,7 @@
 package com.porest.desk.file.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.core.util.FileUploadValidator;
 import com.porest.desk.file.controller.dto.FileApiDto;
 import com.porest.desk.file.service.FileAttachmentService;
 import com.porest.desk.file.service.FileStorageService;
@@ -54,8 +55,8 @@ public class FileApiController {
         Path filePath = fileStorageService.load(info.filePath());
         Resource resource = new UrlResource(filePath.toUri());
 
-        // Content-Disposition 헤더 인젝션 방지: CRLF 및 특수문자 제거
-        String safeFilename = sanitizeFilename(info.originalName());
+        // Content-Disposition 헤더 인젝션 방지
+        String safeFilename = FileUploadValidator.sanitizeForContentDisposition(info.originalName());
 
         return ResponseEntity.ok()
             .contentType(MediaType.parseMediaType(info.contentType()))
@@ -80,12 +81,4 @@ public class FileApiController {
         return ApiResponse.success();
     }
 
-    /**
-     * Content-Disposition 헤더 인젝션 방지용 파일명 정제<br>
-     * CR(\r), LF(\n), 큰따옴표("), 역슬래시(\) 제거
-     */
-    private String sanitizeFilename(String filename) {
-        if (filename == null) return "download";
-        return filename.replaceAll("[\\r\\n\"\\\\]", "_");
-    }
 }
