@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Java-25-007396?logo=openjdk&logoColor=white" alt="Java" />
-  <img src="https://img.shields.io/badge/Spring%20Boot-4.0.2-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot" />
+  <img src="https://img.shields.io/badge/Spring%20Boot-4.0.4-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot" />
   <img src="https://img.shields.io/badge/JWT-000000?logo=jsonwebtokens&logoColor=white" alt="JWT" />
 </p>
 
@@ -31,12 +31,15 @@
 | Category | Technology |
 |----------|------------|
 | **Language** | ![Java](https://img.shields.io/badge/Java_25-007396?style=flat-square&logo=openjdk&logoColor=white) |
-| **Framework** | ![Spring Boot](https://img.shields.io/badge/Spring_Boot_4.0.2-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring Security](https://img.shields.io/badge/Spring_Security-6DB33F?style=flat-square&logo=springsecurity&logoColor=white) |
+| **Framework** | ![Spring Boot](https://img.shields.io/badge/Spring_Boot_4.0.4-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring Security](https://img.shields.io/badge/Spring_Security-6DB33F?style=flat-square&logo=springsecurity&logoColor=white) |
 | **ORM** | ![JPA](https://img.shields.io/badge/JPA-59666C?style=flat-square&logo=hibernate&logoColor=white) ![QueryDSL](https://img.shields.io/badge/QueryDSL_7.1-0769AD?style=flat-square) |
-| **Database** | ![MariaDB](https://img.shields.io/badge/MariaDB-003545?style=flat-square&logo=mariadb&logoColor=white) |
+| **Database** | ![MariaDB](https://img.shields.io/badge/MariaDB_3.5.1-003545?style=flat-square&logo=mariadb&logoColor=white) |
 | **Cache** | ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white) |
-| **Authentication** | ![JWT](https://img.shields.io/badge/JWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white) |
-| **API Documentation** | ![Swagger](https://img.shields.io/badge/Swagger_UI-85EA2D?style=flat-square&logo=swagger&logoColor=black) |
+| **Authentication** | ![JWT](https://img.shields.io/badge/JJWT_0.12.6-000000?style=flat-square&logo=jsonwebtokens&logoColor=white) |
+| **Monitoring** | ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Loki](https://img.shields.io/badge/Loki-F46800?style=flat-square&logo=grafana&logoColor=white) |
+| **공통 라이브러리** | ![porest-core](https://img.shields.io/badge/porest--core_2.0.2-6DB33F?style=flat-square) |
+| **API Documentation** | ![Swagger](https://img.shields.io/badge/SpringDoc_OpenAPI_3.0.0-85EA2D?style=flat-square&logo=swagger&logoColor=black) |
+| **Testing** | ![JUnit5](https://img.shields.io/badge/JUnit5-25A162?style=flat-square&logo=junit5&logoColor=white) ![JaCoCo](https://img.shields.io/badge/JaCoCo_0.8.13-C5D9C8?style=flat-square) |
 | **Build** | ![Gradle](https://img.shields.io/badge/Gradle-02303A?style=flat-square&logo=gradle&logoColor=white) |
 
 ---
@@ -70,10 +73,11 @@ src/main/java/com/porest/desk/
 
 ### 요구사항
 
-- **Java**: 25+
+- **Java**: 25 (toolchain 자동 관리)
 - **Gradle**: 8.x+
 - **MariaDB**: 10.x+
 - **Redis**: 6.x+
+- **GitHub Packages 접근**: `GITHUB_ACTOR`, `GITHUB_TOKEN` 환경변수 필요 (porest-core 의존성)
 
 ### 환경 변수
 
@@ -92,10 +96,13 @@ src/main/java/com/porest/desk/
 ### 빌드 및 실행
 
 ```bash
-# 빌드
+# 빌드 (테스트 포함)
 ./gradlew clean build
 
-# 테스트
+# 빌드 (테스트 제외)
+./gradlew clean build -x test
+
+# 테스트 + JaCoCo 커버리지 리포트 생성
 ./gradlew test
 
 # 로컬 실행
