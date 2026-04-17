@@ -4,6 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.domain.CardCatalog;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,7 +23,8 @@ public class AssetServiceDto {
         String color,
         String institution,
         String memo,
-        Integer sortOrder
+        Integer sortOrder,
+        Long cardCatalogRowId
     ) {}
 
     public record UpdateAssetCommand(
@@ -34,8 +36,28 @@ public class AssetServiceDto {
         String color,
         String institution,
         String memo,
-        YNType isIncludedInTotal
+        YNType isIncludedInTotal,
+        Long cardCatalogRowId
     ) {}
+
+    public record CardCatalogBrief(
+        Long rowId,
+        String cardName,
+        String imgUrl,
+        String companyName,
+        String companyLogoUrl
+    ) {
+        public static CardCatalogBrief from(CardCatalog c) {
+            if (c == null) return null;
+            String companyName = null;
+            String companyLogoUrl = null;
+            if (c.getCompany() != null) {
+                companyName = c.getCompany().getName();
+                companyLogoUrl = c.getCompany().getLogoUrl();
+            }
+            return new CardCatalogBrief(c.getRowId(), c.getCardName(), c.getImgUrl(), companyName, companyLogoUrl);
+        }
+    }
 
     public record AssetInfo(
         Long rowId,
@@ -50,6 +72,7 @@ public class AssetServiceDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        CardCatalogBrief cardCatalog,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -67,6 +90,7 @@ public class AssetServiceDto {
                 asset.getMemo(),
                 asset.getSortOrder(),
                 asset.getIsIncludedInTotal(),
+                CardCatalogBrief.from(asset.getCardCatalog()),
                 asset.getCreateAt(),
                 asset.getModifyAt()
             );

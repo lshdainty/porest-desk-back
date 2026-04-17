@@ -7,7 +7,8 @@ import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
-import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.domain.CardCatalog;
+import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -18,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +29,7 @@ public class AssetServiceImpl implements AssetService {
     private final AssetRepository assetRepository;
     private final AssetTransferRepository assetTransferRepository;
     private final UserRepository userRepository;
+    private final CardCatalogRepository cardCatalogRepository;
 
     @Override
     @Transactional
@@ -37,6 +38,8 @@ public class AssetServiceImpl implements AssetService {
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
 
         Asset asset = Asset.createAsset(
             user,
@@ -48,7 +51,8 @@ public class AssetServiceImpl implements AssetService {
             command.color(),
             command.institution(),
             command.memo(),
-            command.sortOrder() != null ? command.sortOrder() : 0
+            command.sortOrder() != null ? command.sortOrder() : 0,
+            cardCatalog
         );
 
         assetRepository.save(asset);
@@ -82,6 +86,9 @@ public class AssetServiceImpl implements AssetService {
 
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
+
+        CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
+
         asset.updateAsset(
             command.assetName(),
             command.assetType(),
@@ -91,7 +98,8 @@ public class AssetServiceImpl implements AssetService {
             command.color(),
             command.institution(),
             command.memo(),
-            command.isIncludedInTotal()
+            command.isIncludedInTotal(),
+            cardCatalog
         );
 
         log.info("자산 수정 완료: assetId={}", assetId);
@@ -205,6 +213,17 @@ public class AssetServiceImpl implements AssetService {
 
         transfer.deleteTransfer();
         log.info("자산 이체 삭제 완료: transferId={}", transferId);
+    }
+
+    private CardCatalog resolveCardCatalog(Long cardCatalogRowId) {
+        if (cardCatalogRowId == null) {
+            return null;
+        }
+        return cardCatalogRepository.findById(cardCatalogRowId)
+            .orElseThrow(() -> {
+                log.warn("카드 카탈로그 조회 실패 - 존재하지 않는 카드: rowId={}", cardCatalogRowId);
+                return new EntityNotFoundException(DeskErrorCode.CARD_CATALOG_NOT_FOUND);
+            });
     }
 
     private void validateAssetOwnership(Asset asset, Long userRowId) {

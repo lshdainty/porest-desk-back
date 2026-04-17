@@ -93,6 +93,12 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     FILE_ACCESS_DENIED("FILE_002", "error.file.access.denied", HttpStatus.FORBIDDEN),
     FILE_INVALID_TYPE("FILE_003", "error.file.invalid.type", HttpStatus.BAD_REQUEST),
     FILE_TOO_LARGE("FILE_004", "error.file.too.large", HttpStatus.BAD_REQUEST),
+
+    // Card
+    CARD_CATALOG_NOT_FOUND("CARD_001", "error.notfound.card.catalog", HttpStatus.NOT_FOUND),
+    CARD_BENEFIT_MAPPING_NOT_FOUND("CARD_002", "error.notfound.card.benefit.mapping", HttpStatus.NOT_FOUND),
+    CARD_BENEFIT_MAPPING_ACCESS_DENIED("CARD_003", "error.card.benefit.mapping.access.denied", HttpStatus.FORBIDDEN),
+    CARD_BENEFIT_MAPPING_DUPLICATE("CARD_004", "error.duplicate.card.benefit.mapping", HttpStatus.CONFLICT),
     ;
 
     private final String code;

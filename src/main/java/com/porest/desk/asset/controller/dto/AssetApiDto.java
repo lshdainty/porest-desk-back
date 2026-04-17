@@ -20,7 +20,8 @@ public class AssetApiDto {
         String color,
         String institution,
         String memo,
-        Integer sortOrder
+        Integer sortOrder,
+        Long cardCatalogRowId
     ) {}
 
     public record UpdateAssetRequest(
@@ -32,8 +33,22 @@ public class AssetApiDto {
         String color,
         String institution,
         String memo,
-        YNType isIncludedInTotal
+        YNType isIncludedInTotal,
+        Long cardCatalogRowId
     ) {}
+
+    public record CardCatalogBriefResponse(
+        Long rowId,
+        String cardName,
+        String imgUrl,
+        String companyName,
+        String companyLogoUrl
+    ) {
+        public static CardCatalogBriefResponse from(AssetServiceDto.CardCatalogBrief b) {
+            if (b == null) return null;
+            return new CardCatalogBriefResponse(b.rowId(), b.cardName(), b.imgUrl(), b.companyName(), b.companyLogoUrl());
+        }
+    }
 
     public record AssetResponse(
         Long rowId,
@@ -48,6 +63,7 @@ public class AssetApiDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        CardCatalogBriefResponse cardCatalog,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -56,6 +72,7 @@ public class AssetApiDto {
                 info.rowId(), info.userRowId(), info.assetName(), info.assetType(),
                 info.balance(), info.currency(), info.icon(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
+                CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.createAt(), info.modifyAt()
             );
         }

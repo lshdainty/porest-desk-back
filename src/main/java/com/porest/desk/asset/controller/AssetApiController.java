@@ -38,7 +38,8 @@ public class AssetApiController {
             loginUser.getRowId(),
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.icon(), request.color(),
-            request.institution(), request.memo(), request.sortOrder()
+            request.institution(), request.memo(), request.sortOrder(),
+            request.cardCatalogRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -65,7 +66,8 @@ public class AssetApiController {
         AssetServiceDto.AssetInfo info = assetService.updateAsset(id, loginUser.getRowId(), new AssetServiceDto.UpdateAssetCommand(
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.icon(), request.color(),
-            request.institution(), request.memo(), request.isIncludedInTotal()
+            request.institution(), request.memo(), request.isIncludedInTotal(),
+            request.cardCatalogRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
