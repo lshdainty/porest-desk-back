@@ -90,11 +90,23 @@ public class AssetApiDto {
 
     public record AssetSummaryResponse(
         Long totalBalance,
+        Long totalAssets,
+        Long totalDebt,
+        Long netWorth,
+        Long lastMonthNetWorth,
+        Long changeAmount,
+        Double changePercent,
         List<AssetTypeSummaryResponse> byType
     ) {
         public static AssetSummaryResponse from(AssetServiceDto.AssetSummary summary) {
             return new AssetSummaryResponse(
                 summary.totalBalance(),
+                summary.totalAssets(),
+                summary.totalDebt(),
+                summary.netWorth(),
+                summary.lastMonthNetWorth(),
+                summary.changeAmount(),
+                summary.changePercent(),
                 summary.byType().stream().map(AssetTypeSummaryResponse::from).toList()
             );
         }

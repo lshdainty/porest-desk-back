@@ -260,6 +260,34 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     @Override
+    public List<ExpenseServiceDto.MonthlyTrend> getMonthlyTrend(Long userRowId, Integer months) {
+        int n = (months == null || months < 1) ? 6 : Math.min(months, 24);
+        log.debug("지출 월별 트렌드 조회: userRowId={}, months={}", userRowId, n);
+
+        LocalDate now = LocalDate.now();
+        List<ExpenseServiceDto.MonthlyTrend> trends = new java.util.ArrayList<>(n);
+
+        for (int i = n - 1; i >= 0; i--) {
+            LocalDate m = now.minusMonths(i);
+            int y = m.getYear();
+            int mm = m.getMonthValue();
+            List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, y, mm);
+
+            long income = expenses.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
+                .mapToLong(Expense::getAmount)
+                .sum();
+            long expense = expenses.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+                .mapToLong(Expense::getAmount)
+                .sum();
+
+            trends.add(new ExpenseServiceDto.MonthlyTrend(y, mm, income, expense));
+        }
+        return trends;
+    }
+
+    @Override
     public ExpenseServiceDto.WeeklySummary getWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
         log.debug("지출 주간 요약 조회: userRowId={}, weekStart={}, weekEnd={}", userRowId, weekStart, weekEnd);
 

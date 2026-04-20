@@ -97,6 +97,13 @@ public class ExpenseServiceDto {
         List<CategoryBreakdown> categoryBreakdown
     ) {}
 
+    public record MonthlyTrend(
+        Integer year,
+        Integer month,
+        Long totalIncome,
+        Long totalExpense
+    ) {}
+
     public record CategoryBreakdown(
         Long categoryRowId,
         String categoryName,

@@ -7,9 +7,13 @@ import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
+import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.domain.CardCatalog;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,10 +31,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class AssetServiceImpl implements AssetService {
+    private static final Set<AssetType> DEBT_TYPES = Set.of(AssetType.CREDIT_CARD, AssetType.LOAN);
+
     private final AssetRepository assetRepository;
     private final AssetTransferRepository assetTransferRepository;
     private final UserRepository userRepository;
     private final CardCatalogRepository cardCatalogRepository;
+    private final ExpenseRepository expenseRepository;
 
     @Override
     @Transactional
@@ -124,10 +132,41 @@ public class AssetServiceImpl implements AssetService {
 
         List<Asset> assets = assetRepository.findByUser(userRowId);
 
-        Long totalBalance = assets.stream()
+        List<Asset> included = assets.stream()
             .filter(a -> a.getIsIncludedInTotal() == com.porest.core.type.YNType.Y)
+            .toList();
+
+        Long totalBalance = included.stream().mapToLong(Asset::getBalance).sum();
+
+        Long totalAssets = included.stream()
+            .filter(a -> !DEBT_TYPES.contains(a.getAssetType()))
             .mapToLong(Asset::getBalance)
             .sum();
+
+        // 부채는 DB에 음수로 저장되는 경우가 있어 절대값으로 정규화 (API 계약: 양수)
+        Long totalDebt = included.stream()
+            .filter(a -> DEBT_TYPES.contains(a.getAssetType()))
+            .mapToLong(a -> Math.abs(a.getBalance()))
+            .sum();
+
+        long netWorth = totalAssets - totalDebt;
+
+        // 이번 달 순수입(수입-지출)을 역산해 지난달 말 순자산 추정
+        LocalDate today = LocalDate.now();
+        List<Expense> monthly = expenseRepository.findMonthlySummary(userRowId, today.getYear(), today.getMonthValue());
+        long monthIncome = monthly.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
+            .mapToLong(Expense::getAmount)
+            .sum();
+        long monthExpense = monthly.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+            .mapToLong(Expense::getAmount)
+            .sum();
+        long changeAmount = monthIncome - monthExpense;
+        long lastMonthNetWorth = netWorth - changeAmount;
+        double changePercent = lastMonthNetWorth == 0
+            ? 0.0
+            : Math.round(((double) changeAmount / Math.abs(lastMonthNetWorth)) * 1000.0) / 10.0;
 
         List<AssetServiceDto.AssetTypeSummary> byType = assets.stream()
             .collect(Collectors.groupingBy(Asset::getAssetType))
@@ -139,7 +178,16 @@ public class AssetServiceImpl implements AssetService {
             ))
             .toList();
 
-        return new AssetServiceDto.AssetSummary(totalBalance, byType);
+        return new AssetServiceDto.AssetSummary(
+            totalBalance,
+            totalAssets,
+            totalDebt,
+            netWorth,
+            lastMonthNetWorth,
+            changeAmount,
+            changePercent,
+            byType
+        );
     }
 
     @Override

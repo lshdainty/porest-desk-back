@@ -127,6 +127,23 @@ public class ExpenseApiDto {
         }
     }
 
+    public record MonthlyTrendResponse(
+        Integer year,
+        Integer month,
+        Long totalIncome,
+        Long totalExpense
+    ) {
+        public static MonthlyTrendResponse from(ExpenseServiceDto.MonthlyTrend t) {
+            return new MonthlyTrendResponse(t.year(), t.month(), t.totalIncome(), t.totalExpense());
+        }
+    }
+
+    public record MonthlyTrendListResponse(List<MonthlyTrendResponse> trends) {
+        public static MonthlyTrendListResponse from(List<ExpenseServiceDto.MonthlyTrend> trends) {
+            return new MonthlyTrendListResponse(trends.stream().map(MonthlyTrendResponse::from).toList());
+        }
+    }
+
     public record CategoryBreakdownResponse(
         Long categoryRowId,
         String categoryName,

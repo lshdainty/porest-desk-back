@@ -103,7 +103,13 @@ public class AssetServiceDto {
     ) {}
 
     public record AssetSummary(
-        Long totalBalance,
+        Long totalBalance,          // 기존 호환: 모든 자산 balance 합 (부채도 양수로 포함)
+        Long totalAssets,           // 순수 자산 합 (BANK_ACCOUNT, CASH, SAVINGS, INVESTMENT, CHECK_CARD)
+        Long totalDebt,             // 부채 합 (CREDIT_CARD, LOAN) — 양수
+        Long netWorth,              // totalAssets - totalDebt
+        Long lastMonthNetWorth,     // 이번 달 순수입을 역산해 추정한 지난달 말 순자산
+        Long changeAmount,          // netWorth - lastMonthNetWorth (= 이번 달 수입 - 이번 달 지출)
+        Double changePercent,       // changeAmount / |lastMonthNetWorth| * 100 (소수 1자리). lastMonth==0이면 0.0
         List<AssetTypeSummary> byType
     ) {}
 

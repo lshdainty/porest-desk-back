@@ -122,6 +122,14 @@ public class ExpenseApiController {
         return ApiResponse.success(ExpenseApiDto.MonthlySummaryResponse.from(summary));
     }
 
+    @GetMapping("/expenses/summary/trend")
+    public ApiResponse<ExpenseApiDto.MonthlyTrendListResponse> getMonthlyTrend(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false, defaultValue = "6") Integer months) {
+        List<ExpenseServiceDto.MonthlyTrend> trends = expenseService.getMonthlyTrend(loginUser.getRowId(), months);
+        return ApiResponse.success(ExpenseApiDto.MonthlyTrendListResponse.from(trends));
+    }
+
     @GetMapping("/expenses/summary/weekly")
     public ApiResponse<ExpenseApiDto.WeeklySummaryResponse> getWeeklySummary(
             @LoginUser UserPrincipal loginUser,
