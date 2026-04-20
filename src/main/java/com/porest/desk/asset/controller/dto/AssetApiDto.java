@@ -118,6 +118,18 @@ public class AssetApiDto {
         }
     }
 
+    public record NetWorthTrendPointResponse(Integer year, Integer month, Long netWorth) {
+        public static NetWorthTrendPointResponse from(AssetServiceDto.NetWorthTrendPoint p) {
+            return new NetWorthTrendPointResponse(p.year(), p.month(), p.netWorth());
+        }
+    }
+
+    public record NetWorthTrendResponse(List<NetWorthTrendPointResponse> trend) {
+        public static NetWorthTrendResponse from(List<AssetServiceDto.NetWorthTrendPoint> points) {
+            return new NetWorthTrendResponse(points.stream().map(NetWorthTrendPointResponse::from).toList());
+        }
+    }
+
     // === Asset Transfer ===
     public record CreateTransferRequest(
         Long fromAssetRowId,

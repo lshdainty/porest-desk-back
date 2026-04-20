@@ -49,6 +49,15 @@ public class ExpenseBudgetApiController {
         return ApiResponse.success(ExpenseBudgetApiDto.ListResponse.from(infos));
     }
 
+    @GetMapping("/expense/budgets/compliance")
+    public ApiResponse<ExpenseBudgetApiDto.ComplianceListResponse> getCompliance(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false, defaultValue = "6") Integer months) {
+        List<ExpenseBudgetServiceDto.ComplianceMonth> list =
+            expenseBudgetService.getCompliance(loginUser.getRowId(), months);
+        return ApiResponse.success(ExpenseBudgetApiDto.ComplianceListResponse.from(list));
+    }
+
     @DeleteMapping("/expense/budget/{id}")
     public ApiResponse<Void> deleteBudget(
             @LoginUser UserPrincipal loginUser,

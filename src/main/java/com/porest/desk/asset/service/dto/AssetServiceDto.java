@@ -119,6 +119,12 @@ public class AssetServiceDto {
         Integer count
     ) {}
 
+    public record NetWorthTrendPoint(
+        Integer year,
+        Integer month,
+        Long netWorth
+    ) {}
+
     // === Asset Transfer ===
     public record CreateTransferCommand(
         Long userRowId,

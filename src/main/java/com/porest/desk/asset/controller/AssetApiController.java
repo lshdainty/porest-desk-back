@@ -86,6 +86,14 @@ public class AssetApiController {
         return ApiResponse.success(AssetApiDto.AssetSummaryResponse.from(summary));
     }
 
+    @GetMapping("/assets/net-worth-trend")
+    public ApiResponse<AssetApiDto.NetWorthTrendResponse> getNetWorthTrend(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false, defaultValue = "12") Integer months) {
+        List<AssetServiceDto.NetWorthTrendPoint> trend = assetService.getNetWorthTrend(loginUser.getRowId(), months);
+        return ApiResponse.success(AssetApiDto.NetWorthTrendResponse.from(trend));
+    }
+
     @PatchMapping("/assets/reorder")
     public ApiResponse<Void> reorderAssets(
             @LoginUser UserPrincipal loginUser,

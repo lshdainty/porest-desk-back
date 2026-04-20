@@ -3,11 +3,14 @@ package com.porest.desk.expense.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
+import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.dto.ExpenseBudgetServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -24,6 +29,7 @@ import java.util.List;
 public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
+    private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -64,6 +70,38 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         return budgets.stream()
             .map(ExpenseBudgetServiceDto.BudgetInfo::from)
             .toList();
+    }
+
+    @Override
+    public List<ExpenseBudgetServiceDto.ComplianceMonth> getCompliance(Long userRowId, Integer months) {
+        int n = (months == null || months < 1) ? 6 : Math.min(months, 24);
+        log.debug("예산 이행률 조회: userRowId={}, months={}", userRowId, n);
+
+        LocalDate now = LocalDate.now();
+        List<ExpenseBudgetServiceDto.ComplianceMonth> result = new ArrayList<>(n);
+
+        for (int i = n - 1; i >= 0; i--) {
+            LocalDate m = now.minusMonths(i);
+            int y = m.getYear();
+            int mm = m.getMonthValue();
+
+            List<ExpenseBudget> budgets = expenseBudgetRepository.findByUser(userRowId, y, mm);
+            long totalLimit = budgets.stream().mapToLong(ExpenseBudget::getBudgetAmount).sum();
+
+            List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, y, mm);
+            long totalSpent = expenses.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+                .mapToLong(Expense::getAmount)
+                .sum();
+
+            double compliancePercent = totalLimit > 0
+                ? Math.round(((double) totalSpent / totalLimit) * 1000.0) / 10.0
+                : 0.0;
+
+            result.add(new ExpenseBudgetServiceDto.ComplianceMonth(y, mm, totalLimit, totalSpent, compliancePercent));
+        }
+
+        return result;
     }
 
     @Override

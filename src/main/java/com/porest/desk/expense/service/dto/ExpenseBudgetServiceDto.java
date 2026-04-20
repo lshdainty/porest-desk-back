@@ -14,6 +14,14 @@ public class ExpenseBudgetServiceDto {
         Integer budgetMonth
     ) {}
 
+    public record ComplianceMonth(
+        Integer year,
+        Integer month,
+        Long totalLimit,
+        Long totalSpent,
+        Double compliancePercent
+    ) {}
+
     public record BudgetInfo(
         Long rowId,
         Long userRowId,

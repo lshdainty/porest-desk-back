@@ -191,6 +191,55 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
+    public List<AssetServiceDto.NetWorthTrendPoint> getNetWorthTrend(Long userRowId, Integer months) {
+        int n = (months == null || months < 1) ? 12 : Math.min(months, 36);
+        log.debug("순자산 추이 조회: userRowId={}, months={}", userRowId, n);
+
+        List<Asset> assets = assetRepository.findByUser(userRowId);
+        List<Asset> included = assets.stream()
+            .filter(a -> a.getIsIncludedInTotal() == com.porest.core.type.YNType.Y)
+            .toList();
+
+        long totalAssets = included.stream()
+            .filter(a -> !DEBT_TYPES.contains(a.getAssetType()))
+            .mapToLong(Asset::getBalance)
+            .sum();
+        long totalDebt = included.stream()
+            .filter(a -> DEBT_TYPES.contains(a.getAssetType()))
+            .mapToLong(a -> Math.abs(a.getBalance()))
+            .sum();
+        long netWorth = totalAssets - totalDebt;
+
+        // 현재 net worth 에서 월별 순수입(income - expense) 를 차감하며 과거 월 끝 시점을 역산.
+        // 결과는 가장 오래된 월 → 이번 달 순서.
+        LocalDate now = LocalDate.now();
+        java.util.Deque<AssetServiceDto.NetWorthTrendPoint> stack = new java.util.ArrayDeque<>(n);
+
+        long running = netWorth;
+        for (int i = 0; i < n; i++) {
+            LocalDate m = now.minusMonths(i);
+            int y = m.getYear();
+            int mm = m.getMonthValue();
+            stack.addFirst(new AssetServiceDto.NetWorthTrendPoint(y, mm, running));
+
+            // 해당 월의 순수입을 빼서 "이전 달 말" 시점의 net worth 추정
+            List<com.porest.desk.expense.domain.Expense> expenses =
+                expenseRepository.findMonthlySummary(userRowId, y, mm);
+            long income = expenses.stream()
+                .filter(e -> e.getExpenseType() == com.porest.desk.expense.type.ExpenseType.INCOME)
+                .mapToLong(com.porest.desk.expense.domain.Expense::getAmount)
+                .sum();
+            long expense = expenses.stream()
+                .filter(e -> e.getExpenseType() == com.porest.desk.expense.type.ExpenseType.EXPENSE)
+                .mapToLong(com.porest.desk.expense.domain.Expense::getAmount)
+                .sum();
+            running -= (income - expense);
+        }
+
+        return new java.util.ArrayList<>(stack);
+    }
+
+    @Override
     @Transactional
     public void reorderAssets(Long userRowId, List<AssetServiceDto.ReorderItem> items) {
         log.debug("자산 정렬 변경: userRowId={}, count={}", userRowId, items.size());
