@@ -79,11 +79,24 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     @Override
     public List<RecurringTransactionServiceDto.RecurringInfo> getRecurrings(Long userRowId) {
-        log.debug("반복 거래 목록 조회: userRowId={}", userRowId);
+        return getRecurrings(userRowId, false, null);
+    }
 
-        return recurringTransactionRepository.findByUser(userRowId).stream()
-            .map(RecurringTransactionServiceDto.RecurringInfo::from)
-            .toList();
+    @Override
+    public List<RecurringTransactionServiceDto.RecurringInfo> getRecurrings(Long userRowId, boolean upcomingOnly, Integer limit) {
+        log.debug("반복 거래 목록 조회: userRowId={}, upcomingOnly={}, limit={}", userRowId, upcomingOnly, limit);
+
+        LocalDate today = LocalDate.now();
+        java.util.stream.Stream<RecurringTransaction> stream = recurringTransactionRepository.findByUser(userRowId).stream();
+        if (upcomingOnly) {
+            stream = stream.filter(r -> r.getIsActive() == com.porest.core.type.YNType.Y)
+                .filter(r -> r.getExpenseType() == com.porest.desk.expense.type.ExpenseType.EXPENSE)
+                .filter(r -> r.getNextExecutionDate() != null && !r.getNextExecutionDate().isBefore(today));
+        }
+        if (limit != null && limit > 0) {
+            stream = stream.limit(limit);
+        }
+        return stream.map(RecurringTransactionServiceDto.RecurringInfo::from).toList();
     }
 
     @Override

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -44,8 +45,15 @@ public class RecurringTransactionApiController {
     }
 
     @GetMapping("/recurring-transactions")
-    public ApiResponse<RecurringTransactionApiDto.ListResponse> getRecurrings(@LoginUser UserPrincipal loginUser) {
-        List<RecurringTransactionServiceDto.RecurringInfo> infos = recurringTransactionService.getRecurrings(loginUser.getRowId());
+    public ApiResponse<RecurringTransactionApiDto.ListResponse> getRecurrings(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) Boolean upcoming,
+            @RequestParam(required = false) Integer limit) {
+        List<RecurringTransactionServiceDto.RecurringInfo> infos = recurringTransactionService.getRecurrings(
+            loginUser.getRowId(),
+            Boolean.TRUE.equals(upcoming),
+            limit
+        );
         return ApiResponse.success(RecurringTransactionApiDto.ListResponse.from(infos));
     }
 
