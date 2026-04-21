@@ -400,6 +400,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
 
         return expenses.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
             .filter(e -> e.getMerchant() != null && !e.getMerchant().isBlank())
             .collect(Collectors.groupingBy(Expense::getMerchant))
             .entrySet().stream()
@@ -419,6 +420,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
 
         return expenses.stream()
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
             .filter(e -> e.getAsset() != null)
             .collect(Collectors.groupingBy(e -> e.getAsset().getRowId()))
             .entrySet().stream()
