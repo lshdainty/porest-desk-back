@@ -106,6 +106,17 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
 
     @Override
     @Transactional
+    public ExpenseBudgetServiceDto.BudgetInfo updateBudget(Long budgetId, Long userRowId, ExpenseBudgetServiceDto.UpdateCommand command) {
+        log.debug("예산 수정 시작: budgetId={}, userRowId={}", budgetId, userRowId);
+        ExpenseBudget budget = findBudgetOrThrow(budgetId);
+        validateBudgetOwnership(budget, userRowId);
+        budget.updateBudget(command.budgetAmount());
+        log.info("예산 수정 완료: budgetId={}, amount={}", budget.getRowId(), command.budgetAmount());
+        return ExpenseBudgetServiceDto.BudgetInfo.from(budget);
+    }
+
+    @Override
+    @Transactional
     public void deleteBudget(Long budgetId, Long userRowId) {
         log.debug("예산 삭제 시작: budgetId={}", budgetId);
 

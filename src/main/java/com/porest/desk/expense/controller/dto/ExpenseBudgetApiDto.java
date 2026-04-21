@@ -14,6 +14,10 @@ public class ExpenseBudgetApiDto {
         Integer budgetMonth
     ) {}
 
+    public record UpdateRequest(
+        Long budgetAmount
+    ) {}
+
     public record Response(
         Long rowId,
         Long userRowId,
