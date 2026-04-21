@@ -26,12 +26,10 @@ public interface AssetTransferRepository {
     List<Object[]> sumMonthlyTransferOutByUserGroupedByAsset(Long userRowId, LocalDate endDate);
 
     /**
-     * 자산 1개에 대한 startDate~endDate 범위 주단위 이체 in/out 합계 — AssetDetailDialog 차트용.
+     * 자산 1개 전체 이력의 주단위 이체 in/out 합계 — AssetDetailDialog 차트용.
      * direction: "IN" → toAsset 기준, "OUT" → fromAsset 기준(amount+fee).
      * 반환 Object[] = { Integer yearweek (YEARWEEK mode 3), Long totalAmount }
+     * 단일 쿼리. 서비스는 initial_balance 기반으로 주별 delta 누적.
      */
-    List<Object[]> sumTransferByAssetGroupedByWeek(Long assetRowId, String direction, LocalDate startDate, LocalDate endDate);
-
-    /** 자산 1개 scalar 합 — 차트 시작 시점 누적값 계산용. direction: IN | OUT(amount+fee). */
-    Long sumTransferByAssetBeforeDate(Long assetRowId, String direction, LocalDate beforeDate);
+    List<Object[]> sumAllTransferByAssetGroupedByWeek(Long assetRowId, String direction);
 }

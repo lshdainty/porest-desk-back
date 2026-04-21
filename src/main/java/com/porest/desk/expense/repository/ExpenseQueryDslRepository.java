@@ -300,36 +300,16 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Object[]> sumByAssetGroupedByWeekAndType(Long assetRowId, LocalDate startDate, LocalDate endDate) {
+    public List<Object[]> sumAllByAssetGroupedByWeekAndType(Long assetRowId) {
         return entityManager.createQuery(
                 "SELECT FUNCTION('YEARWEEK', e.expenseDate, 3), e.expenseType, COALESCE(SUM(e.amount), 0) " +
                 "FROM Expense e " +
                 "WHERE e.asset.rowId = :assetRowId " +
-                "  AND e.expenseDate >= :startDate " +
-                "  AND e.expenseDate <= :endDate " +
                 "  AND e.isDeleted = :isDeleted " +
                 "GROUP BY FUNCTION('YEARWEEK', e.expenseDate, 3), e.expenseType",
                 Object[].class)
             .setParameter("assetRowId", assetRowId)
-            .setParameter("startDate", toStartOfDay(startDate))
-            .setParameter("endDate", toEndOfDay(endDate))
             .setParameter("isDeleted", YNType.N)
             .getResultList();
-    }
-
-    @Override
-    public Long sumAmountByAssetAndTypeBeforeDate(Long assetRowId, ExpenseType expenseType, LocalDate beforeDate) {
-        Long sum = entityManager.createQuery(
-                "SELECT COALESCE(SUM(e.amount), 0) FROM Expense e " +
-                "WHERE e.asset.rowId = :assetRowId " +
-                "  AND e.expenseType = :expenseType " +
-                "  AND e.expenseDate < :beforeDate " +
-                "  AND e.isDeleted = :isDeleted", Long.class)
-            .setParameter("assetRowId", assetRowId)
-            .setParameter("expenseType", expenseType)
-            .setParameter("beforeDate", toStartOfDay(beforeDate))
-            .setParameter("isDeleted", YNType.N)
-            .getSingleResult();
-        return sum != null ? sum : 0L;
     }
 }

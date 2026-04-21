@@ -213,25 +213,17 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
 
-        // 주 기준일: 이번 주 월요일을 "마지막 주"로, n-1주 전 월요일을 "첫 주"로
+        // window: 이번 주 월요일 기준 n-1주 전 ~ 이번 주
         LocalDate today = LocalDate.now();
         LocalDate currentMonday = today.with(java.time.DayOfWeek.MONDAY);
         LocalDate firstMonday = currentMonday.minusWeeks(n - 1);
-        LocalDate windowStart = firstMonday;
-        LocalDate windowEnd = today;
+        int windowStartYw = mysqlYearWeekMode3(firstMonday);
 
-        // 1) 시작 시점(firstMonday 이전)까지의 누적 계산 — scalar 4쿼리
-        long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
-        long incomeBefore = expenseRepository.sumAmountByAssetAndTypeBeforeDate(assetId, ExpenseType.INCOME, windowStart);
-        long expenseBefore = expenseRepository.sumAmountByAssetAndTypeBeforeDate(assetId, ExpenseType.EXPENSE, windowStart);
-        long tInBefore = assetTransferRepository.sumTransferByAssetBeforeDate(assetId, "IN", windowStart);
-        long tOutBefore = assetTransferRepository.sumTransferByAssetBeforeDate(assetId, "OUT", windowStart);
-        long runningBalance = initial + incomeBefore - expenseBefore + tInBefore - tOutBefore;
-
-        // 2) 기간 내 주 단위 delta — 쿼리 3개 (expense + transferIn + transferOut)
-        List<Object[]> expenseRows = expenseRepository.sumByAssetGroupedByWeekAndType(assetId, windowStart, windowEnd);
-        List<Object[]> tInRows = assetTransferRepository.sumTransferByAssetGroupedByWeek(assetId, "IN", windowStart, windowEnd);
-        List<Object[]> tOutRows = assetTransferRepository.sumTransferByAssetGroupedByWeek(assetId, "OUT", windowStart, windowEnd);
+        // 3쿼리만으로 전체 이력 주단위 delta 맵 구축 (window 무관)
+        // scalar 초기 누적은 필요 없음 — running 을 initial_balance 부터 시작해 전체 delta 누적
+        List<Object[]> expenseRows = expenseRepository.sumAllByAssetGroupedByWeekAndType(assetId);
+        List<Object[]> tInRows = assetTransferRepository.sumAllTransferByAssetGroupedByWeek(assetId, "IN");
+        List<Object[]> tOutRows = assetTransferRepository.sumAllTransferByAssetGroupedByWeek(assetId, "OUT");
 
         Map<Integer, Long> deltaByYearWeek = new java.util.HashMap<>();
         for (Object[] row : expenseRows) {
@@ -252,13 +244,25 @@ public class AssetServiceImpl implements AssetService {
             deltaByYearWeek.merge(yw, -amt, Long::sum);
         }
 
-        // 3) 각 주 월요일 루프하며 running 누적 → 주말 시점 잔액
+        // yw 정렬 후 initial_balance 부터 누적. window 시작 이전 까지는 running 만 갱신,
+        // window 내부 주에만 point 기록.
+        long runningBalance = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
+        List<Integer> sortedYws = new java.util.ArrayList<>(deltaByYearWeek.keySet());
+        java.util.Collections.sort(sortedYws);
+        int cursor = 0;
         List<AssetServiceDto.AssetBalancePoint> points = new java.util.ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             LocalDate weekStart = firstMonday.plusWeeks(i);
             int yw = mysqlYearWeekMode3(weekStart);
-            Long delta = deltaByYearWeek.get(yw);
-            if (delta != null) runningBalance += delta;
+            // 이 주보다 이전(또는 같은) 주의 delta 를 모두 running 에 적용
+            while (cursor < sortedYws.size() && sortedYws.get(cursor) <= yw) {
+                // window 이전 주는 초기 누적, 이번 주는 해당 주 delta → 둘 다 running 에 반영
+                Integer curYw = sortedYws.get(cursor);
+                if (curYw < windowStartYw || curYw.equals(yw) || curYw < yw) {
+                    runningBalance += deltaByYearWeek.getOrDefault(curYw, 0L);
+                }
+                cursor++;
+            }
             points.add(new AssetServiceDto.AssetBalancePoint(weekStart, runningBalance));
         }
 
