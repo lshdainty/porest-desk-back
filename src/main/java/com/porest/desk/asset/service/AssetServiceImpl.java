@@ -162,7 +162,8 @@ public class AssetServiceImpl implements AssetService {
             ? 0.0
             : Math.round(((double) changeAmount / Math.abs(lastMonthNetWorth)) * 1000.0) / 10.0;
 
-        List<AssetServiceDto.AssetTypeSummary> byType = assets.stream()
+        // byType 도 netWorth/totalAssets/totalDebt 와 일관되게 '총액 포함' 자산만 집계
+        List<AssetServiceDto.AssetTypeSummary> byType = included.stream()
             .collect(Collectors.groupingBy(Asset::getAssetType))
             .entrySet().stream()
             .map(entry -> new AssetServiceDto.AssetTypeSummary(
