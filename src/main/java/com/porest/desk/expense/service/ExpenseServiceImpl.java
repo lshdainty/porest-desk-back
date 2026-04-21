@@ -109,8 +109,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     @Override
-    public List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
-        log.debug("지출 목록 조회: userRowId={}, expenseType={}", userRowId, expenseType);
+    public List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
+        log.debug("지출 목록 조회: userRowId={}, assetRowId={}, expenseType={}", userRowId, assetRowId, expenseType);
 
         List<Expense> personalExpenses = expenseRepository.findByUser(userRowId, categoryRowId, expenseType, startDate, endDate);
 
@@ -124,6 +124,14 @@ public class ExpenseServiceImpl implements ExpenseService {
         groupExpenses.stream()
             .filter(e -> !personalIds.contains(e.getRowId()))
             .forEach(allExpenses::add);
+
+        // Asset 필터 (서비스 층) — repo 쿼리 2개 시그니처 확장 대신 여기서 후처리
+        if (assetRowId != null) {
+            allExpenses = allExpenses.stream()
+                .filter(e -> e.getAsset() != null && assetRowId.equals(e.getAsset().getRowId()))
+                .collect(java.util.stream.Collectors.toList());
+        }
+
         allExpenses.sort(java.util.Comparator.comparing(Expense::getExpenseDate).reversed()
             .thenComparing(java.util.Comparator.comparing(Expense::getRowId).reversed()));
 

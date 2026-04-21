@@ -24,4 +24,14 @@ public interface AssetTransferRepository {
      * amount + fee 합. 반환 Object[] = { Long fromAssetRowId, Integer year, Integer month, Long amount }
      */
     List<Object[]> sumMonthlyTransferOutByUserGroupedByAsset(Long userRowId, LocalDate endDate);
+
+    /**
+     * 자산 1개에 대한 startDate~endDate 범위 주단위 이체 in/out 합계 — AssetDetailDialog 차트용.
+     * direction: "IN" → toAsset 기준, "OUT" → fromAsset 기준(amount+fee).
+     * 반환 Object[] = { Integer yearweek (YEARWEEK mode 3), Long totalAmount }
+     */
+    List<Object[]> sumTransferByAssetGroupedByWeek(Long assetRowId, String direction, LocalDate startDate, LocalDate endDate);
+
+    /** 자산 1개 scalar 합 — 차트 시작 시점 누적값 계산용. direction: IN | OUT(amount+fee). */
+    Long sumTransferByAssetBeforeDate(Long assetRowId, String direction, LocalDate beforeDate);
 }

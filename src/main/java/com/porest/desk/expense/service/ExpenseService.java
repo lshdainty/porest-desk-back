@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface ExpenseService {
     ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command);
-    List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
+    List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command);
     void deleteExpense(Long expenseId, Long userRowId);
     ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date);

@@ -130,6 +130,18 @@ public class AssetApiDto {
         }
     }
 
+    public record AssetBalancePointResponse(java.time.LocalDate weekStart, Long balance) {
+        public static AssetBalancePointResponse from(AssetServiceDto.AssetBalancePoint p) {
+            return new AssetBalancePointResponse(p.weekStart(), p.balance());
+        }
+    }
+
+    public record AssetBalanceTrendResponse(List<AssetBalancePointResponse> trend) {
+        public static AssetBalanceTrendResponse from(List<AssetServiceDto.AssetBalancePoint> points) {
+            return new AssetBalanceTrendResponse(points.stream().map(AssetBalancePointResponse::from).toList());
+        }
+    }
+
     // === Asset Transfer ===
     public record CreateTransferRequest(
         Long fromAssetRowId,

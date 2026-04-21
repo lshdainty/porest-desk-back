@@ -13,6 +13,7 @@ public interface AssetService {
     void deleteAsset(Long assetId, Long userRowId);
     AssetServiceDto.AssetSummary getAssetSummary(Long userRowId);
     List<AssetServiceDto.NetWorthTrendPoint> getNetWorthTrend(Long userRowId, Integer months);
+    List<AssetServiceDto.AssetBalancePoint> getAssetBalanceTrend(Long assetId, Long userRowId, Integer weeks);
     void reorderAssets(Long userRowId, List<AssetServiceDto.ReorderItem> items);
 
     AssetServiceDto.TransferInfo createTransfer(AssetServiceDto.CreateTransferCommand command);

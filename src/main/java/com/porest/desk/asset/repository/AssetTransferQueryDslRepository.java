@@ -98,4 +98,44 @@ public class AssetTransferQueryDslRepository implements AssetTransferRepository 
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }
+
+    @Override
+    public List<Object[]> sumTransferByAssetGroupedByWeek(Long assetRowId, String direction, LocalDate startDate, LocalDate endDate) {
+        boolean isIn = "IN".equalsIgnoreCase(direction);
+        String assetPath = isIn ? "t.toAsset.rowId" : "t.fromAsset.rowId";
+        String amountExpr = isIn ? "t.amount" : "(t.amount + t.fee)";
+        String jpql =
+            "SELECT FUNCTION('YEARWEEK', t.transferDate, 3), COALESCE(SUM(" + amountExpr + "), 0) " +
+            "FROM AssetTransfer t " +
+            "WHERE " + assetPath + " = :assetRowId " +
+            "  AND t.transferDate >= :startDate " +
+            "  AND t.transferDate <= :endDate " +
+            "  AND t.isDeleted = :isDeleted " +
+            "GROUP BY FUNCTION('YEARWEEK', t.transferDate, 3)";
+        return entityManager.createQuery(jpql, Object[].class)
+            .setParameter("assetRowId", assetRowId)
+            .setParameter("startDate", startDate)
+            .setParameter("endDate", endDate)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public Long sumTransferByAssetBeforeDate(Long assetRowId, String direction, LocalDate beforeDate) {
+        boolean isIn = "IN".equalsIgnoreCase(direction);
+        String assetPath = isIn ? "t.toAsset.rowId" : "t.fromAsset.rowId";
+        String amountExpr = isIn ? "t.amount" : "(t.amount + t.fee)";
+        String jpql =
+            "SELECT COALESCE(SUM(" + amountExpr + "), 0) " +
+            "FROM AssetTransfer t " +
+            "WHERE " + assetPath + " = :assetRowId " +
+            "  AND t.transferDate < :beforeDate " +
+            "  AND t.isDeleted = :isDeleted";
+        Long sum = entityManager.createQuery(jpql, Long.class)
+            .setParameter("assetRowId", assetRowId)
+            .setParameter("beforeDate", beforeDate)
+            .setParameter("isDeleted", YNType.N)
+            .getSingleResult();
+        return sum != null ? sum : 0L;
+    }
 }

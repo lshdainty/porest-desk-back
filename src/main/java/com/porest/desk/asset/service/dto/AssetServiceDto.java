@@ -125,6 +125,12 @@ public class AssetServiceDto {
         Long netWorth
     ) {}
 
+    /** 자산 상세 차트용 — 각 주의 월요일(weekStart) 기준 잔액. */
+    public record AssetBalancePoint(
+        LocalDate weekStart,
+        Long balance
+    ) {}
+
     // === Asset Transfer ===
     public record CreateTransferCommand(
         Long userRowId,

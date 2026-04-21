@@ -38,4 +38,18 @@ public interface ExpenseRepository {
      * 단일 쿼리로 N+1 없음.
      */
     List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, int year, int month);
+
+    /**
+     * 자산 1개에 대한 startDate(포함) ~ endDate(포함) 범위 주단위 합계 — AssetDetailDialog 차트용.
+     * 반환 Object[] = { Integer yearweek (YEARWEEK mode 3, ISO), ExpenseType, Long totalAmount }
+     * 1쿼리로 끝. 호출은 자산 상세 조회에서 단발성으로만.
+     */
+    List<Object[]> sumByAssetGroupedByWeekAndType(Long assetRowId, LocalDate startDate, LocalDate endDate);
+
+    /**
+     * 자산 1개에 대한 beforeDate(미포함) 이전 전체 합계 — 차트 시작 시점의 누적값 계산용.
+     * 단일 scalar 반환. NULL 없이 0L 보장.
+     * N+1 주의: 단일 자산 상세에서만 호출. 자산 루프 안에서 호출 금지.
+     */
+    Long sumAmountByAssetAndTypeBeforeDate(Long assetRowId, ExpenseType expenseType, LocalDate beforeDate);
 }

@@ -54,11 +54,12 @@ public class ExpenseApiController {
     public ApiResponse<ExpenseApiDto.ListResponse> getExpenses(
             @LoginUser UserPrincipal loginUser,
             @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long assetId,
             @RequestParam(required = false) ExpenseType expenseType,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.getExpenses(
-            loginUser.getRowId(), categoryId, expenseType, startDate, endDate
+            loginUser.getRowId(), categoryId, assetId, expenseType, startDate, endDate
         );
         return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
     }

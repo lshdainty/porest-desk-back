@@ -205,6 +205,78 @@ public class AssetServiceImpl implements AssetService {
         return points;
     }
 
+    @Override
+    public List<AssetServiceDto.AssetBalancePoint> getAssetBalanceTrend(Long assetId, Long userRowId, Integer weeks) {
+        int n = (weeks == null || weeks < 1) ? 12 : Math.min(weeks, 104);
+        log.debug("자산 잔액 추이 조회: assetId={}, weeks={}", assetId, n);
+
+        Asset asset = findAssetOrThrow(assetId);
+        validateAssetOwnership(asset, userRowId);
+
+        // 주 기준일: 이번 주 월요일을 "마지막 주"로, n-1주 전 월요일을 "첫 주"로
+        LocalDate today = LocalDate.now();
+        LocalDate currentMonday = today.with(java.time.DayOfWeek.MONDAY);
+        LocalDate firstMonday = currentMonday.minusWeeks(n - 1);
+        LocalDate windowStart = firstMonday;
+        LocalDate windowEnd = today;
+
+        // 1) 시작 시점(firstMonday 이전)까지의 누적 계산 — scalar 4쿼리
+        long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
+        long incomeBefore = expenseRepository.sumAmountByAssetAndTypeBeforeDate(assetId, ExpenseType.INCOME, windowStart);
+        long expenseBefore = expenseRepository.sumAmountByAssetAndTypeBeforeDate(assetId, ExpenseType.EXPENSE, windowStart);
+        long tInBefore = assetTransferRepository.sumTransferByAssetBeforeDate(assetId, "IN", windowStart);
+        long tOutBefore = assetTransferRepository.sumTransferByAssetBeforeDate(assetId, "OUT", windowStart);
+        long runningBalance = initial + incomeBefore - expenseBefore + tInBefore - tOutBefore;
+
+        // 2) 기간 내 주 단위 delta — 쿼리 3개 (expense + transferIn + transferOut)
+        List<Object[]> expenseRows = expenseRepository.sumByAssetGroupedByWeekAndType(assetId, windowStart, windowEnd);
+        List<Object[]> tInRows = assetTransferRepository.sumTransferByAssetGroupedByWeek(assetId, "IN", windowStart, windowEnd);
+        List<Object[]> tOutRows = assetTransferRepository.sumTransferByAssetGroupedByWeek(assetId, "OUT", windowStart, windowEnd);
+
+        Map<Integer, Long> deltaByYearWeek = new java.util.HashMap<>();
+        for (Object[] row : expenseRows) {
+            int yw = ((Number) row[0]).intValue();
+            ExpenseType type = (ExpenseType) row[1];
+            long amt = ((Number) row[2]).longValue();
+            long signed = (type == ExpenseType.INCOME) ? amt : -amt;
+            deltaByYearWeek.merge(yw, signed, Long::sum);
+        }
+        for (Object[] row : tInRows) {
+            int yw = ((Number) row[0]).intValue();
+            long amt = ((Number) row[1]).longValue();
+            deltaByYearWeek.merge(yw, amt, Long::sum);
+        }
+        for (Object[] row : tOutRows) {
+            int yw = ((Number) row[0]).intValue();
+            long amt = ((Number) row[1]).longValue();
+            deltaByYearWeek.merge(yw, -amt, Long::sum);
+        }
+
+        // 3) 각 주 월요일 루프하며 running 누적 → 주말 시점 잔액
+        List<AssetServiceDto.AssetBalancePoint> points = new java.util.ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            LocalDate weekStart = firstMonday.plusWeeks(i);
+            int yw = mysqlYearWeekMode3(weekStart);
+            Long delta = deltaByYearWeek.get(yw);
+            if (delta != null) runningBalance += delta;
+            points.add(new AssetServiceDto.AssetBalancePoint(weekStart, runningBalance));
+        }
+
+        return points;
+    }
+
+    /**
+     * MySQL YEARWEEK(date, mode=3) 과 동일한 정수 반환.
+     * mode 3 = ISO week (월요일 시작, 최소 4일 포함 기준). 예: 202601, 202653.
+     * 계산: 주가 포함된 ISO 연도 × 100 + ISO 주 번호.
+     */
+    private static int mysqlYearWeekMode3(LocalDate date) {
+        java.time.temporal.WeekFields wf = java.time.temporal.WeekFields.ISO;
+        int isoYear = date.get(wf.weekBasedYear());
+        int isoWeek = date.get(wf.weekOfWeekBasedYear());
+        return isoYear * 100 + isoWeek;
+    }
+
     /**
      * 월별 순자산 맵 구축 (key = "yyyy-MM", value = 해당 월 말 순자산).
      * 쿼리 3회(expense monthly + transfer_in monthly + transfer_out monthly) + 자바 누적으로
