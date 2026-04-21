@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -39,7 +40,7 @@ public class ExpenseApiController {
             request.expenseType(),
             request.amount(),
             request.description(),
-            request.expenseDate(),
+            parseExpenseDate(request.expenseDate()),
             request.merchant(),
             request.paymentMethod(),
             request.calendarEventRowId(),
@@ -87,7 +88,7 @@ public class ExpenseApiController {
             request.expenseType(),
             request.amount(),
             request.description(),
-            request.expenseDate(),
+            parseExpenseDate(request.expenseDate()),
             request.merchant(),
             request.paymentMethod(),
             request.calendarEventRowId(),
@@ -181,6 +182,15 @@ public class ExpenseApiController {
         return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
     }
 
+    @GetMapping("/expenses/summary/heatmap")
+    public ApiResponse<ExpenseApiDto.HeatmapResponse> getHeatmap(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam Integer year,
+            @RequestParam Integer month) {
+        List<ExpenseServiceDto.HeatmapCell> cells = expenseService.getHeatmap(loginUser.getRowId(), year, month);
+        return ApiResponse.success(ExpenseApiDto.HeatmapResponse.from(cells));
+    }
+
     @GetMapping("/expenses/search")
     public ApiResponse<ExpenseApiDto.ListResponse> searchExpenses(
             @LoginUser UserPrincipal loginUser,
@@ -198,5 +208,23 @@ public class ExpenseApiController {
             minAmount, maxAmount, startDate, endDate
         ));
         return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
+    }
+
+    /**
+     * expenseDate 문자열을 LocalDateTime 으로 유연 파싱.
+     * - "yyyy-MM-dd"        → 해당 일자 00:00:00
+     * - "yyyy-MM-ddTHH:mm"  → ISO_LOCAL_DATE_TIME (초 생략 허용)
+     * - "yyyy-MM-dd HH:mm"  → 공백 구분자 허용
+     * - null/빈 문자열은 null 반환
+     */
+    private static LocalDateTime parseExpenseDate(String s) {
+        if (s == null || s.isBlank()) return null;
+        String trimmed = s.trim();
+        if (trimmed.length() == 10) {
+            return LocalDate.parse(trimmed).atStartOfDay();
+        }
+        // 공백 구분자를 ISO_LOCAL_DATE_TIME 호환으로 치환
+        String normalized = trimmed.replace(' ', 'T');
+        return LocalDateTime.parse(normalized);
     }
 }

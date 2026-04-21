@@ -472,6 +472,29 @@ public class ExpenseServiceImpl implements ExpenseService {
             .toList();
     }
 
+    @Override
+    public List<ExpenseServiceDto.HeatmapCell> getHeatmap(Long userRowId, Integer year, Integer month) {
+        log.debug("지출 히트맵 조회: userRowId={}, year={}, month={}", userRowId, year, month);
+
+        // 지출(EXPENSE)만 히트맵 집계 대상
+        List<Object[]> rows = expenseRepository.sumGroupedByDayOfWeekAndHour(
+            userRowId, ExpenseType.EXPENSE, year, month
+        );
+
+        // MySQL/MariaDB DAYOFWEEK(1=일 ~ 7=토) → Java DayOfWeek(1=월 ~ 7=일) 변환
+        //   sun(1) → 7, mon(2) → 1, tue(3) → 2, ..., sat(7) → 6
+        //   공식: javaDow = ((mysqlDow + 5) % 7) + 1
+        return rows.stream()
+            .map(row -> {
+                int mysqlDow = ((Number) row[0]).intValue();
+                int hour = ((Number) row[1]).intValue();
+                long amount = ((Number) row[2]).longValue();
+                int javaDow = ((mysqlDow + 5) % 7) + 1;
+                return new ExpenseServiceDto.HeatmapCell(javaDow, hour, amount);
+            })
+            .toList();
+    }
+
     private void validateExpenseOwnership(Expense expense, Long userRowId) {
         if (expense.getGroup() != null) {
             UserGroupMember member = groupMembershipValidator.validateMembership(

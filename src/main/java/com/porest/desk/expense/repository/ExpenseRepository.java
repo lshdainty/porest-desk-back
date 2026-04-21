@@ -31,4 +31,11 @@ public interface ExpenseRepository {
      * endDate 이하, is_deleted=N, asset IS NOT NULL 필터.
      */
     List<Object[]> sumMonthlyByUserGroupedByAssetAndType(Long userRowId, LocalDate endDate);
+
+    /**
+     * 특정 월의 (요일, 시간) 셀 단위 합계 ─ 히트맵용.
+     * 반환 Object[] = { Integer mysqlDayOfWeek(1=일~7=토), Integer hour(0-23), Long totalAmount }
+     * 단일 쿼리로 N+1 없음.
+     */
+    List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, int year, int month);
 }

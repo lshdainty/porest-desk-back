@@ -135,7 +135,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             template.getExpenseType(),
             template.getAmount(),
             template.getDescription(),
-            expenseDate,
+            // 템플릿은 LocalDate 만 받으므로 00:00 으로 보정하여 엔티티(LocalDateTime) 에 전달
+            expenseDate.atStartOfDay(),
             template.getMerchant(),
             template.getPaymentMethod()
         );

@@ -155,6 +155,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     @Transactional
     public void executeDueTransactions() {
         LocalDate today = LocalDate.now();
+        // 반복 거래 실행 시각은 오전 9시로 고정 (히트맵 시간 집계를 위한 기본값)
+        LocalDateTime executionDateTime = today.atTime(9, 0);
         log.debug("반복 거래 실행 시작: date={}", today);
 
         List<RecurringTransaction> dueTransactions = recurringTransactionRepository.findDueTransactions(today);
@@ -168,7 +170,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                     recurring.getExpenseType(),
                     recurring.getAmount(),
                     recurring.getDescription(),
-                    today,
+                    executionDateTime,
                     recurring.getMerchant(),
                     recurring.getPaymentMethod()
                 );

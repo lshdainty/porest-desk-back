@@ -67,6 +67,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_TRANSFER_SAME_ASSET("ASSET_003", "error.asset.transfer.same", HttpStatus.BAD_REQUEST),
     ASSET_ACCESS_DENIED("ASSET_004", "error.asset.access.denied", HttpStatus.FORBIDDEN),
 
+    // Saving Goal
+    SAVING_GOAL_NOT_FOUND("SAVING_001", "error.notfound.saving.goal", HttpStatus.NOT_FOUND),
+    SAVING_GOAL_ACCESS_DENIED("SAVING_002", "error.saving.goal.access.denied", HttpStatus.FORBIDDEN),
+
     // Dutch Pay
     DUTCH_PAY_NOT_FOUND("DUTCH_001", "error.notfound.dutch.pay", HttpStatus.NOT_FOUND),
     DUTCH_PAY_PARTICIPANT_NOT_FOUND("DUTCH_002", "error.notfound.dutch.pay.participant", HttpStatus.NOT_FOUND),

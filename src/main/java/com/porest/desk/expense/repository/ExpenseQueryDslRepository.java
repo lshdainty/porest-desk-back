@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,6 +24,19 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     private final JPAQueryFactory queryFactory;
     private final EntityManager entityManager;
     private static final QExpense expense = QExpense.expense;
+
+    /**
+     * LocalDate → LocalDateTime 변환 헬퍼
+     * startDate: 해당 일자 00:00:00 (하루의 시작)
+     * endDate:   해당 일자 23:59:59.999999999 (하루의 끝)
+     */
+    private static LocalDateTime toStartOfDay(LocalDate d) {
+        return d.atStartOfDay();
+    }
+
+    private static LocalDateTime toEndOfDay(LocalDate d) {
+        return d.atTime(LocalTime.MAX);
+    }
 
     @Override
     public Optional<Expense> findById(Long rowId) {
@@ -48,10 +63,10 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             builder.and(expense.expenseType.eq(expenseType));
         }
         if (startDate != null) {
-            builder.and(expense.expenseDate.goe(startDate));
+            builder.and(expense.expenseDate.goe(toStartOfDay(startDate)));
         }
         if (endDate != null) {
-            builder.and(expense.expenseDate.loe(endDate));
+            builder.and(expense.expenseDate.loe(toEndOfDay(endDate)));
         }
 
         return queryFactory.selectFrom(expense)
@@ -78,10 +93,10 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             builder.and(expense.expenseType.eq(expenseType));
         }
         if (startDate != null) {
-            builder.and(expense.expenseDate.goe(startDate));
+            builder.and(expense.expenseDate.goe(toStartOfDay(startDate)));
         }
         if (endDate != null) {
-            builder.and(expense.expenseDate.loe(endDate));
+            builder.and(expense.expenseDate.loe(toEndOfDay(endDate)));
         }
 
         return queryFactory.selectFrom(expense)
@@ -102,7 +117,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
-                expense.expenseDate.eq(date)
+                expense.expenseDate.goe(toStartOfDay(date)),
+                expense.expenseDate.loe(toEndOfDay(date))
             )
             .orderBy(expense.rowId.desc())
             .fetch();
@@ -119,8 +135,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
-                expense.expenseDate.goe(startDate),
-                expense.expenseDate.loe(endDate)
+                expense.expenseDate.goe(toStartOfDay(startDate)),
+                expense.expenseDate.loe(toEndOfDay(endDate))
             )
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();
@@ -134,8 +150,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
-                expense.expenseDate.goe(weekStart),
-                expense.expenseDate.loe(weekEnd)
+                expense.expenseDate.goe(toStartOfDay(weekStart)),
+                expense.expenseDate.loe(toEndOfDay(weekEnd))
             )
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();
@@ -152,8 +168,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .where(
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
-                expense.expenseDate.goe(startDate),
-                expense.expenseDate.loe(endDate)
+                expense.expenseDate.goe(toStartOfDay(startDate)),
+                expense.expenseDate.loe(toEndOfDay(endDate))
             )
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();
@@ -189,10 +205,10 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             builder.and(expense.amount.loe(maxAmount));
         }
         if (startDate != null) {
-            builder.and(expense.expenseDate.goe(startDate));
+            builder.and(expense.expenseDate.goe(toStartOfDay(startDate)));
         }
         if (endDate != null) {
-            builder.and(expense.expenseDate.loe(endDate));
+            builder.and(expense.expenseDate.loe(toEndOfDay(endDate)));
         }
 
         return queryFactory.selectFrom(expense)
@@ -256,7 +272,29 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
                 "GROUP BY e.asset.rowId, YEAR(e.expenseDate), MONTH(e.expenseDate), e.expenseType",
                 Object[].class)
             .setParameter("userRowId", userRowId)
-            .setParameter("endDate", endDate)
+            .setParameter("endDate", toEndOfDay(endDate))
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, int year, int month) {
+        return entityManager.createQuery(
+                "SELECT FUNCTION('DAYOFWEEK', e.expenseDate), " +
+                "       FUNCTION('HOUR', e.expenseDate), " +
+                "       COALESCE(SUM(e.amount), 0) " +
+                "FROM Expense e " +
+                "WHERE e.user.rowId = :userRowId " +
+                "  AND e.expenseType = :expenseType " +
+                "  AND YEAR(e.expenseDate) = :year " +
+                "  AND MONTH(e.expenseDate) = :month " +
+                "  AND e.isDeleted = :isDeleted " +
+                "GROUP BY FUNCTION('DAYOFWEEK', e.expenseDate), FUNCTION('HOUR', e.expenseDate)",
+                Object[].class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("expenseType", expenseType)
+            .setParameter("year", year)
+            .setParameter("month", month)
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }

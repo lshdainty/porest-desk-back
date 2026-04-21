@@ -1,0 +1,115 @@
+package com.porest.desk.savingGoal.controller;
+
+import com.porest.core.controller.ApiResponse;
+import com.porest.desk.savingGoal.controller.dto.SavingGoalApiDto;
+import com.porest.desk.savingGoal.service.SavingGoalService;
+import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
+import com.porest.desk.security.annotation.LoginUser;
+import com.porest.desk.security.principal.UserPrincipal;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1")
+@RequiredArgsConstructor
+public class SavingGoalApiController {
+    private final SavingGoalService savingGoalService;
+
+    @PostMapping("/saving-goal")
+    public ApiResponse<SavingGoalApiDto.SavingGoalResponse> createSavingGoal(
+            @LoginUser UserPrincipal loginUser,
+            @RequestBody SavingGoalApiDto.CreateSavingGoalRequest request) {
+        SavingGoalServiceDto.GoalInfo info = savingGoalService.createSavingGoal(
+            new SavingGoalServiceDto.CreateCommand(
+                loginUser.getRowId(),
+                request.title(),
+                request.description(),
+                request.targetAmount(),
+                request.currency(),
+                request.deadlineDate(),
+                request.icon(),
+                request.color(),
+                request.linkedAssetRowId(),
+                request.sortOrder()
+            )
+        );
+        return ApiResponse.success(SavingGoalApiDto.SavingGoalResponse.from(info));
+    }
+
+    @GetMapping("/saving-goals")
+    public ApiResponse<SavingGoalApiDto.SavingGoalListResponse> getSavingGoals(@LoginUser UserPrincipal loginUser) {
+        List<SavingGoalServiceDto.GoalInfo> infos = savingGoalService.getSavingGoals(loginUser.getRowId());
+        return ApiResponse.success(SavingGoalApiDto.SavingGoalListResponse.from(infos));
+    }
+
+    @GetMapping("/saving-goal/{id}")
+    public ApiResponse<SavingGoalApiDto.SavingGoalResponse> getSavingGoal(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        SavingGoalServiceDto.GoalInfo info = savingGoalService.getSavingGoal(id, loginUser.getRowId());
+        return ApiResponse.success(SavingGoalApiDto.SavingGoalResponse.from(info));
+    }
+
+    @PutMapping("/saving-goal/{id}")
+    public ApiResponse<SavingGoalApiDto.SavingGoalResponse> updateSavingGoal(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestBody SavingGoalApiDto.UpdateSavingGoalRequest request) {
+        SavingGoalServiceDto.GoalInfo info = savingGoalService.updateSavingGoal(
+            id, loginUser.getRowId(),
+            new SavingGoalServiceDto.UpdateCommand(
+                request.title(),
+                request.description(),
+                request.targetAmount(),
+                request.deadlineDate(),
+                request.icon(),
+                request.color(),
+                request.linkedAssetRowId()
+            )
+        );
+        return ApiResponse.success(SavingGoalApiDto.SavingGoalResponse.from(info));
+    }
+
+    @PatchMapping("/saving-goal/{id}/contribute")
+    public ApiResponse<SavingGoalApiDto.SavingGoalResponse> contribute(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestBody SavingGoalApiDto.ContributeRequest request) {
+        SavingGoalServiceDto.GoalInfo info = savingGoalService.contribute(
+            id, loginUser.getRowId(),
+            new SavingGoalServiceDto.ContributeCommand(request.amount(), request.note())
+        );
+        return ApiResponse.success(SavingGoalApiDto.SavingGoalResponse.from(info));
+    }
+
+    @DeleteMapping("/saving-goal/{id}")
+    public ApiResponse<Void> deleteSavingGoal(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        savingGoalService.deleteSavingGoal(id, loginUser.getRowId());
+        return ApiResponse.success();
+    }
+
+    @PatchMapping("/saving-goals/reorder")
+    public ApiResponse<Void> reorderSavingGoals(
+            @LoginUser UserPrincipal loginUser,
+            @RequestBody SavingGoalApiDto.ReorderRequest request) {
+        savingGoalService.reorderSavingGoals(
+            loginUser.getRowId(),
+            request.items().stream()
+                .map(i -> new SavingGoalServiceDto.ReorderItem(i.id(), i.sortOrder()))
+                .toList()
+        );
+        return ApiResponse.success();
+    }
+}

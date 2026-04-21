@@ -23,7 +23,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "expense")
@@ -58,7 +58,7 @@ public class Expense extends AuditingFieldsWithIp {
     private String description;
 
     @Column(name = "expense_date", nullable = false)
-    private LocalDate expenseDate;
+    private LocalDateTime expenseDate;
 
     @Column(name = "merchant", length = 100)
     private String merchant;
@@ -84,7 +84,7 @@ public class Expense extends AuditingFieldsWithIp {
 
     public static Expense createExpense(User user, ExpenseCategory category, Asset asset,
                                         ExpenseType expenseType, Long amount, String description,
-                                        LocalDate expenseDate, String merchant, String paymentMethod) {
+                                        LocalDateTime expenseDate, String merchant, String paymentMethod) {
         Expense expense = new Expense();
         expense.user = user;
         expense.category = category;
@@ -100,7 +100,7 @@ public class Expense extends AuditingFieldsWithIp {
     }
 
     public void updateExpense(ExpenseCategory category, Asset asset, ExpenseType expenseType,
-                              Long amount, String description, LocalDate expenseDate,
+                              Long amount, String description, LocalDateTime expenseDate,
                               String merchant, String paymentMethod) {
         this.category = category;
         this.asset = asset;

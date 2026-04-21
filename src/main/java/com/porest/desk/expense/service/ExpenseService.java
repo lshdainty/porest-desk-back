@@ -22,4 +22,5 @@ public interface ExpenseService {
     List<ExpenseServiceDto.ExpenseInfo> getGroupExpenses(Long userRowId, Long groupId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<ExpenseServiceDto.ExpenseInfo> getExpensesByCalendarEvent(Long calendarEventRowId);
     List<ExpenseServiceDto.ExpenseInfo> getExpensesByTodo(Long todoRowId);
+    List<ExpenseServiceDto.HeatmapCell> getHeatmap(Long userRowId, Integer year, Integer month);
 }

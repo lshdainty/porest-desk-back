@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.YearMonth;
 
 @Service
@@ -77,8 +78,9 @@ public class CardPerformanceServiceImpl implements CardPerformanceService {
             "AND e.isDeleted = :isDeleted", Long.class)
             .setParameter("assetRowId", assetRowId)
             .setParameter("expenseType", ExpenseType.EXPENSE)
-            .setParameter("start", start)
-            .setParameter("end", end)
+            // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
+            .setParameter("start", start.atStartOfDay())
+            .setParameter("end", end.atTime(LocalTime.MAX))
             .setParameter("isDeleted", YNType.N)
             .getSingleResult();
         return sum == null ? 0L : sum;

@@ -17,7 +17,7 @@ public class ExpenseServiceDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -31,7 +31,7 @@ public class ExpenseServiceDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -49,7 +49,7 @@ public class ExpenseServiceDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -145,6 +145,12 @@ public class ExpenseServiceDto {
         String assetName,
         Long totalAmount,
         Integer count
+    ) {}
+
+    public record HeatmapCell(
+        Integer dayOfWeek,
+        Integer hour,
+        Long totalAmount
     ) {}
 
     public record SearchCommand(

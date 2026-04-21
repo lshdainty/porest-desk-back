@@ -114,7 +114,8 @@ public class DashboardServiceImpl implements DashboardService {
             dailyMap.put(d, new long[]{0, 0});
         }
         for (Expense e : trendExpenses) {
-            long[] amounts = dailyMap.get(e.getExpenseDate());
+            // expenseDate 는 LocalDateTime 이므로 LocalDate 키로 변환
+            long[] amounts = dailyMap.get(e.getExpenseDate().toLocalDate());
             if (amounts != null) {
                 if (e.getExpenseType() == ExpenseType.INCOME) {
                     amounts[0] += e.getAmount();
