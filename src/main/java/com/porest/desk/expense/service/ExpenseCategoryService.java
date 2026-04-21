@@ -9,4 +9,5 @@ public interface ExpenseCategoryService {
     List<ExpenseCategoryServiceDto.CategoryInfo> getCategories(Long userRowId);
     ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, Long userRowId, ExpenseCategoryServiceDto.UpdateCommand command);
     void deleteCategory(Long categoryId, Long userRowId);
+    void reorderCategories(Long userRowId, List<ExpenseCategoryServiceDto.ReorderItem> items);
 }

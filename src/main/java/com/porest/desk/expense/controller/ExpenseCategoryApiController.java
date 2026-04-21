@@ -9,6 +9,7 @@ import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -65,6 +66,21 @@ public class ExpenseCategoryApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
         expenseCategoryService.deleteCategory(id, loginUser.getRowId());
+        return ApiResponse.success();
+    }
+
+    @PatchMapping("/expense/categories/reorder")
+    public ApiResponse<Void> reorderCategories(
+            @LoginUser UserPrincipal loginUser,
+            @RequestBody ExpenseCategoryApiDto.ReorderRequest request) {
+        expenseCategoryService.reorderCategories(
+            loginUser.getRowId(),
+            request.items().stream()
+                .map(i -> new ExpenseCategoryServiceDto.ReorderItem(
+                    i.categoryRowId(), i.sortOrder(), i.parentRowId()
+                ))
+                .toList()
+        );
         return ApiResponse.success();
     }
 }
