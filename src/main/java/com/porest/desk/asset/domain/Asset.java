@@ -48,6 +48,9 @@ public class Asset extends AuditingFieldsWithIp {
     @Column(name = "balance", nullable = false)
     private Long balance;
 
+    @Column(name = "initial_balance", nullable = false)
+    private Long initialBalance;
+
     @Column(name = "currency", nullable = false, length = 10)
     private String currency;
 
@@ -83,6 +86,7 @@ public class Asset extends AuditingFieldsWithIp {
         asset.assetName = assetName;
         asset.assetType = assetType;
         asset.balance = balance;
+        asset.initialBalance = balance;
         asset.currency = currency;
         asset.icon = icon;
         asset.color = color;

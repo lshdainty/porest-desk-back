@@ -99,6 +99,10 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
 
         expenseRepository.save(expense);
+
+        // 자산 잔액 동기화: 수입은 +, 지출은 -
+        applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
+
         log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
 
         return ExpenseServiceDto.ExpenseInfo.from(expense);
@@ -145,6 +149,12 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
         }
 
+        // 이전 영향 제거 (기존 값 스냅샷 → 롤백 후 새 값 적용)
+        Asset previousAsset = expense.getAsset();
+        ExpenseType previousType = expense.getExpenseType();
+        Long previousAmount = expense.getAmount();
+        revertExpenseFromAssetBalance(previousAsset, previousType, previousAmount);
+
         expense.updateExpense(
             category, asset,
             command.expenseType(),
@@ -154,6 +164,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.merchant(),
             command.paymentMethod()
         );
+
+        // 새 영향 적용
+        applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
 
         if (command.calendarEventRowId() != null) {
             CalendarEvent event = calendarEventRepository.findById(command.calendarEventRowId())
@@ -192,6 +205,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
+
+        // 자산 잔액 복원 (삭제되는 expense의 영향 제거)
+        revertExpenseFromAssetBalance(expense.getAsset(), expense.getExpenseType(), expense.getAmount());
+
         expense.deleteExpense();
 
         log.info("지출 삭제 완료: expenseId={}", expenseId);
@@ -493,5 +510,30 @@ public class ExpenseServiceImpl implements ExpenseService {
                 log.warn("지출 조회 실패 - 존재하지 않는 지출: expenseId={}", expenseId);
                 return new EntityNotFoundException(DeskErrorCode.EXPENSE_NOT_FOUND);
             });
+    }
+
+    /**
+     * expense 생성/수정 시 asset.balance를 동기화.
+     * 수입(INCOME)은 잔액 증가, 지출(EXPENSE)은 잔액 감소.
+     * asset이 null이거나 amount가 null이면 no-op.
+     */
+    private void applyExpenseToAssetBalance(Asset asset, ExpenseType type, Long amount) {
+        if (asset == null || type == null || amount == null) {
+            return;
+        }
+        long delta = (type == ExpenseType.INCOME) ? amount : -amount;
+        asset.updateBalance(asset.getBalance() + delta);
+    }
+
+    /**
+     * expense 삭제/수정 시 기존 영향을 롤백.
+     * applyExpenseToAssetBalance 의 역연산.
+     */
+    private void revertExpenseFromAssetBalance(Asset asset, ExpenseType type, Long amount) {
+        if (asset == null || type == null || amount == null) {
+            return;
+        }
+        long delta = (type == ExpenseType.INCOME) ? -amount : amount;
+        asset.updateBalance(asset.getBalance() + delta);
     }
 }

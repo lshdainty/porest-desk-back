@@ -239,4 +239,25 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     public void delete(Expense entity) {
         entity.deleteExpense();
     }
+
+    @Override
+    public List<Object[]> sumMonthlyByUserGroupedByAssetAndType(Long userRowId, LocalDate endDate) {
+        return entityManager.createQuery(
+                "SELECT e.asset.rowId, " +
+                "       YEAR(e.expenseDate), " +
+                "       MONTH(e.expenseDate), " +
+                "       e.expenseType, " +
+                "       COALESCE(SUM(e.amount), 0) " +
+                "FROM Expense e " +
+                "WHERE e.asset.user.rowId = :userRowId " +
+                "  AND e.expenseDate <= :endDate " +
+                "  AND e.asset IS NOT NULL " +
+                "  AND e.isDeleted = :isDeleted " +
+                "GROUP BY e.asset.rowId, YEAR(e.expenseDate), MONTH(e.expenseDate), e.expenseType",
+                Object[].class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("endDate", endDate)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
 }

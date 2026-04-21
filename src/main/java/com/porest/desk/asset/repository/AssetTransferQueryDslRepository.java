@@ -60,4 +60,42 @@ public class AssetTransferQueryDslRepository implements AssetTransferRepository 
     public void delete(AssetTransfer entity) {
         entity.deleteTransfer();
     }
+
+    @Override
+    public List<Object[]> sumMonthlyTransferInByUserGroupedByAsset(Long userRowId, LocalDate endDate) {
+        return entityManager.createQuery(
+                "SELECT t.toAsset.rowId, " +
+                "       YEAR(t.transferDate), " +
+                "       MONTH(t.transferDate), " +
+                "       COALESCE(SUM(t.amount), 0) " +
+                "FROM AssetTransfer t " +
+                "WHERE t.user.rowId = :userRowId " +
+                "  AND t.transferDate <= :endDate " +
+                "  AND t.isDeleted = :isDeleted " +
+                "GROUP BY t.toAsset.rowId, YEAR(t.transferDate), MONTH(t.transferDate)",
+                Object[].class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("endDate", endDate)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public List<Object[]> sumMonthlyTransferOutByUserGroupedByAsset(Long userRowId, LocalDate endDate) {
+        return entityManager.createQuery(
+                "SELECT t.fromAsset.rowId, " +
+                "       YEAR(t.transferDate), " +
+                "       MONTH(t.transferDate), " +
+                "       COALESCE(SUM(t.amount + t.fee), 0) " +
+                "FROM AssetTransfer t " +
+                "WHERE t.user.rowId = :userRowId " +
+                "  AND t.transferDate <= :endDate " +
+                "  AND t.isDeleted = :isDeleted " +
+                "GROUP BY t.fromAsset.rowId, YEAR(t.transferDate), MONTH(t.transferDate)",
+                Object[].class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("endDate", endDate)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
 }

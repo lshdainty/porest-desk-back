@@ -175,6 +175,15 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
                 expenseRepository.save(expense);
 
+                // 자산 잔액 동기화: INCOME은 +, EXPENSE는 -
+                Asset recurringAsset = recurring.getAsset();
+                if (recurringAsset != null && recurring.getAmount() != null) {
+                    long delta = (recurring.getExpenseType() == com.porest.desk.expense.type.ExpenseType.INCOME)
+                        ? recurring.getAmount()
+                        : -recurring.getAmount();
+                    recurringAsset.updateBalance(recurringAsset.getBalance() + delta);
+                }
+
                 LocalDate nextDate = calculateNextDate(
                     recurring.getNextExecutionDate(),
                     recurring.getFrequency(),
