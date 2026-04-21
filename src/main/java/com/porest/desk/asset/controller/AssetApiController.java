@@ -81,8 +81,11 @@ public class AssetApiController {
     }
 
     @GetMapping("/assets/summary")
-    public ApiResponse<AssetApiDto.AssetSummaryResponse> getAssetSummary(@LoginUser UserPrincipal loginUser) {
-        AssetServiceDto.AssetSummary summary = assetService.getAssetSummary(loginUser.getRowId());
+    public ApiResponse<AssetApiDto.AssetSummaryResponse> getAssetSummary(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        AssetServiceDto.AssetSummary summary = assetService.getAssetSummary(loginUser.getRowId(), year, month);
         return ApiResponse.success(AssetApiDto.AssetSummaryResponse.from(summary));
     }
 

@@ -130,15 +130,29 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
-    public AssetServiceDto.AssetSummary getAssetSummary(Long userRowId) {
-        log.debug("자산 요약 조회: userRowId={}", userRowId);
+    public AssetServiceDto.AssetSummary getAssetSummary(Long userRowId, Integer year, Integer month) {
+        log.debug("자산 요약 조회: userRowId={}, year={}, month={}", userRowId, year, month);
 
         List<Asset> assets = assetRepository.findByUser(userRowId);
         List<Asset> included = assets.stream()
             .filter(a -> a.getIsIncludedInTotal() == com.porest.core.type.YNType.Y)
             .toList();
 
-        // 현재 자산 요약은 asset.balance (실시간) 사용
+        LocalDate today = LocalDate.now();
+        boolean isPastPeriod = year != null && month != null
+            && !(year == today.getYear() && month == today.getMonthValue());
+
+        if (!isPastPeriod) {
+            // 현재 월(또는 year/month 미지정): asset.balance 실시간 사용
+            return buildCurrentPeriodSummary(userRowId, included, today);
+        }
+        // 과거 월: 해당 월 말 시점 누적 잔액으로 재구성
+        return buildPastPeriodSummary(userRowId, included, year, month);
+    }
+
+    private AssetServiceDto.AssetSummary buildCurrentPeriodSummary(
+        Long userRowId, List<Asset> included, LocalDate today
+    ) {
         Long totalBalance = included.stream().mapToLong(Asset::getBalance).sum();
         Long totalAssets = included.stream()
             .filter(a -> !DEBT_TYPES.contains(a.getAssetType()))
@@ -150,19 +164,15 @@ public class AssetServiceImpl implements AssetService {
             .sum();
         long netWorth = totalAssets - totalDebt;
 
-        // 지난달 말 순자산 — 월별 누적 집계(3쿼리)에서 마지막 완결 월 값 추출
-        LocalDate today = LocalDate.now();
         LocalDate lastMonthEnd = today.withDayOfMonth(1).minusDays(1);
-        // summary용 trend 데이터 — 이번달 포함 2개월이면 지난달 말 값만 뽑으면 됨
         Map<String, Long> monthlyNetWorth = buildMonthlyNetWorthMap(userRowId, included, lastMonthEnd, 1);
-        String lastMonthKey = monthKey(lastMonthEnd.getYear(), lastMonthEnd.getMonthValue());
-        long lastMonthNetWorth = monthlyNetWorth.getOrDefault(lastMonthKey, 0L);
+        long lastMonthNetWorth = monthlyNetWorth.getOrDefault(
+            monthKey(lastMonthEnd.getYear(), lastMonthEnd.getMonthValue()), 0L);
         long changeAmount = netWorth - lastMonthNetWorth;
         double changePercent = lastMonthNetWorth == 0
             ? 0.0
             : Math.round(((double) changeAmount / Math.abs(lastMonthNetWorth)) * 1000.0) / 10.0;
 
-        // byType 도 netWorth/totalAssets/totalDebt 와 일관되게 '총액 포함' 자산만 집계
         List<AssetServiceDto.AssetTypeSummary> byType = included.stream()
             .collect(Collectors.groupingBy(Asset::getAssetType))
             .entrySet().stream()
@@ -174,14 +184,59 @@ public class AssetServiceImpl implements AssetService {
             .toList();
 
         return new AssetServiceDto.AssetSummary(
-            totalBalance,
-            totalAssets,
-            totalDebt,
-            netWorth,
-            lastMonthNetWorth,
-            changeAmount,
-            changePercent,
-            byType
+            totalBalance, totalAssets, totalDebt, netWorth,
+            lastMonthNetWorth, changeAmount, changePercent, byType
+        );
+    }
+
+    private AssetServiceDto.AssetSummary buildPastPeriodSummary(
+        Long userRowId, List<Asset> included, int year, int month
+    ) {
+        // 선택 월 말 + 전월 말 두 시점의 월별 순자산 맵 확보
+        LocalDate selectedMonthEnd = LocalDate.of(year, month, 1)
+            .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth());
+        Map<String, Long> monthlyNetWorth = buildMonthlyNetWorthMap(userRowId, included, selectedMonthEnd, 1);
+
+        String selKey = monthKey(year, month);
+        LocalDate prev = selectedMonthEnd.minusMonths(1);
+        String prevKey = monthKey(prev.getYear(), prev.getMonthValue());
+        long netWorth = monthlyNetWorth.getOrDefault(selKey, 0L);
+        long lastMonthNetWorth = monthlyNetWorth.getOrDefault(prevKey, 0L);
+        long changeAmount = netWorth - lastMonthNetWorth;
+        double changePercent = lastMonthNetWorth == 0
+            ? 0.0
+            : Math.round(((double) changeAmount / Math.abs(lastMonthNetWorth)) * 1000.0) / 10.0;
+
+        // 자산 타입별/총자산/총부채는 선택 월 말 시점의 자산별 누적 잔액으로 재구성
+        Map<Long, Long> balanceByAsset = buildAssetBalanceMap(userRowId, included, selectedMonthEnd);
+
+        long totalBalance = 0, totalAssets = 0, totalDebt = 0;
+        Map<AssetType, long[]> byTypeAcc = new java.util.EnumMap<>(AssetType.class);
+        // long[2] = { sumBalance, count }
+        for (Asset a : included) {
+            long bal = balanceByAsset.getOrDefault(a.getRowId(), 0L);
+            totalBalance += bal;
+            if (DEBT_TYPES.contains(a.getAssetType())) {
+                totalDebt += Math.abs(bal);
+            } else {
+                totalAssets += bal;
+            }
+            long[] acc = byTypeAcc.computeIfAbsent(a.getAssetType(), k -> new long[]{0, 0});
+            acc[0] += bal;
+            acc[1] += 1;
+        }
+
+        List<AssetServiceDto.AssetTypeSummary> byType = byTypeAcc.entrySet().stream()
+            .map(e -> new AssetServiceDto.AssetTypeSummary(
+                e.getKey(),
+                e.getValue()[0],
+                (int) e.getValue()[1]
+            ))
+            .toList();
+
+        return new AssetServiceDto.AssetSummary(
+            totalBalance, totalAssets, totalDebt, netWorth,
+            lastMonthNetWorth, changeAmount, changePercent, byType
         );
     }
 
@@ -385,6 +440,64 @@ public class AssetServiceImpl implements AssetService {
 
     private static String monthKey(int year, int month) {
         return String.format("%04d-%02d", year, month);
+    }
+
+    /**
+     * 선택 월 말일 시점의 자산별 누적 잔액 맵(assetRowId → balance).
+     * initialBalance + (endDate 이하의 INCOME − EXPENSE + transfer_in − transfer_out) 누적.
+     * 부호는 원시 누적값(부채 자산도 그대로 음수/양수 유지)을 그대로 반환 — 호출 측에서 DEBT_TYPES 처리.
+     */
+    private Map<Long, Long> buildAssetBalanceMap(Long userRowId, List<Asset> included, LocalDate endDate) {
+        List<Object[]> expenseRows = expenseRepository.sumMonthlyByUserGroupedByAssetAndType(userRowId, endDate);
+        List<Object[]> transferInRows = assetTransferRepository.sumMonthlyTransferInByUserGroupedByAsset(userRowId, endDate);
+        List<Object[]> transferOutRows = assetTransferRepository.sumMonthlyTransferOutByUserGroupedByAsset(userRowId, endDate);
+
+        // (assetRowId, yyyy-MM) → delta
+        Map<Long, Map<String, Long>> deltaByAssetMonth = new java.util.HashMap<>();
+        for (Object[] row : expenseRows) {
+            Long assetRowId = ((Number) row[0]).longValue();
+            int y = ((Number) row[1]).intValue();
+            int mo = ((Number) row[2]).intValue();
+            ExpenseType type = (ExpenseType) row[3];
+            long amt = ((Number) row[4]).longValue();
+            long signed = (type == ExpenseType.INCOME) ? amt : -amt;
+            deltaByAssetMonth
+                .computeIfAbsent(assetRowId, k -> new java.util.HashMap<>())
+                .merge(monthKey(y, mo), signed, Long::sum);
+        }
+        for (Object[] row : transferInRows) {
+            Long assetRowId = ((Number) row[0]).longValue();
+            int y = ((Number) row[1]).intValue();
+            int mo = ((Number) row[2]).intValue();
+            long amt = ((Number) row[3]).longValue();
+            deltaByAssetMonth
+                .computeIfAbsent(assetRowId, k -> new java.util.HashMap<>())
+                .merge(monthKey(y, mo), amt, Long::sum);
+        }
+        for (Object[] row : transferOutRows) {
+            Long assetRowId = ((Number) row[0]).longValue();
+            int y = ((Number) row[1]).intValue();
+            int mo = ((Number) row[2]).intValue();
+            long amt = ((Number) row[3]).longValue();
+            deltaByAssetMonth
+                .computeIfAbsent(assetRowId, k -> new java.util.HashMap<>())
+                .merge(monthKey(y, mo), -amt, Long::sum);
+        }
+
+        String endKey = monthKey(endDate.getYear(), endDate.getMonthValue());
+
+        Map<Long, Long> balanceByAsset = new java.util.HashMap<>();
+        for (Asset asset : included) {
+            long running = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
+            Map<String, Long> deltas = deltaByAssetMonth.getOrDefault(asset.getRowId(), java.util.Collections.emptyMap());
+            for (Map.Entry<String, Long> e : deltas.entrySet()) {
+                if (e.getKey().compareTo(endKey) <= 0) {
+                    running += e.getValue();
+                }
+            }
+            balanceByAsset.put(asset.getRowId(), running);
+        }
+        return balanceByAsset;
     }
 
     @Override
