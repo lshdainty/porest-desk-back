@@ -9,11 +9,17 @@ import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.notification.service.NotificationService;
+import com.porest.desk.notification.service.dto.NotificationServiceDto;
+import com.porest.desk.notification.type.NotificationType;
+import com.porest.desk.notification.type.ReferenceType;
 import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.group.domain.UserGroupMember;
 import com.porest.desk.group.repository.UserGroupRepository;
@@ -28,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -37,8 +44,14 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class ExpenseServiceImpl implements ExpenseService {
+    /** 예산 사용량 알림 임계값 (사용률) */
+    private static final double BUDGET_WARN_THRESHOLD = 0.85;
+    private static final double BUDGET_OVER_THRESHOLD = 1.0;
+
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
+    private final ExpenseBudgetRepository expenseBudgetRepository;
+    private final NotificationService notificationService;
     private final AssetRepository assetRepository;
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
@@ -102,6 +115,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 자산 잔액 동기화: 수입은 +, 지출은 -
         applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
+
+        // 예산 임계 도달 시 알림
+        notifyBudgetThresholdIfCrossed(expense);
 
         log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
 
@@ -568,5 +584,93 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
         long delta = (type == ExpenseType.INCOME) ? -amount : amount;
         asset.updateBalance(asset.getBalance() + delta);
+    }
+
+    /**
+     * 이번 지출로 해당 월 예산이 85% / 100% 임계를 "처음으로" 넘었을 때만 알림 생성.
+     * 대상 예산: 전체(overall, categoryRowId=null) / 지출 카테고리 본인 / 지출 카테고리의 부모.
+     * 실패는 무시(알림 실패가 지출 저장을 막으면 안 됨).
+     */
+    private void notifyBudgetThresholdIfCrossed(Expense expense) {
+        try {
+            if (expense == null || expense.getExpenseType() != ExpenseType.EXPENSE) return;
+            if (expense.getAmount() == null || expense.getAmount() <= 0) return;
+
+            Long userRowId = expense.getUser().getRowId();
+            int year = expense.getExpenseDate().getYear();
+            int month = expense.getExpenseDate().getMonthValue();
+
+            List<ExpenseBudget> budgets = expenseBudgetRepository.findByUser(userRowId, year, month);
+            if (budgets.isEmpty()) return;
+
+            Long catId = expense.getCategory() != null ? expense.getCategory().getRowId() : null;
+            Long parentId = (expense.getCategory() != null && expense.getCategory().getParent() != null)
+                ? expense.getCategory().getParent().getRowId()
+                : null;
+
+            // 해당 월의 총 지출/카테고리별 지출 집계 (방금 저장된 이 expense 포함)
+            List<Expense> monthly = expenseRepository.findMonthlySummary(userRowId, year, month);
+            long totalSpent = 0L;
+            Map<Long, Long> spentByCat = new HashMap<>();
+            for (Expense e : monthly) {
+                if (e.getExpenseType() != ExpenseType.EXPENSE) continue;
+                totalSpent += e.getAmount();
+                if (e.getCategory() == null) continue;
+                spentByCat.merge(e.getCategory().getRowId(), e.getAmount(), Long::sum);
+                if (e.getCategory().getParent() != null) {
+                    spentByCat.merge(e.getCategory().getParent().getRowId(), e.getAmount(), Long::sum);
+                }
+            }
+
+            long delta = expense.getAmount();
+
+            for (ExpenseBudget budget : budgets) {
+                if (budget.getBudgetAmount() == null || budget.getBudgetAmount() <= 0) continue;
+                Long bCatId = budget.getCategory() != null ? budget.getCategory().getRowId() : null;
+
+                // 이 예산이 방금 지출과 관련 있는가?
+                boolean matches = bCatId == null
+                    || bCatId.equals(catId)
+                    || (parentId != null && bCatId.equals(parentId));
+                if (!matches) continue;
+
+                long afterSpent = (bCatId == null) ? totalSpent : spentByCat.getOrDefault(bCatId, 0L);
+                long beforeSpent = afterSpent - delta;
+                double limit = budget.getBudgetAmount();
+                double beforePct = beforeSpent / limit;
+                double afterPct = afterSpent / limit;
+
+                String categoryName = bCatId == null ? "전체" : budget.getCategory().getCategoryName();
+
+                if (beforePct < BUDGET_OVER_THRESHOLD && afterPct >= BUDGET_OVER_THRESHOLD) {
+                    notificationService.createNotification(new NotificationServiceDto.CreateCommand(
+                        userRowId,
+                        NotificationType.BUDGET_ALERT,
+                        String.format("%s 예산 초과", categoryName),
+                        String.format("%s 예산 %s원을 초과했어요 (현재 %s원).",
+                            categoryName, formatKRW((long) limit), formatKRW(afterSpent)),
+                        ReferenceType.EXPENSE_BUDGET,
+                        budget.getRowId()
+                    ));
+                } else if (beforePct < BUDGET_WARN_THRESHOLD && afterPct >= BUDGET_WARN_THRESHOLD) {
+                    int pct = (int) Math.round(afterPct * 100);
+                    notificationService.createNotification(new NotificationServiceDto.CreateCommand(
+                        userRowId,
+                        NotificationType.BUDGET_ALERT,
+                        String.format("%s 예산 %d%% 사용", categoryName, pct),
+                        String.format("%s 예산의 %d%%를 사용했어요 (%s / %s원).",
+                            categoryName, pct, formatKRW(afterSpent), formatKRW((long) limit)),
+                        ReferenceType.EXPENSE_BUDGET,
+                        budget.getRowId()
+                    ));
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("예산 임계 알림 처리 실패: {}", ex.getMessage());
+        }
+    }
+
+    private static String formatKRW(long v) {
+        return String.format("%,d", v);
     }
 }
