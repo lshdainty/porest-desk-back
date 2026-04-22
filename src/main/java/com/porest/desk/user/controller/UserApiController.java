@@ -7,6 +7,7 @@ import com.porest.desk.user.controller.dto.UserApiDto;
 import com.porest.desk.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,5 +31,21 @@ public class UserApiController {
                 request.getConfirmPassword()
         );
         return ApiResponse.success(null);
+    }
+
+    @GetMapping("/me/preferences")
+    public ApiResponse<UserApiDto.PreferencesResponse> getPreferences(
+            @LoginUser UserPrincipal loginUser) {
+        Integer threshold = userService.getBudgetAlertThreshold(loginUser.getRowId());
+        return ApiResponse.success(new UserApiDto.PreferencesResponse(threshold));
+    }
+
+    @PatchMapping("/me/preferences")
+    public ApiResponse<UserApiDto.PreferencesResponse> updatePreferences(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody UserApiDto.UpdatePreferencesReq request) {
+        userService.updateBudgetAlertThreshold(loginUser.getRowId(), request.getBudgetAlertThreshold());
+        Integer threshold = userService.getBudgetAlertThreshold(loginUser.getRowId());
+        return ApiResponse.success(new UserApiDto.PreferencesResponse(threshold));
     }
 }

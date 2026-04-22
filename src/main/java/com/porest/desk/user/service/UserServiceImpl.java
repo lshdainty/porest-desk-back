@@ -1,10 +1,13 @@
 package com.porest.desk.user.service;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.jwt.JwtTokenProvider;
+import com.porest.desk.user.domain.User;
+import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -15,6 +18,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -29,6 +33,7 @@ public class UserServiceImpl implements UserService {
     private static final String SSO_CHANGE_PASSWORD_PATH = "/api/v1/auth/password/change";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
     @Qualifier("ssoRestTemplate")
     private final RestTemplate ssoRestTemplate;
@@ -74,6 +79,23 @@ public class UserServiceImpl implements UserService {
             log.error("SSO password change request failed for user {}: {}", userId, e.getMessage(), e);
             throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 비밀번호 변경 API 호출 실패", e);
         }
+    }
+
+    @Override
+    public Integer getBudgetAlertThreshold(Long userRowId) {
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+        Integer v = user.getBudgetAlertThreshold();
+        return v != null ? v : 85;
+    }
+
+    @Override
+    @Transactional
+    public void updateBudgetAlertThreshold(Long userRowId, Integer threshold) {
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+        user.updateBudgetAlertThreshold(threshold);
+        log.info("예산 알림 임계값 변경: userRowId={}, threshold={}%", userRowId, user.getBudgetAlertThreshold());
     }
 
     private String extractSsoErrorMessage(HttpClientErrorException e) {

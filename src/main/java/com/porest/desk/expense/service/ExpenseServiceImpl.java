@@ -28,6 +28,7 @@ import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -44,14 +45,14 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class ExpenseServiceImpl implements ExpenseService {
-    /** 예산 사용량 알림 임계값 (사용률) */
-    private static final double BUDGET_WARN_THRESHOLD = 0.85;
+    /** 예산 사용량 알림 임계값 (사용률). warn 는 사용자 설정, over 는 100% 고정. */
     private static final double BUDGET_OVER_THRESHOLD = 1.0;
 
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final NotificationService notificationService;
+    private final UserService userService;
     private final AssetRepository assetRepository;
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
@@ -603,6 +604,10 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<ExpenseBudget> budgets = expenseBudgetRepository.findByUser(userRowId, year, month);
             if (budgets.isEmpty()) return;
 
+            // 사용자 설정 warn 임계(%)
+            Integer warnPercent = userService.getBudgetAlertThreshold(userRowId);
+            double warnThreshold = (warnPercent != null ? warnPercent : 85) / 100.0;
+
             Long catId = expense.getCategory() != null ? expense.getCategory().getRowId() : null;
             Long parentId = (expense.getCategory() != null && expense.getCategory().getParent() != null)
                 ? expense.getCategory().getParent().getRowId()
@@ -652,7 +657,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                         ReferenceType.EXPENSE_BUDGET,
                         budget.getRowId()
                     ));
-                } else if (beforePct < BUDGET_WARN_THRESHOLD && afterPct >= BUDGET_WARN_THRESHOLD) {
+                } else if (beforePct < warnThreshold && afterPct >= warnThreshold) {
                     int pct = (int) Math.round(afterPct * 100);
                     notificationService.createNotification(new NotificationServiceDto.CreateCommand(
                         userRowId,

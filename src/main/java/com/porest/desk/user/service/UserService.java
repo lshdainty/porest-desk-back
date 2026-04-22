@@ -14,4 +14,10 @@ public interface UserService {
      * @param confirmPassword 새 비밀번호 확인
      */
     void changePassword(String userId, String currentPassword, String newPassword, String confirmPassword);
+
+    /** 로그인 사용자 환경설정 조회 — 현재는 예산 알림 임계값만 */
+    Integer getBudgetAlertThreshold(Long userRowId);
+
+    /** 로그인 사용자 예산 알림 임계값 변경 */
+    void updateBudgetAlertThreshold(Long userRowId, Integer threshold);
 }
