@@ -86,7 +86,18 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
             int mm = m.getMonthValue();
 
             List<ExpenseBudget> budgets = expenseBudgetRepository.findByUser(userRowId, y, mm);
-            long totalLimit = budgets.stream().mapToLong(ExpenseBudget::getBudgetAmount).sum();
+            // 전체 상한(category == null) 이 있으면 그것만 한도로 사용.
+            // 없을 때만 카테고리별 한도의 합으로 대체 — 중복 집계 방지.
+            long overallLimit = budgets.stream()
+                .filter(b -> b.getCategory() == null)
+                .mapToLong(ExpenseBudget::getBudgetAmount)
+                .sum();
+            long totalLimit = overallLimit > 0
+                ? overallLimit
+                : budgets.stream()
+                    .filter(b -> b.getCategory() != null)
+                    .mapToLong(ExpenseBudget::getBudgetAmount)
+                    .sum();
 
             List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, y, mm);
             long totalSpent = expenses.stream()
