@@ -14,6 +14,7 @@ public class RecurringTransactionServiceDto {
         Long userRowId,
         Long categoryRowId,
         Long assetRowId,
+        Long sourceExpenseRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
@@ -24,7 +25,9 @@ public class RecurringTransactionServiceDto {
         Integer dayOfWeek,
         Integer dayOfMonth,
         LocalDate startDate,
-        LocalDate endDate
+        LocalDate endDate,
+        Boolean autoLog,
+        Boolean notifyDayBefore
     ) {}
 
     public record UpdateCommand(
@@ -40,7 +43,9 @@ public class RecurringTransactionServiceDto {
         Integer dayOfWeek,
         Integer dayOfMonth,
         LocalDate startDate,
-        LocalDate endDate
+        LocalDate endDate,
+        Boolean autoLog,
+        Boolean notifyDayBefore
     ) {}
 
     public record RecurringInfo(
@@ -50,6 +55,7 @@ public class RecurringTransactionServiceDto {
         String categoryName,
         Long assetRowId,
         String assetName,
+        Long sourceExpenseRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
@@ -64,6 +70,8 @@ public class RecurringTransactionServiceDto {
         LocalDate nextExecutionDate,
         LocalDateTime lastExecutedAt,
         YNType isActive,
+        boolean autoLog,
+        boolean notifyDayBefore,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -75,6 +83,7 @@ public class RecurringTransactionServiceDto {
                 recurring.getCategory() != null ? recurring.getCategory().getCategoryName() : null,
                 recurring.getAsset() != null ? recurring.getAsset().getRowId() : null,
                 recurring.getAsset() != null ? recurring.getAsset().getAssetName() : null,
+                recurring.getSourceExpense() != null ? recurring.getSourceExpense().getRowId() : null,
                 recurring.getExpenseType(),
                 recurring.getAmount(),
                 recurring.getDescription(),
@@ -89,6 +98,8 @@ public class RecurringTransactionServiceDto {
                 recurring.getNextExecutionDate(),
                 recurring.getLastExecutedAt(),
                 recurring.getIsActive(),
+                recurring.getAutoLog() == YNType.Y,
+                recurring.getNotifyDayBefore() == YNType.Y,
                 recurring.getCreateAt(),
                 recurring.getModifyAt()
             );

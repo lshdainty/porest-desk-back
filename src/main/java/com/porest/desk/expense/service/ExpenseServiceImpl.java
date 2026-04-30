@@ -11,9 +11,11 @@ import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.domain.ExpenseSplit;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.service.NotificationService;
@@ -51,6 +53,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
+    private final ExpenseSplitRepository expenseSplitRepository;
     private final NotificationService notificationService;
     private final UserService userService;
     private final AssetRepository assetRepository;
@@ -274,31 +277,63 @@ public class ExpenseServiceImpl implements ExpenseService {
             .mapToLong(Expense::getAmount)
             .sum();
 
-        List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = expenses.stream()
-            .collect(Collectors.groupingBy(
-                e -> e.getCategory().getRowId(),
-                Collectors.toList()
-            ))
-            .entrySet().stream()
-            .map(entry -> {
-                List<Expense> categoryExpenses = entry.getValue();
-                Expense first = categoryExpenses.get(0);
-                Long totalAmount = categoryExpenses.stream()
-                    .mapToLong(Expense::getAmount)
-                    .sum();
-                ExpenseCategory parentCategory = first.getCategory().getParent();
-                return new ExpenseServiceDto.CategoryBreakdown(
-                    first.getCategory().getRowId(),
-                    first.getCategory().getCategoryName(),
-                    parentCategory != null ? parentCategory.getRowId() : null,
-                    parentCategory != null ? parentCategory.getCategoryName() : null,
-                    first.getExpenseType(),
-                    totalAmount
-                );
-            })
-            .toList();
+        List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = buildCategoryBreakdown(expenses);
 
         return new ExpenseServiceDto.MonthlySummary(year, month, totalIncome, totalExpense, categoryBreakdown);
+    }
+
+    /**
+     * 거래 목록을 카테고리 단위 합계로 집계.
+     * 분할(ExpenseSplit) 항목이 있는 거래는 부모 카테고리 대신 분할 카테고리별로 집계.
+     * 분할 합계는 부모 amount 와 일치하므로 totalIncome/totalExpense 는 영향 없음.
+     */
+    private List<ExpenseServiceDto.CategoryBreakdown> buildCategoryBreakdown(List<Expense> expenses) {
+        if (expenses.isEmpty()) return List.of();
+
+        List<Long> expenseIds = expenses.stream().map(Expense::getRowId).toList();
+        List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseIds(expenseIds);
+        Map<Long, List<ExpenseSplit>> splitsByExpense = splits.stream()
+            .collect(Collectors.groupingBy(s -> s.getExpense().getRowId()));
+
+        Map<Long, ExpenseServiceDto.CategoryBreakdown> agg = new HashMap<>();
+        for (Expense e : expenses) {
+            List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
+            if (es != null && !es.isEmpty()) {
+                for (ExpenseSplit s : es) {
+                    accumulateBreakdown(agg, s.getCategory(), e.getExpenseType(), s.getAmount());
+                }
+            } else {
+                if (e.getCategory() == null) continue;
+                accumulateBreakdown(agg, e.getCategory(), e.getExpenseType(), e.getAmount());
+            }
+        }
+        return List.copyOf(agg.values());
+    }
+
+    private void accumulateBreakdown(Map<Long, ExpenseServiceDto.CategoryBreakdown> agg,
+                                      ExpenseCategory category, ExpenseType type, Long amount) {
+        Long key = category.getRowId();
+        ExpenseServiceDto.CategoryBreakdown existing = agg.get(key);
+        if (existing == null) {
+            ExpenseCategory parent = category.getParent();
+            agg.put(key, new ExpenseServiceDto.CategoryBreakdown(
+                category.getRowId(),
+                category.getCategoryName(),
+                parent != null ? parent.getRowId() : null,
+                parent != null ? parent.getCategoryName() : null,
+                type,
+                amount
+            ));
+        } else {
+            agg.put(key, new ExpenseServiceDto.CategoryBreakdown(
+                existing.categoryRowId(),
+                existing.categoryName(),
+                existing.parentCategoryRowId(),
+                existing.parentCategoryName(),
+                existing.expenseType(),
+                existing.totalAmount() + amount
+            ));
+        }
     }
 
     @Override
@@ -381,26 +416,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                     .mapToLong(Expense::getAmount)
                     .sum();
 
-                List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = monthExpenses.stream()
-                    .collect(Collectors.groupingBy(e -> e.getCategory().getRowId(), Collectors.toList()))
-                    .entrySet().stream()
-                    .map(catEntry -> {
-                        List<Expense> categoryExpenses = catEntry.getValue();
-                        Expense first = categoryExpenses.get(0);
-                        Long totalAmount = categoryExpenses.stream()
-                            .mapToLong(Expense::getAmount)
-                            .sum();
-                        ExpenseCategory parentCategory = first.getCategory().getParent();
-                        return new ExpenseServiceDto.CategoryBreakdown(
-                            first.getCategory().getRowId(),
-                            first.getCategory().getCategoryName(),
-                            parentCategory != null ? parentCategory.getRowId() : null,
-                            parentCategory != null ? parentCategory.getCategoryName() : null,
-                            first.getExpenseType(),
-                            totalAmount
-                        );
-                    })
-                    .toList();
+                List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = buildCategoryBreakdown(monthExpenses);
 
                 return new ExpenseServiceDto.MonthlyAmount(entry.getKey(), monthIncome, monthExpense, categoryBreakdown);
             })

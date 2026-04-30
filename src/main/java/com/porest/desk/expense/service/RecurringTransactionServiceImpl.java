@@ -57,18 +57,28 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             validateAssetOwnership(asset, command.userRowId());
         }
 
+        Expense sourceExpense = null;
+        if (command.sourceExpenseRowId() != null) {
+            sourceExpense = expenseRepository.findById(command.sourceExpenseRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_NOT_FOUND));
+            if (!sourceExpense.getUser().getRowId().equals(command.userRowId())) {
+                throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+            }
+        }
+
         LocalDate nextExecutionDate = calculateNextExecutionDate(
             command.startDate(), command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth()
         );
 
         RecurringTransaction recurring = RecurringTransaction.createRecurring(
-            user, category, asset,
+            user, category, asset, sourceExpense,
             command.expenseType(), command.amount(), command.description(),
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
-            command.startDate(), command.endDate(), nextExecutionDate
+            command.startDate(), command.endDate(), nextExecutionDate,
+            command.autoLog(), command.notifyDayBefore()
         );
 
         recurringTransactionRepository.save(recurring);
@@ -130,7 +140,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
-            command.startDate(), command.endDate(), nextExecutionDate
+            command.startDate(), command.endDate(), nextExecutionDate,
+            command.autoLog(), command.notifyDayBefore()
         );
 
         log.info("반복 거래 수정 완료: recurringId={}", recurringId);

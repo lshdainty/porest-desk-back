@@ -113,4 +113,28 @@ public class UserGroupApiDto {
     public record InviteCodeResponse(
         String inviteCode
     ) {}
+
+    public record SiblingMemberResponse(
+        Long userRowId,
+        String userName,
+        String userEmail,
+        List<Long> sharedGroupRowIds
+    ) {
+        public static SiblingMemberResponse from(UserGroupServiceDto.SiblingMemberInfo info) {
+            return new SiblingMemberResponse(
+                info.userRowId(),
+                info.userName(),
+                info.userEmail(),
+                info.sharedGroupRowIds()
+            );
+        }
+    }
+
+    public record SiblingMemberListResponse(List<SiblingMemberResponse> members) {
+        public static SiblingMemberListResponse from(List<UserGroupServiceDto.SiblingMemberInfo> infos) {
+            return new SiblingMemberListResponse(
+                infos.stream().map(SiblingMemberResponse::from).toList()
+            );
+        }
+    }
 }

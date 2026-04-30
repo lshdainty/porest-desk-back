@@ -2,6 +2,7 @@ package com.porest.desk.dutchpay.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
+import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -33,6 +34,10 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     @JoinColumn(name = "dutch_pay_row_id")
     private DutchPay dutchPay;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_row_id")
+    private User user;
+
     @Column(name = "participant_name", nullable = false, length = 100)
     private String participantName;
 
@@ -46,9 +51,10 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
-    public static DutchPayParticipant create(DutchPay dutchPay, String participantName, Long amount) {
+    public static DutchPayParticipant create(DutchPay dutchPay, User user, String participantName, Long amount) {
         DutchPayParticipant participant = new DutchPayParticipant();
         participant.dutchPay = dutchPay;
+        participant.user = user;
         participant.participantName = participantName;
         participant.amount = amount;
         participant.isPaid = YNType.N;

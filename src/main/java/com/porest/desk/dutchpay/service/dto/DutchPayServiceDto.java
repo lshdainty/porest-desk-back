@@ -13,6 +13,7 @@ public class DutchPayServiceDto {
 
     public record CreateCommand(
         Long userRowId,
+        Long sourceExpenseRowId,
         String title,
         String description,
         Long totalAmount,
@@ -33,6 +34,7 @@ public class DutchPayServiceDto {
     ) {}
 
     public record ParticipantCommand(
+        Long userRowId,
         String participantName,
         Long amount
     ) {}
@@ -40,6 +42,7 @@ public class DutchPayServiceDto {
     public record DutchPayInfo(
         Long rowId,
         Long userRowId,
+        Long sourceExpenseRowId,
         String title,
         String description,
         Long totalAmount,
@@ -58,6 +61,7 @@ public class DutchPayServiceDto {
             return new DutchPayInfo(
                 dutchPay.getRowId(),
                 dutchPay.getUser().getRowId(),
+                dutchPay.getSourceExpense() != null ? dutchPay.getSourceExpense().getRowId() : null,
                 dutchPay.getTitle(),
                 dutchPay.getDescription(),
                 dutchPay.getTotalAmount(),
@@ -74,6 +78,7 @@ public class DutchPayServiceDto {
 
     public record ParticipantInfo(
         Long rowId,
+        Long userRowId,
         String participantName,
         Long amount,
         boolean isPaid,
@@ -82,6 +87,7 @@ public class DutchPayServiceDto {
         public static ParticipantInfo from(DutchPayParticipant participant) {
             return new ParticipantInfo(
                 participant.getRowId(),
+                participant.getUser() != null ? participant.getUser().getRowId() : null,
                 participant.getParticipantName(),
                 participant.getAmount(),
                 participant.getIsPaid() == YNType.Y,

@@ -60,6 +60,8 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_CATEGORY_TYPE_MISMATCH("EXP_008", "error.expense.category.type.mismatch", HttpStatus.BAD_REQUEST),
     EXPENSE_CATEGORY_NOT_LEAF("EXP_009", "error.expense.category.not.leaf", HttpStatus.BAD_REQUEST),
     EXPENSE_ACCESS_DENIED("EXP_010", "error.expense.access.denied", HttpStatus.FORBIDDEN),
+    EXPENSE_SPLIT_NOT_FOUND("EXP_011", "error.notfound.expense.split", HttpStatus.NOT_FOUND),
+    EXPENSE_SPLIT_AMOUNT_MISMATCH("EXP_012", "error.expense.split.amount.mismatch", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),

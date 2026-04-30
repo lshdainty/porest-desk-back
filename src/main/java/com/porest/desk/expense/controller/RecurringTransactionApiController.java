@@ -33,12 +33,13 @@ public class RecurringTransactionApiController {
         RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.createRecurring(
             new RecurringTransactionServiceDto.CreateCommand(
                 loginUser.getRowId(),
-                request.categoryRowId(), request.assetRowId(),
+                request.categoryRowId(), request.assetRowId(), request.sourceExpenseRowId(),
                 request.expenseType(), request.amount(), request.description(),
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
                 request.dayOfWeek(), request.dayOfMonth(),
-                request.startDate(), request.endDate()
+                request.startDate(), request.endDate(),
+                request.autoLog(), request.notifyDayBefore()
             )
         );
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));
@@ -69,7 +70,8 @@ public class RecurringTransactionApiController {
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
                 request.dayOfWeek(), request.dayOfMonth(),
-                request.startDate(), request.endDate()
+                request.startDate(), request.endDate(),
+                request.autoLog(), request.notifyDayBefore()
             )
         );
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));
