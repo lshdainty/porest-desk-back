@@ -35,7 +35,8 @@ public class ExpenseTemplateApiController {
                 loginUser.getRowId(),
                 request.templateName(), request.categoryRowId(), request.assetRowId(),
                 request.expenseType(), request.amount(), request.description(),
-                request.merchant(), request.paymentMethod(), request.sortOrder()
+                request.merchant(), request.paymentMethod(), request.sortOrder(),
+                request.lockAmount()
             )
         );
         return ApiResponse.success(ExpenseTemplateApiDto.Response.from(info));
@@ -56,7 +57,8 @@ public class ExpenseTemplateApiController {
             new ExpenseTemplateServiceDto.UpdateCommand(
                 request.templateName(), request.categoryRowId(), request.assetRowId(),
                 request.expenseType(), request.amount(), request.description(),
-                request.merchant(), request.paymentMethod()
+                request.merchant(), request.paymentMethod(),
+                request.lockAmount()
             )
         );
         return ApiResponse.success(ExpenseTemplateApiDto.Response.from(info));
@@ -77,5 +79,18 @@ public class ExpenseTemplateApiController {
             @RequestBody ExpenseTemplateApiDto.UseRequest request) {
         ExpenseServiceDto.ExpenseInfo info = expenseTemplateService.useTemplate(id, loginUser.getRowId(), request.expenseDate());
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
+    }
+
+    /**
+     * AddTxSheet 칩으로 프리셋을 불러왔지만 폼을 수정해 일반 거래로 저장한 경우,
+     * 거래 저장 성공 후 이 엔드포인트를 호출해 useCount/lastUsedAt 만 갱신한다.
+     * (Expense 생성은 일반 /v1/expense 흐름을 그대로 사용한다.)
+     */
+    @PostMapping("/expense-template/{id}/touch")
+    public ApiResponse<ExpenseTemplateApiDto.Response> touchTemplate(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        ExpenseTemplateServiceDto.TemplateInfo info = expenseTemplateService.markTemplateUsed(id, loginUser.getRowId());
+        return ApiResponse.success(ExpenseTemplateApiDto.Response.from(info));
     }
 }

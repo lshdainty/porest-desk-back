@@ -59,7 +59,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         ExpenseTemplate template = ExpenseTemplate.createTemplate(
             user, command.templateName(), category, asset,
             command.expenseType(), command.amount(), command.description(),
-            command.merchant(), command.paymentMethod(), command.sortOrder()
+            command.merchant(), command.paymentMethod(), command.sortOrder(),
+            command.lockAmount()
         );
 
         expenseTemplateRepository.save(template);
@@ -100,7 +101,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         template.updateTemplate(
             command.templateName(), category, asset,
             command.expenseType(), command.amount(), command.description(),
-            command.merchant(), command.paymentMethod()
+            command.merchant(), command.paymentMethod(),
+            command.lockAmount()
         );
 
         log.info("경비 템플릿 수정 완료: templateId={}", templateId);
@@ -118,6 +120,16 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         template.deleteTemplate();
 
         log.info("경비 템플릿 삭제 완료: templateId={}", templateId);
+    }
+
+    @Override
+    @Transactional
+    public ExpenseTemplateServiceDto.TemplateInfo markTemplateUsed(Long templateId, Long userRowId) {
+        ExpenseTemplate template = findTemplateOrThrow(templateId);
+        validateTemplateOwnership(template, userRowId);
+        template.incrementUseCount();
+        log.debug("프리셋 사용 마킹: templateId={}, useCount={}", templateId, template.getUseCount());
+        return ExpenseTemplateServiceDto.TemplateInfo.from(template);
     }
 
     @Override
