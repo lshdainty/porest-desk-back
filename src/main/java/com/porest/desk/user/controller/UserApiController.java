@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,6 +31,14 @@ public class UserApiController {
                 request.getNewPassword(),
                 request.getConfirmPassword()
         );
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/me/verify-password")
+    public ApiResponse<Void> verifyPassword(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody UserApiDto.VerifyPasswordReq request) {
+        userService.verifyPassword(loginUser.getUserId(), request.getPassword());
         return ApiResponse.success(null);
     }
 

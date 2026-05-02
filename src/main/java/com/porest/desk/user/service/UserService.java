@@ -15,6 +15,12 @@ public interface UserService {
      */
     void changePassword(String userId, String currentPassword, String newPassword, String confirmPassword);
 
+    /**
+     * 비밀번호 검증 (SSO 연동) — 민감 작업 재인증용.
+     * 일치하지 않으면 InvalidValueException 발생.
+     */
+    void verifyPassword(String userId, String password);
+
     /** 로그인 사용자 환경설정 조회 — 현재는 예산 알림 임계값만 */
     Integer getBudgetAlertThreshold(Long userRowId);
 

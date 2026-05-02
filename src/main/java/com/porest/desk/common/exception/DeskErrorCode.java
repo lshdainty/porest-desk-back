@@ -23,6 +23,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     USER_NOT_FOUND("USER_001", "error.notfound.user", HttpStatus.NOT_FOUND),
     USER_ALREADY_EXISTS("USER_002", "error.duplicate.user", HttpStatus.CONFLICT),
     USER_PASSWORD_CHANGE_FAILED("USER_003", "error.user.password.change.failed", HttpStatus.BAD_REQUEST),
+    USER_PASSWORD_VERIFY_FAILED("USER_004", "error.user.password.verify.failed", HttpStatus.BAD_REQUEST),
 
     // SSO
     SSO_SERVICE_ERROR("SSO_001", "error.sso.service.error", HttpStatus.BAD_GATEWAY),

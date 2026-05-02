@@ -31,6 +31,7 @@ import java.util.Map;
 public class UserServiceImpl implements UserService {
 
     private static final String SSO_CHANGE_PASSWORD_PATH = "/api/v1/auth/password/change";
+    private static final String SSO_VERIFY_PASSWORD_PATH = "/api/v1/auth/password/verify";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
@@ -78,6 +79,39 @@ public class UserServiceImpl implements UserService {
         } catch (RestClientException e) {
             log.error("SSO password change request failed for user {}: {}", userId, e.getMessage(), e);
             throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 비밀번호 변경 API 호출 실패", e);
+        }
+    }
+
+    @Override
+    public void verifyPassword(String userId, String password) {
+        String serviceToken = jwtTokenProvider.createServiceToken(userId);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(serviceToken);
+
+        Map<String, String> requestBody = Map.of("password", password);
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
+
+        try {
+            ResponseEntity<ApiResponse<Void>> response = ssoRestTemplate.exchange(
+                    SSO_VERIFY_PASSWORD_PATH,
+                    HttpMethod.POST,
+                    entity,
+                    new ParameterizedTypeReference<ApiResponse<Void>>() {}
+            );
+
+            ApiResponse<Void> body = response.getBody();
+            if (body != null && !body.isSuccess()) {
+                throw new InvalidValueException(DeskErrorCode.USER_PASSWORD_VERIFY_FAILED, body.getMessage());
+            }
+        } catch (HttpClientErrorException e) {
+            log.warn("SSO password verify client error for user {}: {}", userId, e.getMessage());
+            String errorMessage = extractSsoErrorMessage(e);
+            throw new InvalidValueException(DeskErrorCode.USER_PASSWORD_VERIFY_FAILED, errorMessage);
+        } catch (RestClientException e) {
+            log.error("SSO password verify request failed for user {}: {}", userId, e.getMessage(), e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 비밀번호 검증 API 호출 실패", e);
         }
     }
 

@@ -25,6 +25,14 @@ public class UserApiDto {
         private String confirmPassword;
     }
 
+    @Getter
+    @NoArgsConstructor
+    public static class VerifyPasswordReq {
+
+        @NotBlank(message = "비밀번호를 입력해주세요")
+        private String password;
+    }
+
     public record PreferencesResponse(
         Integer budgetAlertThreshold
     ) {}
