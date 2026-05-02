@@ -1,5 +1,6 @@
 package com.porest.desk.expense.service.dto;
 
+import com.porest.core.type.YNType;
 import com.porest.desk.expense.domain.ExpenseTemplate;
 import com.porest.desk.expense.type.ExpenseType;
 
@@ -17,7 +18,8 @@ public class ExpenseTemplateServiceDto {
         String description,
         String merchant,
         String paymentMethod,
-        Integer sortOrder
+        Integer sortOrder,
+        YNType lockAmount
     ) {}
 
     public record UpdateCommand(
@@ -28,7 +30,8 @@ public class ExpenseTemplateServiceDto {
         Long amount,
         String description,
         String merchant,
-        String paymentMethod
+        String paymentMethod,
+        YNType lockAmount
     ) {}
 
     public record TemplateInfo(
@@ -46,6 +49,8 @@ public class ExpenseTemplateServiceDto {
         String paymentMethod,
         Integer useCount,
         Integer sortOrder,
+        YNType lockAmount,
+        LocalDateTime lastUsedAt,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -65,6 +70,8 @@ public class ExpenseTemplateServiceDto {
                 template.getPaymentMethod(),
                 template.getUseCount(),
                 template.getSortOrder(),
+                template.getLockAmount(),
+                template.getLastUsedAt(),
                 template.getCreateAt(),
                 template.getModifyAt()
             );

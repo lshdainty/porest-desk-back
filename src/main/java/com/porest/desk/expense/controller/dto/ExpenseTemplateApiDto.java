@@ -1,5 +1,6 @@
 package com.porest.desk.expense.controller.dto;
 
+import com.porest.core.type.YNType;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 
@@ -18,7 +19,8 @@ public class ExpenseTemplateApiDto {
         String description,
         String merchant,
         String paymentMethod,
-        Integer sortOrder
+        Integer sortOrder,
+        YNType lockAmount
     ) {}
 
     public record UpdateRequest(
@@ -29,7 +31,8 @@ public class ExpenseTemplateApiDto {
         Long amount,
         String description,
         String merchant,
-        String paymentMethod
+        String paymentMethod,
+        YNType lockAmount
     ) {}
 
     public record UseRequest(
@@ -51,6 +54,8 @@ public class ExpenseTemplateApiDto {
         String paymentMethod,
         Integer useCount,
         Integer sortOrder,
+        YNType lockAmount,
+        LocalDateTime lastUsedAt,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -62,6 +67,7 @@ public class ExpenseTemplateApiDto {
                 info.expenseType(), info.amount(), info.description(),
                 info.merchant(), info.paymentMethod(),
                 info.useCount(), info.sortOrder(),
+                info.lockAmount(), info.lastUsedAt(),
                 info.createAt(), info.modifyAt()
             );
         }

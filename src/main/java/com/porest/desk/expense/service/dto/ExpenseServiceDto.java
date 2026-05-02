@@ -17,7 +17,7 @@ public class ExpenseServiceDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -31,7 +31,7 @@ public class ExpenseServiceDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -44,12 +44,14 @@ public class ExpenseServiceDto {
         Long userRowId,
         Long categoryRowId,
         String categoryName,
+        String categoryIcon,
+        String categoryColor,
         Long assetRowId,
         String assetName,
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -65,6 +67,8 @@ public class ExpenseServiceDto {
                 expense.getUser().getRowId(),
                 expense.getCategory().getRowId(),
                 expense.getCategory().getCategoryName(),
+                expense.getCategory().getIcon(),
+                expense.getCategory().getColor(),
                 expense.getAsset() != null ? expense.getAsset().getRowId() : null,
                 expense.getAsset() != null ? expense.getAsset().getAssetName() : null,
                 expense.getExpenseType(),
@@ -95,6 +99,13 @@ public class ExpenseServiceDto {
         Long totalIncome,
         Long totalExpense,
         List<CategoryBreakdown> categoryBreakdown
+    ) {}
+
+    public record MonthlyTrend(
+        Integer year,
+        Integer month,
+        Long totalIncome,
+        Long totalExpense
     ) {}
 
     public record CategoryBreakdown(
@@ -138,6 +149,12 @@ public class ExpenseServiceDto {
         String assetName,
         Long totalAmount,
         Integer count
+    ) {}
+
+    public record HeatmapCell(
+        Integer dayOfWeek,
+        Integer hour,
+        Long totalAmount
     ) {}
 
     public record SearchCommand(

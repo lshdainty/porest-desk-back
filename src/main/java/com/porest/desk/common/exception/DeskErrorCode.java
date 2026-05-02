@@ -23,6 +23,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     USER_NOT_FOUND("USER_001", "error.notfound.user", HttpStatus.NOT_FOUND),
     USER_ALREADY_EXISTS("USER_002", "error.duplicate.user", HttpStatus.CONFLICT),
     USER_PASSWORD_CHANGE_FAILED("USER_003", "error.user.password.change.failed", HttpStatus.BAD_REQUEST),
+    USER_PASSWORD_VERIFY_FAILED("USER_004", "error.user.password.verify.failed", HttpStatus.BAD_REQUEST),
 
     // SSO
     SSO_SERVICE_ERROR("SSO_001", "error.sso.service.error", HttpStatus.BAD_GATEWAY),
@@ -60,12 +61,18 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_CATEGORY_TYPE_MISMATCH("EXP_008", "error.expense.category.type.mismatch", HttpStatus.BAD_REQUEST),
     EXPENSE_CATEGORY_NOT_LEAF("EXP_009", "error.expense.category.not.leaf", HttpStatus.BAD_REQUEST),
     EXPENSE_ACCESS_DENIED("EXP_010", "error.expense.access.denied", HttpStatus.FORBIDDEN),
+    EXPENSE_SPLIT_NOT_FOUND("EXP_011", "error.notfound.expense.split", HttpStatus.NOT_FOUND),
+    EXPENSE_SPLIT_AMOUNT_MISMATCH("EXP_012", "error.expense.split.amount.mismatch", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),
     ASSET_TRANSFER_NOT_FOUND("ASSET_002", "error.notfound.asset.transfer", HttpStatus.NOT_FOUND),
     ASSET_TRANSFER_SAME_ASSET("ASSET_003", "error.asset.transfer.same", HttpStatus.BAD_REQUEST),
     ASSET_ACCESS_DENIED("ASSET_004", "error.asset.access.denied", HttpStatus.FORBIDDEN),
+
+    // Saving Goal
+    SAVING_GOAL_NOT_FOUND("SAVING_001", "error.notfound.saving.goal", HttpStatus.NOT_FOUND),
+    SAVING_GOAL_ACCESS_DENIED("SAVING_002", "error.saving.goal.access.denied", HttpStatus.FORBIDDEN),
 
     // Dutch Pay
     DUTCH_PAY_NOT_FOUND("DUTCH_001", "error.notfound.dutch.pay", HttpStatus.NOT_FOUND),
@@ -93,6 +100,12 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     FILE_ACCESS_DENIED("FILE_002", "error.file.access.denied", HttpStatus.FORBIDDEN),
     FILE_INVALID_TYPE("FILE_003", "error.file.invalid.type", HttpStatus.BAD_REQUEST),
     FILE_TOO_LARGE("FILE_004", "error.file.too.large", HttpStatus.BAD_REQUEST),
+
+    // Card
+    CARD_CATALOG_NOT_FOUND("CARD_001", "error.notfound.card.catalog", HttpStatus.NOT_FOUND),
+    CARD_BENEFIT_MAPPING_NOT_FOUND("CARD_002", "error.notfound.card.benefit.mapping", HttpStatus.NOT_FOUND),
+    CARD_BENEFIT_MAPPING_ACCESS_DENIED("CARD_003", "error.card.benefit.mapping.access.denied", HttpStatus.FORBIDDEN),
+    CARD_BENEFIT_MAPPING_DUPLICATE("CARD_004", "error.duplicate.card.benefit.mapping", HttpStatus.CONFLICT),
     ;
 
     private final String code;

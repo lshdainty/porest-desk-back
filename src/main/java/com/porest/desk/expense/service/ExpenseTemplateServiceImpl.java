@@ -59,7 +59,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         ExpenseTemplate template = ExpenseTemplate.createTemplate(
             user, command.templateName(), category, asset,
             command.expenseType(), command.amount(), command.description(),
-            command.merchant(), command.paymentMethod(), command.sortOrder()
+            command.merchant(), command.paymentMethod(), command.sortOrder(),
+            command.lockAmount()
         );
 
         expenseTemplateRepository.save(template);
@@ -100,7 +101,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         template.updateTemplate(
             command.templateName(), category, asset,
             command.expenseType(), command.amount(), command.description(),
-            command.merchant(), command.paymentMethod()
+            command.merchant(), command.paymentMethod(),
+            command.lockAmount()
         );
 
         log.info("경비 템플릿 수정 완료: templateId={}", templateId);
@@ -122,6 +124,16 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
     @Override
     @Transactional
+    public ExpenseTemplateServiceDto.TemplateInfo markTemplateUsed(Long templateId, Long userRowId) {
+        ExpenseTemplate template = findTemplateOrThrow(templateId);
+        validateTemplateOwnership(template, userRowId);
+        template.incrementUseCount();
+        log.debug("프리셋 사용 마킹: templateId={}, useCount={}", templateId, template.getUseCount());
+        return ExpenseTemplateServiceDto.TemplateInfo.from(template);
+    }
+
+    @Override
+    @Transactional
     public ExpenseServiceDto.ExpenseInfo useTemplate(Long templateId, Long userRowId, LocalDate expenseDate) {
         log.debug("경비 템플릿 사용: templateId={}, expenseDate={}", templateId, expenseDate);
 
@@ -135,7 +147,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             template.getExpenseType(),
             template.getAmount(),
             template.getDescription(),
-            expenseDate,
+            // 템플릿은 LocalDate 만 받으므로 00:00 으로 보정하여 엔티티(LocalDateTime) 에 전달
+            expenseDate.atStartOfDay(),
             template.getMerchant(),
             template.getPaymentMethod()
         );

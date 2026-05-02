@@ -14,6 +14,10 @@ public class ExpenseBudgetApiDto {
         Integer budgetMonth
     ) {}
 
+    public record UpdateRequest(
+        Long budgetAmount
+    ) {}
+
     public record Response(
         Long rowId,
         Long userRowId,
@@ -48,6 +52,26 @@ public class ExpenseBudgetApiDto {
                 .map(Response::from)
                 .toList();
             return new ListResponse(responses);
+        }
+    }
+
+    public record ComplianceMonthResponse(
+        Integer year,
+        Integer month,
+        Long totalLimit,
+        Long totalSpent,
+        Double compliancePercent
+    ) {
+        public static ComplianceMonthResponse from(ExpenseBudgetServiceDto.ComplianceMonth c) {
+            return new ComplianceMonthResponse(
+                c.year(), c.month(), c.totalLimit(), c.totalSpent(), c.compliancePercent()
+            );
+        }
+    }
+
+    public record ComplianceListResponse(List<ComplianceMonthResponse> months) {
+        public static ComplianceListResponse from(List<ExpenseBudgetServiceDto.ComplianceMonth> months) {
+            return new ComplianceListResponse(months.stream().map(ComplianceMonthResponse::from).toList());
         }
     }
 }

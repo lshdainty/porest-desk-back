@@ -23,6 +23,12 @@ public class ExpenseCategoryServiceDto {
         Integer sortOrder
     ) {}
 
+    public record ReorderItem(
+        Long categoryRowId,
+        Integer sortOrder,
+        Long parentRowId
+    ) {}
+
     public record CategoryInfo(
         Long rowId,
         Long userRowId,

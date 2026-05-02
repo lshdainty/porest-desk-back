@@ -20,6 +20,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "expense_template")
 @Getter
@@ -68,13 +70,20 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
     private Integer sortOrder;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "lock_amount", nullable = false, length = 1)
+    private YNType lockAmount;
+
+    @Column(name = "last_used_at")
+    private LocalDateTime lastUsedAt;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
     public static ExpenseTemplate createTemplate(User user, String templateName, ExpenseCategory category,
                                                   Asset asset, ExpenseType expenseType, Long amount,
                                                   String description, String merchant, String paymentMethod,
-                                                  Integer sortOrder) {
+                                                  Integer sortOrder, YNType lockAmount) {
         ExpenseTemplate template = new ExpenseTemplate();
         template.user = user;
         template.templateName = templateName;
@@ -87,13 +96,14 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
         template.paymentMethod = paymentMethod;
         template.useCount = 0;
         template.sortOrder = sortOrder != null ? sortOrder : 0;
+        template.lockAmount = lockAmount != null ? lockAmount : YNType.Y;
         template.isDeleted = YNType.N;
         return template;
     }
 
     public void updateTemplate(String templateName, ExpenseCategory category, Asset asset,
                                 ExpenseType expenseType, Long amount, String description,
-                                String merchant, String paymentMethod) {
+                                String merchant, String paymentMethod, YNType lockAmount) {
         this.templateName = templateName;
         this.category = category;
         this.asset = asset;
@@ -102,10 +112,12 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
         this.description = description;
         this.merchant = merchant;
         this.paymentMethod = paymentMethod;
+        if (lockAmount != null) this.lockAmount = lockAmount;
     }
 
     public void incrementUseCount() {
         this.useCount++;
+        this.lastUsedAt = LocalDateTime.now();
     }
 
     public void deleteTemplate() {

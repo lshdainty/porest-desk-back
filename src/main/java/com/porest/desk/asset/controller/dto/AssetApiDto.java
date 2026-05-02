@@ -20,7 +20,8 @@ public class AssetApiDto {
         String color,
         String institution,
         String memo,
-        Integer sortOrder
+        Integer sortOrder,
+        Long cardCatalogRowId
     ) {}
 
     public record UpdateAssetRequest(
@@ -32,8 +33,22 @@ public class AssetApiDto {
         String color,
         String institution,
         String memo,
-        YNType isIncludedInTotal
+        YNType isIncludedInTotal,
+        Long cardCatalogRowId
     ) {}
+
+    public record CardCatalogBriefResponse(
+        Long rowId,
+        String cardName,
+        String imgUrl,
+        String companyName,
+        String companyLogoUrl
+    ) {
+        public static CardCatalogBriefResponse from(AssetServiceDto.CardCatalogBrief b) {
+            if (b == null) return null;
+            return new CardCatalogBriefResponse(b.rowId(), b.cardName(), b.imgUrl(), b.companyName(), b.companyLogoUrl());
+        }
+    }
 
     public record AssetResponse(
         Long rowId,
@@ -48,6 +63,7 @@ public class AssetApiDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        CardCatalogBriefResponse cardCatalog,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -56,6 +72,7 @@ public class AssetApiDto {
                 info.rowId(), info.userRowId(), info.assetName(), info.assetType(),
                 info.balance(), info.currency(), info.icon(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
+                CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.createAt(), info.modifyAt()
             );
         }
@@ -73,11 +90,23 @@ public class AssetApiDto {
 
     public record AssetSummaryResponse(
         Long totalBalance,
+        Long totalAssets,
+        Long totalDebt,
+        Long netWorth,
+        Long lastMonthNetWorth,
+        Long changeAmount,
+        Double changePercent,
         List<AssetTypeSummaryResponse> byType
     ) {
         public static AssetSummaryResponse from(AssetServiceDto.AssetSummary summary) {
             return new AssetSummaryResponse(
                 summary.totalBalance(),
+                summary.totalAssets(),
+                summary.totalDebt(),
+                summary.netWorth(),
+                summary.lastMonthNetWorth(),
+                summary.changeAmount(),
+                summary.changePercent(),
                 summary.byType().stream().map(AssetTypeSummaryResponse::from).toList()
             );
         }
@@ -86,6 +115,30 @@ public class AssetApiDto {
     public record AssetTypeSummaryResponse(AssetType assetType, Long totalBalance, Integer count) {
         public static AssetTypeSummaryResponse from(AssetServiceDto.AssetTypeSummary s) {
             return new AssetTypeSummaryResponse(s.assetType(), s.totalBalance(), s.count());
+        }
+    }
+
+    public record NetWorthTrendPointResponse(Integer year, Integer month, Long netWorth) {
+        public static NetWorthTrendPointResponse from(AssetServiceDto.NetWorthTrendPoint p) {
+            return new NetWorthTrendPointResponse(p.year(), p.month(), p.netWorth());
+        }
+    }
+
+    public record NetWorthTrendResponse(List<NetWorthTrendPointResponse> trend) {
+        public static NetWorthTrendResponse from(List<AssetServiceDto.NetWorthTrendPoint> points) {
+            return new NetWorthTrendResponse(points.stream().map(NetWorthTrendPointResponse::from).toList());
+        }
+    }
+
+    public record AssetBalancePointResponse(java.time.LocalDate weekStart, Long balance) {
+        public static AssetBalancePointResponse from(AssetServiceDto.AssetBalancePoint p) {
+            return new AssetBalancePointResponse(p.weekStart(), p.balance());
+        }
+    }
+
+    public record AssetBalanceTrendResponse(List<AssetBalancePointResponse> trend) {
+        public static AssetBalanceTrendResponse from(List<AssetServiceDto.AssetBalancePoint> points) {
+            return new AssetBalanceTrendResponse(points.stream().map(AssetBalancePointResponse::from).toList());
         }
     }
 

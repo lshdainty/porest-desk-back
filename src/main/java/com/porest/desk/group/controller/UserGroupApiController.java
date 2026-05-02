@@ -46,6 +46,13 @@ public class UserGroupApiController {
         return ApiResponse.success(UserGroupApiDto.ListResponse.from(infos));
     }
 
+    @GetMapping("/groups/members")
+    public ApiResponse<UserGroupApiDto.SiblingMemberListResponse> getSiblingMembers(
+            @LoginUser UserPrincipal loginUser) {
+        List<UserGroupServiceDto.SiblingMemberInfo> infos = userGroupService.getSiblingMembers(loginUser.getRowId());
+        return ApiResponse.success(UserGroupApiDto.SiblingMemberListResponse.from(infos));
+    }
+
     @GetMapping("/group/{id}")
     public ApiResponse<UserGroupApiDto.DetailResponse> getGroup(
             @LoginUser UserPrincipal loginUser,

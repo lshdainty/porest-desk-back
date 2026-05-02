@@ -14,6 +14,7 @@ public class RecurringTransactionApiDto {
     public record CreateRequest(
         Long categoryRowId,
         Long assetRowId,
+        Long sourceExpenseRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
@@ -24,7 +25,9 @@ public class RecurringTransactionApiDto {
         Integer dayOfWeek,
         Integer dayOfMonth,
         LocalDate startDate,
-        LocalDate endDate
+        LocalDate endDate,
+        Boolean autoLog,
+        Boolean notifyDayBefore
     ) {}
 
     public record UpdateRequest(
@@ -40,7 +43,9 @@ public class RecurringTransactionApiDto {
         Integer dayOfWeek,
         Integer dayOfMonth,
         LocalDate startDate,
-        LocalDate endDate
+        LocalDate endDate,
+        Boolean autoLog,
+        Boolean notifyDayBefore
     ) {}
 
     public record Response(
@@ -50,6 +55,7 @@ public class RecurringTransactionApiDto {
         String categoryName,
         Long assetRowId,
         String assetName,
+        Long sourceExpenseRowId,
         ExpenseType expenseType,
         Long amount,
         String description,
@@ -64,6 +70,8 @@ public class RecurringTransactionApiDto {
         LocalDate nextExecutionDate,
         LocalDateTime lastExecutedAt,
         YNType isActive,
+        boolean autoLog,
+        boolean notifyDayBefore,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -72,13 +80,16 @@ public class RecurringTransactionApiDto {
                 info.rowId(), info.userRowId(),
                 info.categoryRowId(), info.categoryName(),
                 info.assetRowId(), info.assetName(),
+                info.sourceExpenseRowId(),
                 info.expenseType(), info.amount(), info.description(),
                 info.merchant(), info.paymentMethod(),
                 info.frequency(), info.intervalValue(),
                 info.dayOfWeek(), info.dayOfMonth(),
                 info.startDate(), info.endDate(),
                 info.nextExecutionDate(), info.lastExecutedAt(),
-                info.isActive(), info.createAt(), info.modifyAt()
+                info.isActive(),
+                info.autoLog(), info.notifyDayBefore(),
+                info.createAt(), info.modifyAt()
             );
         }
     }

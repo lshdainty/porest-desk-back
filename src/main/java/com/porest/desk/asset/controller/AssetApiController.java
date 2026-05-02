@@ -38,7 +38,8 @@ public class AssetApiController {
             loginUser.getRowId(),
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.icon(), request.color(),
-            request.institution(), request.memo(), request.sortOrder()
+            request.institution(), request.memo(), request.sortOrder(),
+            request.cardCatalogRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -65,7 +66,8 @@ public class AssetApiController {
         AssetServiceDto.AssetInfo info = assetService.updateAsset(id, loginUser.getRowId(), new AssetServiceDto.UpdateAssetCommand(
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.icon(), request.color(),
-            request.institution(), request.memo(), request.isIncludedInTotal()
+            request.institution(), request.memo(), request.isIncludedInTotal(),
+            request.cardCatalogRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -79,9 +81,29 @@ public class AssetApiController {
     }
 
     @GetMapping("/assets/summary")
-    public ApiResponse<AssetApiDto.AssetSummaryResponse> getAssetSummary(@LoginUser UserPrincipal loginUser) {
-        AssetServiceDto.AssetSummary summary = assetService.getAssetSummary(loginUser.getRowId());
+    public ApiResponse<AssetApiDto.AssetSummaryResponse> getAssetSummary(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        AssetServiceDto.AssetSummary summary = assetService.getAssetSummary(loginUser.getRowId(), year, month);
         return ApiResponse.success(AssetApiDto.AssetSummaryResponse.from(summary));
+    }
+
+    @GetMapping("/assets/net-worth-trend")
+    public ApiResponse<AssetApiDto.NetWorthTrendResponse> getNetWorthTrend(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false, defaultValue = "12") Integer months) {
+        List<AssetServiceDto.NetWorthTrendPoint> trend = assetService.getNetWorthTrend(loginUser.getRowId(), months);
+        return ApiResponse.success(AssetApiDto.NetWorthTrendResponse.from(trend));
+    }
+
+    @GetMapping("/asset/{id}/balance-trend")
+    public ApiResponse<AssetApiDto.AssetBalanceTrendResponse> getAssetBalanceTrend(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "12") Integer weeks) {
+        List<AssetServiceDto.AssetBalancePoint> trend = assetService.getAssetBalanceTrend(id, loginUser.getRowId(), weeks);
+        return ApiResponse.success(AssetApiDto.AssetBalanceTrendResponse.from(trend));
     }
 
     @PatchMapping("/assets/reorder")

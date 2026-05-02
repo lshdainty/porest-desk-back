@@ -86,6 +86,14 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
         }
     }
 
+    public void updateSortOrder(Integer sortOrder) {
+        if (sortOrder != null) this.sortOrder = sortOrder;
+    }
+
+    public void moveParent(ExpenseCategory parent) {
+        this.parent = parent;
+    }
+
     public void deleteCategory() {
         this.isDeleted = YNType.Y;
     }

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -32,20 +33,28 @@ public class RecurringTransactionApiController {
         RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.createRecurring(
             new RecurringTransactionServiceDto.CreateCommand(
                 loginUser.getRowId(),
-                request.categoryRowId(), request.assetRowId(),
+                request.categoryRowId(), request.assetRowId(), request.sourceExpenseRowId(),
                 request.expenseType(), request.amount(), request.description(),
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
                 request.dayOfWeek(), request.dayOfMonth(),
-                request.startDate(), request.endDate()
+                request.startDate(), request.endDate(),
+                request.autoLog(), request.notifyDayBefore()
             )
         );
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));
     }
 
     @GetMapping("/recurring-transactions")
-    public ApiResponse<RecurringTransactionApiDto.ListResponse> getRecurrings(@LoginUser UserPrincipal loginUser) {
-        List<RecurringTransactionServiceDto.RecurringInfo> infos = recurringTransactionService.getRecurrings(loginUser.getRowId());
+    public ApiResponse<RecurringTransactionApiDto.ListResponse> getRecurrings(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) Boolean upcoming,
+            @RequestParam(required = false) Integer limit) {
+        List<RecurringTransactionServiceDto.RecurringInfo> infos = recurringTransactionService.getRecurrings(
+            loginUser.getRowId(),
+            Boolean.TRUE.equals(upcoming),
+            limit
+        );
         return ApiResponse.success(RecurringTransactionApiDto.ListResponse.from(infos));
     }
 
@@ -61,7 +70,8 @@ public class RecurringTransactionApiController {
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
                 request.dayOfWeek(), request.dayOfMonth(),
-                request.startDate(), request.endDate()
+                request.startDate(), request.endDate(),
+                request.autoLog(), request.notifyDayBefore()
             )
         );
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));

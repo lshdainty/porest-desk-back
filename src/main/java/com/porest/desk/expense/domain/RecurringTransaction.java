@@ -46,12 +46,24 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @JoinColumn(name = "asset_row_id")
     private Asset asset;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_expense_row_id")
+    private Expense sourceExpense;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "expense_type", nullable = false, length = 20)
     private ExpenseType expenseType;
 
     @Column(name = "amount", nullable = false)
     private Long amount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auto_log", nullable = false, length = 1)
+    private YNType autoLog;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "notify_day_before", nullable = false, length = 1)
+    private YNType notifyDayBefore;
 
     @Column(name = "description", length = 500)
     private String description;
@@ -96,16 +108,19 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static RecurringTransaction createRecurring(User user, ExpenseCategory category, Asset asset,
+                                                        Expense sourceExpense,
                                                         ExpenseType expenseType, Long amount, String description,
                                                         String merchant, String paymentMethod,
                                                         RecurringFrequency frequency, Integer intervalValue,
                                                         Integer dayOfWeek, Integer dayOfMonth,
                                                         LocalDate startDate, LocalDate endDate,
-                                                        LocalDate nextExecutionDate) {
+                                                        LocalDate nextExecutionDate,
+                                                        Boolean autoLog, Boolean notifyDayBefore) {
         RecurringTransaction recurring = new RecurringTransaction();
         recurring.user = user;
         recurring.category = category;
         recurring.asset = asset;
+        recurring.sourceExpense = sourceExpense;
         recurring.expenseType = expenseType;
         recurring.amount = amount;
         recurring.description = description;
@@ -118,6 +133,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         recurring.startDate = startDate;
         recurring.endDate = endDate;
         recurring.nextExecutionDate = nextExecutionDate;
+        recurring.autoLog = (autoLog == null || autoLog) ? YNType.Y : YNType.N;
+        recurring.notifyDayBefore = (notifyDayBefore == null || notifyDayBefore) ? YNType.Y : YNType.N;
         recurring.isActive = YNType.Y;
         recurring.isDeleted = YNType.N;
         return recurring;
@@ -127,7 +144,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
                                  Long amount, String description, String merchant, String paymentMethod,
                                  RecurringFrequency frequency, Integer intervalValue,
                                  Integer dayOfWeek, Integer dayOfMonth,
-                                 LocalDate startDate, LocalDate endDate, LocalDate nextExecutionDate) {
+                                 LocalDate startDate, LocalDate endDate, LocalDate nextExecutionDate,
+                                 Boolean autoLog, Boolean notifyDayBefore) {
         this.category = category;
         this.asset = asset;
         this.expenseType = expenseType;
@@ -142,6 +160,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         this.startDate = startDate;
         this.endDate = endDate;
         this.nextExecutionDate = nextExecutionDate;
+        if (autoLog != null) this.autoLog = autoLog ? YNType.Y : YNType.N;
+        if (notifyDayBefore != null) this.notifyDayBefore = notifyDayBefore ? YNType.Y : YNType.N;
     }
 
     public void markExecuted(LocalDateTime executedAt, LocalDate nextDate) {

@@ -15,7 +15,8 @@ public class ExpenseApiDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
+        String expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -29,7 +30,8 @@ public class ExpenseApiDto {
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
+        String expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -42,12 +44,14 @@ public class ExpenseApiDto {
         Long userRowId,
         Long categoryRowId,
         String categoryName,
+        String categoryIcon,
+        String categoryColor,
         Long assetRowId,
         String assetName,
         ExpenseType expenseType,
         Long amount,
         String description,
-        LocalDate expenseDate,
+        LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
@@ -63,6 +67,8 @@ public class ExpenseApiDto {
                 info.userRowId(),
                 info.categoryRowId(),
                 info.categoryName(),
+                info.categoryIcon(),
+                info.categoryColor(),
                 info.assetRowId(),
                 info.assetName(),
                 info.expenseType(),
@@ -124,6 +130,23 @@ public class ExpenseApiDto {
                 summary.totalExpense(),
                 breakdowns
             );
+        }
+    }
+
+    public record MonthlyTrendResponse(
+        Integer year,
+        Integer month,
+        Long totalIncome,
+        Long totalExpense
+    ) {
+        public static MonthlyTrendResponse from(ExpenseServiceDto.MonthlyTrend t) {
+            return new MonthlyTrendResponse(t.year(), t.month(), t.totalIncome(), t.totalExpense());
+        }
+    }
+
+    public record MonthlyTrendListResponse(List<MonthlyTrendResponse> trends) {
+        public static MonthlyTrendListResponse from(List<ExpenseServiceDto.MonthlyTrend> trends) {
+            return new MonthlyTrendListResponse(trends.stream().map(MonthlyTrendResponse::from).toList());
         }
     }
 
@@ -210,6 +233,22 @@ public class ExpenseApiDto {
     public record AssetSummaryListResponse(List<AssetSummaryResponse> assets) {
         public static AssetSummaryListResponse from(List<ExpenseServiceDto.AssetSummary> list) {
             return new AssetSummaryListResponse(list.stream().map(AssetSummaryResponse::from).toList());
+        }
+    }
+
+    public record HeatmapCellResponse(
+        Integer dayOfWeek,
+        Integer hour,
+        Long totalAmount
+    ) {
+        public static HeatmapCellResponse from(ExpenseServiceDto.HeatmapCell cell) {
+            return new HeatmapCellResponse(cell.dayOfWeek(), cell.hour(), cell.totalAmount());
+        }
+    }
+
+    public record HeatmapResponse(List<HeatmapCellResponse> cells) {
+        public static HeatmapResponse from(List<ExpenseServiceDto.HeatmapCell> cells) {
+            return new HeatmapResponse(cells.stream().map(HeatmapCellResponse::from).toList());
         }
     }
 }

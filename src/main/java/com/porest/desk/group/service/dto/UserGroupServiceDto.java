@@ -98,4 +98,11 @@ public class UserGroupServiceDto {
             );
         }
     }
+
+    public record SiblingMemberInfo(
+        Long userRowId,
+        String userName,
+        String userEmail,
+        List<Long> sharedGroupRowIds
+    ) {}
 }

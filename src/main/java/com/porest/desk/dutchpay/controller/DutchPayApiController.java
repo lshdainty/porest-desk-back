@@ -31,12 +31,13 @@ public class DutchPayApiController {
             @RequestBody DutchPayApiDto.CreateRequest request) {
         List<DutchPayServiceDto.ParticipantCommand> participants = request.participants() != null
             ? request.participants().stream()
-                .map(p -> new DutchPayServiceDto.ParticipantCommand(p.participantName(), p.amount()))
+                .map(p -> new DutchPayServiceDto.ParticipantCommand(p.userRowId(), p.participantName(), p.amount()))
                 .toList()
             : List.of();
 
         DutchPayServiceDto.DutchPayInfo info = dutchPayService.createDutchPay(new DutchPayServiceDto.CreateCommand(
             loginUser.getRowId(),
+            request.sourceExpenseRowId(),
             request.title(),
             request.description(),
             request.totalAmount(),
@@ -70,7 +71,7 @@ public class DutchPayApiController {
             @RequestBody DutchPayApiDto.UpdateRequest request) {
         List<DutchPayServiceDto.ParticipantCommand> participants = request.participants() != null
             ? request.participants().stream()
-                .map(p -> new DutchPayServiceDto.ParticipantCommand(p.participantName(), p.amount()))
+                .map(p -> new DutchPayServiceDto.ParticipantCommand(p.userRowId(), p.participantName(), p.amount()))
                 .toList()
             : List.of();
 

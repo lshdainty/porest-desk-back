@@ -63,4 +63,12 @@ public class ExpenseCategoryApiDto {
             return new ListResponse(responses);
         }
     }
+
+    public record ReorderItem(
+        Long categoryRowId,
+        Integer sortOrder,
+        Long parentRowId
+    ) {}
+
+    public record ReorderRequest(List<ReorderItem> items) {}
 }

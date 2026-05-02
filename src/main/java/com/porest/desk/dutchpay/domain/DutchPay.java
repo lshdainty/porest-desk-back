@@ -3,6 +3,7 @@ package com.porest.desk.dutchpay.domain;
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.dutchpay.type.SplitMethod;
+import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -39,6 +40,10 @@ public class DutchPay extends AuditingFieldsWithIp {
     @JoinColumn(name = "user_row_id")
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_expense_row_id")
+    private Expense sourceExpense;
+
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
@@ -69,11 +74,13 @@ public class DutchPay extends AuditingFieldsWithIp {
     @OneToMany(mappedBy = "dutchPay", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DutchPayParticipant> participants = new ArrayList<>();
 
-    public static DutchPay createDutchPay(User user, String title, String description,
+    public static DutchPay createDutchPay(User user, Expense sourceExpense,
+                                           String title, String description,
                                            Long totalAmount, String currency,
                                            SplitMethod splitMethod, LocalDate dutchPayDate) {
         DutchPay dutchPay = new DutchPay();
         dutchPay.user = user;
+        dutchPay.sourceExpense = sourceExpense;
         dutchPay.title = title;
         dutchPay.description = description;
         dutchPay.totalAmount = totalAmount;

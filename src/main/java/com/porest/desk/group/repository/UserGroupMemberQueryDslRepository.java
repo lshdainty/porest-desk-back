@@ -53,6 +53,24 @@ public class UserGroupMemberQueryDslRepository implements UserGroupMemberReposit
     }
 
     @Override
+    public List<UserGroupMember> findAllSiblingMembersOfUser(Long userRowId) {
+        QUserGroupMember m2 = new QUserGroupMember("m2");
+        return queryFactory.selectFrom(member)
+            .leftJoin(member.user).fetchJoin()
+            .leftJoin(member.group).fetchJoin()
+            .where(
+                member.isDeleted.eq(YNType.N),
+                member.group.rowId.in(
+                    queryFactory.select(m2.group.rowId)
+                        .from(m2)
+                        .where(m2.user.rowId.eq(userRowId), m2.isDeleted.eq(YNType.N))
+                )
+            )
+            .orderBy(member.group.rowId.asc(), member.joinedAt.asc())
+            .fetch();
+    }
+
+    @Override
     public UserGroupMember save(UserGroupMember entity) {
         entityManager.persist(entity);
         return entity;

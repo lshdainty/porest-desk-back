@@ -3,11 +3,14 @@ package com.porest.desk.expense.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
+import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.dto.ExpenseBudgetServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -24,6 +29,7 @@ import java.util.List;
 public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
+    private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -64,6 +70,60 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         return budgets.stream()
             .map(ExpenseBudgetServiceDto.BudgetInfo::from)
             .toList();
+    }
+
+    @Override
+    public List<ExpenseBudgetServiceDto.ComplianceMonth> getCompliance(Long userRowId, Integer months) {
+        int n = (months == null || months < 1) ? 6 : Math.min(months, 24);
+        log.debug("예산 이행률 조회: userRowId={}, months={}", userRowId, n);
+
+        LocalDate now = LocalDate.now();
+        List<ExpenseBudgetServiceDto.ComplianceMonth> result = new ArrayList<>(n);
+
+        for (int i = n - 1; i >= 0; i--) {
+            LocalDate m = now.minusMonths(i);
+            int y = m.getYear();
+            int mm = m.getMonthValue();
+
+            List<ExpenseBudget> budgets = expenseBudgetRepository.findByUser(userRowId, y, mm);
+            // 전체 상한(category == null) 이 있으면 그것만 한도로 사용.
+            // 없을 때만 카테고리별 한도의 합으로 대체 — 중복 집계 방지.
+            long overallLimit = budgets.stream()
+                .filter(b -> b.getCategory() == null)
+                .mapToLong(ExpenseBudget::getBudgetAmount)
+                .sum();
+            long totalLimit = overallLimit > 0
+                ? overallLimit
+                : budgets.stream()
+                    .filter(b -> b.getCategory() != null)
+                    .mapToLong(ExpenseBudget::getBudgetAmount)
+                    .sum();
+
+            List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, y, mm);
+            long totalSpent = expenses.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+                .mapToLong(Expense::getAmount)
+                .sum();
+
+            double compliancePercent = totalLimit > 0
+                ? Math.round(((double) totalSpent / totalLimit) * 1000.0) / 10.0
+                : 0.0;
+
+            result.add(new ExpenseBudgetServiceDto.ComplianceMonth(y, mm, totalLimit, totalSpent, compliancePercent));
+        }
+
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public ExpenseBudgetServiceDto.BudgetInfo updateBudget(Long budgetId, Long userRowId, ExpenseBudgetServiceDto.UpdateCommand command) {
+        log.debug("예산 수정 시작: budgetId={}, userRowId={}", budgetId, userRowId);
+        ExpenseBudget budget = findBudgetOrThrow(budgetId);
+        validateBudgetOwnership(budget, userRowId);
+        budget.updateBudget(command.budgetAmount());
+        log.info("예산 수정 완료: budgetId={}, amount={}", budget.getRowId(), command.budgetAmount());
+        return ExpenseBudgetServiceDto.BudgetInfo.from(budget);
     }
 
     @Override

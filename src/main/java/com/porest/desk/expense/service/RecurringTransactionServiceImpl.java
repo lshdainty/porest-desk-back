@@ -57,18 +57,28 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             validateAssetOwnership(asset, command.userRowId());
         }
 
+        Expense sourceExpense = null;
+        if (command.sourceExpenseRowId() != null) {
+            sourceExpense = expenseRepository.findById(command.sourceExpenseRowId())
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_NOT_FOUND));
+            if (!sourceExpense.getUser().getRowId().equals(command.userRowId())) {
+                throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+            }
+        }
+
         LocalDate nextExecutionDate = calculateNextExecutionDate(
             command.startDate(), command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth()
         );
 
         RecurringTransaction recurring = RecurringTransaction.createRecurring(
-            user, category, asset,
+            user, category, asset, sourceExpense,
             command.expenseType(), command.amount(), command.description(),
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
-            command.startDate(), command.endDate(), nextExecutionDate
+            command.startDate(), command.endDate(), nextExecutionDate,
+            command.autoLog(), command.notifyDayBefore()
         );
 
         recurringTransactionRepository.save(recurring);
@@ -79,11 +89,24 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     @Override
     public List<RecurringTransactionServiceDto.RecurringInfo> getRecurrings(Long userRowId) {
-        log.debug("반복 거래 목록 조회: userRowId={}", userRowId);
+        return getRecurrings(userRowId, false, null);
+    }
 
-        return recurringTransactionRepository.findByUser(userRowId).stream()
-            .map(RecurringTransactionServiceDto.RecurringInfo::from)
-            .toList();
+    @Override
+    public List<RecurringTransactionServiceDto.RecurringInfo> getRecurrings(Long userRowId, boolean upcomingOnly, Integer limit) {
+        log.debug("반복 거래 목록 조회: userRowId={}, upcomingOnly={}, limit={}", userRowId, upcomingOnly, limit);
+
+        LocalDate today = LocalDate.now();
+        java.util.stream.Stream<RecurringTransaction> stream = recurringTransactionRepository.findByUser(userRowId).stream();
+        if (upcomingOnly) {
+            stream = stream.filter(r -> r.getIsActive() == com.porest.core.type.YNType.Y)
+                .filter(r -> r.getExpenseType() == com.porest.desk.expense.type.ExpenseType.EXPENSE)
+                .filter(r -> r.getNextExecutionDate() != null && !r.getNextExecutionDate().isBefore(today));
+        }
+        if (limit != null && limit > 0) {
+            stream = stream.limit(limit);
+        }
+        return stream.map(RecurringTransactionServiceDto.RecurringInfo::from).toList();
     }
 
     @Override
@@ -117,7 +140,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
-            command.startDate(), command.endDate(), nextExecutionDate
+            command.startDate(), command.endDate(), nextExecutionDate,
+            command.autoLog(), command.notifyDayBefore()
         );
 
         log.info("반복 거래 수정 완료: recurringId={}", recurringId);
@@ -155,6 +179,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     @Transactional
     public void executeDueTransactions() {
         LocalDate today = LocalDate.now();
+        // 반복 거래 실행 시각은 오전 9시로 고정 (히트맵 시간 집계를 위한 기본값)
+        LocalDateTime executionDateTime = today.atTime(9, 0);
         log.debug("반복 거래 실행 시작: date={}", today);
 
         List<RecurringTransaction> dueTransactions = recurringTransactionRepository.findDueTransactions(today);
@@ -168,12 +194,21 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                     recurring.getExpenseType(),
                     recurring.getAmount(),
                     recurring.getDescription(),
-                    today,
+                    executionDateTime,
                     recurring.getMerchant(),
                     recurring.getPaymentMethod()
                 );
 
                 expenseRepository.save(expense);
+
+                // 자산 잔액 동기화: INCOME은 +, EXPENSE는 -
+                Asset recurringAsset = recurring.getAsset();
+                if (recurringAsset != null && recurring.getAmount() != null) {
+                    long delta = (recurring.getExpenseType() == com.porest.desk.expense.type.ExpenseType.INCOME)
+                        ? recurring.getAmount()
+                        : -recurring.getAmount();
+                    recurringAsset.updateBalance(recurringAsset.getBalance() + delta);
+                }
 
                 LocalDate nextDate = calculateNextDate(
                     recurring.getNextExecutionDate(),

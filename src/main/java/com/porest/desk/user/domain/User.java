@@ -45,6 +45,10 @@ public class User extends AuditingFieldsWithIp {
     @Column(name = "month_start_day", nullable = false)
     private Integer monthStartDay;
 
+    /** 예산 경고·알림 임계값(%). 기본 85. 100은 강제로 초과 알림만. */
+    @Column(name = "budget_alert_threshold", nullable = false)
+    private Integer budgetAlertThreshold;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -57,6 +61,7 @@ public class User extends AuditingFieldsWithIp {
         user.userEmail = userEmail;
         user.timezone = "Asia/Seoul";
         user.monthStartDay = 1;
+        user.budgetAlertThreshold = 85;
         user.isDeleted = YNType.N;
         return user;
     }
@@ -77,6 +82,12 @@ public class User extends AuditingFieldsWithIp {
 
     public void updateMonthStartDay(Integer monthStartDay) {
         this.monthStartDay = monthStartDay;
+    }
+
+    public void updateBudgetAlertThreshold(Integer threshold) {
+        if (threshold == null) return;
+        int clamped = Math.max(50, Math.min(150, threshold));
+        this.budgetAlertThreshold = clamped;
     }
 
     public void deleteUser() {

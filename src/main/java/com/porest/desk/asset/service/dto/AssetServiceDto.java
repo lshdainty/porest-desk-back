@@ -4,6 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.domain.CardCatalog;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,7 +23,8 @@ public class AssetServiceDto {
         String color,
         String institution,
         String memo,
-        Integer sortOrder
+        Integer sortOrder,
+        Long cardCatalogRowId
     ) {}
 
     public record UpdateAssetCommand(
@@ -34,8 +36,28 @@ public class AssetServiceDto {
         String color,
         String institution,
         String memo,
-        YNType isIncludedInTotal
+        YNType isIncludedInTotal,
+        Long cardCatalogRowId
     ) {}
+
+    public record CardCatalogBrief(
+        Long rowId,
+        String cardName,
+        String imgUrl,
+        String companyName,
+        String companyLogoUrl
+    ) {
+        public static CardCatalogBrief from(CardCatalog c) {
+            if (c == null) return null;
+            String companyName = null;
+            String companyLogoUrl = null;
+            if (c.getCompany() != null) {
+                companyName = c.getCompany().getName();
+                companyLogoUrl = c.getCompany().getLogoUrl();
+            }
+            return new CardCatalogBrief(c.getRowId(), c.getCardName(), c.getImgUrl(), companyName, companyLogoUrl);
+        }
+    }
 
     public record AssetInfo(
         Long rowId,
@@ -50,6 +72,7 @@ public class AssetServiceDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        CardCatalogBrief cardCatalog,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -67,6 +90,7 @@ public class AssetServiceDto {
                 asset.getMemo(),
                 asset.getSortOrder(),
                 asset.getIsIncludedInTotal(),
+                CardCatalogBrief.from(asset.getCardCatalog()),
                 asset.getCreateAt(),
                 asset.getModifyAt()
             );
@@ -79,7 +103,13 @@ public class AssetServiceDto {
     ) {}
 
     public record AssetSummary(
-        Long totalBalance,
+        Long totalBalance,          // 기존 호환: 모든 자산 balance 합 (부채도 양수로 포함)
+        Long totalAssets,           // 순수 자산 합 (BANK_ACCOUNT, CASH, SAVINGS, INVESTMENT, CHECK_CARD)
+        Long totalDebt,             // 부채 합 (CREDIT_CARD, LOAN) — 양수
+        Long netWorth,              // totalAssets - totalDebt
+        Long lastMonthNetWorth,     // 이번 달 순수입을 역산해 추정한 지난달 말 순자산
+        Long changeAmount,          // netWorth - lastMonthNetWorth (= 이번 달 수입 - 이번 달 지출)
+        Double changePercent,       // changeAmount / |lastMonthNetWorth| * 100 (소수 1자리). lastMonth==0이면 0.0
         List<AssetTypeSummary> byType
     ) {}
 
@@ -87,6 +117,18 @@ public class AssetServiceDto {
         AssetType assetType,
         Long totalBalance,
         Integer count
+    ) {}
+
+    public record NetWorthTrendPoint(
+        Integer year,
+        Integer month,
+        Long netWorth
+    ) {}
+
+    /** 자산 상세 차트용 — 각 주의 월요일(weekStart) 기준 잔액. */
+    public record AssetBalancePoint(
+        LocalDate weekStart,
+        Long balance
     ) {}
 
     // === Asset Transfer ===

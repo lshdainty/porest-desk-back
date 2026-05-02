@@ -2,6 +2,7 @@ package com.porest.desk.asset.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.domain.CardCatalog;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
@@ -33,6 +34,10 @@ public class Asset extends AuditingFieldsWithIp {
     @JoinColumn(name = "user_row_id")
     private User user;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "card_catalog_row_id")
+    private CardCatalog cardCatalog;
+
     @Column(name = "asset_name", nullable = false, length = 100)
     private String assetName;
 
@@ -42,6 +47,9 @@ public class Asset extends AuditingFieldsWithIp {
 
     @Column(name = "balance", nullable = false)
     private Long balance;
+
+    @Column(name = "initial_balance", nullable = false)
+    private Long initialBalance;
 
     @Column(name = "currency", nullable = false, length = 10)
     private String currency;
@@ -71,12 +79,14 @@ public class Asset extends AuditingFieldsWithIp {
 
     public static Asset createAsset(User user, String assetName, AssetType assetType, Long balance,
                                      String currency, String icon, String color, String institution,
-                                     String memo, Integer sortOrder) {
+                                     String memo, Integer sortOrder, CardCatalog cardCatalog) {
         Asset asset = new Asset();
         asset.user = user;
+        asset.cardCatalog = cardCatalog;
         asset.assetName = assetName;
         asset.assetType = assetType;
         asset.balance = balance;
+        asset.initialBalance = balance;
         asset.currency = currency;
         asset.icon = icon;
         asset.color = color;
@@ -90,7 +100,7 @@ public class Asset extends AuditingFieldsWithIp {
 
     public void updateAsset(String assetName, AssetType assetType, Long balance, String currency,
                             String icon, String color, String institution, String memo,
-                            YNType isIncludedInTotal) {
+                            YNType isIncludedInTotal, CardCatalog cardCatalog) {
         this.assetName = assetName;
         this.assetType = assetType;
         this.balance = balance;
@@ -100,6 +110,7 @@ public class Asset extends AuditingFieldsWithIp {
         this.institution = institution;
         this.memo = memo;
         this.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : this.isIncludedInTotal;
+        this.cardCatalog = cardCatalog;
     }
 
     public void updateBalance(Long balance) {

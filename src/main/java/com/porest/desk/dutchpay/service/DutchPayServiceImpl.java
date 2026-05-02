@@ -7,6 +7,8 @@ import com.porest.desk.dutchpay.domain.DutchPay;
 import com.porest.desk.dutchpay.domain.DutchPayParticipant;
 import com.porest.desk.dutchpay.repository.DutchPayRepository;
 import com.porest.desk.dutchpay.service.dto.DutchPayServiceDto;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import java.util.List;
 public class DutchPayServiceImpl implements DutchPayService {
     private final DutchPayRepository dutchPayRepository;
     private final UserRepository userRepository;
+    private final ExpenseRepository expenseRepository;
 
     @Override
     @Transactional
@@ -32,8 +35,11 @@ public class DutchPayServiceImpl implements DutchPayService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
+        Expense sourceExpense = resolveSourceExpense(command.sourceExpenseRowId(), command.userRowId());
+
         DutchPay dutchPay = DutchPay.createDutchPay(
             user,
+            sourceExpense,
             command.title(),
             command.description(),
             command.totalAmount(),
@@ -42,14 +48,7 @@ public class DutchPayServiceImpl implements DutchPayService {
             command.dutchPayDate()
         );
 
-        if (command.participants() != null) {
-            for (DutchPayServiceDto.ParticipantCommand pc : command.participants()) {
-                DutchPayParticipant participant = DutchPayParticipant.create(
-                    dutchPay, pc.participantName(), pc.amount()
-                );
-                dutchPay.addParticipant(participant);
-            }
-        }
+        addParticipants(dutchPay, command.participants());
 
         dutchPayRepository.save(dutchPay);
         log.info("더치페이 생성 완료: dutchPayId={}", dutchPay.getRowId());
@@ -95,16 +94,8 @@ public class DutchPayServiceImpl implements DutchPayService {
             command.dutchPayDate()
         );
 
-        // 참가자 재설정
         dutchPay.clearParticipants();
-        if (command.participants() != null) {
-            for (DutchPayServiceDto.ParticipantCommand pc : command.participants()) {
-                DutchPayParticipant participant = DutchPayParticipant.create(
-                    dutchPay, pc.participantName(), pc.amount()
-                );
-                dutchPay.addParticipant(participant);
-            }
-        }
+        addParticipants(dutchPay, command.participants());
 
         dutchPayRepository.save(dutchPay);
         log.info("더치페이 수정 완료: dutchPayId={}", dutchPayId);
@@ -162,6 +153,31 @@ public class DutchPayServiceImpl implements DutchPayService {
         log.info("더치페이 전체 정산 완료: dutchPayId={}", dutchPayId);
 
         return DutchPayServiceDto.DutchPayInfo.from(dutchPay);
+    }
+
+    private Expense resolveSourceExpense(Long sourceExpenseRowId, Long userRowId) {
+        if (sourceExpenseRowId == null) return null;
+        Expense expense = expenseRepository.findById(sourceExpenseRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_NOT_FOUND));
+        if (!expense.getUser().getRowId().equals(userRowId)) {
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+        return expense;
+    }
+
+    private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
+        if (participants == null) return;
+        for (DutchPayServiceDto.ParticipantCommand pc : participants) {
+            User participantUser = null;
+            if (pc.userRowId() != null) {
+                participantUser = userRepository.findById(pc.userRowId())
+                    .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+            }
+            DutchPayParticipant participant = DutchPayParticipant.create(
+                dutchPay, participantUser, pc.participantName(), pc.amount()
+            );
+            dutchPay.addParticipant(participant);
+        }
     }
 
     private void validateDutchPayOwnership(DutchPay dutchPay, Long userRowId) {

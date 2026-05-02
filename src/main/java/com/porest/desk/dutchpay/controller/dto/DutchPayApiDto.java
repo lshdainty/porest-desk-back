@@ -10,6 +10,7 @@ import java.util.List;
 public class DutchPayApiDto {
 
     public record CreateRequest(
+        Long sourceExpenseRowId,
         String title,
         String description,
         Long totalAmount,
@@ -30,6 +31,7 @@ public class DutchPayApiDto {
     ) {}
 
     public record ParticipantRequest(
+        Long userRowId,
         String participantName,
         Long amount
     ) {}
@@ -37,6 +39,7 @@ public class DutchPayApiDto {
     public record Response(
         Long rowId,
         Long userRowId,
+        Long sourceExpenseRowId,
         String title,
         String description,
         Long totalAmount,
@@ -55,6 +58,7 @@ public class DutchPayApiDto {
             return new Response(
                 info.rowId(),
                 info.userRowId(),
+                info.sourceExpenseRowId(),
                 info.title(),
                 info.description(),
                 info.totalAmount(),
@@ -71,6 +75,7 @@ public class DutchPayApiDto {
 
     public record ParticipantResponse(
         Long rowId,
+        Long userRowId,
         String participantName,
         Long amount,
         boolean isPaid,
@@ -79,6 +84,7 @@ public class DutchPayApiDto {
         public static ParticipantResponse from(DutchPayServiceDto.ParticipantInfo info) {
             return new ParticipantResponse(
                 info.rowId(),
+                info.userRowId(),
                 info.participantName(),
                 info.amount(),
                 info.isPaid(),

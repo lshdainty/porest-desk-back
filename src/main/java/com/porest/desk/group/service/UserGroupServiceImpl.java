@@ -17,7 +17,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -61,6 +64,34 @@ public class UserGroupServiceImpl implements UserGroupService {
         return userGroupRepository.findAllByUser(userRowId).stream()
             .map(UserGroupServiceDto.GroupInfo::from)
             .toList();
+    }
+
+    @Override
+    public List<UserGroupServiceDto.SiblingMemberInfo> getSiblingMembers(Long userRowId) {
+        log.debug("그룹 멤버 풀 조회: userRowId={}", userRowId);
+
+        List<UserGroupMember> members = userGroupMemberRepository.findAllSiblingMembersOfUser(userRowId);
+        Map<Long, UserGroupServiceDto.SiblingMemberInfo> byUser = new LinkedHashMap<>();
+
+        for (UserGroupMember m : members) {
+            Long uid = m.getUser().getRowId();
+            if (uid.equals(userRowId)) continue;
+            UserGroupServiceDto.SiblingMemberInfo existing = byUser.get(uid);
+            if (existing == null) {
+                List<Long> groups = new ArrayList<>();
+                groups.add(m.getGroup().getRowId());
+                byUser.put(uid, new UserGroupServiceDto.SiblingMemberInfo(
+                    uid, m.getUser().getUserName(), m.getUser().getUserEmail(), groups
+                ));
+            } else {
+                List<Long> merged = new ArrayList<>(existing.sharedGroupRowIds());
+                merged.add(m.getGroup().getRowId());
+                byUser.put(uid, new UserGroupServiceDto.SiblingMemberInfo(
+                    existing.userRowId(), existing.userName(), existing.userEmail(), merged
+                ));
+            }
+        }
+        return List.copyOf(byUser.values());
     }
 
     @Override
