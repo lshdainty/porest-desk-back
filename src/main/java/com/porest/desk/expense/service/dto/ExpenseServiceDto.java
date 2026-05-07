@@ -93,12 +93,21 @@ public class ExpenseServiceDto {
         Long totalExpense
     ) {}
 
-    public record MonthlySummary(
+    /// 임의 기간 요약. 도넛/하이라이트 + 추이 차트용 monthlyBuckets 포함.
+    public record RangeSummary(
+        LocalDate startDate,
+        LocalDate endDate,
+        Long totalIncome,
+        Long totalExpense,
+        List<CategoryBreakdown> categoryBreakdown,
+        List<RangeMonthlyBucket> monthlyBuckets
+    ) {}
+
+    public record RangeMonthlyBucket(
         Integer year,
         Integer month,
         Long totalIncome,
-        Long totalExpense,
-        List<CategoryBreakdown> categoryBreakdown
+        Long totalExpense
     ) {}
 
     public record MonthlyTrend(
@@ -115,27 +124,6 @@ public class ExpenseServiceDto {
         String parentCategoryName,
         ExpenseType expenseType,
         Long totalAmount
-    ) {}
-
-    public record WeeklySummary(
-        LocalDate weekStart,
-        LocalDate weekEnd,
-        Long totalIncome,
-        Long totalExpense
-    ) {}
-
-    public record YearlySummary(
-        Integer year,
-        Long totalIncome,
-        Long totalExpense,
-        List<MonthlyAmount> monthlyAmounts
-    ) {}
-
-    public record MonthlyAmount(
-        Integer month,
-        Long totalIncome,
-        Long totalExpense,
-        List<CategoryBreakdown> categoryBreakdown
     ) {}
 
     public record MerchantSummary(

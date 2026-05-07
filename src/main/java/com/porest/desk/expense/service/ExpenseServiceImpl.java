@@ -262,10 +262,10 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     @Override
-    public ExpenseServiceDto.MonthlySummary getMonthlySummary(Long userRowId, Integer year, Integer month) {
-        log.debug("지출 월별 요약 조회: userRowId={}, year={}, month={}", userRowId, year, month);
+    public ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        log.debug("지출 기간 요약 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
 
-        List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, year, month);
+        List<Expense> expenses = expenseRepository.findByDateRange(userRowId, startDate, endDate);
 
         Long totalIncome = expenses.stream()
             .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
@@ -279,7 +279,29 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = buildCategoryBreakdown(expenses);
 
-        return new ExpenseServiceDto.MonthlySummary(year, month, totalIncome, totalExpense, categoryBreakdown);
+        // 추이 차트용 월별 버킷 — startDate~endDate 안의 모든 (year, month) 슬롯을 보장 (0 인 달도 포함)
+        Map<String, List<Expense>> grouped = expenses.stream()
+            .collect(Collectors.groupingBy(e -> e.getExpenseDate().getYear() + "-" + e.getExpenseDate().getMonthValue()));
+
+        List<ExpenseServiceDto.RangeMonthlyBucket> monthlyBuckets = new java.util.ArrayList<>();
+        LocalDate cursor = startDate.withDayOfMonth(1);
+        LocalDate endMonth = endDate.withDayOfMonth(1);
+        while (!cursor.isAfter(endMonth)) {
+            int y = cursor.getYear();
+            int m = cursor.getMonthValue();
+            List<Expense> bucket = grouped.getOrDefault(y + "-" + m, List.of());
+            long income = bucket.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
+                .mapToLong(Expense::getAmount).sum();
+            long expense = bucket.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+                .mapToLong(Expense::getAmount).sum();
+            monthlyBuckets.add(new ExpenseServiceDto.RangeMonthlyBucket(y, m, income, expense));
+            cursor = cursor.plusMonths(1);
+        }
+
+        return new ExpenseServiceDto.RangeSummary(
+            startDate, endDate, totalIncome, totalExpense, categoryBreakdown, monthlyBuckets);
     }
 
     /**
@@ -348,7 +370,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             LocalDate m = now.minusMonths(i);
             int y = m.getYear();
             int mm = m.getMonthValue();
-            List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, y, mm);
+            LocalDate ms = LocalDate.of(y, mm, 1);
+            LocalDate me = ms.plusMonths(1).minusDays(1);
+            List<Expense> expenses = expenseRepository.findByDateRange(userRowId, ms, me);
 
             long income = expenses.stream()
                 .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
@@ -362,68 +386,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             trends.add(new ExpenseServiceDto.MonthlyTrend(y, mm, income, expense));
         }
         return trends;
-    }
-
-    @Override
-    public ExpenseServiceDto.WeeklySummary getWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
-        log.debug("지출 주간 요약 조회: userRowId={}, weekStart={}, weekEnd={}", userRowId, weekStart, weekEnd);
-
-        List<Expense> expenses = expenseRepository.findWeeklySummary(userRowId, weekStart, weekEnd);
-
-        Long totalIncome = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        Long totalExpense = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        return new ExpenseServiceDto.WeeklySummary(weekStart, weekEnd, totalIncome, totalExpense);
-    }
-
-    @Override
-    public ExpenseServiceDto.YearlySummary getYearlySummary(Long userRowId, Integer year) {
-        log.debug("지출 연간 요약 조회: userRowId={}, year={}", userRowId, year);
-
-        List<Expense> expenses = expenseRepository.findYearlySummary(userRowId, year);
-
-        Long totalIncome = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        Long totalExpense = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        Map<Integer, List<Expense>> byMonth = expenses.stream()
-            .collect(Collectors.groupingBy(e -> e.getExpenseDate().getMonthValue()));
-
-        List<ExpenseServiceDto.MonthlyAmount> monthlyAmounts = byMonth.entrySet().stream()
-            .map(entry -> {
-                List<Expense> monthExpenses = entry.getValue();
-
-                Long monthIncome = monthExpenses.stream()
-                    .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-                    .mapToLong(Expense::getAmount)
-                    .sum();
-
-                Long monthExpense = monthExpenses.stream()
-                    .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-                    .mapToLong(Expense::getAmount)
-                    .sum();
-
-                List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = buildCategoryBreakdown(monthExpenses);
-
-                return new ExpenseServiceDto.MonthlyAmount(entry.getKey(), monthIncome, monthExpense, categoryBreakdown);
-            })
-            .sorted((a, b) -> a.month().compareTo(b.month()))
-            .toList();
-
-        return new ExpenseServiceDto.YearlySummary(year, totalIncome, totalExpense, monthlyAmounts);
     }
 
     @Override
@@ -516,12 +478,12 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     @Override
-    public List<ExpenseServiceDto.HeatmapCell> getHeatmap(Long userRowId, Integer year, Integer month) {
-        log.debug("지출 히트맵 조회: userRowId={}, year={}, month={}", userRowId, year, month);
+    public List<ExpenseServiceDto.HeatmapCell> getHeatmap(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        log.debug("지출 히트맵 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
 
-        // 지출(EXPENSE)만 히트맵 집계 대상
+        // 지출(EXPENSE)만 히트맵 집계 대상. 합계 그대로 반환 — 평균 정규화는 클라이언트가 기간 길이로.
         List<Object[]> rows = expenseRepository.sumGroupedByDayOfWeekAndHour(
-            userRowId, ExpenseType.EXPENSE, year, month
+            userRowId, ExpenseType.EXPENSE, startDate, endDate
         );
 
         // MySQL/MariaDB DAYOFWEEK(1=일 ~ 7=토) → Java DayOfWeek(1=월 ~ 7=일) 변환
@@ -630,7 +592,9 @@ public class ExpenseServiceImpl implements ExpenseService {
                 : null;
 
             // 해당 월의 총 지출/카테고리별 지출 집계 (방금 저장된 이 expense 포함)
-            List<Expense> monthly = expenseRepository.findMonthlySummary(userRowId, year, month);
+            LocalDate ms = LocalDate.of(year, month, 1);
+            LocalDate me = ms.plusMonths(1).minusDays(1);
+            List<Expense> monthly = expenseRepository.findByDateRange(userRowId, ms, me);
             long totalSpent = 0L;
             Map<Long, Long> spentByCat = new HashMap<>();
             for (Expense e : monthly) {

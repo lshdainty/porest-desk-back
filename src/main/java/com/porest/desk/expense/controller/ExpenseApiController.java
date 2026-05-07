@@ -115,13 +115,13 @@ public class ExpenseApiController {
         return ApiResponse.success(ExpenseApiDto.DailySummaryResponse.from(summary));
     }
 
-    @GetMapping("/expenses/summary/monthly")
-    public ApiResponse<ExpenseApiDto.MonthlySummaryResponse> getMonthlySummary(
+    @GetMapping("/expenses/summary/range")
+    public ApiResponse<ExpenseApiDto.RangeSummaryResponse> getRangeSummary(
             @LoginUser UserPrincipal loginUser,
-            @RequestParam Integer year,
-            @RequestParam Integer month) {
-        ExpenseServiceDto.MonthlySummary summary = expenseService.getMonthlySummary(loginUser.getRowId(), year, month);
-        return ApiResponse.success(ExpenseApiDto.MonthlySummaryResponse.from(summary));
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        ExpenseServiceDto.RangeSummary summary = expenseService.getRangeSummary(loginUser.getRowId(), startDate, endDate);
+        return ApiResponse.success(ExpenseApiDto.RangeSummaryResponse.from(summary));
     }
 
     @GetMapping("/expenses/summary/trend")
@@ -130,23 +130,6 @@ public class ExpenseApiController {
             @RequestParam(required = false, defaultValue = "6") Integer months) {
         List<ExpenseServiceDto.MonthlyTrend> trends = expenseService.getMonthlyTrend(loginUser.getRowId(), months);
         return ApiResponse.success(ExpenseApiDto.MonthlyTrendListResponse.from(trends));
-    }
-
-    @GetMapping("/expenses/summary/weekly")
-    public ApiResponse<ExpenseApiDto.WeeklySummaryResponse> getWeeklySummary(
-            @LoginUser UserPrincipal loginUser,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekStart,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekEnd) {
-        ExpenseServiceDto.WeeklySummary summary = expenseService.getWeeklySummary(loginUser.getRowId(), weekStart, weekEnd);
-        return ApiResponse.success(ExpenseApiDto.WeeklySummaryResponse.from(summary));
-    }
-
-    @GetMapping("/expenses/summary/yearly")
-    public ApiResponse<ExpenseApiDto.YearlySummaryResponse> getYearlySummary(
-            @LoginUser UserPrincipal loginUser,
-            @RequestParam Integer year) {
-        ExpenseServiceDto.YearlySummary summary = expenseService.getYearlySummary(loginUser.getRowId(), year);
-        return ApiResponse.success(ExpenseApiDto.YearlySummaryResponse.from(summary));
     }
 
     @GetMapping("/expenses/summary/by-merchant")
@@ -186,9 +169,9 @@ public class ExpenseApiController {
     @GetMapping("/expenses/summary/heatmap")
     public ApiResponse<ExpenseApiDto.HeatmapResponse> getHeatmap(
             @LoginUser UserPrincipal loginUser,
-            @RequestParam Integer year,
-            @RequestParam Integer month) {
-        List<ExpenseServiceDto.HeatmapCell> cells = expenseService.getHeatmap(loginUser.getRowId(), year, month);
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        List<ExpenseServiceDto.HeatmapCell> cells = expenseService.getHeatmap(loginUser.getRowId(), startDate, endDate);
         return ApiResponse.success(ExpenseApiDto.HeatmapResponse.from(cells));
     }
 

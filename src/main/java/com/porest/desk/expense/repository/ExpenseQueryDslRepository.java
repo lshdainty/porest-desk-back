@@ -125,43 +125,7 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Expense> findMonthlySummary(Long userRowId, Integer year, Integer month) {
-        LocalDate startDate = LocalDate.of(year, month, 1);
-        LocalDate endDate = startDate.plusMonths(1).minusDays(1);
-
-        return queryFactory.selectFrom(expense)
-            .leftJoin(expense.category).fetchJoin()
-            .leftJoin(expense.asset).fetchJoin()
-            .where(
-                expense.user.rowId.eq(userRowId),
-                expense.isDeleted.eq(YNType.N),
-                expense.expenseDate.goe(toStartOfDay(startDate)),
-                expense.expenseDate.loe(toEndOfDay(endDate))
-            )
-            .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
-            .fetch();
-    }
-
-    @Override
-    public List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
-        return queryFactory.selectFrom(expense)
-            .leftJoin(expense.category).fetchJoin()
-            .leftJoin(expense.asset).fetchJoin()
-            .where(
-                expense.user.rowId.eq(userRowId),
-                expense.isDeleted.eq(YNType.N),
-                expense.expenseDate.goe(toStartOfDay(weekStart)),
-                expense.expenseDate.loe(toEndOfDay(weekEnd))
-            )
-            .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
-            .fetch();
-    }
-
-    @Override
-    public List<Expense> findYearlySummary(Long userRowId, Integer year) {
-        LocalDate startDate = LocalDate.of(year, 1, 1);
-        LocalDate endDate = LocalDate.of(year, 12, 31);
-
+    public List<Expense> findByDateRange(Long userRowId, LocalDate startDate, LocalDate endDate) {
         return queryFactory.selectFrom(expense)
             .leftJoin(expense.category).fetchJoin()
             .leftJoin(expense.asset).fetchJoin()
@@ -278,7 +242,8 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, int year, int month) {
+    public List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType,
+                                                       LocalDate startDate, LocalDate endDate) {
         return entityManager.createQuery(
                 "SELECT FUNCTION('DAYOFWEEK', e.expenseDate), " +
                 "       FUNCTION('HOUR', e.expenseDate), " +
@@ -286,15 +251,15 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
                 "FROM Expense e " +
                 "WHERE e.user.rowId = :userRowId " +
                 "  AND e.expenseType = :expenseType " +
-                "  AND YEAR(e.expenseDate) = :year " +
-                "  AND MONTH(e.expenseDate) = :month " +
+                "  AND e.expenseDate >= :startDate " +
+                "  AND e.expenseDate <= :endDate " +
                 "  AND e.isDeleted = :isDeleted " +
                 "GROUP BY FUNCTION('DAYOFWEEK', e.expenseDate), FUNCTION('HOUR', e.expenseDate)",
                 Object[].class)
             .setParameter("userRowId", userRowId)
             .setParameter("expenseType", expenseType)
-            .setParameter("year", year)
-            .setParameter("month", month)
+            .setParameter("startDate", toStartOfDay(startDate))
+            .setParameter("endDate", toEndOfDay(endDate))
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }

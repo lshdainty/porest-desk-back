@@ -12,9 +12,8 @@ public interface ExpenseRepository {
     List<Expense> findByUser(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<Expense> findByGroups(List<Long> groupRowIds, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<Expense> findDailySummary(Long userRowId, LocalDate date);
-    List<Expense> findMonthlySummary(Long userRowId, Integer year, Integer month);
-    List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd);
-    List<Expense> findYearlySummary(Long userRowId, Integer year);
+    /// 임의 기간(startDate ~ endDate, inclusive) 의 사용자 거래 — 통계 집계용. fetch-join 포함.
+    List<Expense> findByDateRange(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<Expense> search(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType,
                          String keyword, String merchant, Long minAmount, Long maxAmount,
                          LocalDate startDate, LocalDate endDate);
@@ -33,11 +32,11 @@ public interface ExpenseRepository {
     List<Object[]> sumMonthlyByUserGroupedByAssetAndType(Long userRowId, LocalDate endDate);
 
     /**
-     * 특정 월의 (요일, 시간) 셀 단위 합계 ─ 히트맵용.
+     * 임의 기간(startDate ~ endDate, inclusive) 의 (요일, 시간) 셀 단위 합계 ─ 히트맵용.
      * 반환 Object[] = { Integer mysqlDayOfWeek(1=일~7=토), Integer hour(0-23), Long totalAmount }
-     * 단일 쿼리로 N+1 없음.
+     * 단일 쿼리로 N+1 없음. 평균/주별 정규화는 호출자가 처리.
      */
-    List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, int year, int month);
+    List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
 
     /**
      * 자산 1개 전체 이력의 주단위 (type × week) 합계 — AssetDetailDialog 차트용.

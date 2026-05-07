@@ -130,35 +130,7 @@ public class ExpenseJpaRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Expense> findMonthlySummary(Long userRowId, Integer year, Integer month) {
-        LocalDate startDate = LocalDate.of(year, month, 1);
-        LocalDate endDate = startDate.plusMonths(1).minusDays(1);
-
-        return entityManager.createQuery(
-            "SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted AND e.expenseDate >= :startDate AND e.expenseDate <= :endDate ORDER BY e.expenseDate DESC, e.rowId DESC", Expense.class)
-            .setParameter("userRowId", userRowId)
-            .setParameter("isDeleted", YNType.N)
-            .setParameter("startDate", toStartOfDay(startDate))
-            .setParameter("endDate", toEndOfDay(endDate))
-            .getResultList();
-    }
-
-    @Override
-    public List<Expense> findWeeklySummary(Long userRowId, LocalDate weekStart, LocalDate weekEnd) {
-        return entityManager.createQuery(
-            "SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted AND e.expenseDate >= :weekStart AND e.expenseDate <= :weekEnd ORDER BY e.expenseDate DESC, e.rowId DESC", Expense.class)
-            .setParameter("userRowId", userRowId)
-            .setParameter("isDeleted", YNType.N)
-            .setParameter("weekStart", toStartOfDay(weekStart))
-            .setParameter("weekEnd", toEndOfDay(weekEnd))
-            .getResultList();
-    }
-
-    @Override
-    public List<Expense> findYearlySummary(Long userRowId, Integer year) {
-        LocalDate startDate = LocalDate.of(year, 1, 1);
-        LocalDate endDate = LocalDate.of(year, 12, 31);
-
+    public List<Expense> findByDateRange(Long userRowId, LocalDate startDate, LocalDate endDate) {
         return entityManager.createQuery(
             "SELECT e FROM Expense e WHERE e.user.rowId = :userRowId AND e.isDeleted = :isDeleted AND e.expenseDate >= :startDate AND e.expenseDate <= :endDate ORDER BY e.expenseDate DESC, e.rowId DESC", Expense.class)
             .setParameter("userRowId", userRowId)
@@ -258,7 +230,8 @@ public class ExpenseJpaRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, int year, int month) {
+    public List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType,
+                                                       LocalDate startDate, LocalDate endDate) {
         return entityManager.createQuery(
                 "SELECT FUNCTION('DAYOFWEEK', e.expenseDate), " +
                 "       FUNCTION('HOUR', e.expenseDate), " +
@@ -266,15 +239,15 @@ public class ExpenseJpaRepository implements ExpenseRepository {
                 "FROM Expense e " +
                 "WHERE e.user.rowId = :userRowId " +
                 "  AND e.expenseType = :expenseType " +
-                "  AND YEAR(e.expenseDate) = :year " +
-                "  AND MONTH(e.expenseDate) = :month " +
+                "  AND e.expenseDate >= :startDate " +
+                "  AND e.expenseDate <= :endDate " +
                 "  AND e.isDeleted = :isDeleted " +
                 "GROUP BY FUNCTION('DAYOFWEEK', e.expenseDate), FUNCTION('HOUR', e.expenseDate)",
                 Object[].class)
             .setParameter("userRowId", userRowId)
             .setParameter("expenseType", expenseType)
-            .setParameter("year", year)
-            .setParameter("month", month)
+            .setParameter("startDate", toStartOfDay(startDate))
+            .setParameter("endDate", toEndOfDay(endDate))
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }

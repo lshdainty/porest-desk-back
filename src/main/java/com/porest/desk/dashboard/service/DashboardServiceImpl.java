@@ -87,7 +87,9 @@ public class DashboardServiceImpl implements DashboardService {
         List<Expense> todayExpenses = expenseRepository.findDailySummary(userRowId, today);
         long todayIncome = todayExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
         long todayExpenseAmount = todayExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
-        List<Expense> monthExpenses = expenseRepository.findMonthlySummary(userRowId, today.getYear(), today.getMonthValue());
+        LocalDate monthStart = today.withDayOfMonth(1);
+        LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
+        List<Expense> monthExpenses = expenseRepository.findByDateRange(userRowId, monthStart, monthEnd);
         long monthlyIncome = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
         long monthlyExpenseAmount = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
 

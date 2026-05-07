@@ -112,24 +112,40 @@ public class ExpenseApiDto {
         }
     }
 
-    public record MonthlySummaryResponse(
-        Integer year,
-        Integer month,
+    public record RangeSummaryResponse(
+        LocalDate startDate,
+        LocalDate endDate,
         Long totalIncome,
         Long totalExpense,
-        List<CategoryBreakdownResponse> categoryBreakdown
+        List<CategoryBreakdownResponse> categoryBreakdown,
+        List<RangeMonthlyBucketResponse> monthlyBuckets
     ) {
-        public static MonthlySummaryResponse from(ExpenseServiceDto.MonthlySummary summary) {
+        public static RangeSummaryResponse from(ExpenseServiceDto.RangeSummary summary) {
             List<CategoryBreakdownResponse> breakdowns = summary.categoryBreakdown().stream()
                 .map(CategoryBreakdownResponse::from)
                 .toList();
-            return new MonthlySummaryResponse(
-                summary.year(),
-                summary.month(),
+            List<RangeMonthlyBucketResponse> buckets = summary.monthlyBuckets().stream()
+                .map(RangeMonthlyBucketResponse::from)
+                .toList();
+            return new RangeSummaryResponse(
+                summary.startDate(),
+                summary.endDate(),
                 summary.totalIncome(),
                 summary.totalExpense(),
-                breakdowns
+                breakdowns,
+                buckets
             );
+        }
+    }
+
+    public record RangeMonthlyBucketResponse(
+        Integer year,
+        Integer month,
+        Long totalIncome,
+        Long totalExpense
+    ) {
+        public static RangeMonthlyBucketResponse from(ExpenseServiceDto.RangeMonthlyBucket b) {
+            return new RangeMonthlyBucketResponse(b.year(), b.month(), b.totalIncome(), b.totalExpense());
         }
     }
 
@@ -167,48 +183,6 @@ public class ExpenseApiDto {
                 breakdown.expenseType(),
                 breakdown.totalAmount()
             );
-        }
-    }
-
-    public record WeeklySummaryResponse(
-        LocalDate weekStart,
-        LocalDate weekEnd,
-        Long totalIncome,
-        Long totalExpense
-    ) {
-        public static WeeklySummaryResponse from(ExpenseServiceDto.WeeklySummary summary) {
-            return new WeeklySummaryResponse(
-                summary.weekStart(), summary.weekEnd(),
-                summary.totalIncome(), summary.totalExpense()
-            );
-        }
-    }
-
-    public record YearlySummaryResponse(
-        Integer year,
-        Long totalIncome,
-        Long totalExpense,
-        List<MonthlyAmountResponse> monthlyAmounts
-    ) {
-        public static YearlySummaryResponse from(ExpenseServiceDto.YearlySummary summary) {
-            return new YearlySummaryResponse(
-                summary.year(), summary.totalIncome(), summary.totalExpense(),
-                summary.monthlyAmounts().stream().map(MonthlyAmountResponse::from).toList()
-            );
-        }
-    }
-
-    public record MonthlyAmountResponse(
-        Integer month,
-        Long totalIncome,
-        Long totalExpense,
-        List<CategoryBreakdownResponse> categoryBreakdown
-    ) {
-        public static MonthlyAmountResponse from(ExpenseServiceDto.MonthlyAmount ma) {
-            List<CategoryBreakdownResponse> breakdowns = ma.categoryBreakdown() != null
-                ? ma.categoryBreakdown().stream().map(CategoryBreakdownResponse::from).toList()
-                : List.of();
-            return new MonthlyAmountResponse(ma.month(), ma.totalIncome(), ma.totalExpense(), breakdowns);
         }
     }
 

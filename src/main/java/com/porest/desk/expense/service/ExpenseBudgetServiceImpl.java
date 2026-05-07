@@ -99,7 +99,9 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
                     .mapToLong(ExpenseBudget::getBudgetAmount)
                     .sum();
 
-            List<Expense> expenses = expenseRepository.findMonthlySummary(userRowId, y, mm);
+            LocalDate ms = LocalDate.of(y, mm, 1);
+            LocalDate me = ms.plusMonths(1).minusDays(1);
+            List<Expense> expenses = expenseRepository.findByDateRange(userRowId, ms, me);
             long totalSpent = expenses.stream()
                 .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
                 .mapToLong(Expense::getAmount)
