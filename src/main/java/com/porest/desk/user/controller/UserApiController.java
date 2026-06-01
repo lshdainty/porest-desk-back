@@ -45,16 +45,13 @@ public class UserApiController {
     @GetMapping("/me/preferences")
     public ApiResponse<UserApiDto.PreferencesResponse> getPreferences(
             @LoginUser UserPrincipal loginUser) {
-        Integer threshold = userService.getBudgetAlertThreshold(loginUser.getRowId());
-        return ApiResponse.success(new UserApiDto.PreferencesResponse(threshold));
+        return ApiResponse.success(userService.getPreferences(loginUser.getRowId()));
     }
 
     @PatchMapping("/me/preferences")
     public ApiResponse<UserApiDto.PreferencesResponse> updatePreferences(
             @LoginUser UserPrincipal loginUser,
             @Valid @RequestBody UserApiDto.UpdatePreferencesReq request) {
-        userService.updateBudgetAlertThreshold(loginUser.getRowId(), request.getBudgetAlertThreshold());
-        Integer threshold = userService.getBudgetAlertThreshold(loginUser.getRowId());
-        return ApiResponse.success(new UserApiDto.PreferencesResponse(threshold));
+        return ApiResponse.success(userService.updatePreferences(loginUser.getRowId(), request));
     }
 }

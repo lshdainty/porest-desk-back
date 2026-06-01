@@ -6,6 +6,8 @@ import com.porest.core.exception.ExternalServiceException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.jwt.JwtTokenProvider;
+import com.porest.desk.user.controller.dto.UserApiDto.PreferencesResponse;
+import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -124,12 +126,37 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
-    public void updateBudgetAlertThreshold(Long userRowId, Integer threshold) {
+    public PreferencesResponse getPreferences(Long userRowId) {
         User user = userRepository.findById(userRowId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
-        user.updateBudgetAlertThreshold(threshold);
-        log.info("예산 알림 임계값 변경: userRowId={}, threshold={}%", userRowId, user.getBudgetAlertThreshold());
+        return PreferencesResponse.from(user);
+    }
+
+    @Override
+    @Transactional
+    public PreferencesResponse updatePreferences(Long userRowId, UpdatePreferencesReq req) {
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+        user.updateBudgetAlertThreshold(req.getBudgetAlertThreshold());
+        user.updateNotificationPreferences(
+            req.getPushEnabled(),
+            req.getNotifyPayment(),
+            req.getNotifyBudget(),
+            req.getNotifyAutoRecord(),
+            req.getNotifyDutchPay(),
+            req.getNotifyCalendar(),
+            req.getNotifyWeeklyReport(),
+            req.getNotifyMonthlyReport(),
+            req.getQuietHoursEnabled(),
+            req.getQuietHoursStart(),
+            req.getQuietHoursEnd(),
+            req.getNotificationSound(),
+            req.getVibrationEnabled(),
+            req.getEmailEnabled(),
+            req.getEmailFrequency()
+        );
+        log.info("알림 환경설정 변경: userRowId={}", userRowId);
+        return PreferencesResponse.from(user);
     }
 
     private String extractSsoErrorMessage(HttpClientErrorException e) {
