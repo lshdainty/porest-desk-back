@@ -26,6 +26,7 @@ public class RecurringTransactionServiceDto {
         Integer dayOfMonth,
         LocalDate startDate,
         LocalDate endDate,
+        Integer maxOccurrences,
         Boolean autoLog,
         Boolean notifyDayBefore
     ) {}
@@ -44,6 +45,7 @@ public class RecurringTransactionServiceDto {
         Integer dayOfMonth,
         LocalDate startDate,
         LocalDate endDate,
+        Integer maxOccurrences,
         Boolean autoLog,
         Boolean notifyDayBefore
     ) {}
@@ -67,6 +69,8 @@ public class RecurringTransactionServiceDto {
         Integer dayOfMonth,
         LocalDate startDate,
         LocalDate endDate,
+        Integer maxOccurrences,
+        Integer executedCount,
         LocalDate nextExecutionDate,
         LocalDateTime lastExecutedAt,
         YNType isActive,
@@ -95,6 +99,8 @@ public class RecurringTransactionServiceDto {
                 recurring.getDayOfMonth(),
                 recurring.getStartDate(),
                 recurring.getEndDate(),
+                recurring.getMaxOccurrences(),
+                recurring.getExecutedCount(),
                 recurring.getNextExecutionDate(),
                 recurring.getLastExecutedAt(),
                 recurring.getIsActive(),

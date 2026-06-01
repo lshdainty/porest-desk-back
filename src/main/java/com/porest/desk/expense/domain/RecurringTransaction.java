@@ -93,6 +93,12 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @Column(name = "end_date")
     private LocalDate endDate;
 
+    @Column(name = "max_occurrences")
+    private Integer maxOccurrences;
+
+    @Column(name = "executed_count", nullable = false)
+    private Integer executedCount;
+
     @Column(name = "next_execution_date", nullable = false)
     private LocalDate nextExecutionDate;
 
@@ -114,6 +120,7 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
                                                         RecurringFrequency frequency, Integer intervalValue,
                                                         Integer dayOfWeek, Integer dayOfMonth,
                                                         LocalDate startDate, LocalDate endDate,
+                                                        Integer maxOccurrences,
                                                         LocalDate nextExecutionDate,
                                                         Boolean autoLog, Boolean notifyDayBefore) {
         RecurringTransaction recurring = new RecurringTransaction();
@@ -132,6 +139,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         recurring.dayOfMonth = dayOfMonth;
         recurring.startDate = startDate;
         recurring.endDate = endDate;
+        recurring.maxOccurrences = maxOccurrences;
+        recurring.executedCount = 0;
         recurring.nextExecutionDate = nextExecutionDate;
         recurring.autoLog = (autoLog == null || autoLog) ? YNType.Y : YNType.N;
         recurring.notifyDayBefore = (notifyDayBefore == null || notifyDayBefore) ? YNType.Y : YNType.N;
@@ -144,7 +153,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
                                  Long amount, String description, String merchant, String paymentMethod,
                                  RecurringFrequency frequency, Integer intervalValue,
                                  Integer dayOfWeek, Integer dayOfMonth,
-                                 LocalDate startDate, LocalDate endDate, LocalDate nextExecutionDate,
+                                 LocalDate startDate, LocalDate endDate, Integer maxOccurrences,
+                                 LocalDate nextExecutionDate,
                                  Boolean autoLog, Boolean notifyDayBefore) {
         this.category = category;
         this.asset = asset;
@@ -159,6 +169,7 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         this.dayOfMonth = dayOfMonth;
         this.startDate = startDate;
         this.endDate = endDate;
+        this.maxOccurrences = maxOccurrences;
         this.nextExecutionDate = nextExecutionDate;
         if (autoLog != null) this.autoLog = autoLog ? YNType.Y : YNType.N;
         if (notifyDayBefore != null) this.notifyDayBefore = notifyDayBefore ? YNType.Y : YNType.N;
@@ -167,6 +178,11 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     public void markExecuted(LocalDateTime executedAt, LocalDate nextDate) {
         this.lastExecutedAt = executedAt;
         this.nextExecutionDate = nextDate;
+        this.executedCount = (this.executedCount == null ? 0 : this.executedCount) + 1;
+        // 횟수 지정 종료: 목표 횟수 도달 시 자동 비활성화
+        if (this.maxOccurrences != null && this.executedCount >= this.maxOccurrences) {
+            this.isActive = YNType.N;
+        }
     }
 
     public void toggleActive() {

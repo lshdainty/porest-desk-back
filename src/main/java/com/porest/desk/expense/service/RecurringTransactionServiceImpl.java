@@ -77,7 +77,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
-            command.startDate(), command.endDate(), nextExecutionDate,
+            command.startDate(), command.endDate(), command.maxOccurrences(), nextExecutionDate,
             command.autoLog(), command.notifyDayBefore()
         );
 
@@ -140,7 +140,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
-            command.startDate(), command.endDate(), nextExecutionDate,
+            command.startDate(), command.endDate(), command.maxOccurrences(), nextExecutionDate,
             command.autoLog(), command.notifyDayBefore()
         );
 

@@ -26,6 +26,7 @@ public class RecurringTransactionApiDto {
         Integer dayOfMonth,
         LocalDate startDate,
         LocalDate endDate,
+        Integer maxOccurrences,
         Boolean autoLog,
         Boolean notifyDayBefore
     ) {}
@@ -44,6 +45,7 @@ public class RecurringTransactionApiDto {
         Integer dayOfMonth,
         LocalDate startDate,
         LocalDate endDate,
+        Integer maxOccurrences,
         Boolean autoLog,
         Boolean notifyDayBefore
     ) {}
@@ -67,6 +69,8 @@ public class RecurringTransactionApiDto {
         Integer dayOfMonth,
         LocalDate startDate,
         LocalDate endDate,
+        Integer maxOccurrences,
+        Integer executedCount,
         LocalDate nextExecutionDate,
         LocalDateTime lastExecutedAt,
         YNType isActive,
@@ -86,6 +90,7 @@ public class RecurringTransactionApiDto {
                 info.frequency(), info.intervalValue(),
                 info.dayOfWeek(), info.dayOfMonth(),
                 info.startDate(), info.endDate(),
+                info.maxOccurrences(), info.executedCount(),
                 info.nextExecutionDate(), info.lastExecutedAt(),
                 info.isActive(),
                 info.autoLog(), info.notifyDayBefore(),
