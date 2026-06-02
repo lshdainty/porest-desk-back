@@ -27,11 +27,11 @@ public class TodoTagMapping {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "todo_row_id")
+    @JoinColumn(name = "todo_row_id", nullable = false)
     private Todo todo;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "tag_row_id")
+    @JoinColumn(name = "tag_row_id", nullable = false)
     private TodoTag tag;
 
     public static TodoTagMapping create(Todo todo, TodoTag tag) {

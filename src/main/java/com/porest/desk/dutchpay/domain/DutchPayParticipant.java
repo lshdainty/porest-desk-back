@@ -31,7 +31,7 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "dutch_pay_row_id")
+    @JoinColumn(name = "dutch_pay_row_id", nullable = false)
     private DutchPay dutchPay;
 
     @ManyToOne(fetch = FetchType.LAZY)

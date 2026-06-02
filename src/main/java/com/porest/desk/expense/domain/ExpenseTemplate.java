@@ -33,7 +33,7 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_row_id")
+    @JoinColumn(name = "user_row_id", nullable = false)
     private User user;
 
     @Column(name = "template_name", nullable = false, length = 100)

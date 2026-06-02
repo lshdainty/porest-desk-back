@@ -1,6 +1,7 @@
 package com.porest.desk.card.domain;
 
 import com.porest.desk.card.type.CardBenefitKind;
+import com.porest.desk.common.domain.CreatedAuditingFieldsWithIp;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -20,7 +21,7 @@ import lombok.NoArgsConstructor;
 @Table(name = "card_catalog_benefit")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class CardCatalogBenefit {
+public class CardCatalogBenefit extends CreatedAuditingFieldsWithIp {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "row_id")

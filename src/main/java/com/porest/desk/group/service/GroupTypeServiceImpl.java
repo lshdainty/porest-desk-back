@@ -117,10 +117,10 @@ public class GroupTypeServiceImpl implements GroupTypeService {
     private List<GroupType> seedDefaultGroupTypes(User user) {
         List<GroupType> defaults = new ArrayList<>();
 
-        defaults.add(GroupType.createGroupType(user, "가족", "#ef4444", 1));
-        defaults.add(GroupType.createGroupType(user, "커플", "#ec4899", 2));
-        defaults.add(GroupType.createGroupType(user, "친구", "#3b82f6", 3));
-        defaults.add(GroupType.createGroupType(user, "기타", "#6b7280", 4));
+        defaults.add(GroupType.createGroupType(user, "가족", "#c73838", 1));
+        defaults.add(GroupType.createGroupType(user, "커플", "#b83b7a", 2));
+        defaults.add(GroupType.createGroupType(user, "친구", "#2c70bf", 3));
+        defaults.add(GroupType.createGroupType(user, "기타", "#6b7484", 4));
 
         for (GroupType groupType : defaults) {
             groupTypeRepository.save(groupType);

@@ -97,4 +97,7 @@ public class CardCatalog extends AuditingFieldsWithIp {
 
     @OneToMany(mappedBy = "cardCatalog", fetch = FetchType.LAZY)
     private List<CardCatalogTag> tags = new ArrayList<>();
+
+    @OneToMany(mappedBy = "cardCatalog", fetch = FetchType.LAZY)
+    private List<CardCatalogAnnualFee> annualFees = new ArrayList<>();
 }
