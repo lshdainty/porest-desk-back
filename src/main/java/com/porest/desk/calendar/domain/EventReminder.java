@@ -30,7 +30,7 @@ public class EventReminder extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_row_id")
+    @JoinColumn(name = "event_row_id", nullable = false)
     private CalendarEvent event;
 
     @Column(name = "reminder_type", nullable = false, length = 20)

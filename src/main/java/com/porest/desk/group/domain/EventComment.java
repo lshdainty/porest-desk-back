@@ -30,11 +30,11 @@ public class EventComment extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_row_id")
+    @JoinColumn(name = "event_row_id", nullable = false)
     private CalendarEvent event;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_row_id")
+    @JoinColumn(name = "user_row_id", nullable = false)
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)

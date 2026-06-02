@@ -139,7 +139,7 @@ public class UserCalendarServiceImpl implements UserCalendarService {
                 User user = userRepository.findById(userRowId)
                     .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-                UserCalendar defaultCalendar = UserCalendar.createCalendar(user, "내 캘린더", "#3b82f6", 0, true);
+                UserCalendar defaultCalendar = UserCalendar.createCalendar(user, "내 캘린더", "#2c70bf", 0, true);
                 userCalendarRepository.save(defaultCalendar);
 
                 log.info("기본 캘린더 생성 완료: calendarId={}, userRowId={}", defaultCalendar.getRowId(), userRowId);

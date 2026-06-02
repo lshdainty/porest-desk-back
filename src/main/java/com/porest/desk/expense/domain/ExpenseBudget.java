@@ -26,7 +26,7 @@ public class ExpenseBudget extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_row_id")
+    @JoinColumn(name = "user_row_id", nullable = false)
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)

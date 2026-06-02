@@ -32,11 +32,11 @@ public class UserGroupMember extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "group_row_id")
+    @JoinColumn(name = "group_row_id", nullable = false)
     private UserGroup group;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_row_id")
+    @JoinColumn(name = "user_row_id", nullable = false)
     private User user;
 
     @Enumerated(EnumType.STRING)

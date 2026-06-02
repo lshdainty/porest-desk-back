@@ -15,10 +15,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "card_catalog_brand")
+@Table(name = "card_catalog_annual_fee")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class CardCatalogBrand extends CreatedAuditingFieldsWithIp {
+public class CardCatalogAnnualFee extends CreatedAuditingFieldsWithIp {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "row_id")
@@ -28,8 +28,17 @@ public class CardCatalogBrand extends CreatedAuditingFieldsWithIp {
     @JoinColumn(name = "card_catalog_row_id", nullable = false)
     private CardCatalog cardCatalog;
 
-    @Column(name = "brand", nullable = false, length = 30)
+    @Column(name = "label", nullable = false, length = 500)
+    private String label;
+
+    @Column(name = "amount", nullable = false)
+    private Integer amount;
+
+    @Column(name = "brand", length = 30)
     private String brand;
+
+    @Column(name = "scope", length = 20)
+    private String scope;
 
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;

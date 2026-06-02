@@ -96,7 +96,7 @@ public class CalendarEvent extends AuditingFieldsWithIp {
         event.title = title;
         event.description = description;
         event.eventType = eventType;
-        event.color = color != null ? color : "#3B82F6";
+        event.color = color != null ? color : "#2c70bf";
         event.startDate = startDate;
         event.endDate = endDate;
         event.isAllDay = isAllDay != null ? isAllDay : YNType.N;

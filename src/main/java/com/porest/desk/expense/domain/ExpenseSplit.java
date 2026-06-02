@@ -28,11 +28,11 @@ public class ExpenseSplit extends AuditingFieldsWithIp {
     private Long rowId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "expense_row_id")
+    @JoinColumn(name = "expense_row_id", nullable = false)
     private Expense expense;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_row_id")
+    @JoinColumn(name = "category_row_id", nullable = false)
     private ExpenseCategory category;
 
     @Column(name = "amount", nullable = false)

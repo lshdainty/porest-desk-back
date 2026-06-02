@@ -57,7 +57,7 @@ public class UserCalendar extends AuditingFieldsWithIp {
         UserCalendar calendar = new UserCalendar();
         calendar.user = user;
         calendar.calendarName = calendarName;
-        calendar.color = color != null ? color : "#3b82f6";
+        calendar.color = color != null ? color : "#2c70bf";
         calendar.sortOrder = sortOrder != null ? sortOrder : 0;
         calendar.isDefault = isDefault ? YNType.Y : YNType.N;
         calendar.isVisible = YNType.Y;
