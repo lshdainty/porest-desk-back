@@ -56,7 +56,6 @@ public class AssetServiceImpl implements AssetService {
             command.assetType(),
             command.balance(),
             command.currency() != null ? command.currency() : "KRW",
-            command.icon(),
             command.color(),
             command.institution(),
             command.memo(),
@@ -99,13 +98,12 @@ public class AssetServiceImpl implements AssetService {
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
 
         // 필수 필드(NOT NULL)는 null 이면 기존 값 유지 — partial update 허용.
-        // 선택 필드(icon/color/institution/memo) 는 null 을 clear 로 간주.
+        // 선택 필드(color/institution/memo) 는 null 을 clear 로 간주.
         asset.updateAsset(
             command.assetName() != null ? command.assetName() : asset.getAssetName(),
             command.assetType() != null ? command.assetType() : asset.getAssetType(),
             command.balance()   != null ? command.balance()   : asset.getBalance(),
             command.currency()  != null ? command.currency()  : asset.getCurrency(),
-            command.icon(),
             command.color(),
             command.institution(),
             command.memo(),

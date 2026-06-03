@@ -54,9 +54,6 @@ public class Asset extends AuditingFieldsWithIp {
     @Column(name = "currency", nullable = false, length = 10)
     private String currency;
 
-    @Column(name = "icon", length = 50)
-    private String icon;
-
     @Column(name = "color", length = 20)
     private String color;
 
@@ -78,7 +75,7 @@ public class Asset extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static Asset createAsset(User user, String assetName, AssetType assetType, Long balance,
-                                     String currency, String icon, String color, String institution,
+                                     String currency, String color, String institution,
                                      String memo, Integer sortOrder, CardCatalog cardCatalog) {
         Asset asset = new Asset();
         asset.user = user;
@@ -88,7 +85,6 @@ public class Asset extends AuditingFieldsWithIp {
         asset.balance = balance;
         asset.initialBalance = balance;
         asset.currency = currency;
-        asset.icon = icon;
         asset.color = color;
         asset.institution = institution;
         asset.memo = memo;
@@ -99,13 +95,12 @@ public class Asset extends AuditingFieldsWithIp {
     }
 
     public void updateAsset(String assetName, AssetType assetType, Long balance, String currency,
-                            String icon, String color, String institution, String memo,
+                            String color, String institution, String memo,
                             YNType isIncludedInTotal, CardCatalog cardCatalog) {
         this.assetName = assetName;
         this.assetType = assetType;
         this.balance = balance;
         this.currency = currency;
-        this.icon = icon;
         this.color = color;
         this.institution = institution;
         this.memo = memo;

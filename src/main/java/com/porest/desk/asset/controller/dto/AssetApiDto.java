@@ -16,7 +16,6 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
@@ -29,7 +28,6 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
@@ -57,7 +55,6 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
@@ -70,7 +67,7 @@ public class AssetApiDto {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
                 info.rowId(), info.userRowId(), info.assetName(), info.assetType(),
-                info.balance(), info.currency(), info.icon(), info.color(),
+                info.balance(), info.currency(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.createAt(), info.modifyAt()
