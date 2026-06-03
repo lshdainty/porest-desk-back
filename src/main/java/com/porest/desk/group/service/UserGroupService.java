@@ -18,6 +18,6 @@ public interface UserGroupService {
     void deleteGroup(Long groupRowId);
     String regenerateInviteCode(Long groupRowId);
     UserGroupServiceDto.GroupDetailInfo joinByInviteCode(Long userRowId, String inviteCode);
-    void removeMember(Long groupRowId, Long memberRowId);
-    void changeMemberRole(Long groupRowId, Long memberRowId, GroupRole role);
+    void removeMember(Long groupRowId, Long memberRowId, Long requestUserRowId);
+    void changeMemberRole(Long groupRowId, Long memberRowId, GroupRole role, Long requestUserRowId);
 }

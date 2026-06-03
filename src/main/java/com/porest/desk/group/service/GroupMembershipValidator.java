@@ -7,7 +7,6 @@ import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.group.domain.UserGroupMember;
 import com.porest.desk.group.repository.UserGroupMemberRepository;
 import com.porest.desk.group.repository.UserGroupRepository;
-import com.porest.desk.group.type.GroupRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -28,7 +27,25 @@ public class GroupMembershipValidator {
 
     public boolean canEditOrDelete(UserGroupMember member, Long itemOwnerRowId, Long requestUserRowId) {
         if (itemOwnerRowId.equals(requestUserRowId)) return true;
-        return member.getRole() == GroupRole.OWNER || member.getRole() == GroupRole.ADMIN;
+        return member.getRole().canWrite();
+    }
+
+    /** 그룹 콘텐츠 쓰기 권한(생성) 검증. 읽기전용(READ) 멤버는 차단. */
+    public UserGroupMember validateCanWrite(Long groupRowId, Long userRowId) {
+        UserGroupMember member = validateMembership(groupRowId, userRowId);
+        if (!member.getRole().canWrite()) {
+            throw new ForbiddenException(DeskErrorCode.GROUP_ACCESS_DENIED);
+        }
+        return member;
+    }
+
+    /** 그룹 관리 권한(멤버 초대·퇴출·권한변경) 검증. 소유자만 허용. */
+    public UserGroupMember validateOwner(Long groupRowId, Long userRowId) {
+        UserGroupMember member = validateMembership(groupRowId, userRowId);
+        if (!member.getRole().canManageMembers()) {
+            throw new ForbiddenException(DeskErrorCode.GROUP_ACCESS_DENIED);
+        }
+        return member;
     }
 
     public List<Long> getUserGroupIds(Long userRowId) {

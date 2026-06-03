@@ -27,10 +27,13 @@ import java.util.Map;
 @Slf4j
 @Transactional(readOnly = true)
 public class UserGroupServiceImpl implements UserGroupService {
+    private static final String DEFAULT_GROUP_COLOR = "#2c70bf";
+
     private final UserGroupRepository userGroupRepository;
     private final UserGroupMemberRepository userGroupMemberRepository;
     private final GroupTypeRepository groupTypeRepository;
     private final UserRepository userRepository;
+    private final GroupMembershipValidator groupMembershipValidator;
 
     @Override
     @Transactional
@@ -46,7 +49,8 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_TYPE_NOT_FOUND));
         }
 
-        UserGroup group = UserGroup.createGroup(command.groupName(), command.description(), groupType);
+        String color = resolveGroupColor(command.color(), groupType);
+        UserGroup group = UserGroup.createGroup(command.groupName(), command.description(), groupType, color);
         userGroupRepository.save(group);
 
         UserGroupMember ownerMember = UserGroupMember.create(group, user, GroupRole.OWNER);
@@ -119,7 +123,8 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_TYPE_NOT_FOUND));
         }
 
-        group.updateGroup(command.groupName(), command.description(), groupType);
+        String color = resolveGroupColor(command.color(), groupType);
+        group.updateGroup(command.groupName(), command.description(), groupType, color);
         userGroupRepository.save(group);
 
         log.info("그룹 수정 완료: groupId={}", group.getRowId());
@@ -171,7 +176,8 @@ public class UserGroupServiceImpl implements UserGroupService {
                 throw new IllegalStateException("이미 그룹에 참가한 사용자입니다.");
             });
 
-        UserGroupMember member = UserGroupMember.create(group, user, GroupRole.MEMBER);
+        // 초대코드로 참여한 멤버는 기본 편집가능(EDIT). 소유자가 이후 읽기전용(READ)으로 강등 가능.
+        UserGroupMember member = UserGroupMember.create(group, user, GroupRole.EDIT);
         group.addMember(member);
         userGroupMemberRepository.save(member);
 
@@ -183,11 +189,18 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional
-    public void removeMember(Long groupRowId, Long memberRowId) {
+    public void removeMember(Long groupRowId, Long memberRowId, Long requestUserRowId) {
         log.debug("그룹 멤버 제거: groupRowId={}, memberRowId={}", groupRowId, memberRowId);
+
+        // 멤버 관리(퇴출)는 소유자만 가능
+        groupMembershipValidator.validateOwner(groupRowId, requestUserRowId);
 
         UserGroupMember member = userGroupMemberRepository.findById(memberRowId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_MEMBER_NOT_FOUND));
+
+        if (member.getRole() == GroupRole.OWNER) {
+            throw new IllegalStateException("소유자는 퇴출할 수 없습니다.");
+        }
 
         member.removeMember();
         userGroupMemberRepository.save(member);
@@ -196,14 +209,32 @@ public class UserGroupServiceImpl implements UserGroupService {
 
     @Override
     @Transactional
-    public void changeMemberRole(Long groupRowId, Long memberRowId, GroupRole role) {
+    public void changeMemberRole(Long groupRowId, Long memberRowId, GroupRole role, Long requestUserRowId) {
         log.debug("그룹 멤버 역할 변경: memberRowId={}, role={}", memberRowId, role);
+
+        // 권한 변경은 소유자만 가능
+        groupMembershipValidator.validateOwner(groupRowId, requestUserRowId);
+
+        if (role == GroupRole.OWNER) {
+            throw new IllegalStateException("소유자 권한은 양도할 수 없습니다.");
+        }
 
         UserGroupMember member = userGroupMemberRepository.findById(memberRowId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_MEMBER_NOT_FOUND));
 
+        if (member.getRole() == GroupRole.OWNER) {
+            throw new IllegalStateException("소유자의 권한은 변경할 수 없습니다.");
+        }
+
         member.changeRole(role);
         userGroupMemberRepository.save(member);
         log.info("그룹 멤버 역할 변경 완료: memberRowId={}, newRole={}", memberRowId, role);
+    }
+
+    /** 그룹 색상 결정: 요청 색 → 그룹타입 색 → 기본색 순 fallback. */
+    private String resolveGroupColor(String requested, GroupType groupType) {
+        if (requested != null && !requested.isBlank()) return requested;
+        if (groupType != null && groupType.getColor() != null) return groupType.getColor();
+        return DEFAULT_GROUP_COLOR;
     }
 }

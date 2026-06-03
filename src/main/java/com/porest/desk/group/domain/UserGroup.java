@@ -43,6 +43,9 @@ public class UserGroup extends AuditingFieldsWithIp {
     @JoinColumn(name = "group_type_id")
     private GroupType groupType;
 
+    @Column(name = "color", length = 20)
+    private String color;
+
     @Column(name = "invite_code", length = 20, unique = true)
     private String inviteCode;
 
@@ -53,20 +56,22 @@ public class UserGroup extends AuditingFieldsWithIp {
     @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UserGroupMember> members = new ArrayList<>();
 
-    public static UserGroup createGroup(String groupName, String description, GroupType groupType) {
+    public static UserGroup createGroup(String groupName, String description, GroupType groupType, String color) {
         UserGroup group = new UserGroup();
         group.groupName = groupName;
         group.description = description;
         group.groupType = groupType;
+        group.color = color;
         group.inviteCode = generateInviteCode();
         group.isDeleted = YNType.N;
         return group;
     }
 
-    public void updateGroup(String groupName, String description, GroupType groupType) {
+    public void updateGroup(String groupName, String description, GroupType groupType, String color) {
         this.groupName = groupName;
         this.description = description;
         this.groupType = groupType;
+        this.color = color;
     }
 
     public void deleteGroup() {

@@ -14,14 +14,16 @@ public class UserGroupServiceDto {
         Long userRowId,
         String groupName,
         String description,
-        Long groupTypeId
+        Long groupTypeId,
+        String color
     ) {}
 
     public record UpdateCommand(
         Long groupRowId,
         String groupName,
         String description,
-        Long groupTypeId
+        Long groupTypeId,
+        String color
     ) {}
 
     public record GroupInfo(
@@ -31,6 +33,7 @@ public class UserGroupServiceDto {
         Long groupTypeId,
         String groupTypeName,
         String groupTypeColor,
+        String color,
         String inviteCode,
         int memberCount,
         LocalDateTime createAt
@@ -46,6 +49,7 @@ public class UserGroupServiceDto {
                 group.getGroupType() != null ? group.getGroupType().getRowId() : null,
                 group.getGroupType() != null ? group.getGroupType().getTypeName() : null,
                 group.getGroupType() != null ? group.getGroupType().getColor() : null,
+                group.getColor(),
                 group.getInviteCode(),
                 (int) activeMembers,
                 group.getCreateAt()
@@ -60,6 +64,7 @@ public class UserGroupServiceDto {
         Long groupTypeId,
         String groupTypeName,
         String groupTypeColor,
+        String color,
         String inviteCode,
         List<MemberInfo> members,
         LocalDateTime createAt
@@ -72,6 +77,7 @@ public class UserGroupServiceDto {
                 group.getGroupType() != null ? group.getGroupType().getRowId() : null,
                 group.getGroupType() != null ? group.getGroupType().getTypeName() : null,
                 group.getGroupType() != null ? group.getGroupType().getColor() : null,
+                group.getColor(),
                 group.getInviteCode(),
                 members.stream().map(MemberInfo::from).toList(),
                 group.getCreateAt()

@@ -11,13 +11,15 @@ public class UserGroupApiDto {
     public record CreateRequest(
         String groupName,
         String description,
-        Long groupTypeId
+        Long groupTypeId,
+        String color
     ) {}
 
     public record UpdateRequest(
         String groupName,
         String description,
-        Long groupTypeId
+        Long groupTypeId,
+        String color
     ) {}
 
     public record JoinRequest(
@@ -35,6 +37,7 @@ public class UserGroupApiDto {
         Long groupTypeId,
         String groupTypeName,
         String groupTypeColor,
+        String color,
         String inviteCode,
         int memberCount,
         LocalDateTime createAt
@@ -47,6 +50,7 @@ public class UserGroupApiDto {
                 info.groupTypeId(),
                 info.groupTypeName(),
                 info.groupTypeColor(),
+                info.color(),
                 info.inviteCode(),
                 info.memberCount(),
                 info.createAt()
@@ -61,6 +65,7 @@ public class UserGroupApiDto {
         Long groupTypeId,
         String groupTypeName,
         String groupTypeColor,
+        String color,
         String inviteCode,
         List<MemberResponse> members,
         LocalDateTime createAt
@@ -73,6 +78,7 @@ public class UserGroupApiDto {
                 info.groupTypeId(),
                 info.groupTypeName(),
                 info.groupTypeColor(),
+                info.color(),
                 info.inviteCode(),
                 info.members().stream().map(MemberResponse::from).toList(),
                 info.createAt()

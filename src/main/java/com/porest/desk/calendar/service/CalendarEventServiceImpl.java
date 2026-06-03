@@ -93,7 +93,8 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         calendarEventRepository.save(event);
 
         if (command.groupRowId() != null) {
-            groupMembershipValidator.validateMembership(command.groupRowId(), command.userRowId());
+            // 읽기전용(READ) 멤버는 그룹 일정 생성 불가
+            groupMembershipValidator.validateCanWrite(command.groupRowId(), command.userRowId());
             UserGroup group = userGroupRepository.findById(command.groupRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
             event.setGroup(group);

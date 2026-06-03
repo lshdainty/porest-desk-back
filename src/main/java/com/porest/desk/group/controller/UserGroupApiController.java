@@ -33,7 +33,8 @@ public class UserGroupApiController {
             loginUser.getRowId(),
             request.groupName(),
             request.description(),
-            request.groupTypeId()
+            request.groupTypeId(),
+            request.color()
         );
         UserGroupServiceDto.GroupInfo info = userGroupService.createGroup(command);
         return ApiResponse.success(UserGroupApiDto.Response.from(info));
@@ -70,7 +71,8 @@ public class UserGroupApiController {
             id,
             request.groupName(),
             request.description(),
-            request.groupTypeId()
+            request.groupTypeId(),
+            request.color()
         );
         UserGroupServiceDto.GroupInfo info = userGroupService.updateGroup(command);
         return ApiResponse.success(UserGroupApiDto.Response.from(info));
@@ -106,7 +108,7 @@ public class UserGroupApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long groupId,
             @PathVariable Long memberId) {
-        userGroupService.removeMember(groupId, memberId);
+        userGroupService.removeMember(groupId, memberId, loginUser.getRowId());
         return ApiResponse.success();
     }
 
@@ -116,7 +118,7 @@ public class UserGroupApiController {
             @PathVariable Long groupId,
             @PathVariable Long memberId,
             @RequestBody UserGroupApiDto.ChangeRoleRequest request) {
-        userGroupService.changeMemberRole(groupId, memberId, request.role());
+        userGroupService.changeMemberRole(groupId, memberId, request.role(), loginUser.getRowId());
         return ApiResponse.success();
     }
 }
