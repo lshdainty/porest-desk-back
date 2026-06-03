@@ -20,6 +20,7 @@ public class AssetApiDto {
         String institution,
         String memo,
         Integer sortOrder,
+        YNType isIncludedInTotal,
         Long cardCatalogRowId
     ) {}
 

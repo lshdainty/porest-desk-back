@@ -76,7 +76,8 @@ public class Asset extends AuditingFieldsWithIp {
 
     public static Asset createAsset(User user, String assetName, AssetType assetType, Long balance,
                                      String currency, String color, String institution,
-                                     String memo, Integer sortOrder, CardCatalog cardCatalog) {
+                                     String memo, Integer sortOrder, YNType isIncludedInTotal,
+                                     CardCatalog cardCatalog) {
         Asset asset = new Asset();
         asset.user = user;
         asset.cardCatalog = cardCatalog;
@@ -89,7 +90,7 @@ public class Asset extends AuditingFieldsWithIp {
         asset.institution = institution;
         asset.memo = memo;
         asset.sortOrder = sortOrder;
-        asset.isIncludedInTotal = YNType.Y;
+        asset.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : YNType.Y;
         asset.isDeleted = YNType.N;
         return asset;
     }

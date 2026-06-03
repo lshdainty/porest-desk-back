@@ -39,6 +39,7 @@ public class AssetApiController {
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.color(),
             request.institution(), request.memo(), request.sortOrder(),
+            request.isIncludedInTotal(),
             request.cardCatalogRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));

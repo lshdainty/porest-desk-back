@@ -23,6 +23,7 @@ public class AssetServiceDto {
         String institution,
         String memo,
         Integer sortOrder,
+        YNType isIncludedInTotal,
         Long cardCatalogRowId
     ) {}
 

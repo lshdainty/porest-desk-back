@@ -60,6 +60,7 @@ public class AssetServiceImpl implements AssetService {
             command.institution(),
             command.memo(),
             command.sortOrder() != null ? command.sortOrder() : 0,
+            command.isIncludedInTotal(),
             cardCatalog
         );
 
