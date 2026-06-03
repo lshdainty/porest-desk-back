@@ -71,4 +71,50 @@ public class UserCalendarApiController {
         userCalendarService.deleteCalendar(id, loginUser.getRowId());
         return ApiResponse.success();
     }
+
+    // ── 공유 ──
+
+    @GetMapping("/calendar/calendars/{id}/members")
+    public ApiResponse<UserCalendarApiDto.MemberListResponse> getMembers(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        List<UserCalendarServiceDto.MemberInfo> infos = userCalendarService.getMembers(id, loginUser.getRowId());
+        return ApiResponse.success(UserCalendarApiDto.MemberListResponse.from(infos));
+    }
+
+    @PatchMapping("/calendar/calendars/{id}/regenerate-invite-code")
+    public ApiResponse<UserCalendarApiDto.InviteCodeResponse> regenerateInviteCode(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        String newCode = userCalendarService.regenerateInviteCode(id, loginUser.getRowId());
+        return ApiResponse.success(new UserCalendarApiDto.InviteCodeResponse(newCode));
+    }
+
+    @PostMapping("/calendar/calendars/join")
+    public ApiResponse<UserCalendarApiDto.Response> joinByInviteCode(
+            @LoginUser UserPrincipal loginUser,
+            @RequestBody UserCalendarApiDto.JoinRequest request) {
+        UserCalendarServiceDto.CalendarInfo info =
+            userCalendarService.joinByInviteCode(loginUser.getRowId(), request.inviteCode());
+        return ApiResponse.success(UserCalendarApiDto.Response.from(info));
+    }
+
+    @DeleteMapping("/calendar/calendars/{id}/member/{memberId}")
+    public ApiResponse<Void> removeMember(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @PathVariable Long memberId) {
+        userCalendarService.removeMember(id, memberId, loginUser.getRowId());
+        return ApiResponse.success();
+    }
+
+    @PatchMapping("/calendar/calendars/{id}/member/{memberId}/role")
+    public ApiResponse<Void> changeMemberRole(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @PathVariable Long memberId,
+            @RequestBody UserCalendarApiDto.ChangeRoleRequest request) {
+        userCalendarService.changeMemberRole(id, memberId, request.permission(), loginUser.getRowId());
+        return ApiResponse.success();
+    }
 }

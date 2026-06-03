@@ -22,8 +22,7 @@ public class CalendarEventApiDto {
         String location,
         String rrule,
         List<Integer> reminderMinutes,
-        Long calendarRowId,
-        Long groupRowId
+        Long calendarRowId
     ) {}
 
     public record UpdateRequest(
@@ -38,8 +37,7 @@ public class CalendarEventApiDto {
         String location,
         String rrule,
         List<Integer> reminderMinutes,
-        Long calendarRowId,
-        Long groupRowId
+        Long calendarRowId
     ) {}
 
     public record ReminderResponse(
@@ -81,8 +79,6 @@ public class CalendarEventApiDto {
         Long calendarRowId,
         String calendarName,
         String calendarColor,
-        Long groupRowId,
-        String groupName,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -111,8 +107,6 @@ public class CalendarEventApiDto {
                 info.calendarRowId(),
                 info.calendarName(),
                 info.calendarColor(),
-                info.groupRowId(),
-                info.groupName(),
                 info.createAt(),
                 info.modifyAt()
             );

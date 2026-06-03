@@ -46,11 +46,11 @@ public class CalendarEventJpaRepository implements CalendarEventRepository {
     }
 
     @Override
-    public List<CalendarEvent> findByGroupsAndDateRange(List<Long> groupRowIds, LocalDateTime startDate, LocalDateTime endDate) {
-        if (groupRowIds.isEmpty()) return List.of();
+    public List<CalendarEvent> findByCalendarIdsAndDateRange(List<Long> calendarRowIds, LocalDateTime startDate, LocalDateTime endDate) {
+        if (calendarRowIds == null || calendarRowIds.isEmpty()) return List.of();
         return entityManager.createQuery(
-            "SELECT e FROM CalendarEvent e WHERE e.group.rowId IN :groupRowIds AND e.isDeleted = :isDeleted AND e.startDate <= :endDate AND e.endDate >= :startDate ORDER BY e.startDate ASC", CalendarEvent.class)
-            .setParameter("groupRowIds", groupRowIds)
+            "SELECT e FROM CalendarEvent e WHERE e.calendar.rowId IN :calendarRowIds AND e.isDeleted = :isDeleted AND e.startDate <= :endDate AND e.endDate >= :startDate ORDER BY e.startDate ASC", CalendarEvent.class)
+            .setParameter("calendarRowIds", calendarRowIds)
             .setParameter("isDeleted", YNType.N)
             .setParameter("startDate", startDate)
             .setParameter("endDate", endDate)

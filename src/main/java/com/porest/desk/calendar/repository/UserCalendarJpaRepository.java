@@ -34,6 +34,28 @@ public class UserCalendarJpaRepository implements UserCalendarRepository {
     }
 
     @Override
+    public List<UserCalendar> findAllByIds(List<Long> calendarRowIds) {
+        if (calendarRowIds == null || calendarRowIds.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.rowId IN :ids AND c.isDeleted = :isDeleted ORDER BY c.sortOrder ASC, c.rowId ASC", UserCalendar.class)
+            .setParameter("ids", calendarRowIds)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public Optional<UserCalendar> findByInviteCode(String inviteCode) {
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.inviteCode = :inviteCode AND c.isDeleted = :isDeleted", UserCalendar.class)
+            .setParameter("inviteCode", inviteCode)
+            .setParameter("isDeleted", YNType.N)
+            .getResultStream()
+            .findFirst();
+    }
+
+    @Override
     public Optional<UserCalendar> findDefaultByUser(Long userRowId) {
         return entityManager.createQuery(
             "SELECT c FROM UserCalendar c WHERE c.user.rowId = :userRowId AND c.isDefault = :isDefault AND c.isDeleted = :isDeleted", UserCalendar.class)

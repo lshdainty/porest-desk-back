@@ -44,6 +44,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CALENDAR_ACCESS_DENIED("CAL_007", "error.calendar.access.denied", HttpStatus.FORBIDDEN),
     CALENDAR_EVENT_ACCESS_DENIED("CAL_008", "error.calendar.event.access.denied", HttpStatus.FORBIDDEN),
     EVENT_LABEL_ACCESS_DENIED("CAL_009", "error.event.label.access.denied", HttpStatus.FORBIDDEN),
+    USER_CALENDAR_MEMBER_NOT_FOUND("CAL_010", "error.notfound.user.calendar.member", HttpStatus.NOT_FOUND),
+    USER_CALENDAR_ALREADY_MEMBER("CAL_011", "error.user.calendar.already.member", HttpStatus.CONFLICT),
+    USER_CALENDAR_INVITE_INVALID("CAL_012", "error.user.calendar.invite.invalid", HttpStatus.NOT_FOUND),
+    USER_CALENDAR_OWNER_REMOVE("CAL_013", "error.user.calendar.owner.remove", HttpStatus.BAD_REQUEST),
 
     // Memo
     MEMO_NOT_FOUND("MEMO_001", "error.notfound.memo", HttpStatus.NOT_FOUND),
