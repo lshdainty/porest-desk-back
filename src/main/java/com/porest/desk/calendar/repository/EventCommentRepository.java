@@ -1,6 +1,6 @@
-package com.porest.desk.group.repository;
+package com.porest.desk.calendar.repository;
 
-import com.porest.desk.group.domain.EventComment;
+import com.porest.desk.calendar.domain.EventComment;
 
 import java.util.List;
 import java.util.Optional;

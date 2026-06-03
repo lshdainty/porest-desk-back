@@ -20,8 +20,7 @@ public class ExpenseApiDto {
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
-        Long todoRowId,
-        Long groupRowId
+        Long todoRowId
     ) {}
 
     public record UpdateRequest(
@@ -35,8 +34,7 @@ public class ExpenseApiDto {
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
-        Long todoRowId,
-        Long groupRowId
+        Long todoRowId
     ) {}
 
     public record Response(
@@ -56,8 +54,6 @@ public class ExpenseApiDto {
         String paymentMethod,
         Long calendarEventRowId,
         Long todoRowId,
-        Long groupRowId,
-        String groupName,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -79,8 +75,6 @@ public class ExpenseApiDto {
                 info.paymentMethod(),
                 info.calendarEventRowId(),
                 info.todoRowId(),
-                info.groupRowId(),
-                info.groupName(),
                 info.createAt(),
                 info.modifyAt()
             );

@@ -87,13 +87,9 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     NOTIFICATION_NOT_FOUND("NOTI_001", "error.notfound.notification", HttpStatus.NOT_FOUND),
     NOTIFICATION_ACCESS_DENIED("NOTI_002", "error.notification.access.denied", HttpStatus.FORBIDDEN),
 
-    // Group
-    GROUP_NOT_FOUND("GROUP_001", "error.notfound.group", HttpStatus.NOT_FOUND),
-    GROUP_MEMBER_NOT_FOUND("GROUP_002", "error.notfound.group.member", HttpStatus.NOT_FOUND),
+    // Event Comment
     EVENT_COMMENT_NOT_FOUND("GROUP_003", "error.notfound.event.comment", HttpStatus.NOT_FOUND),
     EVENT_COMMENT_ACCESS_DENIED("GROUP_004", "error.event.comment.access.denied", HttpStatus.FORBIDDEN),
-    GROUP_TYPE_NOT_FOUND("GROUP_005", "error.notfound.group.type", HttpStatus.NOT_FOUND),
-    GROUP_ACCESS_DENIED("GROUP_006", "error.group.access.denied", HttpStatus.FORBIDDEN),
 
     // Holiday
     HOLIDAY_NOT_FOUND("HOLIDAY_001", "error.notfound.holiday", HttpStatus.NOT_FOUND),

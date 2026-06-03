@@ -1,4 +1,4 @@
-package com.porest.desk.group.domain;
+package com.porest.desk.calendar.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.calendar.domain.CalendarEvent;

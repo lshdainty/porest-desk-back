@@ -1,9 +1,9 @@
-package com.porest.desk.group.controller;
+package com.porest.desk.calendar.controller;
 
 import com.porest.core.controller.ApiResponse;
-import com.porest.desk.group.controller.dto.EventCommentApiDto;
-import com.porest.desk.group.service.EventCommentService;
-import com.porest.desk.group.service.dto.EventCommentServiceDto;
+import com.porest.desk.calendar.controller.dto.EventCommentApiDto;
+import com.porest.desk.calendar.service.EventCommentService;
+import com.porest.desk.calendar.service.dto.EventCommentServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import lombok.RequiredArgsConstructor;

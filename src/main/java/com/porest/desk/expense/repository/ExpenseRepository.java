@@ -10,7 +10,6 @@ import java.util.Optional;
 public interface ExpenseRepository {
     Optional<Expense> findById(Long rowId);
     List<Expense> findByUser(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
-    List<Expense> findByGroups(List<Long> groupRowIds, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     List<Expense> findDailySummary(Long userRowId, LocalDate date);
     /// 임의 기간(startDate ~ endDate, inclusive) 의 사용자 거래 — 통계 집계용. fetch-join 포함.
     List<Expense> findByDateRange(Long userRowId, LocalDate startDate, LocalDate endDate);

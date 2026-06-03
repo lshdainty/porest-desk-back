@@ -1,6 +1,6 @@
-package com.porest.desk.group.service;
+package com.porest.desk.calendar.service;
 
-import com.porest.desk.group.service.dto.EventCommentServiceDto;
+import com.porest.desk.calendar.service.dto.EventCommentServiceDto;
 
 import java.util.List;
 

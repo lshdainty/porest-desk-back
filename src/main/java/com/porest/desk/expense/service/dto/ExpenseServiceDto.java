@@ -21,8 +21,7 @@ public class ExpenseServiceDto {
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
-        Long todoRowId,
-        Long groupRowId
+        Long todoRowId
     ) {}
 
     public record UpdateCommand(
@@ -35,8 +34,7 @@ public class ExpenseServiceDto {
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
-        Long todoRowId,
-        Long groupRowId
+        Long todoRowId
     ) {}
 
     public record ExpenseInfo(
@@ -56,8 +54,6 @@ public class ExpenseServiceDto {
         String paymentMethod,
         Long calendarEventRowId,
         Long todoRowId,
-        Long groupRowId,
-        String groupName,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -79,8 +75,6 @@ public class ExpenseServiceDto {
                 expense.getPaymentMethod(),
                 expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
                 expense.getTodo() != null ? expense.getTodo().getRowId() : null,
-                expense.getGroup() != null ? expense.getGroup().getRowId() : null,
-                expense.getGroup() != null ? expense.getGroup().getGroupName() : null,
                 expense.getCreateAt(),
                 expense.getModifyAt()
             );

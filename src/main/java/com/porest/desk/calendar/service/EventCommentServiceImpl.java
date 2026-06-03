@@ -1,13 +1,13 @@
-package com.porest.desk.group.service;
+package com.porest.desk.calendar.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
-import com.porest.desk.group.domain.EventComment;
-import com.porest.desk.group.repository.EventCommentRepository;
-import com.porest.desk.group.service.dto.EventCommentServiceDto;
+import com.porest.desk.calendar.domain.EventComment;
+import com.porest.desk.calendar.repository.EventCommentRepository;
+import com.porest.desk.calendar.service.dto.EventCommentServiceDto;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;

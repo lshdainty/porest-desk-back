@@ -44,8 +44,7 @@ public class ExpenseApiController {
             request.merchant(),
             request.paymentMethod(),
             request.calendarEventRowId(),
-            request.todoRowId(),
-            request.groupRowId()
+            request.todoRowId()
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
@@ -60,20 +59,6 @@ public class ExpenseApiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.getExpenses(
             loginUser.getRowId(), categoryId, assetId, expenseType, startDate, endDate
-        );
-        return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
-    }
-
-    @GetMapping("/group/{groupId}/expenses")
-    public ApiResponse<ExpenseApiDto.ListResponse> getGroupExpenses(
-            @LoginUser UserPrincipal loginUser,
-            @PathVariable Long groupId,
-            @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) ExpenseType expenseType,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.getGroupExpenses(
-            loginUser.getRowId(), groupId, categoryId, expenseType, startDate, endDate
         );
         return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
     }
@@ -93,8 +78,7 @@ public class ExpenseApiController {
             request.merchant(),
             request.paymentMethod(),
             request.calendarEventRowId(),
-            request.todoRowId(),
-            request.groupRowId()
+            request.todoRowId()
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }

@@ -1,6 +1,6 @@
-package com.porest.desk.group.service.dto;
+package com.porest.desk.calendar.service.dto;
 
-import com.porest.desk.group.domain.EventComment;
+import com.porest.desk.calendar.domain.EventComment;
 
 import java.time.LocalDateTime;
 

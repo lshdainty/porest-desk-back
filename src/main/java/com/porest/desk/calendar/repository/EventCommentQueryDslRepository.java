@@ -1,8 +1,8 @@
-package com.porest.desk.group.repository;
+package com.porest.desk.calendar.repository;
 
 import com.porest.core.type.YNType;
-import com.porest.desk.group.domain.EventComment;
-import com.porest.desk.group.domain.QEventComment;
+import com.porest.desk.calendar.domain.EventComment;
+import com.porest.desk.calendar.domain.QEventComment;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
