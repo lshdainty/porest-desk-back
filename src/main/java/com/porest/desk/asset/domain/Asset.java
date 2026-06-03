@@ -70,6 +70,16 @@ public class Asset extends AuditingFieldsWithIp {
     @Column(name = "is_included_in_total", nullable = false, length = 1)
     private YNType isIncludedInTotal;
 
+    @Column(name = "credit_limit")
+    private Long creditLimit;
+
+    @Column(name = "payment_day")
+    private Integer paymentDay;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_asset_row_id")
+    private Asset paymentAsset;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -77,7 +87,8 @@ public class Asset extends AuditingFieldsWithIp {
     public static Asset createAsset(User user, String assetName, AssetType assetType, Long balance,
                                      String currency, String color, String institution,
                                      String memo, Integer sortOrder, YNType isIncludedInTotal,
-                                     CardCatalog cardCatalog) {
+                                     CardCatalog cardCatalog, Long creditLimit, Integer paymentDay,
+                                     Asset paymentAsset) {
         Asset asset = new Asset();
         asset.user = user;
         asset.cardCatalog = cardCatalog;
@@ -91,13 +102,17 @@ public class Asset extends AuditingFieldsWithIp {
         asset.memo = memo;
         asset.sortOrder = sortOrder;
         asset.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : YNType.Y;
+        asset.creditLimit = creditLimit;
+        asset.paymentDay = paymentDay;
+        asset.paymentAsset = paymentAsset;
         asset.isDeleted = YNType.N;
         return asset;
     }
 
     public void updateAsset(String assetName, AssetType assetType, Long balance, String currency,
                             String color, String institution, String memo,
-                            YNType isIncludedInTotal, CardCatalog cardCatalog) {
+                            YNType isIncludedInTotal, CardCatalog cardCatalog,
+                            Long creditLimit, Integer paymentDay, Asset paymentAsset) {
         this.assetName = assetName;
         this.assetType = assetType;
         this.balance = balance;
@@ -107,6 +122,9 @@ public class Asset extends AuditingFieldsWithIp {
         this.memo = memo;
         this.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : this.isIncludedInTotal;
         this.cardCatalog = cardCatalog;
+        this.creditLimit = creditLimit != null ? creditLimit : this.creditLimit;
+        this.paymentDay = paymentDay != null ? paymentDay : this.paymentDay;
+        this.paymentAsset = paymentAsset != null ? paymentAsset : this.paymentAsset;
     }
 
     public void updateBalance(Long balance) {

@@ -49,6 +49,7 @@ public class AssetServiceImpl implements AssetService {
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
+        Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), command.userRowId());
 
         Asset asset = Asset.createAsset(
             user,
@@ -61,7 +62,10 @@ public class AssetServiceImpl implements AssetService {
             command.memo(),
             command.sortOrder() != null ? command.sortOrder() : 0,
             command.isIncludedInTotal(),
-            cardCatalog
+            cardCatalog,
+            command.creditLimit(),
+            command.paymentDay(),
+            paymentAsset
         );
 
         assetRepository.save(asset);
@@ -97,6 +101,8 @@ public class AssetServiceImpl implements AssetService {
         validateAssetOwnership(asset, userRowId);
 
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
+        // paymentAssetRowId 가 들어온 경우에만 로드 — null 이면 기존 연관 유지(partial update).
+        Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), userRowId);
 
         // 필수 필드(NOT NULL)는 null 이면 기존 값 유지 — partial update 허용.
         // 선택 필드(color/institution/memo) 는 null 을 clear 로 간주.
@@ -109,7 +115,10 @@ public class AssetServiceImpl implements AssetService {
             command.institution(),
             command.memo(),
             command.isIncludedInTotal(),
-            cardCatalog
+            cardCatalog,
+            command.creditLimit(),
+            command.paymentDay(),
+            paymentAsset
         );
 
         log.info("자산 수정 완료: assetId={}", assetId);
@@ -581,6 +590,15 @@ public class AssetServiceImpl implements AssetService {
                 log.warn("카드 카탈로그 조회 실패 - 존재하지 않는 카드: rowId={}", cardCatalogRowId);
                 return new EntityNotFoundException(DeskErrorCode.CARD_CATALOG_NOT_FOUND);
             });
+    }
+
+    private Asset resolvePaymentAsset(Long paymentAssetRowId, Long userRowId) {
+        if (paymentAssetRowId == null) {
+            return null;
+        }
+        Asset paymentAsset = findAssetOrThrow(paymentAssetRowId);
+        validateAssetOwnership(paymentAsset, userRowId);
+        return paymentAsset;
     }
 
     private void validateAssetOwnership(Asset asset, Long userRowId) {

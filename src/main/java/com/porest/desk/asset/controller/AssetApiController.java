@@ -40,7 +40,8 @@ public class AssetApiController {
             request.currency(), request.color(),
             request.institution(), request.memo(), request.sortOrder(),
             request.isIncludedInTotal(),
-            request.cardCatalogRowId()
+            request.cardCatalogRowId(),
+            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -68,7 +69,8 @@ public class AssetApiController {
             request.assetName(), request.assetType(), request.balance(),
             request.currency(), request.color(),
             request.institution(), request.memo(), request.isIncludedInTotal(),
-            request.cardCatalogRowId()
+            request.cardCatalogRowId(),
+            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }

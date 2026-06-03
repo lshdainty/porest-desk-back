@@ -21,7 +21,10 @@ public class AssetApiDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
-        Long cardCatalogRowId
+        Long cardCatalogRowId,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId
     ) {}
 
     public record UpdateAssetRequest(
@@ -33,7 +36,10 @@ public class AssetApiDto {
         String institution,
         String memo,
         YNType isIncludedInTotal,
-        Long cardCatalogRowId
+        Long cardCatalogRowId,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId
     ) {}
 
     public record CardCatalogBriefResponse(
@@ -62,6 +68,9 @@ public class AssetApiDto {
         Integer sortOrder,
         YNType isIncludedInTotal,
         CardCatalogBriefResponse cardCatalog,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -71,6 +80,7 @@ public class AssetApiDto {
                 info.balance(), info.currency(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
+                info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
                 info.createAt(), info.modifyAt()
             );
         }
