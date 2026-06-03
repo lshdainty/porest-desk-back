@@ -123,7 +123,10 @@ public class UserGroupServiceImpl implements UserGroupService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_TYPE_NOT_FOUND));
         }
 
-        String color = resolveGroupColor(command.color(), groupType);
+        // 수정 시 색 미전달이면 기존 색 유지 (이름/설명만 바꿔도 색 보존)
+        String color = (command.color() != null && !command.color().isBlank())
+            ? command.color()
+            : group.getColor();
         group.updateGroup(command.groupName(), command.description(), groupType, color);
         userGroupRepository.save(group);
 
