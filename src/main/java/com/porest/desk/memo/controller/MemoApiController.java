@@ -34,7 +34,9 @@ public class MemoApiController {
             loginUser.getRowId(),
             request.folderId(),
             request.title(),
-            request.content()
+            request.content(),
+            request.tag(),
+            request.color()
         ));
         return ApiResponse.success(MemoApiDto.Response.from(info));
     }
@@ -66,7 +68,9 @@ public class MemoApiController {
         MemoServiceDto.MemoInfo info = memoService.updateMemo(id, loginUser.getRowId(), new MemoServiceDto.UpdateCommand(
             request.folderId(),
             request.title(),
-            request.content()
+            request.content(),
+            request.tag(),
+            request.color()
         ));
         return ApiResponse.success(MemoApiDto.Response.from(info));
     }

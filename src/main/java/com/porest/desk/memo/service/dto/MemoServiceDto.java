@@ -12,13 +12,17 @@ public class MemoServiceDto {
         Long userRowId,
         Long folderId,
         String title,
-        String content
+        String content,
+        String tag,
+        String color
     ) {}
 
     public record UpdateCommand(
         Long folderId,
         String title,
-        String content
+        String content,
+        String tag,
+        String color
     ) {}
 
     public record MemoInfo(
@@ -27,6 +31,8 @@ public class MemoServiceDto {
         Long folderId,
         String title,
         String content,
+        String tag,
+        String color,
         YNType isPinned,
         LocalDateTime createAt,
         LocalDateTime modifyAt
@@ -38,6 +44,8 @@ public class MemoServiceDto {
                 memo.getFolder() != null ? memo.getFolder().getRowId() : null,
                 memo.getTitle(),
                 memo.getContent(),
+                memo.getTag(),
+                memo.getColor(),
                 memo.getIsPinned(),
                 memo.getCreateAt(),
                 memo.getModifyAt()

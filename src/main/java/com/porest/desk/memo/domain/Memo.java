@@ -42,6 +42,12 @@ public class Memo extends AuditingFieldsWithIp {
     @Column(name = "content", columnDefinition = "LONGTEXT")
     private String content;
 
+    @Column(name = "tag", length = 50)
+    private String tag;
+
+    @Column(name = "color", length = 7)
+    private String color;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_pinned", nullable = false, length = 1)
     private YNType isPinned;
@@ -50,21 +56,26 @@ public class Memo extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Memo createMemo(User user, MemoFolder folder, String title, String content) {
+    public static Memo createMemo(User user, MemoFolder folder, String title, String content,
+                                  String tag, String color) {
         Memo memo = new Memo();
         memo.user = user;
         memo.folder = folder;
         memo.title = title;
         memo.content = content;
+        memo.tag = tag;
+        memo.color = color;
         memo.isPinned = YNType.N;
         memo.isDeleted = YNType.N;
         return memo;
     }
 
-    public void updateMemo(MemoFolder folder, String title, String content) {
+    public void updateMemo(MemoFolder folder, String title, String content, String tag, String color) {
         this.folder = folder;
         this.title = title;
         this.content = content;
+        this.tag = tag;
+        this.color = color;
     }
 
     public void togglePin() {
