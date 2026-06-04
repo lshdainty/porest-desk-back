@@ -11,13 +11,17 @@ public class MemoApiDto {
     public record CreateRequest(
         Long folderId,
         String title,
-        String content
+        String content,
+        String tag,
+        String color
     ) {}
 
     public record UpdateRequest(
         Long folderId,
         String title,
-        String content
+        String content,
+        String tag,
+        String color
     ) {}
 
     public record Response(
@@ -26,6 +30,8 @@ public class MemoApiDto {
         Long folderId,
         String title,
         String content,
+        String tag,
+        String color,
         YNType isPinned,
         LocalDateTime createAt,
         LocalDateTime modifyAt
@@ -37,6 +43,8 @@ public class MemoApiDto {
                 info.folderId(),
                 info.title(),
                 info.content(),
+                info.tag(),
+                info.color(),
                 info.isPinned(),
                 info.createAt(),
                 info.modifyAt()

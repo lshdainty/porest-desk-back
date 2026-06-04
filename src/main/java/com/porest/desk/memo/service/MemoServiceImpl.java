@@ -44,7 +44,8 @@ public class MemoServiceImpl implements MemoService {
             validateFolderOwnership(folder, command.userRowId());
         }
 
-        Memo memo = Memo.createMemo(user, folder, command.title(), command.content());
+        Memo memo = Memo.createMemo(user, folder, command.title(), command.content(),
+            command.tag(), command.color());
 
         memoRepository.save(memo);
         log.info("메모 등록 완료: memoId={}, userRowId={}", memo.getRowId(), command.userRowId());
@@ -90,7 +91,7 @@ public class MemoServiceImpl implements MemoService {
                 });
         }
 
-        memo.updateMemo(folder, command.title(), command.content());
+        memo.updateMemo(folder, command.title(), command.content(), command.tag(), command.color());
 
         log.info("메모 수정 완료: memoId={}", memoId);
 
