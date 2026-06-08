@@ -79,6 +79,10 @@ dependencies {
     // ==================== API Documentation ====================
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.0'
 
+    // ==================== Export (Excel) ====================
+    // 데이터 내보내기 — Excel(.xlsx) 생성. CSV/JSON 은 수동/Jackson(내장).
+    implementation 'org.apache.poi:poi-ooxml:5.3.0'
+
     // ==================== Lombok ====================
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
