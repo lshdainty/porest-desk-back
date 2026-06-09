@@ -22,10 +22,6 @@ import com.porest.desk.notification.service.NotificationService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
 import com.porest.desk.notification.type.NotificationType;
 import com.porest.desk.notification.type.ReferenceType;
-import com.porest.desk.group.domain.UserGroup;
-import com.porest.desk.group.domain.UserGroupMember;
-import com.porest.desk.group.repository.UserGroupRepository;
-import com.porest.desk.group.service.GroupMembershipValidator;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
@@ -60,8 +56,6 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
     private final UserRepository userRepository;
-    private final GroupMembershipValidator groupMembershipValidator;
-    private final UserGroupRepository userGroupRepository;
 
     @Override
     @Transactional
@@ -108,13 +102,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             expense.setTodo(todo);
         }
 
-        if (command.groupRowId() != null) {
-            groupMembershipValidator.validateMembership(command.groupRowId(), command.userRowId());
-            UserGroup group = userGroupRepository.findById(command.groupRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
-            expense.setGroup(group);
-        }
-
         expenseRepository.save(expense);
 
         // 자산 잔액 동기화: 수입은 +, 지출은 -
@@ -132,20 +119,10 @@ public class ExpenseServiceImpl implements ExpenseService {
     public List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
         log.debug("지출 목록 조회: userRowId={}, assetRowId={}, expenseType={}", userRowId, assetRowId, expenseType);
 
-        List<Expense> personalExpenses = expenseRepository.findByUser(userRowId, categoryRowId, expenseType, startDate, endDate);
+        List<Expense> allExpenses = new java.util.ArrayList<>(
+            expenseRepository.findByUser(userRowId, categoryRowId, expenseType, startDate, endDate));
 
-        List<Long> groupIds = groupMembershipValidator.getUserGroupIds(userRowId);
-        List<Expense> groupExpenses = expenseRepository.findByGroups(groupIds, categoryRowId, expenseType, startDate, endDate);
-
-        java.util.Set<Long> personalIds = personalExpenses.stream()
-            .map(Expense::getRowId)
-            .collect(java.util.stream.Collectors.toSet());
-        List<Expense> allExpenses = new java.util.ArrayList<>(personalExpenses);
-        groupExpenses.stream()
-            .filter(e -> !personalIds.contains(e.getRowId()))
-            .forEach(allExpenses::add);
-
-        // Asset 필터 (서비스 층) — repo 쿼리 2개 시그니처 확장 대신 여기서 후처리
+        // Asset 필터 (서비스 층) — repo 쿼리 시그니처 확장 대신 여기서 후처리
         if (assetRowId != null) {
             allExpenses = allExpenses.stream()
                 .filter(e -> e.getAsset() != null && assetRowId.equals(e.getAsset().getRowId()))
@@ -210,15 +187,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             expense.setTodo(todo);
         } else {
             expense.setTodo(null);
-        }
-
-        if (command.groupRowId() != null) {
-            UserGroup group = userGroupRepository.findById(command.groupRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
-            groupMembershipValidator.validateMembership(command.groupRowId(), expense.getUser().getRowId());
-            expense.setGroup(group);
-        } else {
-            expense.setGroup(null);
         }
 
         log.info("지출 수정 완료: expenseId={}", expenseId);
@@ -449,17 +417,6 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     @Override
-    public List<ExpenseServiceDto.ExpenseInfo> getGroupExpenses(Long userRowId, Long groupId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
-        groupMembershipValidator.validateMembership(groupId, userRowId);
-
-        List<Expense> expenses = expenseRepository.findByGroups(List.of(groupId), categoryRowId, expenseType, startDate, endDate);
-
-        return expenses.stream()
-            .map(ExpenseServiceDto.ExpenseInfo::from)
-            .toList();
-    }
-
-    @Override
     public List<ExpenseServiceDto.ExpenseInfo> getExpensesByCalendarEvent(Long calendarEventRowId) {
         log.debug("일정 연결 지출 조회: calendarEventRowId={}", calendarEventRowId);
 
@@ -501,14 +458,6 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     private void validateExpenseOwnership(Expense expense, Long userRowId) {
-        if (expense.getGroup() != null) {
-            UserGroupMember member = groupMembershipValidator.validateMembership(
-                expense.getGroup().getRowId(), userRowId);
-            if (!groupMembershipValidator.canEditOrDelete(member, expense.getUser().getRowId(), userRowId)) {
-                throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
-            }
-            return;
-        }
         if (!expense.getUser().getRowId().equals(userRowId)) {
             log.warn("지출 소유권 검증 실패 - expenseId={}, ownerRowId={}, requestUserRowId={}",
                 expense.getRowId(), expense.getUser().getRowId(), userRowId);

@@ -38,6 +38,26 @@ public class UserCalendarQueryDslRepository implements UserCalendarRepository {
     }
 
     @Override
+    public List<UserCalendar> findAllByIds(List<Long> calendarRowIds) {
+        if (calendarRowIds == null || calendarRowIds.isEmpty()) {
+            return List.of();
+        }
+        return queryFactory.selectFrom(userCalendar)
+            .where(userCalendar.rowId.in(calendarRowIds), userCalendar.isDeleted.eq(YNType.N))
+            .orderBy(userCalendar.sortOrder.asc(), userCalendar.rowId.asc())
+            .fetch();
+    }
+
+    @Override
+    public Optional<UserCalendar> findByInviteCode(String inviteCode) {
+        return Optional.ofNullable(
+            queryFactory.selectFrom(userCalendar)
+                .where(userCalendar.inviteCode.eq(inviteCode), userCalendar.isDeleted.eq(YNType.N))
+                .fetchOne()
+        );
+    }
+
+    @Override
     public Optional<UserCalendar> findDefaultByUser(Long userRowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(userCalendar)

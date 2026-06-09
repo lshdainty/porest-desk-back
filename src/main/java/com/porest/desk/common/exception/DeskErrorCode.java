@@ -44,6 +44,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CALENDAR_ACCESS_DENIED("CAL_007", "error.calendar.access.denied", HttpStatus.FORBIDDEN),
     CALENDAR_EVENT_ACCESS_DENIED("CAL_008", "error.calendar.event.access.denied", HttpStatus.FORBIDDEN),
     EVENT_LABEL_ACCESS_DENIED("CAL_009", "error.event.label.access.denied", HttpStatus.FORBIDDEN),
+    USER_CALENDAR_MEMBER_NOT_FOUND("CAL_010", "error.notfound.user.calendar.member", HttpStatus.NOT_FOUND),
+    USER_CALENDAR_ALREADY_MEMBER("CAL_011", "error.user.calendar.already.member", HttpStatus.CONFLICT),
+    USER_CALENDAR_INVITE_INVALID("CAL_012", "error.user.calendar.invite.invalid", HttpStatus.NOT_FOUND),
+    USER_CALENDAR_OWNER_REMOVE("CAL_013", "error.user.calendar.owner.remove", HttpStatus.BAD_REQUEST),
 
     // Memo
     MEMO_NOT_FOUND("MEMO_001", "error.notfound.memo", HttpStatus.NOT_FOUND),
@@ -83,13 +87,9 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     NOTIFICATION_NOT_FOUND("NOTI_001", "error.notfound.notification", HttpStatus.NOT_FOUND),
     NOTIFICATION_ACCESS_DENIED("NOTI_002", "error.notification.access.denied", HttpStatus.FORBIDDEN),
 
-    // Group
-    GROUP_NOT_FOUND("GROUP_001", "error.notfound.group", HttpStatus.NOT_FOUND),
-    GROUP_MEMBER_NOT_FOUND("GROUP_002", "error.notfound.group.member", HttpStatus.NOT_FOUND),
+    // Event Comment
     EVENT_COMMENT_NOT_FOUND("GROUP_003", "error.notfound.event.comment", HttpStatus.NOT_FOUND),
     EVENT_COMMENT_ACCESS_DENIED("GROUP_004", "error.event.comment.access.denied", HttpStatus.FORBIDDEN),
-    GROUP_TYPE_NOT_FOUND("GROUP_005", "error.notfound.group.type", HttpStatus.NOT_FOUND),
-    GROUP_ACCESS_DENIED("GROUP_006", "error.group.access.denied", HttpStatus.FORBIDDEN),
 
     // Holiday
     HOLIDAY_NOT_FOUND("HOLIDAY_001", "error.notfound.holiday", HttpStatus.NOT_FOUND),
@@ -106,6 +106,9 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CARD_BENEFIT_MAPPING_NOT_FOUND("CARD_002", "error.notfound.card.benefit.mapping", HttpStatus.NOT_FOUND),
     CARD_BENEFIT_MAPPING_ACCESS_DENIED("CARD_003", "error.card.benefit.mapping.access.denied", HttpStatus.FORBIDDEN),
     CARD_BENEFIT_MAPPING_DUPLICATE("CARD_004", "error.duplicate.card.benefit.mapping", HttpStatus.CONFLICT),
+    CARD_BILLING_NOT_CREDIT_CARD("CARD_005", "error.card.billing.not.credit.card", HttpStatus.BAD_REQUEST),
+    CARD_BILLING_PAYMENT_ASSET_REQUIRED("CARD_006", "error.card.billing.payment.asset.required", HttpStatus.BAD_REQUEST),
+    CARD_BILLING_INSUFFICIENT_BALANCE("CARD_007", "error.card.billing.insufficient.balance", HttpStatus.BAD_REQUEST),
     ;
 
     private final String code;

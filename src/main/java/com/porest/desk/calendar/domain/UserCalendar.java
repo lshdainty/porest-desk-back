@@ -18,6 +18,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Entity
 @Table(name = "user_calendar")
 @Getter
@@ -28,6 +30,7 @@ public class UserCalendar extends AuditingFieldsWithIp {
     @Column(name = "row_id")
     private Long rowId;
 
+    // 캘린더 소유자(생성자). 공유 시에도 owner 역할.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_row_id")
     private User user;
@@ -49,6 +52,10 @@ public class UserCalendar extends AuditingFieldsWithIp {
     @Column(name = "is_visible", nullable = false, length = 1)
     private YNType isVisible;
 
+    // 공유용 초대 코드(생성 시 자동 발급, 공유받은 사람이 입력해 참여).
+    @Column(name = "invite_code", length = 20, unique = true)
+    private String inviteCode;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -61,6 +68,7 @@ public class UserCalendar extends AuditingFieldsWithIp {
         calendar.sortOrder = sortOrder != null ? sortOrder : 0;
         calendar.isDefault = isDefault ? YNType.Y : YNType.N;
         calendar.isVisible = YNType.Y;
+        calendar.inviteCode = generateInviteCode();
         calendar.isDeleted = YNType.N;
         return calendar;
     }
@@ -78,7 +86,16 @@ public class UserCalendar extends AuditingFieldsWithIp {
         this.isVisible = this.isVisible == YNType.Y ? YNType.N : YNType.Y;
     }
 
+    public String regenerateInviteCode() {
+        this.inviteCode = generateInviteCode();
+        return this.inviteCode;
+    }
+
     public void deleteCalendar() {
         this.isDeleted = YNType.Y;
+    }
+
+    private static String generateInviteCode() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 }

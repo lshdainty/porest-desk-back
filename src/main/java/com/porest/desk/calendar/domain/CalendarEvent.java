@@ -3,7 +3,6 @@ package com.porest.desk.calendar.domain;
 import com.porest.core.type.YNType;
 import com.porest.desk.calendar.type.CalendarEventType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
-import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -80,10 +79,6 @@ public class CalendarEvent extends AuditingFieldsWithIp {
     @JoinColumn(name = "calendar_row_id")
     private UserCalendar calendar;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "group_row_id")
-    private UserGroup group;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -134,10 +129,6 @@ public class CalendarEvent extends AuditingFieldsWithIp {
 
     public void setCalendar(UserCalendar calendar) {
         this.calendar = calendar;
-    }
-
-    public void setGroup(UserGroup group) {
-        this.group = group;
     }
 
     public void deleteEvent() {

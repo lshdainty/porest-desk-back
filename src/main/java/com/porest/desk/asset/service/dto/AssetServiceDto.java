@@ -19,12 +19,15 @@ public class AssetServiceDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
         Integer sortOrder,
-        Long cardCatalogRowId
+        YNType isIncludedInTotal,
+        Long cardCatalogRowId,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId
     ) {}
 
     public record UpdateAssetCommand(
@@ -32,12 +35,14 @@ public class AssetServiceDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
         YNType isIncludedInTotal,
-        Long cardCatalogRowId
+        Long cardCatalogRowId,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId
     ) {}
 
     public record CardCatalogBrief(
@@ -66,13 +71,15 @@ public class AssetServiceDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
         CardCatalogBrief cardCatalog,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -84,13 +91,15 @@ public class AssetServiceDto {
                 asset.getAssetType(),
                 asset.getBalance(),
                 asset.getCurrency(),
-                asset.getIcon(),
                 asset.getColor(),
                 asset.getInstitution(),
                 asset.getMemo(),
                 asset.getSortOrder(),
                 asset.getIsIncludedInTotal(),
                 CardCatalogBrief.from(asset.getCardCatalog()),
+                asset.getCreditLimit(),
+                asset.getPaymentDay(),
+                asset.getPaymentAsset() != null ? asset.getPaymentAsset().getRowId() : null,
                 asset.getCreateAt(),
                 asset.getModifyAt()
             );

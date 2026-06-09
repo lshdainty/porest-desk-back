@@ -16,12 +16,15 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
         Integer sortOrder,
-        Long cardCatalogRowId
+        YNType isIncludedInTotal,
+        Long cardCatalogRowId,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId
     ) {}
 
     public record UpdateAssetRequest(
@@ -29,12 +32,14 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
         YNType isIncludedInTotal,
-        Long cardCatalogRowId
+        Long cardCatalogRowId,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId
     ) {}
 
     public record CardCatalogBriefResponse(
@@ -57,22 +62,25 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
-        String icon,
         String color,
         String institution,
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
         CardCatalogBriefResponse cardCatalog,
+        Long creditLimit,
+        Integer paymentDay,
+        Long paymentAssetRowId,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
                 info.rowId(), info.userRowId(), info.assetName(), info.assetType(),
-                info.balance(), info.currency(), info.icon(), info.color(),
+                info.balance(), info.currency(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
+                info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
                 info.createAt(), info.modifyAt()
             );
         }

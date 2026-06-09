@@ -1,0 +1,20 @@
+package com.porest.desk.card.repository;
+
+import com.porest.desk.card.domain.CardBilling;
+import com.porest.desk.card.type.BillingStatus;
+
+import java.time.LocalDate;
+import java.util.List;
+
+public interface CardBillingRepository {
+    CardBilling save(CardBilling billing);
+
+    /** 카드별 청구 이력 (결제예정일 desc, 최신순). */
+    List<CardBilling> findByCardAssetRowId(Long cardAssetRowId);
+
+    /** 멱등성 체크 — 특정 카드의 특정 결제일에 COMPLETED 청구가 이미 존재하는지. */
+    boolean existsCompletedByCardAndPaymentDate(Long cardAssetRowId, LocalDate paymentDate);
+
+    /** 상태별 조회. */
+    List<CardBilling> findByStatus(BillingStatus status);
+}

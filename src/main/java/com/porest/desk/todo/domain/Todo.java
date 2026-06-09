@@ -2,7 +2,6 @@ package com.porest.desk.todo.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
-import com.porest.desk.group.domain.UserGroup;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
@@ -46,10 +45,6 @@ public class Todo extends AuditingFieldsWithIp {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_row_id")
     private Todo parent;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "group_row_id")
-    private UserGroup group;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_row_id")
@@ -144,10 +139,6 @@ public class Todo extends AuditingFieldsWithIp {
 
     public void updateSortOrder(int sortOrder) {
         this.sortOrder = sortOrder;
-    }
-
-    public void setGroup(UserGroup group) {
-        this.group = group;
     }
 
     public void setAssignee(User assignee) {

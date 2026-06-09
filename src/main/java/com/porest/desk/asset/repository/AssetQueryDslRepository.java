@@ -3,6 +3,7 @@ package com.porest.desk.asset.repository;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.QAsset;
+import com.porest.desk.asset.type.AssetType;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,14 @@ public class AssetQueryDslRepository implements AssetRepository {
         return queryFactory.selectFrom(asset)
             .where(asset.user.rowId.eq(userRowId), asset.isDeleted.eq(YNType.N))
             .orderBy(asset.sortOrder.asc(), asset.rowId.asc())
+            .fetch();
+    }
+
+    @Override
+    public List<Asset> findAllByType(AssetType assetType) {
+        return queryFactory.selectFrom(asset)
+            .where(asset.assetType.eq(assetType), asset.isDeleted.eq(YNType.N))
+            .orderBy(asset.rowId.asc())
             .fetch();
     }
 

@@ -7,6 +7,7 @@ import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.domain.EventReminder;
 import com.porest.desk.calendar.domain.UserCalendar;
+import com.porest.desk.calendar.domain.UserCalendarMember;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.repository.EventReminderRepository;
@@ -15,10 +16,6 @@ import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
-import com.porest.desk.group.domain.UserGroup;
-import com.porest.desk.group.domain.UserGroupMember;
-import com.porest.desk.group.repository.UserGroupRepository;
-import com.porest.desk.group.service.GroupMembershipValidator;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,8 +40,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
     private final UserCalendarRepository userCalendarRepository;
     private final UserCalendarService userCalendarService;
     private final UserRepository userRepository;
-    private final GroupMembershipValidator groupMembershipValidator;
-    private final UserGroupRepository userGroupRepository;
+    private final CalendarMembershipValidator calendarMembershipValidator;
 
     @Override
     @Transactional
@@ -64,11 +60,12 @@ public class CalendarEventServiceImpl implements CalendarEventService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
         }
 
-        UserCalendar calendar = null;
+        UserCalendar calendar;
         if (command.calendarRowId() != null) {
             calendar = userCalendarRepository.findById(command.calendarRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
-            validateCalendarOwnership(calendar, command.userRowId());
+            // 공유 캘린더면 편집가능(EDIT) 이상만 일정 생성 가능 (읽기전용 차단)
+            calendarMembershipValidator.validateCanWrite(command.calendarRowId(), command.userRowId());
         } else {
             UserCalendarServiceDto.CalendarInfo defaultInfo = userCalendarService.getOrCreateDefault(command.userRowId());
             calendar = userCalendarRepository.findById(defaultInfo.rowId())
@@ -89,15 +86,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             command.rrule(),
             calendar
         );
-
         calendarEventRepository.save(event);
-
-        if (command.groupRowId() != null) {
-            groupMembershipValidator.validateMembership(command.groupRowId(), command.userRowId());
-            UserGroup group = userGroupRepository.findById(command.groupRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
-            event.setGroup(group);
-        }
 
         List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
         if (command.reminderMinutes() != null && !command.reminderMinutes().isEmpty()) {
@@ -109,7 +98,6 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         }
 
         log.info("캘린더 이벤트 등록 완료: eventId={}, userRowId={}", event.getRowId(), command.userRowId());
-
         return CalendarEventServiceDto.EventInfo.from(event, reminderInfos);
     }
 
@@ -121,23 +109,14 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
         }
 
-        List<CalendarEvent> personalEvents = calendarEventRepository.findByUserAndDateRange(userRowId, startDate, endDate);
+        // 접근 가능한(소유 + 공유받은) 모든 캘린더의 이벤트
+        List<Long> calendarIds = calendarMembershipValidator.getAccessibleCalendarIds(userRowId);
+        List<CalendarEvent> events = calendarEventRepository.findByCalendarIdsAndDateRange(calendarIds, startDate, endDate);
 
-        List<Long> groupIds = groupMembershipValidator.getUserGroupIds(userRowId);
-        List<CalendarEvent> groupEvents = calendarEventRepository.findByGroupsAndDateRange(groupIds, startDate, endDate);
-
-        // Merge (deduplicate: user's own group events already in personalEvents)
-        java.util.Set<Long> personalEventIds = personalEvents.stream().map(CalendarEvent::getRowId).collect(java.util.stream.Collectors.toSet());
-        List<CalendarEvent> allEvents = new java.util.ArrayList<>(personalEvents);
-        groupEvents.stream()
-            .filter(e -> !personalEventIds.contains(e.getRowId()))
-            .forEach(allEvents::add);
-        allEvents.sort(java.util.Comparator.comparing(CalendarEvent::getStartDate));
-
-        List<Long> eventIds = allEvents.stream().map(CalendarEvent::getRowId).toList();
+        List<Long> eventIds = events.stream().map(CalendarEvent::getRowId).toList();
         Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
 
-        return allEvents.stream()
+        return events.stream()
             .map(event -> CalendarEventServiceDto.EventInfo.from(
                 event,
                 remindersMap.getOrDefault(event.getRowId(), List.of())
@@ -179,17 +158,9 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         if (command.calendarRowId() != null) {
             UserCalendar calendar = userCalendarRepository.findById(command.calendarRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
-            validateCalendarOwnership(calendar, event.getUser().getRowId());
+            // 옮기려는 캘린더에 쓰기 권한 필요
+            calendarMembershipValidator.validateCanWrite(command.calendarRowId(), userRowId);
             event.setCalendar(calendar);
-        }
-
-        if (command.groupRowId() != null) {
-            UserGroup group = userGroupRepository.findById(command.groupRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.GROUP_NOT_FOUND));
-            groupMembershipValidator.validateMembership(command.groupRowId(), event.getUser().getRowId());
-            event.setGroup(group);
-        } else {
-            event.setGroup(null);
         }
 
         List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
@@ -208,7 +179,6 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         }
 
         log.info("캘린더 이벤트 수정 완료: eventId={}", eventId);
-
         return CalendarEventServiceDto.EventInfo.from(event, reminderInfos);
     }
 
@@ -225,46 +195,22 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         log.info("캘린더 이벤트 삭제 완료: eventId={}", eventId);
     }
 
-    @Override
-    public List<CalendarEventServiceDto.EventInfo> getGroupEvents(Long userRowId, Long groupId, LocalDateTime startDate, LocalDateTime endDate) {
-        groupMembershipValidator.validateMembership(groupId, userRowId);
-
-        List<CalendarEvent> events = calendarEventRepository.findByGroupsAndDateRange(List.of(groupId), startDate, endDate);
-
-        List<Long> eventIds = events.stream().map(CalendarEvent::getRowId).toList();
-        Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
-
-        return events.stream()
-            .map(event -> CalendarEventServiceDto.EventInfo.from(
-                event,
-                remindersMap.getOrDefault(event.getRowId(), List.of())
-            ))
-            .toList();
-    }
-
+    /**
+     * 이벤트는 항상 캘린더에 소속 — 캘린더 멤버십+권한으로 판정.
+     * 이벤트 생성자 본인이거나 EDIT 이상 권한이면 수정/삭제 가능.
+     */
     private void validateEventOwnership(CalendarEvent event, Long userRowId) {
-        if (event.getGroup() != null) {
-            // Group event: check membership and role
-            UserGroupMember member = groupMembershipValidator.validateMembership(
-                event.getGroup().getRowId(), userRowId);
-            if (!groupMembershipValidator.canEditOrDelete(member, event.getUser().getRowId(), userRowId)) {
+        if (event.getCalendar() != null) {
+            UserCalendarMember member = calendarMembershipValidator.validateMembership(
+                event.getCalendar().getRowId(), userRowId);
+            if (!calendarMembershipValidator.canEditOrDelete(member, event.getUser().getRowId(), userRowId)) {
                 throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
             }
             return;
         }
-        // Personal event: owner only
+        // 캘린더 미소속 이벤트(이론상 없음): 생성자만
         if (!event.getUser().getRowId().equals(userRowId)) {
-            log.warn("캘린더 이벤트 소유권 검증 실패 - eventId={}, ownerRowId={}, requestUserRowId={}",
-                event.getRowId(), event.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
-        }
-    }
-
-    private void validateCalendarOwnership(UserCalendar calendar, Long userRowId) {
-        if (!calendar.getUser().getRowId().equals(userRowId)) {
-            log.warn("캘린더 소유권 검증 실패 - calendarId={}, ownerRowId={}, requestUserRowId={}",
-                calendar.getRowId(), calendar.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.CALENDAR_ACCESS_DENIED);
         }
     }
 

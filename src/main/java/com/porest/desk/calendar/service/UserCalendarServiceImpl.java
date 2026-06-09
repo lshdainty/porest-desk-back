@@ -3,11 +3,15 @@ package com.porest.desk.calendar.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.core.type.YNType;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.UserCalendar;
+import com.porest.desk.calendar.domain.UserCalendarMember;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
+import com.porest.desk.calendar.repository.UserCalendarMemberRepository;
 import com.porest.desk.calendar.repository.UserCalendarRepository;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
+import com.porest.desk.calendar.type.CalendarRole;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -16,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -24,8 +29,10 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class UserCalendarServiceImpl implements UserCalendarService {
     private final UserCalendarRepository userCalendarRepository;
+    private final UserCalendarMemberRepository memberRepository;
     private final CalendarEventRepository calendarEventRepository;
     private final UserRepository userRepository;
+    private final CalendarMembershipValidator membershipValidator;
 
     @Override
     @Transactional
@@ -35,79 +42,74 @@ public class UserCalendarServiceImpl implements UserCalendarService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        List<UserCalendar> existing = userCalendarRepository.findAllByUser(command.userRowId());
-        int nextOrder = existing.size();
-        boolean shouldBeDefault = existing.isEmpty();
+        int nextOrder = userCalendarRepository.findAllByUser(command.userRowId()).size();
+        boolean shouldBeDefault = userCalendarRepository.findDefaultByUser(command.userRowId()).isEmpty();
 
         UserCalendar calendar = UserCalendar.createCalendar(user, command.calendarName(), command.color(), nextOrder, shouldBeDefault);
         userCalendarRepository.save(calendar);
 
+        // 소유자를 OWNER 멤버로 등록 (멤버 조회 단일화 — 소유+공유 모두 멤버 행으로 판정)
+        memberRepository.save(UserCalendarMember.create(calendar, user, CalendarRole.OWNER));
+
         log.info("사용자 캘린더 생성 완료: calendarId={}", calendar.getRowId());
-        return UserCalendarServiceDto.CalendarInfo.from(calendar);
+        return UserCalendarServiceDto.CalendarInfo.from(calendar, CalendarRole.OWNER, 1);
     }
 
     @Override
     public List<UserCalendarServiceDto.CalendarInfo> getCalendars(Long userRowId) {
-        log.debug("사용자 캘린더 목록 조회: userRowId={}", userRowId);
-        return userCalendarRepository.findAllByUser(userRowId).stream()
-            .map(UserCalendarServiceDto.CalendarInfo::from)
-            .toList();
+        log.debug("사용자 캘린더 목록 조회(소유+공유): userRowId={}", userRowId);
+
+        List<Long> ids = membershipValidator.getAccessibleCalendarIds(userRowId);
+        List<UserCalendar> calendars = userCalendarRepository.findAllByIds(ids);
+
+        List<UserCalendarServiceDto.CalendarInfo> result = new ArrayList<>();
+        for (UserCalendar cal : calendars) {
+            CalendarRole myRole = memberRepository.findByCalendarAndUser(cal.getRowId(), userRowId)
+                .map(UserCalendarMember::getPermission)
+                .orElse(CalendarRole.READ);
+            int count = memberRepository.findAllByCalendar(cal.getRowId()).size();
+            result.add(UserCalendarServiceDto.CalendarInfo.from(cal, myRole, count));
+        }
+        return result;
     }
 
     @Override
     @Transactional
     public UserCalendarServiceDto.CalendarInfo updateCalendar(Long calendarId, Long userRowId, UserCalendarServiceDto.UpdateCommand command) {
-        log.debug("사용자 캘린더 수정 시작: calendarId={}", calendarId);
-
-        UserCalendar calendar = userCalendarRepository.findById(calendarId)
-            .orElseThrow(() -> {
-                log.warn("사용자 캘린더 조회 실패: calendarId={}", calendarId);
-                return new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND);
-            });
-
-        validateCalendarOwnership(calendar, userRowId);
+        UserCalendar calendar = findCalendarOrThrow(calendarId);
+        validateOwnership(calendar, userRowId);
 
         calendar.updateCalendar(command.calendarName(), command.color());
+        int count = memberRepository.findAllByCalendar(calendarId).size();
         log.info("사용자 캘린더 수정 완료: calendarId={}", calendarId);
-        return UserCalendarServiceDto.CalendarInfo.from(calendar);
+        return UserCalendarServiceDto.CalendarInfo.from(calendar, CalendarRole.OWNER, count);
     }
 
     @Override
     @Transactional
     public UserCalendarServiceDto.CalendarInfo toggleVisibility(Long calendarId, Long userRowId) {
-        log.debug("사용자 캘린더 표시 전환 시작: calendarId={}", calendarId);
-
-        UserCalendar calendar = userCalendarRepository.findById(calendarId)
-            .orElseThrow(() -> {
-                log.warn("사용자 캘린더 조회 실패: calendarId={}", calendarId);
-                return new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND);
-            });
-
-        validateCalendarOwnership(calendar, userRowId);
+        UserCalendar calendar = findCalendarOrThrow(calendarId);
+        // 표시 토글은 캘린더 멤버(소유+공유) 누구나 가능
+        membershipValidator.validateMembership(calendarId, userRowId);
 
         calendar.toggleVisibility();
-        log.info("사용자 캘린더 표시 전환 완료: calendarId={}", calendarId);
-        return UserCalendarServiceDto.CalendarInfo.from(calendar);
+        CalendarRole myRole = memberRepository.findByCalendarAndUser(calendarId, userRowId)
+            .map(UserCalendarMember::getPermission).orElse(CalendarRole.READ);
+        int count = memberRepository.findAllByCalendar(calendarId).size();
+        return UserCalendarServiceDto.CalendarInfo.from(calendar, myRole, count);
     }
 
     @Override
     @Transactional
     public void deleteCalendar(Long calendarId, Long userRowId) {
-        log.debug("사용자 캘린더 삭제 시작: calendarId={}", calendarId);
+        UserCalendar calendar = findCalendarOrThrow(calendarId);
+        validateOwnership(calendar, userRowId);
 
-        UserCalendar calendar = userCalendarRepository.findById(calendarId)
-            .orElseThrow(() -> {
-                log.warn("사용자 캘린더 조회 실패: calendarId={}", calendarId);
-                return new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND);
-            });
-
-        validateCalendarOwnership(calendar, userRowId);
-
-        if (calendar.getIsDefault() == com.porest.core.type.YNType.Y) {
+        if (calendar.getIsDefault() == YNType.Y) {
             throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_DEFAULT_DELETE);
         }
 
-        // 삭제할 캘린더의 이벤트를 기본 캘린더로 이동
+        // 삭제할 캘린더의 이벤트를 소유자 기본 캘린더로 이동
         UserCalendar defaultCalendar = userCalendarRepository.findDefaultByUser(calendar.getUser().getRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
 
@@ -116,16 +118,13 @@ public class UserCalendarServiceImpl implements UserCalendarService {
             event.setCalendar(defaultCalendar);
         }
 
+        // 공유 멤버 정리
+        for (UserCalendarMember member : memberRepository.findAllByCalendar(calendarId)) {
+            member.removeMember();
+        }
+
         calendar.deleteCalendar();
         log.info("사용자 캘린더 삭제 완료: calendarId={}, movedEvents={}", calendarId, events.size());
-    }
-
-    private void validateCalendarOwnership(UserCalendar calendar, Long userRowId) {
-        if (!calendar.getUser().getRowId().equals(userRowId)) {
-            log.warn("캘린더 소유권 검증 실패 - calendarId={}, ownerRowId={}, requestUserRowId={}",
-                calendar.getRowId(), calendar.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.CALENDAR_ACCESS_DENIED);
-        }
     }
 
     @Override
@@ -134,16 +133,104 @@ public class UserCalendarServiceImpl implements UserCalendarService {
         log.debug("기본 캘린더 조회 또는 생성: userRowId={}", userRowId);
 
         return userCalendarRepository.findDefaultByUser(userRowId)
-            .map(UserCalendarServiceDto.CalendarInfo::from)
+            .map(c -> UserCalendarServiceDto.CalendarInfo.from(
+                c, CalendarRole.OWNER, memberRepository.findAllByCalendar(c.getRowId()).size()))
             .orElseGet(() -> {
                 User user = userRepository.findById(userRowId)
                     .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
                 UserCalendar defaultCalendar = UserCalendar.createCalendar(user, "내 캘린더", "#2c70bf", 0, true);
                 userCalendarRepository.save(defaultCalendar);
+                memberRepository.save(UserCalendarMember.create(defaultCalendar, user, CalendarRole.OWNER));
 
                 log.info("기본 캘린더 생성 완료: calendarId={}, userRowId={}", defaultCalendar.getRowId(), userRowId);
-                return UserCalendarServiceDto.CalendarInfo.from(defaultCalendar);
+                return UserCalendarServiceDto.CalendarInfo.from(defaultCalendar, CalendarRole.OWNER, 1);
             });
+    }
+
+    // ── 공유 ──
+
+    @Override
+    public List<UserCalendarServiceDto.MemberInfo> getMembers(Long calendarId, Long userRowId) {
+        membershipValidator.validateMembership(calendarId, userRowId);
+        return memberRepository.findAllByCalendar(calendarId).stream()
+            .map(UserCalendarServiceDto.MemberInfo::from)
+            .toList();
+    }
+
+    @Override
+    @Transactional
+    public String regenerateInviteCode(Long calendarId, Long userRowId) {
+        membershipValidator.validateOwner(calendarId, userRowId);
+        UserCalendar calendar = findCalendarOrThrow(calendarId);
+        String newCode = calendar.regenerateInviteCode();
+        log.info("캘린더 초대코드 재생성 완료: calendarId={}", calendarId);
+        return newCode;
+    }
+
+    @Override
+    @Transactional
+    public UserCalendarServiceDto.CalendarInfo joinByInviteCode(Long userRowId, String inviteCode) {
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        UserCalendar calendar = userCalendarRepository.findByInviteCode(inviteCode)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_INVITE_INVALID));
+
+        memberRepository.findByCalendarAndUser(calendar.getRowId(), userRowId)
+            .ifPresent(m -> { throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_ALREADY_MEMBER); });
+
+        // 초대코드로 참여 시 기본 편집가능(EDIT). 소유자가 이후 읽기전용(READ)으로 강등 가능.
+        memberRepository.save(UserCalendarMember.create(calendar, user, CalendarRole.EDIT));
+        int count = memberRepository.findAllByCalendar(calendar.getRowId()).size();
+        log.info("캘린더 공유 참여 완료: calendarId={}, userRowId={}", calendar.getRowId(), userRowId);
+        return UserCalendarServiceDto.CalendarInfo.from(calendar, CalendarRole.EDIT, count);
+    }
+
+    @Override
+    @Transactional
+    public void removeMember(Long calendarId, Long memberId, Long requestUserRowId) {
+        membershipValidator.validateOwner(calendarId, requestUserRowId);
+
+        UserCalendarMember member = memberRepository.findById(memberId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_MEMBER_NOT_FOUND));
+        if (member.getPermission() == CalendarRole.OWNER) {
+            throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_OWNER_REMOVE);
+        }
+
+        member.removeMember();
+        log.info("캘린더 멤버 제거 완료: memberId={}", memberId);
+    }
+
+    @Override
+    @Transactional
+    public void changeMemberRole(Long calendarId, Long memberId, CalendarRole permission, Long requestUserRowId) {
+        membershipValidator.validateOwner(calendarId, requestUserRowId);
+
+        if (permission == CalendarRole.OWNER) {
+            throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_OWNER_REMOVE);
+        }
+
+        UserCalendarMember member = memberRepository.findById(memberId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_MEMBER_NOT_FOUND));
+        if (member.getPermission() == CalendarRole.OWNER) {
+            throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_OWNER_REMOVE);
+        }
+
+        member.changePermission(permission);
+        log.info("캘린더 멤버 권한 변경 완료: memberId={}, permission={}", memberId, permission);
+    }
+
+    // ── helpers ──
+
+    private UserCalendar findCalendarOrThrow(Long calendarId) {
+        return userCalendarRepository.findById(calendarId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+    }
+
+    private void validateOwnership(UserCalendar calendar, Long userRowId) {
+        if (!calendar.getUser().getRowId().equals(userRowId)) {
+            throw new ForbiddenException(DeskErrorCode.CALENDAR_ACCESS_DENIED);
+        }
     }
 }

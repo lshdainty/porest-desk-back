@@ -44,8 +44,7 @@ public class CalendarEventApiController {
             request.location(),
             request.rrule(),
             request.reminderMinutes(),
-            request.calendarRowId(),
-            request.groupRowId()
+            request.calendarRowId()
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
     }
@@ -78,22 +77,9 @@ public class CalendarEventApiController {
             request.location(),
             request.rrule(),
             request.reminderMinutes(),
-            request.calendarRowId(),
-            request.groupRowId()
+            request.calendarRowId()
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
-    }
-
-    @GetMapping("/group/{groupId}/calendar/events")
-    public ApiResponse<CalendarEventApiDto.ListResponse> getGroupEvents(
-            @LoginUser UserPrincipal loginUser,
-            @PathVariable Long groupId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
-        List<CalendarEventServiceDto.EventInfo> infos = calendarEventService.getGroupEvents(
-            loginUser.getRowId(), groupId, startDate, endDate
-        );
-        return ApiResponse.success(CalendarEventApiDto.ListResponse.from(infos));
     }
 
     @DeleteMapping("/calendar/event/{id}")
