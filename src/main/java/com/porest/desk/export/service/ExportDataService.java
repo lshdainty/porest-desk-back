@@ -11,6 +11,7 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.dto.ExpenseBudgetServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import com.porest.desk.export.repository.ExportCountRepository;
 import com.porest.desk.export.type.ExportType;
 import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
@@ -54,6 +55,7 @@ public class ExportDataService {
     private final MemoRepository memoRepository;
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
+    private final ExportCountRepository exportCountRepository;
 
     /** 전체 행을 담은 표. */
     public ExportTable buildTable(ExportType type, Long userRowId, LocalDate start, LocalDate end, boolean mask) {
@@ -68,9 +70,15 @@ public class ExportDataService {
         };
     }
 
-    /** 건수 (기간 적용 후). */
+    /** 건수 (기간 적용 후). 대용량 타입은 전용 COUNT(*), 그 외는 목록 size. */
     public long count(ExportType type, Long userRowId, LocalDate start, LocalDate end) {
-        return buildTable(type, userRowId, start, end, false).rows().size();
+        return switch (type) {
+            case EXPENSE -> exportCountRepository.countExpense(userRowId, start, end);
+            case CALENDAR -> exportCountRepository.countCalendar(userRowId, start, end);
+            case TODO -> exportCountRepository.countTodo(userRowId, start, end);
+            // 자산·카테고리·예산·메모는 사용자당 소량 — 목록 size 로 충분.
+            default -> buildTable(type, userRowId, start, end, false).rows().size();
+        };
     }
 
     // ── 타입별 표 ─────────────────────────────────────────────
