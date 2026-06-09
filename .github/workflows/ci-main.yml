@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Branch
+        uses: actions/checkout@v4
+
+      # 테스트 임시 비활성 (hr-back 정합). 활성화하려면 sso-back 처럼
+      # setup-java(JDK 25) + ./gradlew test + READ_PACKAGE_TOKEN/CODECOV_TOKEN secret 추가.
+      - name: Skip tests (temporarily disabled)
+        run: echo "Tests are temporarily disabled"
+
+  trigger-deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Jenkins Deploy
+        run: curl -s -X POST "${{ secrets.JENKINS_URL }}/generic-webhook-trigger/invoke?token=porest-desk-back-deploy"
