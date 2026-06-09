@@ -188,27 +188,6 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Object[]> sumMonthlyByUserGroupedByAssetAndType(Long userRowId, LocalDate endDate) {
-        return entityManager.createQuery(
-                "SELECT e.asset.rowId, " +
-                "       YEAR(e.expenseDate), " +
-                "       MONTH(e.expenseDate), " +
-                "       e.expenseType, " +
-                "       COALESCE(SUM(e.amount), 0) " +
-                "FROM Expense e " +
-                "WHERE e.asset.user.rowId = :userRowId " +
-                "  AND e.expenseDate <= :endDate " +
-                "  AND e.asset IS NOT NULL " +
-                "  AND e.isDeleted = :isDeleted " +
-                "GROUP BY e.asset.rowId, YEAR(e.expenseDate), MONTH(e.expenseDate), e.expenseType",
-                Object[].class)
-            .setParameter("userRowId", userRowId)
-            .setParameter("endDate", toEndOfDay(endDate))
-            .setParameter("isDeleted", YNType.N)
-            .getResultList();
-    }
-
-    @Override
     public List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType,
                                                        LocalDate startDate, LocalDate endDate) {
         return entityManager.createQuery(
@@ -227,20 +206,6 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .setParameter("expenseType", expenseType)
             .setParameter("startDate", toStartOfDay(startDate))
             .setParameter("endDate", toEndOfDay(endDate))
-            .setParameter("isDeleted", YNType.N)
-            .getResultList();
-    }
-
-    @Override
-    public List<Object[]> sumAllByAssetGroupedByWeekAndType(Long assetRowId) {
-        return entityManager.createQuery(
-                "SELECT FUNCTION('YEARWEEK', e.expenseDate, 3), e.expenseType, COALESCE(SUM(e.amount), 0) " +
-                "FROM Expense e " +
-                "WHERE e.asset.rowId = :assetRowId " +
-                "  AND e.isDeleted = :isDeleted " +
-                "GROUP BY FUNCTION('YEARWEEK', e.expenseDate, 3), e.expenseType",
-                Object[].class)
-            .setParameter("assetRowId", assetRowId)
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }
