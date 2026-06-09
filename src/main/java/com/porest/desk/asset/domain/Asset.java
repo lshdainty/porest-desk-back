@@ -109,13 +109,14 @@ public class Asset extends AuditingFieldsWithIp {
         return asset;
     }
 
-    public void updateAsset(String assetName, AssetType assetType, Long balance, String currency,
+    // balance 는 여기서 받지 않는다 — 잔액은 asset_balance_history(recompute)에서 단독 관리.
+    // 잔액 직접 수정은 AssetBalanceHistoryService.recordManual → recompute 경로로만 반영.
+    public void updateAsset(String assetName, AssetType assetType, String currency,
                             String color, String institution, String memo,
                             YNType isIncludedInTotal, CardCatalog cardCatalog,
                             Long creditLimit, Integer paymentDay, Asset paymentAsset) {
         this.assetName = assetName;
         this.assetType = assetType;
-        this.balance = balance;
         this.currency = currency;
         this.color = color;
         this.institution = institution;

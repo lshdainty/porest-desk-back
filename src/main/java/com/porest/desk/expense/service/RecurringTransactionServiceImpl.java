@@ -203,16 +203,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
                 expenseRepository.save(expense);
 
-                // 자산 잔액 동기화: INCOME은 +, EXPENSE는 -
-                Asset recurringAsset = recurring.getAsset();
-                if (recurringAsset != null && recurring.getAmount() != null) {
-                    long delta = (recurring.getExpenseType() == com.porest.desk.expense.type.ExpenseType.INCOME)
-                        ? recurring.getAmount()
-                        : -recurring.getAmount();
-                    recurringAsset.updateBalance(recurringAsset.getBalance() + delta);
-                }
-                // 잔액 이력: 자동 생성된 expense 의 flow row 적재 (effective_at = 실행 일시)
-                balanceHistoryService.recordExpense(recurringAsset, expense.getRowId(),
+                // 자산 잔액 이력: 자동 생성 expense 의 flow 적재 → recompute 가 잔액 반영 (단일 writer)
+                balanceHistoryService.recordExpense(recurring.getAsset(), expense.getRowId(),
                     recurring.getExpenseType(), recurring.getAmount(), executionDateTime);
 
                 LocalDate nextDate = calculateNextDate(

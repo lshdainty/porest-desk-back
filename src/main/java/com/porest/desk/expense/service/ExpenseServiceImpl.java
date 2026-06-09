@@ -106,9 +106,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         expenseRepository.save(expense);
 
-        // 자산 잔액 동기화: 수입은 +, 지출은 -
-        applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
-        // 잔액 이력: 거래 flow row 적재 (effective_at = 거래 일시)
+        // 자산 잔액 이력: 거래 flow 적재 → recompute 가 asset.balance 반영 (단일 writer)
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
 
@@ -159,12 +157,6 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
         }
 
-        // 이전 영향 제거 (기존 값 스냅샷 → 롤백 후 새 값 적용)
-        Asset previousAsset = expense.getAsset();
-        ExpenseType previousType = expense.getExpenseType();
-        Long previousAmount = expense.getAmount();
-        revertExpenseFromAssetBalance(previousAsset, previousType, previousAmount);
-
         expense.updateExpense(
             category, asset,
             command.expenseType(),
@@ -175,9 +167,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.paymentMethod()
         );
 
-        // 새 영향 적용
-        applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
-        // 잔액 이력: 기존 row soft-delete 후 새 flow row 적재 (자산 변경 포함)
+        // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함) → recompute 가 잔액 반영
         balanceHistoryService.removeExpense(expense.getRowId());
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
@@ -211,11 +201,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
 
-        // 자산 잔액 복원 (삭제되는 expense의 영향 제거)
-        revertExpenseFromAssetBalance(expense.getAsset(), expense.getExpenseType(), expense.getAmount());
-
         expense.deleteExpense();
-        // 잔액 이력: 해당 거래 flow row soft-delete
+        // 자산 잔액 이력: 해당 거래 flow soft-delete → recompute 가 잔액 반영
         balanceHistoryService.removeExpense(expenseId);
 
         log.info("지출 삭제 완료: expenseId={}", expenseId);
@@ -498,31 +485,6 @@ public class ExpenseServiceImpl implements ExpenseService {
                 log.warn("지출 조회 실패 - 존재하지 않는 지출: expenseId={}", expenseId);
                 return new EntityNotFoundException(DeskErrorCode.EXPENSE_NOT_FOUND);
             });
-    }
-
-    /**
-     * expense 생성/수정 시 asset.balance를 동기화.
-     * 수입(INCOME)은 잔액 증가, 지출(EXPENSE)은 잔액 감소.
-     * asset이 null이거나 amount가 null이면 no-op.
-     */
-    private void applyExpenseToAssetBalance(Asset asset, ExpenseType type, Long amount) {
-        if (asset == null || type == null || amount == null) {
-            return;
-        }
-        long delta = (type == ExpenseType.INCOME) ? amount : -amount;
-        asset.updateBalance(asset.getBalance() + delta);
-    }
-
-    /**
-     * expense 삭제/수정 시 기존 영향을 롤백.
-     * applyExpenseToAssetBalance 의 역연산.
-     */
-    private void revertExpenseFromAssetBalance(Asset asset, ExpenseType type, Long amount) {
-        if (asset == null || type == null || amount == null) {
-            return;
-        }
-        long delta = (type == ExpenseType.INCOME) ? -amount : amount;
-        asset.updateBalance(asset.getBalance() + delta);
     }
 
     /**

@@ -118,7 +118,6 @@ public class AssetServiceImpl implements AssetService {
         asset.updateAsset(
             command.assetName() != null ? command.assetName() : asset.getAssetName(),
             command.assetType() != null ? command.assetType() : asset.getAssetType(),
-            newBalance,
             command.currency()  != null ? command.currency()  : asset.getCurrency(),
             command.color(),
             command.institution(),
@@ -317,13 +316,8 @@ public class AssetServiceImpl implements AssetService {
             command.amount(), command.fee(), command.description(), command.transferDate()
         );
 
-        // 잔액 업데이트
-        Long fee = command.fee() != null ? command.fee() : 0L;
-        fromAsset.updateBalance(fromAsset.getBalance() - command.amount() - fee);
-        toAsset.updateBalance(toAsset.getBalance() + command.amount());
-
         assetTransferRepository.save(transfer);
-        // 잔액 이력: 출금/입금 자산 flow 2건
+        // 자산 잔액 이력: 출금/입금 flow 2건 적재 → recompute 가 양쪽 잔액 반영 (단일 writer)
         balanceHistoryService.recordTransfer(transfer);
         log.info("자산 이체 완료: transferId={}", transfer.getRowId());
 
@@ -351,14 +345,8 @@ public class AssetServiceImpl implements AssetService {
             });
         validateTransferOwnership(transfer, userRowId);
 
-        // 잔액 복원
-        Asset fromAsset = transfer.getFromAsset();
-        Asset toAsset = transfer.getToAsset();
-        fromAsset.updateBalance(fromAsset.getBalance() + transfer.getAmount() + transfer.getFee());
-        toAsset.updateBalance(toAsset.getBalance() - transfer.getAmount());
-
         transfer.deleteTransfer();
-        // 잔액 이력: 양쪽 flow row soft-delete
+        // 자산 잔액 이력: 양쪽 flow soft-delete → recompute 가 양쪽 잔액 반영 (단일 writer)
         balanceHistoryService.removeTransfer(transferId);
         log.info("자산 이체 삭제 완료: transferId={}", transferId);
     }
