@@ -4,6 +4,7 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseCategory;
@@ -34,6 +35,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     private final AssetRepository assetRepository;
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
+    private final AssetBalanceHistoryService balanceHistoryService;
 
     @Override
     @Transactional
@@ -209,6 +211,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                         : -recurring.getAmount();
                     recurringAsset.updateBalance(recurringAsset.getBalance() + delta);
                 }
+                // 잔액 이력: 자동 생성된 expense 의 flow row 적재 (effective_at = 실행 일시)
+                balanceHistoryService.recordExpense(recurringAsset, expense.getRowId(),
+                    recurring.getExpenseType(), recurring.getAmount(), executionDateTime);
 
                 LocalDate nextDate = calculateNextDate(
                     recurring.getNextExecutionDate(),

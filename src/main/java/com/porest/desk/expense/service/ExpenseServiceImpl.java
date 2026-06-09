@@ -5,6 +5,7 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -53,6 +54,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final NotificationService notificationService;
     private final UserService userService;
     private final AssetRepository assetRepository;
+    private final AssetBalanceHistoryService balanceHistoryService;
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
     private final UserRepository userRepository;
@@ -106,6 +108,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 자산 잔액 동기화: 수입은 +, 지출은 -
         applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
+        // 잔액 이력: 거래 flow row 적재 (effective_at = 거래 일시)
+        balanceHistoryService.recordExpense(asset, expense.getRowId(),
+            command.expenseType(), command.amount(), command.expenseDate());
 
         // 예산 임계 도달 시 알림
         notifyBudgetThresholdIfCrossed(expense);
@@ -172,6 +177,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 새 영향 적용
         applyExpenseToAssetBalance(asset, command.expenseType(), command.amount());
+        // 잔액 이력: 기존 row soft-delete 후 새 flow row 적재 (자산 변경 포함)
+        balanceHistoryService.removeExpense(expense.getRowId());
+        balanceHistoryService.recordExpense(asset, expense.getRowId(),
+            command.expenseType(), command.amount(), command.expenseDate());
 
         if (command.calendarEventRowId() != null) {
             CalendarEvent event = calendarEventRepository.findById(command.calendarEventRowId())
@@ -206,6 +215,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         revertExpenseFromAssetBalance(expense.getAsset(), expense.getExpenseType(), expense.getAmount());
 
         expense.deleteExpense();
+        // 잔액 이력: 해당 거래 flow row soft-delete
+        balanceHistoryService.removeExpense(expenseId);
 
         log.info("지출 삭제 완료: expenseId={}", expenseId);
     }
