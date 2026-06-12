@@ -90,6 +90,10 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
         if (sortOrder != null) this.sortOrder = sortOrder;
     }
 
+    public void changeExpenseType(ExpenseType expenseType) {
+        if (expenseType != null) this.expenseType = expenseType;
+    }
+
     public void moveParent(ExpenseCategory parent) {
         this.parent = parent;
     }
