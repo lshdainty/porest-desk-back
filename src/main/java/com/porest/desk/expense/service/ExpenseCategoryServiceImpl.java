@@ -7,6 +7,7 @@ import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -87,12 +88,45 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         ExpenseCategory category = findCategoryOrThrow(categoryId);
         validateCategoryOwnership(category, userRowId);
 
+        // 구분(expenseType)·상위(parentRowId) 변경 — 편집 다이얼로그(웹/앱) 지원.
+        // 변경 "후" 상태(targetType/targetParent)를 기준으로 계층 무결성을 검증한다
+        // (reorder 의 parent 검증과 동일 규칙: 깊이 2 제한 + 부모-자식 타입 일치).
+        ExpenseType targetType = command.expenseType() != null
+            ? command.expenseType()
+            : category.getExpenseType();
+
+        ExpenseCategory targetParent = null;
+        if (command.parentRowId() != null) {
+            if (command.parentRowId().equals(category.getRowId())) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+            }
+            targetParent = findCategoryOrThrow(command.parentRowId());
+            validateCategoryOwnership(targetParent, userRowId);
+            if (targetParent.getParent() != null) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+            }
+        }
+
+        boolean hasChildren = expenseCategoryRepository.hasChildren(categoryId);
+        // 자식 보유 부모는 다른 부모 밑으로 못 들어가고(깊이 2+), 타입도 못 바꿈(자식과 불일치).
+        if (hasChildren && targetParent != null) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+        }
+        if (hasChildren && targetType != category.getExpenseType()) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+        }
+        if (targetParent != null && targetParent.getExpenseType() != targetType) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+        }
+
         category.updateCategory(
             command.categoryName(),
             command.icon(),
             command.color(),
             command.sortOrder()
         );
+        category.changeExpenseType(targetType);
+        category.moveParent(targetParent);
 
         log.info("지출 카테고리 수정 완료: categoryId={}", categoryId);
 

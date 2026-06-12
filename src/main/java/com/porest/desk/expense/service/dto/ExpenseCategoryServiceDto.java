@@ -20,7 +20,11 @@ public class ExpenseCategoryServiceDto {
         String categoryName,
         String icon,
         String color,
-        Integer sortOrder
+        // null 이면 기존 유지
+        ExpenseType expenseType,
+        Integer sortOrder,
+        // null = 최상위로 이동 (웹/앱 편집 다이얼로그는 항상 포함 전송)
+        Long parentRowId
     ) {}
 
     public record ReorderItem(

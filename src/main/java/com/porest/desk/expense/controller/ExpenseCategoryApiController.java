@@ -56,7 +56,9 @@ public class ExpenseCategoryApiController {
             request.categoryName(),
             request.icon(),
             request.color(),
-            request.sortOrder()
+            request.expenseType(),
+            request.sortOrder(),
+            request.parentRowId()
         ));
         return ApiResponse.success(ExpenseCategoryApiDto.Response.from(info));
     }

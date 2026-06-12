@@ -20,7 +20,11 @@ public class ExpenseCategoryApiDto {
         String categoryName,
         String icon,
         String color,
-        Integer sortOrder
+        // null 이면 변경 없음 (클라이언트가 보낸 경우에만 반영)
+        ExpenseType expenseType,
+        Integer sortOrder,
+        // null = 최상위로 이동. 웹/앱 편집 다이얼로그는 항상 이 필드를 포함해 전송.
+        Long parentRowId
     ) {}
 
     public record Response(
