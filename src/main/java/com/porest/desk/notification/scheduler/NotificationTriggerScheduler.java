@@ -14,6 +14,7 @@ import com.porest.desk.notification.type.NotificationType;
 import com.porest.desk.notification.type.ReferenceType;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
+import com.porest.desk.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,6 +35,7 @@ public class NotificationTriggerScheduler {
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseRepository expenseRepository;
     private final TodoRepository todoRepository;
+    private final UserService userService;
 
     @Scheduled(fixedRate = 60000)
     @Transactional
@@ -81,14 +83,17 @@ public class NotificationTriggerScheduler {
                 LocalDate startDate = LocalDate.of(year, month, 1);
                 LocalDate endDate = startDate.plusMonths(1).minusDays(1);
 
-                List<Expense> expenses = expenseRepository.findByUser(
-                    userRowId, categoryRowId, ExpenseType.EXPENSE, startDate, endDate);
+                // 카테고리 예산은 자식 지출까지 합산(roll-up), 전체(=null)는 월 전체 지출.
+                long totalSpending = categoryRowId != null
+                    ? expenseRepository.sumAmountByCategoryRollup(
+                        userRowId, categoryRowId, ExpenseType.EXPENSE, startDate, endDate)
+                    : expenseRepository.findByUser(
+                        userRowId, null, ExpenseType.EXPENSE, startDate, endDate)
+                        .stream().mapToLong(Expense::getAmount).sum();
 
-                long totalSpending = expenses.stream()
-                    .mapToLong(Expense::getAmount)
-                    .sum();
-
-                if (totalSpending >= budget.getBudgetAmount() * 0.8) {
+                // 임계값은 사용자 설정(user.budget_alert_threshold, %) 사용 — 미설정 시 85%.
+                int thresholdPct = userService.getBudgetAlertThreshold(userRowId);
+                if (totalSpending >= budget.getBudgetAmount() * (thresholdPct / 100.0)) {
                     boolean alreadyNotified = notificationRepository.existsByUserAndReferenceAndCreatedAfter(
                         userRowId, ReferenceType.EXPENSE_BUDGET, budget.getRowId(),
                         startDate.atStartOfDay());

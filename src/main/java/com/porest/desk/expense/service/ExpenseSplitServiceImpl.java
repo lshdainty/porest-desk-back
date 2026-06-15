@@ -54,6 +54,10 @@ public class ExpenseSplitServiceImpl implements ExpenseSplitService {
             ExpenseSplitServiceDto.SplitCommand sc = incoming.get(i);
             ExpenseCategory category = expenseCategoryRepository.findById(sc.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            // 정책: 상위(자식 보유) 카테고리에는 거래(분할)를 둘 수 없음.
+            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+            }
             int order = sc.sortOrder() != null ? sc.sortOrder() : i;
             ExpenseSplit split = ExpenseSplit.create(expense, category, sc.amount(), sc.label(), order);
             expenseSplitRepository.save(split);

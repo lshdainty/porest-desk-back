@@ -2,6 +2,7 @@ package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
@@ -45,6 +46,10 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId());
+            // 정책: 예산은 최상위(부모) 카테고리에만. 자식(하위) 카테고리는 예산 불가.
+            if (category.getParent() != null) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_BUDGET_CATEGORY_NOT_ROOT);
+            }
         }
 
         ExpenseBudget budget = ExpenseBudget.createBudget(

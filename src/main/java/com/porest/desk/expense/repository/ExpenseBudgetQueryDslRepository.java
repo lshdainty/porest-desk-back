@@ -80,6 +80,13 @@ public class ExpenseBudgetQueryDslRepository implements ExpenseBudgetRepository 
     }
 
     @Override
+    public List<ExpenseBudget> findAllByCategory(Long categoryRowId) {
+        return queryFactory.selectFrom(expenseBudget)
+            .where(expenseBudget.category.rowId.eq(categoryRowId))
+            .fetch();
+    }
+
+    @Override
     public ExpenseBudget save(ExpenseBudget entity) {
         entityManager.persist(entity);
         return entity;

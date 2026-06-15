@@ -16,6 +16,11 @@ public interface ExpenseRepository {
     List<Expense> search(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType,
                          String keyword, String merchant, Long minAmount, Long maxAmount,
                          LocalDate startDate, LocalDate endDate);
+    /** 해당 카테고리를 참조하는 (삭제되지 않은) 거래 존재 여부 — 상위 승격 가드용. */
+    boolean existsByCategory(Long categoryRowId);
+    /** 카테고리 + 그 하위 카테고리들의 기간 내 지출 합계 (예산 알림 roll-up용). */
+    long sumAmountByCategoryRollup(Long userRowId, Long categoryRowId, ExpenseType expenseType,
+                                   LocalDate startDate, LocalDate endDate);
     List<Expense> findByCalendarEvent(Long calendarEventRowId);
     List<Expense> findByTodo(Long todoRowId);
     Expense save(Expense expense);

@@ -150,6 +150,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+        // 정책: 상위(자식 보유) 카테고리에는 거래를 둘 수 없음.
+        if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+        }
 
         Asset asset = null;
         if (command.assetRowId() != null) {

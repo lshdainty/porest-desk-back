@@ -79,6 +79,14 @@ public class ExpenseBudgetJpaRepository implements ExpenseBudgetRepository {
     }
 
     @Override
+    public List<ExpenseBudget> findAllByCategory(Long categoryRowId) {
+        return entityManager.createQuery(
+            "SELECT b FROM ExpenseBudget b WHERE b.category.rowId = :categoryRowId", ExpenseBudget.class)
+            .setParameter("categoryRowId", categoryRowId)
+            .getResultList();
+    }
+
+    @Override
     public ExpenseBudget save(ExpenseBudget entity) {
         entityManager.persist(entity);
         return entity;
