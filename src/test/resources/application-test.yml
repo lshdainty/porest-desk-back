@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: porest-desk-test
+  messages:
+    basename: message/core-messages,message/messages
+    encoding: utf-8
+
+  # 테스트 DB — H2 인메모리(MariaDB 호환 모드), 엔티티 기반 스키마 자동 생성.
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:desk_test;MODE=MariaDB;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    p6spy:
+      enable-logging: false
+
+  # JPA — 테스트마다 스키마 create-drop, H2 dialect.
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        default_batch_fetch_size: 100
+        format_sql: false
+    open-in-view: false
+
+# 더미 시크릿 — @WebMvcTest 가 보안 빈을 로드할 때 필요(실제 검증은 @WithLoginUser 로 우회).
+jwt:
+  secret: test-jwt-secret-test-jwt-secret-test-jwt-secret-0123456789
+  access-token-expiration: 3600000
+  sso-secret: test-sso-secret-test-sso-secret-test-sso-secret-0123456789
+
+app:
+  sso:
+    base-url: http://localhost:0
+  cors:
+    allowed-origins: http://localhost:3000
+
+logging:
+  level:
+    com.porest.desk: warn
+    org.hibernate.SQL: warn
+    p6spy: off
+    root: warn
