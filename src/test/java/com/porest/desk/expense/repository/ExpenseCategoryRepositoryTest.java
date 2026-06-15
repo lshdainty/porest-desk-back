@@ -1,6 +1,7 @@
 package com.porest.desk.expense.repository;
 
 import com.porest.desk.common.config.QueryDslConfig;
+import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.type.ExpenseType;
@@ -28,7 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({QueryDslConfig.class, LoginUserAuditorAware.class, ExpenseCategoryQueryDslRepository.class})
+@Import({QueryDslConfig.class, JpaAuditingConfig.class, LoginUserAuditorAware.class,
+        ExpenseCategoryQueryDslRepository.class})
 @ActiveProfiles("test")
 class ExpenseCategoryRepositoryTest {
 
