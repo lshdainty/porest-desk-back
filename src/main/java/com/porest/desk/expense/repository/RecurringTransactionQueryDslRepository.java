@@ -42,6 +42,17 @@ public class RecurringTransactionQueryDslRepository implements RecurringTransact
     }
 
     @Override
+    public boolean existsByCategory(Long categoryRowId) {
+        return queryFactory.selectOne()
+            .from(recurring)
+            .where(
+                recurring.category.rowId.eq(categoryRowId),
+                recurring.isDeleted.eq(YNType.N)
+            )
+            .fetchFirst() != null;
+    }
+
+    @Override
     public List<RecurringTransaction> findDueTransactions(LocalDate date) {
         return queryFactory.selectFrom(recurring)
             .where(

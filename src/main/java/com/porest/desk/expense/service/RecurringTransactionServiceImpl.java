@@ -2,6 +2,7 @@ package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
@@ -50,6 +51,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId());
+            // 정책: 상위(자식 보유) 카테고리에는 반복 거래를 둘 수 없음.
+            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+            }
         }
 
         Asset asset = null;
@@ -123,6 +128,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            // 정책: 상위(자식 보유) 카테고리에는 반복 거래를 둘 수 없음.
+            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+            }
         }
 
         Asset asset = null;

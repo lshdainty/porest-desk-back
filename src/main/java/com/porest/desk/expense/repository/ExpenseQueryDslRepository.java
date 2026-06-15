@@ -50,6 +50,36 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
+    public boolean existsByCategory(Long categoryRowId) {
+        return queryFactory.selectOne()
+            .from(expense)
+            .where(
+                expense.category.rowId.eq(categoryRowId),
+                expense.isDeleted.eq(YNType.N)
+            )
+            .fetchFirst() != null;
+    }
+
+    @Override
+    public long sumAmountByCategoryRollup(Long userRowId, Long categoryRowId, ExpenseType expenseType,
+                                          LocalDate startDate, LocalDate endDate) {
+        List<Long> amounts = queryFactory.select(expense.amount)
+            .from(expense)
+            .where(
+                expense.user.rowId.eq(userRowId),
+                expense.isDeleted.eq(YNType.N),
+                expense.expenseType.eq(expenseType),
+                expense.expenseDate.goe(toStartOfDay(startDate)),
+                expense.expenseDate.loe(toEndOfDay(endDate)),
+                // 카테고리 본인 + 하위 카테고리 지출까지 합산 (자식 → 부모 roll-up)
+                expense.category.rowId.eq(categoryRowId)
+                    .or(expense.category.parent.rowId.eq(categoryRowId))
+            )
+            .fetch();
+        return amounts.stream().filter(java.util.Objects::nonNull).mapToLong(Long::longValue).sum();
+    }
+
+    @Override
     public List<Expense> findByUser(Long userRowId, Long categoryRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(expense.user.rowId.eq(userRowId));

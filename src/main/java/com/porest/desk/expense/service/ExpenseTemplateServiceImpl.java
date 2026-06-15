@@ -2,6 +2,7 @@ package com.porest.desk.expense.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -47,6 +48,10 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId());
+            // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
+            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+            }
         }
 
         Asset asset = null;
@@ -90,6 +95,10 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
+            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+            }
         }
 
         Asset asset = null;
@@ -139,6 +148,12 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
         validateTemplateOwnership(template, userRowId);
+
+        // 정책: 템플릿 생성 이후 카테고리가 상위(부모)가 됐다면 거래 생성 불가.
+        if (template.getCategory() != null
+            && expenseCategoryRepository.hasChildren(template.getCategory().getRowId())) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+        }
 
         Expense expense = Expense.createExpense(
             template.getUser(),

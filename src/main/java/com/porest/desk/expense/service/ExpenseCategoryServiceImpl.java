@@ -4,8 +4,12 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
+import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.repository.RecurringTransactionRepository;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
@@ -25,6 +29,9 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
+    private final ExpenseBudgetRepository expenseBudgetRepository;
+    private final ExpenseRepository expenseRepository;
+    private final RecurringTransactionRepository recurringTransactionRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -47,6 +54,9 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             if (parent.getExpenseType() != command.expenseType()) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
             }
+            // 정책: 부모는 직접 거래를 가질 수 없음 — 거래/반복 거래가 있는 카테고리는
+            // 자식을 가질(부모가 될) 수 없다. 먼저 내역을 다른 카테고리로 옮겨야 함.
+            validateCanBecomeParent(parent.getRowId());
         }
 
         ExpenseCategory category = ExpenseCategory.createCategory(
@@ -88,15 +98,27 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         ExpenseCategory category = findCategoryOrThrow(categoryId);
         validateCategoryOwnership(category, userRowId);
 
-        // 구분(expenseType)·상위(parentRowId) 변경 — 편집 다이얼로그(웹/앱) 지원.
-        // 변경 "후" 상태(targetType/targetParent)를 기준으로 계층 무결성을 검증한다
-        // (reorder 의 parent 검증과 동일 규칙: 깊이 2 제한 + 부모-자식 타입 일치).
+        // 계층(parentRowId) 변경 정책:
+        //  - 최상위(부모) → 하위(강등): 금지. 삭제 후 재생성으로만.
+        //  - 하위(자식) → 최상위(승격): 금지(현재). 연결 내역 이관 후 별도 기능에서.
+        //  - 하위 → 다른 하위(부모 변경/이동): 허용. 단 새 부모는 거래/반복이 없어야 함.
+        boolean wasChild = category.getParent() != null;
+        boolean willHaveParent = command.parentRowId() != null;
+
+        if (!wasChild && willHaveParent) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_CANNOT_DEMOTE);
+        }
+        if (wasChild && !willHaveParent) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_CANNOT_PROMOTE);
+        }
+
         ExpenseType targetType = command.expenseType() != null
             ? command.expenseType()
             : category.getExpenseType();
 
         ExpenseCategory targetParent = null;
-        if (command.parentRowId() != null) {
+        if (willHaveParent) {
+            // 이 시점은 하위 → 다른 하위 이동만 도달 (위에서 강등/승격 차단됨).
             if (command.parentRowId().equals(category.getRowId())) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
             }
@@ -105,18 +127,20 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             if (targetParent.getParent() != null) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
             }
-        }
-
-        boolean hasChildren = expenseCategoryRepository.hasChildren(categoryId);
-        // 자식 보유 부모는 다른 부모 밑으로 못 들어가고(깊이 2+), 타입도 못 바꿈(자식과 불일치).
-        if (hasChildren && targetParent != null) {
-            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
-        }
-        if (hasChildren && targetType != category.getExpenseType()) {
-            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
-        }
-        if (targetParent != null && targetParent.getExpenseType() != targetType) {
-            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+            if (targetParent.getExpenseType() != targetType) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+            }
+            // 새 부모가 아직 자식이 없던 leaf 라면, 그 자체가 거래/반복을 보유한 경우
+            // 부모가 될 수 없다(부모는 직접 거래 불가).
+            if (!expenseCategoryRepository.hasChildren(targetParent.getRowId())) {
+                validateCanBecomeParent(targetParent.getRowId());
+            }
+        } else {
+            // 최상위 유지 — 자식이 있으면 타입을 바꿔도 자식과 불일치하면 안 됨.
+            if (expenseCategoryRepository.hasChildren(categoryId)
+                && targetType != category.getExpenseType()) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+            }
         }
 
         category.updateCategory(
@@ -133,6 +157,14 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         return ExpenseCategoryServiceDto.CategoryInfo.from(category);
     }
 
+    /** 거래 또는 반복 거래가 있는 카테고리는 부모(상위)가 될 수 없다. */
+    private void validateCanBecomeParent(Long categoryId) {
+        if (expenseRepository.existsByCategory(categoryId)
+            || recurringTransactionRepository.existsByCategory(categoryId)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_PARENT_HAS_TX);
+        }
+    }
+
     @Override
     @Transactional
     public void deleteCategory(Long categoryId, Long userRowId) {
@@ -145,9 +177,16 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_HAS_CHILDREN);
         }
 
+        // 정책: 예산이 걸린 카테고리를 삭제하면 예산도 함께 삭제(cascade).
+        // (클라이언트가 사전 확인 다이얼로그로 사용자 동의를 받는다.)
+        List<ExpenseBudget> budgets = expenseBudgetRepository.findAllByCategory(categoryId);
+        for (ExpenseBudget budget : budgets) {
+            expenseBudgetRepository.delete(budget);
+        }
+
         category.deleteCategory();
 
-        log.info("지출 카테고리 삭제 완료: categoryId={}", categoryId);
+        log.info("지출 카테고리 삭제 완료: categoryId={}, 예산 {}건 정리", categoryId, budgets.size());
     }
 
     @Override
