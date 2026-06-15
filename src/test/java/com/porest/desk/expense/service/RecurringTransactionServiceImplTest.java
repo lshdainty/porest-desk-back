@@ -1,0 +1,121 @@
+package com.porest.desk.expense.service;
+
+import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
+import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.domain.RecurringTransaction;
+import com.porest.desk.expense.repository.ExpenseCategoryRepository;
+import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.repository.RecurringTransactionRepository;
+import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.user.domain.User;
+import com.porest.desk.user.repository.UserRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+
+/**
+ * 반복 거래 정책 회귀 방지 단위 테스트 — 거래와 동일하게 leaf 카테고리만, 소유권 검증.
+ */
+@ExtendWith(MockitoExtension.class)
+class RecurringTransactionServiceImplTest {
+
+    @Mock private RecurringTransactionRepository recurringTransactionRepository;
+    @Mock private ExpenseCategoryRepository expenseCategoryRepository;
+    @Mock private AssetRepository assetRepository;
+    @Mock private ExpenseRepository expenseRepository;
+    @Mock private UserRepository userRepository;
+    @Mock private AssetBalanceHistoryService balanceHistoryService;
+
+    @InjectMocks private RecurringTransactionServiceImpl sut;
+
+    private static final long USER_ID = 1L;
+
+    private User user(long rowId) {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", rowId);
+        return u;
+    }
+
+    private ExpenseCategory category(long rowId, User owner) {
+        ExpenseCategory c = ExpenseCategory.createCategory(owner, "식비", "tag", "#fff", ExpenseType.EXPENSE, null);
+        ReflectionTestUtils.setField(c, "rowId", rowId);
+        return c;
+    }
+
+    private RecurringTransactionServiceDto.CreateCommand createCmd(long categoryRowId) {
+        return new RecurringTransactionServiceDto.CreateCommand(
+                USER_ID, categoryRowId, null, null, ExpenseType.EXPENSE, 10_000L,
+                null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    private RecurringTransactionServiceDto.UpdateCommand updateCmd(long categoryRowId) {
+        return new RecurringTransactionServiceDto.UpdateCommand(
+                categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
+                null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    @Test
+    @DisplayName("createRecurring — 자식 보유(상위) 카테고리에는 반복 거래 불가")
+    void createRejectsNonLeafCategory() {
+        User u = user(USER_ID);
+        ExpenseCategory parent = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(parent));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(true);
+
+        assertThatThrownBy(() -> sut.createRecurring(createCmd(10L)))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("createRecurring — 남의 카테고리에는 반복 거래 불가")
+    void createRejectsOthersCategory() {
+        User u = user(USER_ID);
+        ExpenseCategory othersCategory = category(20L, user(999L));
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(20L)).willReturn(Optional.of(othersCategory));
+
+        assertThatThrownBy(() -> sut.createRecurring(createCmd(20L)))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("updateRecurring — 자식 보유(상위) 카테고리로 변경 불가")
+    void updateRejectsNonLeafCategory() {
+        User u = user(USER_ID);
+        RecurringTransaction recurring = mock(RecurringTransaction.class);
+        given(recurring.getUser()).willReturn(u);
+        ExpenseCategory parent = category(30L, u);
+        given(recurringTransactionRepository.findById(5L)).willReturn(Optional.of(recurring));
+        given(expenseCategoryRepository.findById(30L)).willReturn(Optional.of(parent));
+        given(expenseCategoryRepository.hasChildren(30L)).willReturn(true);
+
+        assertThatThrownBy(() -> sut.updateRecurring(5L, USER_ID, updateCmd(30L)))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("updateRecurring — 남의 반복 거래는 수정 불가")
+    void updateRejectsOthersRecurring() {
+        RecurringTransaction recurring = mock(RecurringTransaction.class);
+        given(recurring.getUser()).willReturn(user(999L));
+        given(recurringTransactionRepository.findById(5L)).willReturn(Optional.of(recurring));
+
+        assertThatThrownBy(() -> sut.updateRecurring(5L, USER_ID, updateCmd(30L)))
+                .isInstanceOf(ForbiddenException.class);
+    }
+}
