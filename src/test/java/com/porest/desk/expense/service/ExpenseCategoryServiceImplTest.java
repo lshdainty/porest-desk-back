@@ -84,6 +84,22 @@ class ExpenseCategoryServiceImplTest {
         }
 
         @Test
+        @DisplayName("같은 위치·같은 타입에 같은 이름의 활성 카테고리가 있으면 생성 불가(중복 방지)")
+        void rejectDuplicateActiveName() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(true);
+
+            var command = new ExpenseCategoryServiceDto.CreateCommand(
+                    USER_ID, "식비", "utensils", "#fff", ExpenseType.EXPENSE, null);
+
+            assertThatThrownBy(() -> sut.createCategory(command))
+                    .isInstanceOf(InvalidValueException.class);
+            verify(expenseCategoryRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("부모가 이미 자식인 경우(2단계 초과) 생성 불가")
         void rejectWhenParentIsChild() {
             User u = user(USER_ID);

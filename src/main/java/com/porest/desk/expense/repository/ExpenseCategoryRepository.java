@@ -1,6 +1,7 @@
 package com.porest.desk.expense.repository;
 
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.type.ExpenseType;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,4 +12,6 @@ public interface ExpenseCategoryRepository {
     ExpenseCategory save(ExpenseCategory expenseCategory);
     void delete(ExpenseCategory expenseCategory);
     boolean hasChildren(Long categoryRowId);
+    boolean existsActiveByUserAndParentAndTypeAndName(Long userRowId, Long parentRowId,
+                                                      ExpenseType expenseType, String categoryName, Long excludeRowId);
 }

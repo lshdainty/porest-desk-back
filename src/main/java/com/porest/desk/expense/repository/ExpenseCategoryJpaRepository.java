@@ -53,4 +53,29 @@ public class ExpenseCategoryJpaRepository implements ExpenseCategoryRepository {
             .getSingleResult();
         return count > 0;
     }
+
+    @Override
+    public boolean existsActiveByUserAndParentAndTypeAndName(Long userRowId, Long parentRowId,
+                                                             com.porest.desk.expense.type.ExpenseType expenseType,
+                                                             String categoryName, Long excludeRowId) {
+        StringBuilder jpql = new StringBuilder(
+            "SELECT COUNT(c) FROM ExpenseCategory c WHERE c.user.rowId = :userRowId"
+                + " AND c.categoryName = :categoryName AND c.expenseType = :expenseType AND c.isDeleted = :isDeleted");
+        jpql.append(parentRowId != null ? " AND c.parent.rowId = :parentRowId" : " AND c.parent IS NULL");
+        if (excludeRowId != null) {
+            jpql.append(" AND c.rowId <> :excludeRowId");
+        }
+        var query = entityManager.createQuery(jpql.toString(), Long.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("categoryName", categoryName)
+            .setParameter("expenseType", expenseType)
+            .setParameter("isDeleted", YNType.N);
+        if (parentRowId != null) {
+            query.setParameter("parentRowId", parentRowId);
+        }
+        if (excludeRowId != null) {
+            query.setParameter("excludeRowId", excludeRowId);
+        }
+        return query.getSingleResult() > 0;
+    }
 }

@@ -62,4 +62,21 @@ public class ExpenseCategoryQueryDslRepository implements ExpenseCategoryReposit
             )
             .fetchFirst() != null;
     }
+
+    @Override
+    public boolean existsActiveByUserAndParentAndTypeAndName(Long userRowId, Long parentRowId,
+                                                             com.porest.desk.expense.type.ExpenseType expenseType,
+                                                             String categoryName, Long excludeRowId) {
+        return queryFactory.selectOne()
+            .from(expenseCategory)
+            .where(
+                expenseCategory.user.rowId.eq(userRowId),
+                expenseCategory.categoryName.eq(categoryName),
+                expenseCategory.expenseType.eq(expenseType),
+                expenseCategory.isDeleted.eq(YNType.N),
+                parentRowId != null ? expenseCategory.parent.rowId.eq(parentRowId) : expenseCategory.parent.isNull(),
+                excludeRowId != null ? expenseCategory.rowId.ne(excludeRowId) : null
+            )
+            .fetchFirst() != null;
+    }
 }
