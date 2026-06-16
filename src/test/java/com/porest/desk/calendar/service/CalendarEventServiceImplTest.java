@@ -2,7 +2,9 @@ package com.porest.desk.calendar.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.UserCalendar;
+import com.porest.desk.calendar.domain.UserCalendarMember;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.repository.EventReminderRepository;
@@ -26,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * 캘린더 이벤트 서비스 회귀 방지 단위 테스트 — 날짜 범위 검증 + 공유 캘린더 쓰기 권한 위임.
@@ -88,5 +91,23 @@ class CalendarEventServiceImplTest {
 
         assertThatThrownBy(() -> sut.createEvent(cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("deleteEvent — 생성자(user)가 삭제된 stale 이벤트도 EDIT 권한이면 NPE 없이 삭제")
+    void deleteStaleEventWithNullCreator() {
+        CalendarEvent event = mock(CalendarEvent.class);
+        UserCalendar cal = mock(UserCalendar.class);
+        given(cal.getRowId()).willReturn(50L);
+        given(event.getCalendar()).willReturn(cal);
+        given(event.getUser()).willReturn(null); // 생성자 삭제됨(stale)
+        given(calendarEventRepository.findById(5L)).willReturn(Optional.of(event));
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        given(calendarMembershipValidator.validateMembership(50L, USER_ID)).willReturn(member);
+        given(calendarMembershipValidator.canEditOrDelete(member, null, USER_ID)).willReturn(true);
+
+        sut.deleteEvent(5L, USER_ID); // 가드 없으면 event.getUser().getRowId() 에서 NPE
+
+        verify(event).deleteEvent();
     }
 }

@@ -200,16 +200,18 @@ public class CalendarEventServiceImpl implements CalendarEventService {
      * 이벤트 생성자 본인이거나 EDIT 이상 권한이면 수정/삭제 가능.
      */
     private void validateEventOwnership(CalendarEvent event, Long userRowId) {
+        // 오래된 데이터에서 생성자(user)가 삭제돼 null 일 수 있으므로 null-safe 하게 소유자 id 추출.
+        Long ownerRowId = event.getUser() != null ? event.getUser().getRowId() : null;
         if (event.getCalendar() != null) {
             UserCalendarMember member = calendarMembershipValidator.validateMembership(
                 event.getCalendar().getRowId(), userRowId);
-            if (!calendarMembershipValidator.canEditOrDelete(member, event.getUser().getRowId(), userRowId)) {
+            if (!calendarMembershipValidator.canEditOrDelete(member, ownerRowId, userRowId)) {
                 throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
             }
             return;
         }
-        // 캘린더 미소속 이벤트(이론상 없음): 생성자만
-        if (!event.getUser().getRowId().equals(userRowId)) {
+        // 캘린더 미소속 이벤트(이론상 없음): 생성자만 (생성자 불명이면 접근 거부)
+        if (!userRowId.equals(ownerRowId)) {
             throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
         }
     }
