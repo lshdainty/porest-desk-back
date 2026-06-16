@@ -105,6 +105,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         if (command.assetRowId() != null) {
             asset = assetRepository.findById(command.assetRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+            validateAssetOwnership(asset, userRowId); // create 와 대칭 — 남의 자산 할당 차단
         }
 
         template.updateTemplate(
