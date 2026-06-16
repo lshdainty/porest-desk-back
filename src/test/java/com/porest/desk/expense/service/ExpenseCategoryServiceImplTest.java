@@ -217,4 +217,63 @@ class ExpenseCategoryServiceImplTest {
             verify(expenseBudgetRepository, times(1)).delete(budget);
         }
     }
+
+    @Nested
+    @DisplayName("reorderCategories")
+    class ReorderCategory {
+
+        @Test
+        @DisplayName("같은 부모 내 순서 변경은 sortOrder 만 갱신")
+        void sameParentReorderUpdatesSortOrder() {
+            User u = user(USER_ID);
+            ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+
+            sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 3, null)));
+
+            assertThat(cat.getSortOrder()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("자기 자신을 부모로 지정하면 불가")
+        void rejectSelfAsParent() {
+            User u = user(USER_ID);
+            ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+
+            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 10L))))
+                    .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("이미 부모가 있는(2단계) 카테고리 아래로는 이동 불가")
+        void rejectDepthOverflow() {
+            User u = user(USER_ID);
+            ExpenseCategory grandParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory parentWithParent = category(2L, u, grandParent, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(parentWithParent));
+
+            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
+                    .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("구분(expenseType)이 다른 부모로는 이동 불가")
+        void rejectTypeMismatch() {
+            User u = user(USER_ID);
+            ExpenseCategory incomeParent = category(2L, u, null, ExpenseType.INCOME);
+            ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(incomeParent));
+
+            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
+                    .isInstanceOf(InvalidValueException.class);
+        }
+    }
 }
