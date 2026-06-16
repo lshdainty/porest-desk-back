@@ -97,7 +97,7 @@ class DutchPayServiceImplTest {
     void markPaidRejectsUnknownParticipant() {
         DutchPay d = mock(DutchPay.class);
         given(d.getUser()).willReturn(user(USER_ID));
-        given(d.getParticipants()).willReturn(List.of()); // 해당 참가자 없음
+        given(d.getActiveParticipants()).willReturn(List.of()); // 해당 참가자 없음
         given(dutchPayRepository.findById(5L)).willReturn(Optional.of(d));
 
         assertThatThrownBy(() -> sut.markParticipantPaid(5L, USER_ID, 7L))

@@ -71,8 +71,16 @@ public class DutchPay extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    @OneToMany(mappedBy = "dutchPay", cascade = CascadeType.ALL, orphanRemoval = true)
+    // 참가자는 soft-delete(is_deleted) 로 관리 — 물리 삭제(orphanRemoval) 대신 플래그 처리.
+    @OneToMany(mappedBy = "dutchPay", cascade = CascadeType.ALL)
     private List<DutchPayParticipant> participants = new ArrayList<>();
+
+    /** 활성(미삭제) 참가자만. 정산/노출/검증의 기준. */
+    public List<DutchPayParticipant> getActiveParticipants() {
+        return this.participants.stream()
+            .filter(p -> p.getIsDeleted() == YNType.N)
+            .toList();
+    }
 
     public static DutchPay createDutchPay(User user, Expense sourceExpense,
                                            String title, String description,
@@ -104,15 +112,18 @@ public class DutchPay extends AuditingFieldsWithIp {
 
     public void deleteDutchPay() {
         this.isDeleted = YNType.Y;
+        // 부모 삭제 시 활성 참가자도 함께 soft-delete (cascade)
+        getActiveParticipants().forEach(DutchPayParticipant::deleteParticipant);
     }
 
     public void settleAll() {
         this.isSettled = YNType.Y;
-        this.participants.forEach(DutchPayParticipant::markPaid);
+        getActiveParticipants().forEach(DutchPayParticipant::markPaid);
     }
 
     public void checkSettled() {
-        boolean allPaid = this.participants.stream()
+        List<DutchPayParticipant> active = getActiveParticipants();
+        boolean allPaid = !active.isEmpty() && active.stream()
             .allMatch(p -> p.getIsPaid() == YNType.Y);
         this.isSettled = allPaid ? YNType.Y : YNType.N;
     }
@@ -121,7 +132,8 @@ public class DutchPay extends AuditingFieldsWithIp {
         this.participants.add(participant);
     }
 
+    /** 교체 시 기존 활성 참가자를 soft-delete (물리 삭제 대신 플래그). */
     public void clearParticipants() {
-        this.participants.clear();
+        getActiveParticipants().forEach(DutchPayParticipant::deleteParticipant);
     }
 }

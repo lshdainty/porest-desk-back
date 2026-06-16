@@ -126,7 +126,7 @@ public class DutchPayServiceImpl implements DutchPayService {
         DutchPay dutchPay = findDutchPayOrThrow(dutchPayId);
         validateDutchPayOwnership(dutchPay, userRowId);
 
-        DutchPayParticipant participant = dutchPay.getParticipants().stream()
+        DutchPayParticipant participant = dutchPay.getActiveParticipants().stream()
             .filter(p -> p.getRowId().equals(participantId))
             .findFirst()
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.DUTCH_PAY_PARTICIPANT_NOT_FOUND));

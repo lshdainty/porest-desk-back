@@ -55,7 +55,7 @@ public class DutchPayServiceDto {
         LocalDateTime modifyAt
     ) {
         public static DutchPayInfo from(DutchPay dutchPay) {
-            List<ParticipantInfo> participantInfos = dutchPay.getParticipants().stream()
+            List<ParticipantInfo> participantInfos = dutchPay.getActiveParticipants().stream()
                 .map(ParticipantInfo::from)
                 .toList();
             return new DutchPayInfo(
