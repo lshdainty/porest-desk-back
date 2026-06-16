@@ -2,6 +2,7 @@ package com.porest.desk.expense.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.domain.ExpenseTemplate;
@@ -119,6 +120,25 @@ class ExpenseTemplateServiceImplTest {
         given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(template));
 
         assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID, updateCmd(30L)))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("updateTemplate — 남의 자산으로 변경 불가(소유권 검증 누락 보강)")
+    void updateRejectsOthersAsset() {
+        User u = user(USER_ID);
+        ExpenseTemplate template = mock(ExpenseTemplate.class);
+        given(template.getUser()).willReturn(u);
+        given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(template));
+        Asset othersAsset = mock(Asset.class);
+        given(othersAsset.getUser()).willReturn(user(999L));
+        given(assetRepository.findById(20L)).willReturn(Optional.of(othersAsset));
+
+        var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
+                "점심 템플릿", null, 20L, ExpenseType.EXPENSE, 10_000L,
+                null, null, null, null);
+
+        assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
     }
 
