@@ -28,9 +28,13 @@ public class CalendarMembershipValidator {
             .orElseThrow(() -> new ForbiddenException(DeskErrorCode.CALENDAR_ACCESS_DENIED));
     }
 
-    /** 이벤트 수정·삭제 가능 여부: 이벤트 생성자 본인이거나 EDIT 이상. */
+    /**
+     * 이벤트 수정·삭제 가능 여부: 이벤트 생성자 본인이거나 EDIT 이상.
+     * itemOwnerRowId 는 생성자가 삭제된 stale 데이터에서 null 일 수 있으므로 null-safe 하게 처리한다
+     * (생성자 불명 → 본인 일치로 보지 않고 권한(canWrite)으로만 판정).
+     */
     public boolean canEditOrDelete(UserCalendarMember member, Long itemOwnerRowId, Long requestUserRowId) {
-        if (itemOwnerRowId.equals(requestUserRowId)) return true;
+        if (itemOwnerRowId != null && itemOwnerRowId.equals(requestUserRowId)) return true;
         return member.getPermission().canWrite();
     }
 

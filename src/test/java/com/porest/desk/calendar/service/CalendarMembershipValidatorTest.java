@@ -97,6 +97,18 @@ class CalendarMembershipValidatorTest {
         assertThat(sut.canEditOrDelete(member(CalendarRole.READ), 2L, USER_ID)).isFalse();
     }
 
+    @Test
+    @DisplayName("canEditOrDelete — 생성자 불명(null·stale)이라도 EDIT 권한이면 허용(NPE 없음)")
+    void canEditWithNullOwnerAndEdit() {
+        assertThat(sut.canEditOrDelete(member(CalendarRole.EDIT), null, USER_ID)).isTrue();
+    }
+
+    @Test
+    @DisplayName("canEditOrDelete — 생성자 불명(null)이고 READ 권한이면 불가")
+    void cannotEditWithNullOwnerAndRead() {
+        assertThat(sut.canEditOrDelete(member(CalendarRole.READ), null, USER_ID)).isFalse();
+    }
+
     // ---- validateCanWrite ----
 
     @Test
