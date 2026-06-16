@@ -1,7 +1,10 @@
 package com.porest.desk.expense.service;
 
+import com.porest.core.type.YNType;
+import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
+import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseCategory;
@@ -70,6 +73,18 @@ class ExpenseServiceSummaryTest {
 
     private Expense expenseIn(ExpenseCategory cat, ExpenseType type, long amount) {
         return Expense.createExpense(null, cat, null, type, amount, null,
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
+    }
+
+    private Asset asset(long rowId, String name) {
+        Asset a = Asset.createAsset(null, name, AssetType.BANK_ACCOUNT, 0L, "KRW",
+                null, null, null, 0, YNType.Y, null, null, null, null);
+        ReflectionTestUtils.setField(a, "rowId", rowId);
+        return a;
+    }
+
+    private Expense expenseWithAsset(Asset asset, ExpenseType type, long amount) {
+        return Expense.createExpense(null, null, asset, type, amount, null,
                 LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
     }
 
@@ -143,5 +158,30 @@ class ExpenseServiceSummaryTest {
         var foodEntry = summary.categoryBreakdown().stream()
                 .filter(b -> b.categoryRowId().equals(20L)).findFirst().orElseThrow();
         assertThat(foodEntry.parentCategoryRowId()).isNull();           // 최상위는 부모 없음
+    }
+
+    @Test
+    @DisplayName("getAssetSummary — 지출만, 자산별 합산·건수·내림차순, 자산 없는 거래 제외")
+    void assetSummaryGroupsFiltersSorts() {
+        Asset bank = asset(1L, "통장");
+        Asset card = asset(2L, "카드");
+        given(expenseRepository.findByUser(eq(USER_ID), isNull(), isNull(), any(), any()))
+                .willReturn(List.of(
+                        expenseWithAsset(bank, ExpenseType.EXPENSE, 5_000L),
+                        expenseWithAsset(bank, ExpenseType.EXPENSE, 3_000L),
+                        expenseWithAsset(card, ExpenseType.EXPENSE, 10_000L),
+                        expenseWithAsset(bank, ExpenseType.INCOME, 100_000L), // 수입 → 제외
+                        expense(ExpenseType.EXPENSE, 2_000L, null)             // 자산 없음 → 제외
+                ));
+
+        List<ExpenseServiceDto.AssetSummary> result = sut.getAssetSummary(
+                USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).assetName()).isEqualTo("카드");      // 10,000 (최대)
+        assertThat(result.get(0).totalAmount()).isEqualTo(10_000L);
+        assertThat(result.get(1).assetName()).isEqualTo("통장");      // 8,000
+        assertThat(result.get(1).totalAmount()).isEqualTo(8_000L);
+        assertThat(result.get(1).count()).isEqualTo(2);
     }
 }
