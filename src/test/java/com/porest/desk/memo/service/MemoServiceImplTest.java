@@ -2,6 +2,7 @@ package com.porest.desk.memo.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.memo.domain.Memo;
+import com.porest.desk.memo.domain.MemoFolder;
 import com.porest.desk.memo.repository.MemoFolderRepository;
 import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.user.domain.User;
@@ -13,6 +14,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import com.porest.desk.memo.service.dto.MemoServiceDto;
 
 import java.util.Optional;
 
@@ -73,6 +76,22 @@ class MemoServiceImplTest {
         given(memoRepository.findById(5L)).willReturn(Optional.of(m));
 
         assertThatThrownBy(() -> sut.deleteMemo(5L, USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("updateMemo — 남의 폴더로 이동 불가(소유권 검증 누락 보강)")
+    void updateRejectsOthersFolder() {
+        Memo m = mock(Memo.class);
+        given(m.getUser()).willReturn(user(USER_ID));
+        given(memoRepository.findById(5L)).willReturn(Optional.of(m));
+        MemoFolder othersFolder = mock(MemoFolder.class);
+        given(othersFolder.getUser()).willReturn(user(999L));
+        given(memoFolderRepository.findById(20L)).willReturn(Optional.of(othersFolder));
+
+        var cmd = new MemoServiceDto.UpdateCommand(20L, "수정", "내용", null, null);
+
+        assertThatThrownBy(() -> sut.updateMemo(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
     }
 }
