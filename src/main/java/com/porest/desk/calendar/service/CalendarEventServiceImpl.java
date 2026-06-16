@@ -58,6 +58,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         if (command.labelRowId() != null) {
             label = eventLabelRepository.findById(command.labelRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
+            validateLabelOwnership(label, command.userRowId());
         }
 
         UserCalendar calendar;
@@ -140,6 +141,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         if (command.labelRowId() != null) {
             label = eventLabelRepository.findById(command.labelRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
+            validateLabelOwnership(label, userRowId);
         }
 
         event.updateEvent(
@@ -213,6 +215,19 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         // 캘린더 미소속 이벤트(이론상 없음): 생성자만 (생성자 불명이면 접근 거부)
         if (!userRowId.equals(ownerRowId)) {
             throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
+        }
+    }
+
+    /**
+     * 라벨은 사용자 개인 분류값 — 본인 소유 라벨만 이벤트에 부착 가능.
+     * (남의 라벨 부착 시 타인 라벨명/색상이 EventInfo 로 노출되는 정보 누출 차단)
+     */
+    private void validateLabelOwnership(EventLabel label, Long userRowId) {
+        Long ownerRowId = label.getUser() != null ? label.getUser().getRowId() : null;
+        if (!userRowId.equals(ownerRowId)) {
+            log.warn("이벤트 라벨 소유권 검증 실패 - labelId={}, ownerRowId={}, requestUserRowId={}",
+                label.getRowId(), ownerRowId, userRowId);
+            throw new ForbiddenException(DeskErrorCode.EVENT_LABEL_ACCESS_DENIED);
         }
     }
 
