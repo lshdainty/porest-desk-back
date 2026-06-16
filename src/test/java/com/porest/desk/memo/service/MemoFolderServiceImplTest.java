@@ -1,6 +1,7 @@
 package com.porest.desk.memo.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.memo.domain.MemoFolder;
 import com.porest.desk.memo.repository.MemoFolderRepository;
 import com.porest.desk.user.domain.User;
@@ -79,5 +80,40 @@ class MemoFolderServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateFolder(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("updateFolder — 자기 자신을 상위로 지정 불가(순환 차단)")
+    void updateRejectsSelfAsParent() {
+        MemoFolder owned = mock(MemoFolder.class);
+        given(owned.getUser()).willReturn(user(USER_ID));
+        given(owned.getRowId()).willReturn(5L);
+        given(memoFolderRepository.findById(5L)).willReturn(Optional.of(owned));
+
+        var cmd = new MemoServiceDto.FolderUpdateCommand(5L, "수정", null);
+
+        assertThatThrownBy(() -> sut.updateFolder(5L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("updateFolder — 하위 폴더를 상위로 지정 불가(조상 순환 차단)")
+    void updateRejectsDescendantAsParent() {
+        MemoFolder owned = mock(MemoFolder.class);
+        given(owned.getUser()).willReturn(user(USER_ID));
+        given(memoFolderRepository.findById(5L)).willReturn(Optional.of(owned));
+        // 새 부모(20)의 조상 체인: 20 -> 5(수정 대상) → 순환
+        MemoFolder self = mock(MemoFolder.class);
+        given(self.getRowId()).willReturn(5L);
+        MemoFolder newParent = mock(MemoFolder.class);
+        given(newParent.getUser()).willReturn(user(USER_ID));
+        given(newParent.getRowId()).willReturn(20L);
+        given(newParent.getParent()).willReturn(self);
+        given(memoFolderRepository.findById(20L)).willReturn(Optional.of(newParent));
+
+        var cmd = new MemoServiceDto.FolderUpdateCommand(20L, "수정", null);
+
+        assertThatThrownBy(() -> sut.updateFolder(5L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class);
     }
 }

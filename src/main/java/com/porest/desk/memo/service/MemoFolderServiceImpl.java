@@ -2,6 +2,7 @@ package com.porest.desk.memo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.memo.domain.MemoFolder;
 import com.porest.desk.memo.repository.MemoFolderRepository;
@@ -76,6 +77,7 @@ public class MemoFolderServiceImpl implements MemoFolderService {
                     return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
                 });
             validateFolderOwnership(parent, userRowId); // create 와 대칭 — 남의 폴더 하위로 이동 차단
+            validateNoCycle(parent, folderId); // 자기 자신/하위 폴더를 상위로 지정하는 순환 차단
         }
 
         folder.updateFolder(parent, command.folderName(), command.sortOrder());
@@ -95,6 +97,23 @@ public class MemoFolderServiceImpl implements MemoFolderService {
         folder.deleteFolder();
 
         log.info("메모 폴더 삭제 완료: folderId={}", folderId);
+    }
+
+    /**
+     * 순환 방지: 새 상위(parent) 후보의 조상 체인에 수정 대상 폴더가 있으면 순환.
+     * 자기 자신을 상위로 지정하는 경우(첫 노드 == folderId)도 함께 차단한다.
+     * 기존 데이터가 이미 순환이어도 무한루프에 빠지지 않도록 깊이 상한을 둔다.
+     */
+    private void validateNoCycle(MemoFolder parent, Long folderId) {
+        MemoFolder ancestor = parent;
+        int guard = 0;
+        while (ancestor != null && guard++ < 100) {
+            if (folderId.equals(ancestor.getRowId())) {
+                log.warn("메모 폴더 순환 지정 차단 - folderId={}, parentChain 에 자기 자신 포함", folderId);
+                throw new InvalidValueException(DeskErrorCode.MEMO_FOLDER_INVALID_PARENT);
+            }
+            ancestor = ancestor.getParent();
+        }
     }
 
     private void validateFolderOwnership(MemoFolder folder, Long userRowId) {
