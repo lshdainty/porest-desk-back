@@ -3,6 +3,7 @@ package com.porest.desk.calendar.service;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.calendar.domain.CalendarEvent;
+import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.domain.UserCalendar;
 import com.porest.desk.calendar.domain.UserCalendarMember;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
@@ -88,6 +89,23 @@ class CalendarEventServiceImplTest {
                 .given(calendarMembershipValidator).validateCanWrite(7L, USER_ID);
 
         var cmd = createCmd(LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0), 7L);
+
+        assertThatThrownBy(() -> sut.createEvent(cmd))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("createEvent — 남의 라벨은 이벤트에 부착 불가(소유권 검증 누락 보강)")
+    void createRejectsOthersLabel() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        EventLabel othersLabel = mock(EventLabel.class);
+        given(othersLabel.getUser()).willReturn(user(999L));
+        given(eventLabelRepository.findById(30L)).willReturn(Optional.of(othersLabel));
+
+        var cmd = new CalendarEventServiceDto.CreateCommand(
+                USER_ID, "회의", null, null, null,
+                LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0), null,
+                30L, null, null, null, null);
 
         assertThatThrownBy(() -> sut.createEvent(cmd))
                 .isInstanceOf(ForbiddenException.class);
