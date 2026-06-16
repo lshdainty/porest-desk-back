@@ -77,6 +77,11 @@ public class NotificationTriggerScheduler {
                     continue;
                 }
 
+                // 0/음수 예산은 사용률 계산에서 0 나눗셈(ArithmeticException)을 유발 — 방어적으로 건너뜀.
+                if (budget.getBudgetAmount() == null || budget.getBudgetAmount() <= 0) {
+                    continue;
+                }
+
                 Long userRowId = budget.getUser().getRowId();
                 Long categoryRowId = budget.getCategory() != null ? budget.getCategory().getRowId() : null;
 
