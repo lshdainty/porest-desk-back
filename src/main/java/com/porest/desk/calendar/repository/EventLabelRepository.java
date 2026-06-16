@@ -8,6 +8,7 @@ import java.util.Optional;
 public interface EventLabelRepository {
     Optional<EventLabel> findById(Long rowId);
     List<EventLabel> findAllByUser(Long userRowId);
+    boolean existsActiveByUserAndName(Long userRowId, String labelName, Long excludeRowId);
     EventLabel save(EventLabel eventLabel);
     void delete(EventLabel eventLabel);
 }

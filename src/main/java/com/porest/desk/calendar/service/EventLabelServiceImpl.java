@@ -2,6 +2,7 @@ package com.porest.desk.calendar.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.service.dto.EventLabelServiceDto;
@@ -30,6 +31,11 @@ public class EventLabelServiceImpl implements EventLabelService {
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        // 활성(미삭제) 라벨 중 동일 이름 중복 금지 (soft-delete 된 같은 이름은 재사용 허용)
+        if (eventLabelRepository.existsActiveByUserAndName(command.userRowId(), command.labelName(), null)) {
+            throw new InvalidValueException(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME);
+        }
 
         List<EventLabel> existing = eventLabelRepository.findAllByUser(command.userRowId());
         int nextOrder = existing.size();
@@ -60,6 +66,10 @@ public class EventLabelServiceImpl implements EventLabelService {
                 return new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND);
             });
         validateLabelOwnership(label, userRowId);
+        // 이름 변경 시 자기 자신을 제외한 활성 라벨과 중복 금지
+        if (eventLabelRepository.existsActiveByUserAndName(userRowId, command.labelName(), labelId)) {
+            throw new InvalidValueException(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME);
+        }
 
         label.updateLabel(command.labelName(), command.color());
         log.info("일정 라벨 수정 완료: labelId={}", labelId);

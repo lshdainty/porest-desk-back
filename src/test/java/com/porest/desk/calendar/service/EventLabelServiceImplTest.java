@@ -1,6 +1,7 @@
 package com.porest.desk.calendar.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.service.dto.EventLabelServiceDto;
@@ -54,6 +55,16 @@ class EventLabelServiceImplTest {
         assertThat(info.labelName()).isEqualTo("업무");
         assertThat(info.sortOrder()).isEqualTo(0);
         verify(eventLabelRepository).save(any(EventLabel.class));
+    }
+
+    @Test
+    @DisplayName("createLabel — 활성 라벨 중 같은 이름이 있으면 거부(중복 방지)")
+    void createRejectsDuplicateActiveName() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.existsActiveByUserAndName(USER_ID, "업무", null)).willReturn(true);
+
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "업무", "#f00")))
+                .isInstanceOf(InvalidValueException.class);
     }
 
     @Test

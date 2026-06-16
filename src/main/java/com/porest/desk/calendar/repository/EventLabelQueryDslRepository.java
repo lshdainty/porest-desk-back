@@ -30,6 +30,19 @@ public class EventLabelQueryDslRepository implements EventLabelRepository {
     }
 
     @Override
+    public boolean existsActiveByUserAndName(Long userRowId, String labelName, Long excludeRowId) {
+        return queryFactory.selectOne()
+            .from(eventLabel)
+            .where(
+                eventLabel.user.rowId.eq(userRowId),
+                eventLabel.labelName.eq(labelName),
+                eventLabel.isDeleted.eq(YNType.N),
+                excludeRowId != null ? eventLabel.rowId.ne(excludeRowId) : null
+            )
+            .fetchFirst() != null;
+    }
+
+    @Override
     public List<EventLabel> findAllByUser(Long userRowId) {
         return queryFactory.selectFrom(eventLabel)
             .where(eventLabel.user.rowId.eq(userRowId), eventLabel.isDeleted.eq(YNType.N))

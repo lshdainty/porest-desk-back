@@ -1,8 +1,10 @@
 package com.porest.desk.todo.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.todo.domain.TodoTag;
 import com.porest.desk.todo.repository.TodoTagRepository;
+import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -58,5 +60,17 @@ class TodoTagServiceImplTest {
 
         assertThatThrownBy(() -> sut.deleteTag(5L, USER_ID))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("createTag — 활성 태그 중 같은 이름이 있으면 거부(중복 방지)")
+    void createRejectsDuplicateActiveName() {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(todoTagRepository.existsActiveByUserAndName(USER_ID, "일상", null)).willReturn(true);
+
+        assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "일상", "#fff")))
+                .isInstanceOf(InvalidValueException.class);
     }
 }
