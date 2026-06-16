@@ -51,6 +51,10 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_deleted", nullable = false, length = 1)
+    private YNType isDeleted;
+
     public static DutchPayParticipant create(DutchPay dutchPay, User user, String participantName, Long amount) {
         DutchPayParticipant participant = new DutchPayParticipant();
         participant.dutchPay = dutchPay;
@@ -58,7 +62,12 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
         participant.participantName = participantName;
         participant.amount = amount;
         participant.isPaid = YNType.N;
+        participant.isDeleted = YNType.N;
         return participant;
+    }
+
+    public void deleteParticipant() {
+        this.isDeleted = YNType.Y;
     }
 
     public void markPaid() {
