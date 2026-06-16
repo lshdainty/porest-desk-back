@@ -18,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -108,6 +109,20 @@ class TodoServiceImplTest {
                 "수정", null, null, null, null, 20L, null);
 
         assertThatThrownBy(() -> sut.updateTodo(5L, USER_ID, cmd))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("reorderTodos — 남의 할일 순서는 변경 불가(소유권 검증 누락 보강)")
+    void reorderRejectsOthers() {
+        Todo todo = mock(Todo.class);
+        given(todo.getUser()).willReturn(user(999L));
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+
+        var cmd = new TodoServiceDto.ReorderCommand(
+                List.of(new TodoServiceDto.ReorderCommand.ReorderItem(5L, 1)));
+
+        assertThatThrownBy(() -> sut.reorderTodos(USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
     }
 }

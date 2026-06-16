@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -135,6 +136,18 @@ class AssetServiceImplTest {
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("reorderAssets — 남의 자산 순서는 변경 불가(소유권 검증 누락 보강)")
+    void reorderRejectsOthers() {
+        Asset others = assetOwnedBy(999L);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(others));
+
+        var items = List.of(new AssetServiceDto.ReorderItem(10L, 1));
+
+        assertThatThrownBy(() -> sut.reorderAssets(USER_ID, items))
+                .isInstanceOf(ForbiddenException.class);
     }
 
     @Test

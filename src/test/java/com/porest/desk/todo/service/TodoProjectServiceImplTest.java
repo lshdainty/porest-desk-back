@@ -3,6 +3,7 @@ package com.porest.desk.todo.service;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.todo.domain.TodoProject;
 import com.porest.desk.todo.repository.TodoProjectRepository;
+import com.porest.desk.todo.service.dto.TodoProjectServiceDto;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +59,19 @@ class TodoProjectServiceImplTest {
         given(todoProjectRepository.findById(5L)).willReturn(Optional.of(p));
 
         assertThatThrownBy(() -> sut.deleteProject(5L, USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("reorderProjects — 남의 프로젝트 순서는 변경 불가(소유권 검증 누락 보강)")
+    void reorderRejectsOthers() {
+        TodoProject p = othersProject();
+        given(todoProjectRepository.findById(5L)).willReturn(Optional.of(p));
+
+        var cmd = new TodoProjectServiceDto.ReorderCommand(
+                List.of(new TodoProjectServiceDto.ReorderCommand.ReorderItem(5L, 1)));
+
+        assertThatThrownBy(() -> sut.reorderProjects(USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
     }
 }
