@@ -64,8 +64,16 @@ public class EventCommentServiceImpl implements EventCommentService {
     }
 
     @Override
-    public List<EventCommentServiceDto.CommentInfo> getComments(Long eventRowId) {
-        log.debug("일정 댓글 목록 조회: eventRowId={}", eventRowId);
+    public List<EventCommentServiceDto.CommentInfo> getComments(Long eventRowId, Long userRowId) {
+        log.debug("일정 댓글 목록 조회: eventRowId={}, userRowId={}", eventRowId, userRowId);
+
+        // 접근 권한 검증: 이벤트가 속한 캘린더 멤버(읽기 이상)만 댓글 조회 가능.
+        // 접근조차 불가한 이벤트의 댓글 내용이 노출되는 것을 차단.
+        CalendarEvent event = calendarEventRepository.findById(eventRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.CALENDAR_EVENT_NOT_FOUND));
+        if (event.getCalendar() != null) {
+            calendarMembershipValidator.validateMembership(event.getCalendar().getRowId(), userRowId);
+        }
 
         return eventCommentRepository.findAllByEvent(eventRowId).stream()
             .map(EventCommentServiceDto.CommentInfo::from)

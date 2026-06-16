@@ -77,6 +77,18 @@ class EventCommentServiceImplTest {
     }
 
     @Test
+    @DisplayName("getComments — 접근 권한 없는 이벤트의 댓글은 조회 불가(읽기 접근 검증 누락 보강)")
+    void getCommentsRejectsWhenNoCalendarAccess() {
+        CalendarEvent event = eventOnCalendar(50L);
+        given(calendarEventRepository.findById(10L)).willReturn(Optional.of(event));
+        willThrow(new ForbiddenException(DeskErrorCode.CALENDAR_ACCESS_DENIED))
+                .given(calendarMembershipValidator).validateMembership(50L, USER_ID);
+
+        assertThatThrownBy(() -> sut.getComments(10L, USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
     @DisplayName("createComment — 부모 댓글이 다른 이벤트 소속이면 거부(스레드 무결성 보강)")
     void createRejectsParentFromOtherEvent() {
         CalendarEvent event = eventOnCalendar(50L);

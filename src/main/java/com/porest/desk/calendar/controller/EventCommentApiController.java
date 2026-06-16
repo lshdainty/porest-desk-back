@@ -43,7 +43,7 @@ public class EventCommentApiController {
     public ApiResponse<EventCommentApiDto.ListResponse> getComments(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long eventId) {
-        List<EventCommentServiceDto.CommentInfo> infos = eventCommentService.getComments(eventId);
+        List<EventCommentServiceDto.CommentInfo> infos = eventCommentService.getComments(eventId, loginUser.getRowId());
         return ApiResponse.success(EventCommentApiDto.ListResponse.from(infos));
     }
 

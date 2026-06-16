@@ -6,7 +6,7 @@ import java.util.List;
 
 public interface EventCommentService {
     EventCommentServiceDto.CommentInfo createComment(EventCommentServiceDto.CreateCommand command);
-    List<EventCommentServiceDto.CommentInfo> getComments(Long eventRowId);
+    List<EventCommentServiceDto.CommentInfo> getComments(Long eventRowId, Long userRowId);
     EventCommentServiceDto.CommentInfo updateComment(Long userRowId, EventCommentServiceDto.UpdateCommand command);
     void deleteComment(Long commentRowId, Long userRowId);
 }
