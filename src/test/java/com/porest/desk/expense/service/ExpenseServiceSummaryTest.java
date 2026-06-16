@@ -4,6 +4,7 @@ import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -27,6 +29,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
@@ -57,6 +60,17 @@ class ExpenseServiceSummaryTest {
     private Expense expense(ExpenseType type, long amount, String merchant) {
         return Expense.createExpense(null, null, null, type, amount, null,
                 LocalDateTime.of(2026, 6, 15, 12, 0), merchant, "CARD");
+    }
+
+    private ExpenseCategory category(long rowId, String name, ExpenseCategory parent) {
+        ExpenseCategory c = ExpenseCategory.createCategory(null, name, "tag", "#fff", ExpenseType.EXPENSE, parent);
+        ReflectionTestUtils.setField(c, "rowId", rowId);
+        return c;
+    }
+
+    private Expense expenseIn(ExpenseCategory cat, ExpenseType type, long amount) {
+        return Expense.createExpense(null, cat, null, type, amount, null,
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
     }
 
     @Test
@@ -99,5 +113,35 @@ class ExpenseServiceSummaryTest {
         assertThat(result.get(1).merchant()).isEqualTo("스타벅스");
         assertThat(result.get(1).totalAmount()).isEqualTo(8_000L);
         assertThat(result.get(1).count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("getRangeSummary — 자식 카테고리 지출이 부모로 roll-up되어 집계된다")
+    void rangeSummaryRollsUpChildToParent() {
+        ExpenseCategory parent = category(10L, "건강", null);
+        ExpenseCategory child = category(11L, "의료비", parent);
+        ExpenseCategory food = category(20L, "식비", null);
+        // 분할 없음
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(
+                        expenseIn(child, ExpenseType.EXPENSE, 5_000L),
+                        expenseIn(child, ExpenseType.EXPENSE, 3_000L),
+                        expenseIn(food, ExpenseType.EXPENSE, 10_000L)
+                ));
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        assertThat(summary.totalExpense()).isEqualTo(18_000L);
+
+        var childEntry = summary.categoryBreakdown().stream()
+                .filter(b -> b.categoryRowId().equals(11L)).findFirst().orElseThrow();
+        assertThat(childEntry.totalAmount()).isEqualTo(8_000L);          // 같은 자식 카테고리 합산
+        assertThat(childEntry.parentCategoryRowId()).isEqualTo(10L);     // 부모로 roll-up 링크
+
+        var foodEntry = summary.categoryBreakdown().stream()
+                .filter(b -> b.categoryRowId().equals(20L)).findFirst().orElseThrow();
+        assertThat(foodEntry.parentCategoryRowId()).isNull();           // 최상위는 부모 없음
     }
 }
