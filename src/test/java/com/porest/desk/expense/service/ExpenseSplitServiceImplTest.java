@@ -101,4 +101,21 @@ class ExpenseSplitServiceImplTest {
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(ForbiddenException.class);
     }
+
+    @Test
+    @DisplayName("replaceSplits — 남의 카테고리로 분할 지정 불가(소유권 검증 누락 보강)")
+    void rejectOthersCategory() {
+        User u = user(USER_ID);
+        Expense expense = mock(Expense.class);
+        given(expense.getUser()).willReturn(u);
+        given(expense.getAmount()).willReturn(10_000L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        ExpenseCategory othersCategory = category(20L, user(999L));
+        given(expenseCategoryRepository.findById(20L)).willReturn(Optional.of(othersCategory));
+
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(20L, 10_000L, "전부", 0));
+
+        assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
+                .isInstanceOf(ForbiddenException.class);
+    }
 }
