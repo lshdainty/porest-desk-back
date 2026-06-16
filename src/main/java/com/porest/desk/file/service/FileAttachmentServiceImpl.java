@@ -68,8 +68,11 @@ public class FileAttachmentServiceImpl implements FileAttachmentService {
     }
 
     @Override
-    public List<FileServiceDto.FileInfo> getFilesByReference(ReferenceType referenceType, Long referenceRowId) {
+    public List<FileServiceDto.FileInfo> getFilesByReference(ReferenceType referenceType, Long referenceRowId, Long userRowId) {
+        // EXPENSE_RECEIPT/MEMO_ATTACHMENT 는 개인 리소스 — 본인이 올린 첨부만 노출.
+        // (referenceRowId 만으로 타인 첨부 메타가 노출되던 읽기 측 인가 누락 차단)
         return fileAttachmentRepository.findByReference(referenceType, referenceRowId).stream()
+            .filter(f -> f.getUser() != null && userRowId.equals(f.getUser().getRowId()))
             .map(FileServiceDto.FileInfo::from)
             .toList();
     }
