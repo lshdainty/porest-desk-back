@@ -42,6 +42,12 @@ public class MemoFolderServiceImpl implements MemoFolderService {
             validateFolderOwnership(parent, command.userRowId());
         }
 
+        // 같은 위치(부모) 내 활성 폴더명 중복 금지 (삭제된 같은 이름은 재사용 허용)
+        if (memoFolderRepository.existsActiveByUserAndParentAndName(
+                command.userRowId(), command.parentId(), command.folderName(), null)) {
+            throw new InvalidValueException(DeskErrorCode.MEMO_FOLDER_DUPLICATE_NAME);
+        }
+
         MemoFolder folder = MemoFolder.createFolder(user, parent, command.folderName());
 
         memoFolderRepository.save(folder);
@@ -78,6 +84,12 @@ public class MemoFolderServiceImpl implements MemoFolderService {
                 });
             validateFolderOwnership(parent, userRowId); // create 와 대칭 — 남의 폴더 하위로 이동 차단
             validateNoCycle(parent, folderId); // 자기 자신/하위 폴더를 상위로 지정하는 순환 차단
+        }
+
+        // 이동/개명 후 같은 위치(부모) 내 활성 폴더명 중복 금지 (자기 자신 제외)
+        if (memoFolderRepository.existsActiveByUserAndParentAndName(
+                userRowId, command.parentId(), command.folderName(), folderId)) {
+            throw new InvalidValueException(DeskErrorCode.MEMO_FOLDER_DUPLICATE_NAME);
         }
 
         folder.updateFolder(parent, command.folderName(), command.sortOrder());

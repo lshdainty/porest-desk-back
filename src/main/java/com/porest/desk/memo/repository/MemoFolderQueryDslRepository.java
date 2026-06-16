@@ -50,4 +50,18 @@ public class MemoFolderQueryDslRepository implements MemoFolderRepository {
     public void delete(MemoFolder entity) {
         entity.deleteFolder();
     }
+
+    @Override
+    public boolean existsActiveByUserAndParentAndName(Long userRowId, Long parentRowId, String folderName, Long excludeRowId) {
+        return queryFactory.selectOne()
+            .from(memoFolder)
+            .where(
+                memoFolder.user.rowId.eq(userRowId),
+                memoFolder.folderName.eq(folderName),
+                memoFolder.isDeleted.eq(YNType.N),
+                parentRowId != null ? memoFolder.parent.rowId.eq(parentRowId) : memoFolder.parent.isNull(),
+                excludeRowId != null ? memoFolder.rowId.ne(excludeRowId) : null
+            )
+            .fetchFirst() != null;
+    }
 }
