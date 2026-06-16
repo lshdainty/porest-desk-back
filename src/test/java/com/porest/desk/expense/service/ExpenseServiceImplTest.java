@@ -28,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -161,6 +162,49 @@ class ExpenseServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("getRangeSummary — 자식 카테고리가 다른 부모로 이동해도 합계는 leaf 기준으로 정확하다(부모 라벨만 변경)")
+    void rangeSummaryAggregatesByLeafRegardlessOfParent() {
+        User u = user(USER_ID);
+        ExpenseCategory parent1 = ExpenseCategory.createCategory(u, "부모1", "t", "#fff", ExpenseType.EXPENSE, null);
+        ReflectionTestUtils.setField(parent1, "rowId", 100L);
+        ExpenseCategory parent2 = ExpenseCategory.createCategory(u, "부모2", "t", "#fff", ExpenseType.EXPENSE, null);
+        ReflectionTestUtils.setField(parent2, "rowId", 200L);
+        ExpenseCategory child = ExpenseCategory.createCategory(u, "식비", "t", "#fff", ExpenseType.EXPENSE, parent1);
+        ReflectionTestUtils.setField(child, "rowId", 10L);
+
+        Expense e1 = Expense.createExpense(u, child, null, ExpenseType.EXPENSE, 3_000L, "a",
+                LocalDateTime.of(2026, 6, 1, 12, 0), null, null);
+        ReflectionTestUtils.setField(e1, "rowId", 1L);
+        Expense e2 = Expense.createExpense(u, child, null, ExpenseType.EXPENSE, 2_000L, "b",
+                LocalDateTime.of(2026, 6, 2, 12, 0), null, null);
+        ReflectionTestUtils.setField(e2, "rowId", 2L);
+
+        LocalDate start = LocalDate.of(2026, 6, 1);
+        LocalDate end = LocalDate.of(2026, 6, 30);
+        given(expenseRepository.findByDateRange(USER_ID, start, end)).willReturn(List.of(e1, e2));
+        given(expenseSplitRepository.findByExpenseIds(any())).willReturn(List.of());
+
+        // 부모1 산하일 때
+        var before = sut.getRangeSummary(USER_ID, start, end);
+        assertThat(before.totalExpense()).isEqualTo(5_000L);
+        assertThat(before.categoryBreakdown()).hasSize(1);
+        var b0 = before.categoryBreakdown().get(0);
+        assertThat(b0.categoryRowId()).isEqualTo(10L);
+        assertThat(b0.totalAmount()).isEqualTo(5_000L);
+        assertThat(b0.parentCategoryRowId()).isEqualTo(100L);
+
+        // 부모2 산하로 이동 — 합계/leaf 집계는 그대로, 부모 라벨만 변경(이중계상·누락 없음)
+        child.moveParent(parent2);
+        var after = sut.getRangeSummary(USER_ID, start, end);
+        assertThat(after.totalExpense()).isEqualTo(5_000L);
+        assertThat(after.categoryBreakdown()).hasSize(1);
+        var a0 = after.categoryBreakdown().get(0);
+        assertThat(a0.categoryRowId()).isEqualTo(10L);
+        assertThat(a0.totalAmount()).isEqualTo(5_000L);
+        assertThat(a0.parentCategoryRowId()).isEqualTo(200L);
     }
 
     @Test
