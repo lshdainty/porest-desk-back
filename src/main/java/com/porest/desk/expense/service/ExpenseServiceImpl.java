@@ -121,6 +121,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate) {
         log.debug("지출 목록 조회: userRowId={}, assetRowId={}, expenseType={}", userRowId, assetRowId, expenseType);
+        validateDateRange(startDate, endDate);
 
         List<Expense> allExpenses = new java.util.ArrayList<>(
             expenseRepository.findByUser(userRowId, categoryRowId, expenseType, startDate, endDate));
@@ -242,6 +243,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
         log.debug("지출 기간 요약 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
+        validateDateRange(startDate, endDate);
 
         List<Expense> expenses = expenseRepository.findByDateRange(userRowId, startDate, endDate);
 
@@ -369,6 +371,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public List<ExpenseServiceDto.MerchantSummary> getMerchantSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
         log.debug("거래처별 요약 조회: userRowId={}", userRowId);
+        validateDateRange(startDate, endDate);
 
         List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
 
@@ -389,6 +392,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public List<ExpenseServiceDto.AssetSummary> getAssetSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
         log.debug("자산별 요약 조회: userRowId={}", userRowId);
+        validateDateRange(startDate, endDate);
 
         List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
 
@@ -447,6 +451,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     public List<ExpenseServiceDto.HeatmapCell> getHeatmap(Long userRowId, LocalDate startDate, LocalDate endDate) {
         log.debug("지출 히트맵 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
+        validateDateRange(startDate, endDate);
 
         // 지출(EXPENSE)만 히트맵 집계 대상. 합계 그대로 반환 — 평균 정규화는 클라이언트가 기간 길이로.
         List<Object[]> rows = expenseRepository.sumGroupedByDayOfWeekAndHour(
@@ -510,6 +515,13 @@ public class ExpenseServiceImpl implements ExpenseService {
      *        (생성=0, 수정=수정 전 금액). delta = 현재금액 - previousCountedAmount 로
      *        임계 "돌파"를 판정해, 수정 시 금액 전체가 새로 더해진 것으로 오판하지 않도록 한다.
      */
+    /** 기간 조회 공통 검증 — 시작일이 종료일보다 늦으면 조용히 빈/부분 결과를 내지 않고 거부. */
+    private void validateDateRange(LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_DATE_RANGE);
+        }
+    }
+
     private void notifyBudgetThresholdIfCrossed(Expense expense, long previousCountedAmount) {
         try {
             if (expense == null || expense.getExpenseType() != ExpenseType.EXPENSE) return;

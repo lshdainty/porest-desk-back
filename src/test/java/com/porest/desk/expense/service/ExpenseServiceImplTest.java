@@ -165,6 +165,22 @@ class ExpenseServiceImplTest {
     }
 
     @Test
+    @DisplayName("getExpenses — 시작일이 종료일보다 늦으면 거부(역전 범위 조용한 빈결과 방지)")
+    void getExpensesRejectsInvertedDateRange() {
+        assertThatThrownBy(() -> sut.getExpenses(USER_ID, null, null, null,
+                LocalDate.of(2026, 6, 30), LocalDate.of(2026, 6, 1)))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("getRangeSummary — 시작일이 종료일보다 늦으면 거부")
+    void getRangeSummaryRejectsInvertedDateRange() {
+        assertThatThrownBy(() -> sut.getRangeSummary(USER_ID,
+                LocalDate.of(2026, 6, 30), LocalDate.of(2026, 6, 1)))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
     @DisplayName("getRangeSummary — 자식 카테고리가 다른 부모로 이동해도 합계는 leaf 기준으로 정확하다(부모 라벨만 변경)")
     void rangeSummaryAggregatesByLeafRegardlessOfParent() {
         User u = user(USER_ID);
