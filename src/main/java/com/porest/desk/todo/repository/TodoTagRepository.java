@@ -8,6 +8,7 @@ import java.util.Optional;
 public interface TodoTagRepository {
     Optional<TodoTag> findById(Long rowId);
     List<TodoTag> findAllByUser(Long userRowId);
+    boolean existsActiveByUserAndName(Long userRowId, String tagName, Long excludeRowId);
     List<TodoTag> findAllByIds(List<Long> ids);
     TodoTag save(TodoTag tag);
     void delete(TodoTag tag);

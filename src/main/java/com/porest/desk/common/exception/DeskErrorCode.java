@@ -33,6 +33,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     TODO_PROJECT_NOT_FOUND("TODO_002", "error.notfound.todo.project", HttpStatus.NOT_FOUND),
     TODO_TAG_NOT_FOUND("TODO_003", "error.notfound.todo.tag", HttpStatus.NOT_FOUND),
     TODO_ACCESS_DENIED("TODO_004", "error.todo.access.denied", HttpStatus.FORBIDDEN),
+    TODO_TAG_DUPLICATE_NAME("TODO_005", "error.duplicate.todo.tag", HttpStatus.CONFLICT),
 
     // Calendar
     CALENDAR_EVENT_NOT_FOUND("CAL_001", "error.notfound.calendar.event", HttpStatus.NOT_FOUND),
@@ -48,6 +49,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     USER_CALENDAR_ALREADY_MEMBER("CAL_011", "error.user.calendar.already.member", HttpStatus.CONFLICT),
     USER_CALENDAR_INVITE_INVALID("CAL_012", "error.user.calendar.invite.invalid", HttpStatus.NOT_FOUND),
     USER_CALENDAR_OWNER_REMOVE("CAL_013", "error.user.calendar.owner.remove", HttpStatus.BAD_REQUEST),
+    EVENT_LABEL_DUPLICATE_NAME("CAL_014", "error.duplicate.event.label", HttpStatus.CONFLICT),
 
     // Memo
     MEMO_NOT_FOUND("MEMO_001", "error.notfound.memo", HttpStatus.NOT_FOUND),

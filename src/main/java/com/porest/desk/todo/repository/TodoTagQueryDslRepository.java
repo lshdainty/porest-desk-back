@@ -38,6 +38,19 @@ public class TodoTagQueryDslRepository implements TodoTagRepository {
     }
 
     @Override
+    public boolean existsActiveByUserAndName(Long userRowId, String tagName, Long excludeRowId) {
+        return queryFactory.selectOne()
+            .from(tag)
+            .where(
+                tag.user.rowId.eq(userRowId),
+                tag.tagName.eq(tagName),
+                tag.isDeleted.eq(YNType.N),
+                excludeRowId != null ? tag.rowId.ne(excludeRowId) : null
+            )
+            .fetchFirst() != null;
+    }
+
+    @Override
     public List<TodoTag> findAllByIds(List<Long> ids) {
         return queryFactory.selectFrom(tag)
             .where(tag.rowId.in(ids), tag.isDeleted.eq(YNType.N))

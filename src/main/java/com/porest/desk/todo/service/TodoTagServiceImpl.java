@@ -2,6 +2,7 @@ package com.porest.desk.todo.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.todo.domain.TodoTag;
 import com.porest.desk.todo.repository.TodoTagRepository;
@@ -31,6 +32,11 @@ public class TodoTagServiceImpl implements TodoTagService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
+        // 활성(미삭제) 태그 중 동일 이름 중복 금지 (soft-delete 된 같은 이름은 재사용 허용)
+        if (todoTagRepository.existsActiveByUserAndName(command.userRowId(), command.tagName(), null)) {
+            throw new InvalidValueException(DeskErrorCode.TODO_TAG_DUPLICATE_NAME);
+        }
+
         TodoTag tag = TodoTag.createTag(user, command.tagName(), command.color());
         todoTagRepository.save(tag);
 
@@ -55,6 +61,10 @@ public class TodoTagServiceImpl implements TodoTagService {
 
         TodoTag tag = findTagOrThrow(tagId);
         validateTagOwnership(tag, userRowId);
+        // 이름 변경 시 자기 자신을 제외한 활성 태그와 중복 금지
+        if (todoTagRepository.existsActiveByUserAndName(userRowId, command.tagName(), tagId)) {
+            throw new InvalidValueException(DeskErrorCode.TODO_TAG_DUPLICATE_NAME);
+        }
         tag.updateTag(command.tagName(), command.color());
 
         log.info("태그 수정 완료: tagId={}", tagId);
