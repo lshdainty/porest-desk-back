@@ -51,6 +51,12 @@ class ExpenseRepositoryTest {
                 "거래", LocalDateTime.of(2026, 6, 15, 12, 0), "가게", "CARD"));
     }
 
+    private Expense persistExpenseFull(User user, ExpenseCategory cat, long amount,
+                                       String description, LocalDateTime when) {
+        return em.persist(Expense.createExpense(user, cat, null, ExpenseType.EXPENSE, amount,
+                description, when, "가게", "CARD"));
+    }
+
     @Test
     @DisplayName("existsByCategory — 거래가 있으면 true, 없으면 false")
     void existsByCategory() {
@@ -98,5 +104,59 @@ class ExpenseRepositoryTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getCategory().getCategoryName()).isEqualTo("식비");
+    }
+
+    @Test
+    @DisplayName("search — 키워드(설명)로 부분일치 필터")
+    void searchByKeyword() {
+        User user = persistUser();
+        ExpenseCategory cat = persistCategory(user, "식비", null);
+        persistExpenseFull(user, cat, 5_000L, "스타벅스 커피", LocalDateTime.of(2026, 6, 10, 9, 0));
+        persistExpenseFull(user, cat, 1_200L, "버스 요금", LocalDateTime.of(2026, 6, 11, 9, 0));
+        em.flush();
+        em.clear();
+
+        List<Expense> result = repository.search(user.getRowId(), null, null, null,
+                "커피", null, null, null, START, END);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getDescription()).contains("커피");
+    }
+
+    @Test
+    @DisplayName("search — 금액 범위(min~max)로 필터")
+    void searchByAmountRange() {
+        User user = persistUser();
+        ExpenseCategory cat = persistCategory(user, "식비", null);
+        persistExpenseFull(user, cat, 1_000L, "a", LocalDateTime.of(2026, 6, 10, 9, 0));
+        persistExpenseFull(user, cat, 5_000L, "b", LocalDateTime.of(2026, 6, 10, 9, 0));
+        persistExpenseFull(user, cat, 10_000L, "c", LocalDateTime.of(2026, 6, 10, 9, 0));
+        em.flush();
+        em.clear();
+
+        List<Expense> result = repository.search(user.getRowId(), null, null, null,
+                null, null, 3_000L, 8_000L, START, END);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getAmount()).isEqualTo(5_000L);
+    }
+
+    @Test
+    @DisplayName("search — 기간 경계는 포함(start 00:00 ~ end 23:59), 범위 밖은 제외")
+    void searchDateBoundaryInclusive() {
+        User user = persistUser();
+        ExpenseCategory cat = persistCategory(user, "식비", null);
+        persistExpenseFull(user, cat, 1_000L, "start경계", LocalDateTime.of(2026, 6, 1, 0, 0));
+        persistExpenseFull(user, cat, 2_000L, "end경계", LocalDateTime.of(2026, 6, 30, 23, 0));
+        persistExpenseFull(user, cat, 3_000L, "범위전", LocalDateTime.of(2026, 5, 31, 12, 0));
+        em.flush();
+        em.clear();
+
+        List<Expense> result = repository.search(user.getRowId(), null, null, null,
+                null, null, null, null, START, END);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(Expense::getDescription)
+                .containsExactlyInAnyOrder("start경계", "end경계");
     }
 }
