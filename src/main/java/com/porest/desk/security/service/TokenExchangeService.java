@@ -2,6 +2,7 @@ package com.porest.desk.security.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.UnauthorizedException;
+import com.porest.desk.calendar.service.UserCalendarService;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.controller.dto.TokenExchangeDto;
 import com.porest.desk.security.jwt.JwtTokenProvider;
@@ -23,6 +24,7 @@ public class TokenExchangeService {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
+    private final UserCalendarService userCalendarService;
 
     @Transactional
     public TokenExchangeDto.Response exchangeToken(String ssoToken) {
@@ -46,11 +48,15 @@ public class TokenExchangeService {
         String userEmail = ssoClaims.get("email", String.class);
         Long ssoUserNo = ssoClaims.get("userNo", Long.class);
 
-        User user = userRepository.findByUserId(userId)
-            .orElseGet(() -> {
-                User newUser = User.createUser(ssoUserNo, userId, userName, userEmail);
-                return userRepository.save(newUser);
-            });
+        User user = userRepository.findByUserId(userId).orElse(null);
+        if (user == null) {
+            user = userRepository.save(User.createUser(ssoUserNo, userId, userName, userEmail));
+            // 신규 사용자: 기본 캘린더를 가입(최초 프로비저닝) 시점에 즉시 생성한다.
+            // 지연 생성(getOrCreateDefault on first event)에 의존하면 신규 사용자에게
+            // 동시 요청이 겹칠 때 기본 캘린더가 중복 생성될 수 있어, 단일 트랜잭션인
+            // 이 시점에서 한 번 만들어 경쟁 자체를 없앤다.
+            userCalendarService.getOrCreateDefault(user.getRowId());
+        }
 
         // Update user info if changed
         user.updateFromSso(ssoUserNo, userName, userEmail);
