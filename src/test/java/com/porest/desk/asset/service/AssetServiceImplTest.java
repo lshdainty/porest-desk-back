@@ -1,6 +1,7 @@
 package com.porest.desk.asset.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetRepository;
@@ -110,6 +111,18 @@ class AssetServiceImplTest {
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("createTransfer — 같은 자산으로의 이체는 불가")
+    void transferRejectsSameAsset() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 10L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> sut.createTransfer(cmd))
+                .isInstanceOf(InvalidValueException.class);
     }
 
     @Test
