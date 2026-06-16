@@ -110,8 +110,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
 
-        // 예산 임계 도달 시 알림
-        notifyBudgetThresholdIfCrossed(expense);
+        // 예산 임계 도달 시 알림 (생성이므로 이전 반영액 0)
+        notifyBudgetThresholdIfCrossed(expense, 0L);
 
         log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
 
@@ -147,6 +147,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
+
+        // 수정 전 EXPENSE 예산에 반영돼 있던 금액 (수정 후 임계 돌파 판정용 delta 기준)
+        long previousCountedAmount = (expense.getExpenseType() == ExpenseType.EXPENSE
+                && expense.getAmount() != null) ? expense.getAmount() : 0L;
 
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
@@ -192,6 +196,9 @@ public class ExpenseServiceImpl implements ExpenseService {
         } else {
             expense.setTodo(null);
         }
+
+        // 예산 임계 도달 시 알림 — 수정 전 금액을 기준으로 돌파 여부 판정 (create 와 대칭)
+        notifyBudgetThresholdIfCrossed(expense, previousCountedAmount);
 
         log.info("지출 수정 완료: expenseId={}", expenseId);
 
@@ -497,7 +504,13 @@ public class ExpenseServiceImpl implements ExpenseService {
      * 대상 예산: 전체(overall, categoryRowId=null) / 지출 카테고리 본인 / 지출 카테고리의 부모.
      * 실패는 무시(알림 실패가 지출 저장을 막으면 안 됨).
      */
-    private void notifyBudgetThresholdIfCrossed(Expense expense) {
+    /**
+     * 예산 임계 도달 알림.
+     * @param previousCountedAmount 이번 변경 전에 이미 EXPENSE 예산에 반영돼 있던 금액
+     *        (생성=0, 수정=수정 전 금액). delta = 현재금액 - previousCountedAmount 로
+     *        임계 "돌파"를 판정해, 수정 시 금액 전체가 새로 더해진 것으로 오판하지 않도록 한다.
+     */
+    private void notifyBudgetThresholdIfCrossed(Expense expense, long previousCountedAmount) {
         try {
             if (expense == null || expense.getExpenseType() != ExpenseType.EXPENSE) return;
             if (expense.getAmount() == null || expense.getAmount() <= 0) return;
@@ -534,7 +547,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                 }
             }
 
-            long delta = expense.getAmount();
+            long delta = expense.getAmount() - previousCountedAmount;
 
             for (ExpenseBudget budget : budgets) {
                 if (budget.getBudgetAmount() == null || budget.getBudgetAmount() <= 0) continue;
