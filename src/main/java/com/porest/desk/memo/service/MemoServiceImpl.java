@@ -89,6 +89,7 @@ public class MemoServiceImpl implements MemoService {
                     log.warn("메모 폴더 조회 실패 - 존재하지 않는 폴더: folderId={}", command.folderId());
                     return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
                 });
+            validateFolderOwnership(folder, userRowId); // create 와 대칭 — 남의 폴더로 이동 차단
         }
 
         memo.updateMemo(folder, command.title(), command.content(), command.tag(), command.color());
