@@ -41,6 +41,8 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
+        validateBudgetAmount(command.budgetAmount());
+
         ExpenseCategory category = null;
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
@@ -128,6 +130,7 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         log.debug("예산 수정 시작: budgetId={}, userRowId={}", budgetId, userRowId);
         ExpenseBudget budget = findBudgetOrThrow(budgetId);
         validateBudgetOwnership(budget, userRowId);
+        validateBudgetAmount(command.budgetAmount());
         budget.updateBudget(command.budgetAmount());
         log.info("예산 수정 완료: budgetId={}, amount={}", budget.getRowId(), command.budgetAmount());
         return ExpenseBudgetServiceDto.BudgetInfo.from(budget);
@@ -150,6 +153,13 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
             log.warn("예산 소유권 검증 실패 - budgetId={}, ownerRowId={}, requestUserRowId={}",
                 budget.getRowId(), budget.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    /** 예산 금액은 0보다 커야 한다 — 0/음수는 알림 스케줄러의 0 나눗셈·잘못된 사용률을 유발. */
+    private void validateBudgetAmount(Long amount) {
+        if (amount == null || amount <= 0) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_BUDGET_INVALID_AMOUNT);
         }
     }
 

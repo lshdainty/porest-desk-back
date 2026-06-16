@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -112,5 +113,28 @@ class ExpenseBudgetServiceImplTest {
         assertThat(info.categoryRowId()).isNull();
         assertThat(info.budgetAmount()).isEqualTo(300_000L);
         verify(expenseBudgetRepository).save(any(ExpenseBudget.class));
+    }
+
+    @Test
+    @DisplayName("createBudget — 0 이하 금액은 불가(스케줄러 0 나눗셈 방지)")
+    void createRejectsNonPositiveAmount() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new ExpenseBudgetServiceDto.CreateCommand(USER_ID, null, 0L, 2026, 6);
+
+        assertThatThrownBy(() -> sut.createBudget(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("updateBudget — 0 이하 금액은 불가")
+    void updateRejectsNonPositiveAmount() {
+        ExpenseBudget budget = mock(ExpenseBudget.class);
+        given(budget.getUser()).willReturn(user(USER_ID));
+        given(expenseBudgetRepository.findById(5L)).willReturn(Optional.of(budget));
+
+        assertThatThrownBy(() -> sut.updateBudget(5L, USER_ID,
+                new ExpenseBudgetServiceDto.UpdateCommand(0L)))
+                .isInstanceOf(InvalidValueException.class);
     }
 }
