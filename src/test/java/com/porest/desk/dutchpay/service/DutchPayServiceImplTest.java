@@ -2,8 +2,11 @@ package com.porest.desk.dutchpay.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.dutchpay.domain.DutchPay;
 import com.porest.desk.dutchpay.repository.DutchPayRepository;
+import com.porest.desk.dutchpay.service.dto.DutchPayServiceDto;
+import com.porest.desk.dutchpay.type.SplitMethod;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -15,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -98,6 +102,20 @@ class DutchPayServiceImplTest {
 
         assertThatThrownBy(() -> sut.markParticipantPaid(5L, USER_ID, 7L))
                 .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 참가자 금액이 0/음수면 거부(정산 데이터 오염 차단)")
+    void createRejectsNonPositiveParticipantAmount() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new DutchPayServiceDto.CreateCommand(
+                USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
+                LocalDate.of(2026, 6, 1),
+                List.of(new DutchPayServiceDto.ParticipantCommand(null, "참가자A", -1_000L)));
+
+        assertThatThrownBy(() -> sut.createDutchPay(cmd))
+                .isInstanceOf(InvalidValueException.class);
     }
 
     @Test

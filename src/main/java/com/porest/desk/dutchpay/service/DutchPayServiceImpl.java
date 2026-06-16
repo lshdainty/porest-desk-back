@@ -2,6 +2,7 @@ package com.porest.desk.dutchpay.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.dutchpay.domain.DutchPay;
 import com.porest.desk.dutchpay.domain.DutchPayParticipant;
@@ -168,6 +169,10 @@ public class DutchPayServiceImpl implements DutchPayService {
     private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
         if (participants == null) return;
         for (DutchPayServiceDto.ParticipantCommand pc : participants) {
+            // amount 는 not-null 컬럼 — null/0/음수는 정산 데이터를 오염시키므로 영속화 전에 차단.
+            if (pc.amount() == null || pc.amount() <= 0) {
+                throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
+            }
             User participantUser = null;
             if (pc.userRowId() != null) {
                 participantUser = userRepository.findById(pc.userRowId())
