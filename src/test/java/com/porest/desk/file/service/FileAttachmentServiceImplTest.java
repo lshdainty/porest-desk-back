@@ -3,6 +3,8 @@ package com.porest.desk.file.service;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.file.domain.FileAttachment;
 import com.porest.desk.file.repository.FileAttachmentRepository;
+import com.porest.desk.file.service.dto.FileServiceDto;
+import com.porest.desk.file.type.ReferenceType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -13,8 +15,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -63,5 +67,22 @@ class FileAttachmentServiceImplTest {
 
         assertThatThrownBy(() -> sut.deleteFile(5L, USER_ID))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("getFilesByReference — 본인 첨부만 반환하고 남의 첨부는 제외(읽기 인가 누락 보강)")
+    void getFilesByReferenceReturnsOnlyOwn() {
+        FileAttachment mine = mock(FileAttachment.class);
+        given(mine.getUser()).willReturn(user(USER_ID));
+        given(mine.getReferenceType()).willReturn(ReferenceType.EXPENSE_RECEIPT);
+        FileAttachment others = othersFile();
+        given(fileAttachmentRepository.findByReference(ReferenceType.EXPENSE_RECEIPT, 7L))
+                .willReturn(List.of(mine, others));
+
+        List<FileServiceDto.FileInfo> result =
+                sut.getFilesByReference(ReferenceType.EXPENSE_RECEIPT, 7L, USER_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).userRowId()).isEqualTo(USER_ID);
     }
 }

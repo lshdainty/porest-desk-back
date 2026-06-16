@@ -69,7 +69,7 @@ public class FileApiController {
             @LoginUser UserPrincipal loginUser,
             @RequestParam ReferenceType referenceType,
             @RequestParam Long referenceRowId) {
-        List<FileServiceDto.FileInfo> infos = fileAttachmentService.getFilesByReference(referenceType, referenceRowId);
+        List<FileServiceDto.FileInfo> infos = fileAttachmentService.getFilesByReference(referenceType, referenceRowId, loginUser.getRowId());
         return ApiResponse.success(FileApiDto.ListResponse.from(infos));
     }
 

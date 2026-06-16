@@ -9,6 +9,6 @@ import java.util.List;
 public interface FileAttachmentService {
     FileServiceDto.FileInfo uploadFile(MultipartFile file, Long userRowId, ReferenceType referenceType, Long referenceRowId);
     FileServiceDto.FileInfo getFile(Long fileId, Long userRowId);
-    List<FileServiceDto.FileInfo> getFilesByReference(ReferenceType referenceType, Long referenceRowId);
+    List<FileServiceDto.FileInfo> getFilesByReference(ReferenceType referenceType, Long referenceRowId, Long userRowId);
     void deleteFile(Long fileId, Long userRowId);
 }
