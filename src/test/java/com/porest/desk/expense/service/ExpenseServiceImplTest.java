@@ -272,4 +272,11 @@ class ExpenseServiceImplTest {
         verify(expenseRepository).save(any(Expense.class));
         verify(balanceHistoryService).recordExpense(any(), any(), eq(ExpenseType.EXPENSE), eq(10_000L), any());
     }
+
+    @Test
+    @DisplayName("getMonthlyTrend — 음수 months 는 거부")
+    void getMonthlyTrendRejectsNegativeMonths() {
+        assertThatThrownBy(() -> sut.getMonthlyTrend(USER_ID, -3))
+                .isInstanceOf(InvalidValueException.class);
+    }
 }

@@ -340,6 +340,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public List<ExpenseServiceDto.MonthlyTrend> getMonthlyTrend(Long userRowId, Integer months) {
+        if (months != null && months < 0) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
         int n = (months == null || months < 1) ? 6 : Math.min(months, 24);
         log.debug("지출 월별 트렌드 조회: userRowId={}, months={}", userRowId, n);
 

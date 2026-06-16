@@ -102,6 +102,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     @Override
     public List<RecurringTransactionServiceDto.RecurringInfo> getRecurrings(Long userRowId, boolean upcomingOnly, Integer limit) {
         log.debug("반복 거래 목록 조회: userRowId={}, upcomingOnly={}, limit={}", userRowId, upcomingOnly, limit);
+        // 음수 limit 은 전체 반환으로 새어나가지 않도록 입력 자체를 거부 (null=제한 없음 유지)
+        if (limit != null && limit < 0) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
 
         LocalDate today = LocalDate.now();
         java.util.stream.Stream<RecurringTransaction> stream = recurringTransactionRepository.findByUser(userRowId).stream();
