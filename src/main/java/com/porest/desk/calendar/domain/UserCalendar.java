@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -29,6 +30,10 @@ public class UserCalendar extends AuditingFieldsWithIp {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "row_id")
     private Long rowId;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     // 캘린더 소유자(생성자). 공유 시에도 owner 역할.
     @ManyToOne(fetch = FetchType.LAZY)
