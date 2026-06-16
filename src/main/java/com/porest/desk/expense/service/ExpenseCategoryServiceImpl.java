@@ -59,6 +59,12 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             validateCanBecomeParent(parent.getRowId());
         }
 
+        // 같은 위치(부모)·같은 타입 내 활성 카테고리명 중복 금지 (삭제된 같은 이름은 재사용 허용)
+        if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                command.userRowId(), command.parentRowId(), command.expenseType(), command.categoryName(), null)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
+        }
+
         ExpenseCategory category = ExpenseCategory.createCategory(
             user,
             command.categoryName(),
@@ -141,6 +147,12 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
                 && targetType != category.getExpenseType()) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
             }
+        }
+
+        // 변경 후 위치(부모)·타입 기준 활성 카테고리명 중복 금지 (자기 자신 제외)
+        if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                userRowId, command.parentRowId(), targetType, command.categoryName(), categoryId)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
         }
 
         category.updateCategory(
