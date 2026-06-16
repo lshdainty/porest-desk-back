@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -23,6 +24,10 @@ public class User extends AuditingFieldsWithIp {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "row_id")
     private Long rowId;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     @Column(name = "sso_user_row_id")
     private Long ssoUserRowId;
