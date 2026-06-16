@@ -75,6 +75,7 @@ public class MemoFolderServiceImpl implements MemoFolderService {
                     log.warn("메모 상위 폴더 조회 실패 - 존재하지 않는 폴더: parentId={}", command.parentId());
                     return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
                 });
+            validateFolderOwnership(parent, userRowId); // create 와 대칭 — 남의 폴더 하위로 이동 차단
         }
 
         folder.updateFolder(parent, command.folderName(), command.sortOrder());
