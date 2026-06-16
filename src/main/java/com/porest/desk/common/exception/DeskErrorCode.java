@@ -77,6 +77,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_TRANSFER_NOT_FOUND("ASSET_002", "error.notfound.asset.transfer", HttpStatus.NOT_FOUND),
     ASSET_TRANSFER_SAME_ASSET("ASSET_003", "error.asset.transfer.same", HttpStatus.BAD_REQUEST),
     ASSET_ACCESS_DENIED("ASSET_004", "error.asset.access.denied", HttpStatus.FORBIDDEN),
+    ASSET_TRANSFER_INVALID_AMOUNT("ASSET_005", "error.asset.transfer.invalid.amount", HttpStatus.BAD_REQUEST),
 
     // Saving Goal
     SAVING_GOAL_NOT_FOUND("SAVING_001", "error.notfound.saving.goal", HttpStatus.NOT_FOUND),

@@ -126,6 +126,18 @@ class AssetServiceImplTest {
     }
 
     @Test
+    @DisplayName("createTransfer — 이체 금액이 0 이하면 불가(음수 자금 역류 방지)")
+    void transferRejectsNonPositiveAmount() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 11L, -50_000L, 0L, "이체", LocalDate.of(2026, 6, 1));
+
+        assertThatThrownBy(() -> sut.createTransfer(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
     @DisplayName("deleteTransfer — 남의 이체는 삭제 불가")
     void deleteTransferRejectsOthers() {
         AssetTransfer transfer = mock(AssetTransfer.class);

@@ -312,6 +312,10 @@ public class AssetServiceImpl implements AssetService {
             && command.fromAssetRowId().equals(command.toAssetRowId())) {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_SAME_ASSET);
         }
+        // 이체 금액은 0보다 커야 함 — 음수는 잔액 흐름을 역전시켜 자금이 거꾸로 이동(검증 누락 시 위험).
+        if (command.amount() == null || command.amount() <= 0) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
+        }
 
         Asset fromAsset = findAssetOrThrow(command.fromAssetRowId());
         validateAssetOwnership(fromAsset, command.userRowId());
