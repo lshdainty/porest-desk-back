@@ -2,6 +2,7 @@ package com.porest.desk.asset.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
@@ -305,6 +306,12 @@ public class AssetServiceImpl implements AssetService {
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        // 같은 자산으로의 이체는 무의미·잘못된 잔액 이력 유발 — 차단(ASSET_TRANSFER_SAME_ASSET 코드는 있었으나 미적용이었음).
+        if (command.fromAssetRowId() != null
+            && command.fromAssetRowId().equals(command.toAssetRowId())) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_SAME_ASSET);
+        }
 
         Asset fromAsset = findAssetOrThrow(command.fromAssetRowId());
         validateAssetOwnership(fromAsset, command.userRowId());
