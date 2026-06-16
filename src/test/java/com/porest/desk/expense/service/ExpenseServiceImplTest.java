@@ -27,11 +27,17 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * 거래(Expense) 정책 회귀 방지 단위 테스트.
@@ -131,5 +137,22 @@ class ExpenseServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, updateCmd(30L)))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("createExpense — 성공 시 거래를 저장하고 자산 잔액 이력을 기록한다")
+    void createPersistsAndRecordsBalance() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        given(expenseBudgetRepository.findByUser(eq(USER_ID), anyInt(), anyInt())).willReturn(List.of());
+
+        var info = sut.createExpense(createCmd(10L));
+
+        assertThat(info.amount()).isEqualTo(10_000L);
+        verify(expenseRepository).save(any(Expense.class));
+        verify(balanceHistoryService).recordExpense(any(), any(), eq(ExpenseType.EXPENSE), eq(10_000L), any());
     }
 }
