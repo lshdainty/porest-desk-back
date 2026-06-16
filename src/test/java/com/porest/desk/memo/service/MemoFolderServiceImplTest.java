@@ -48,6 +48,19 @@ class MemoFolderServiceImplTest {
     }
 
     @Test
+    @DisplayName("createFolder — 같은 위치에 같은 이름의 활성 폴더가 있으면 거부(중복 방지)")
+    void createRejectsDuplicateNameSameParent() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(memoFolderRepository.existsActiveByUserAndParentAndName(USER_ID, null, "업무", null))
+                .willReturn(true);
+
+        var cmd = new MemoServiceDto.FolderCreateCommand(USER_ID, null, "업무");
+
+        assertThatThrownBy(() -> sut.createFolder(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
     @DisplayName("updateFolder — 남의 폴더는 수정 불가")
     void updateRejectsOthers() {
         MemoFolder f = othersFolder();

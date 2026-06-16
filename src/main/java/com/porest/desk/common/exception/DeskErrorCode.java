@@ -56,6 +56,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     MEMO_FOLDER_NOT_FOUND("MEMO_002", "error.notfound.memo.folder", HttpStatus.NOT_FOUND),
     MEMO_ACCESS_DENIED("MEMO_003", "error.memo.access.denied", HttpStatus.FORBIDDEN),
     MEMO_FOLDER_INVALID_PARENT("MEMO_004", "error.memo.folder.invalid.parent", HttpStatus.BAD_REQUEST),
+    MEMO_FOLDER_DUPLICATE_NAME("MEMO_005", "error.duplicate.memo.folder", HttpStatus.CONFLICT),
 
     // Expense
     EXPENSE_NOT_FOUND("EXP_001", "error.notfound.expense", HttpStatus.NOT_FOUND),

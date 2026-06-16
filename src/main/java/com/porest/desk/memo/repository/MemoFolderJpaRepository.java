@@ -34,6 +34,28 @@ public class MemoFolderJpaRepository implements MemoFolderRepository {
     }
 
     @Override
+    public boolean existsActiveByUserAndParentAndName(Long userRowId, Long parentRowId, String folderName, Long excludeRowId) {
+        StringBuilder jpql = new StringBuilder(
+            "SELECT COUNT(f) FROM MemoFolder f WHERE f.user.rowId = :userRowId"
+                + " AND f.folderName = :folderName AND f.isDeleted = :isDeleted");
+        jpql.append(parentRowId != null ? " AND f.parent.rowId = :parentRowId" : " AND f.parent IS NULL");
+        if (excludeRowId != null) {
+            jpql.append(" AND f.rowId <> :excludeRowId");
+        }
+        var query = entityManager.createQuery(jpql.toString(), Long.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("folderName", folderName)
+            .setParameter("isDeleted", YNType.N);
+        if (parentRowId != null) {
+            query.setParameter("parentRowId", parentRowId);
+        }
+        if (excludeRowId != null) {
+            query.setParameter("excludeRowId", excludeRowId);
+        }
+        return query.getSingleResult() > 0;
+    }
+
+    @Override
     public MemoFolder save(MemoFolder entity) {
         entityManager.persist(entity);
         return entity;
