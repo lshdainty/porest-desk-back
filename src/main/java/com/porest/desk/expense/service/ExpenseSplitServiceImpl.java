@@ -54,6 +54,7 @@ public class ExpenseSplitServiceImpl implements ExpenseSplitService {
             ExpenseSplitServiceDto.SplitCommand sc = incoming.get(i);
             ExpenseCategory category = expenseCategoryRepository.findById(sc.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            validateCategoryOwnership(category, command.userRowId()); // 남의 카테고리를 분할에 지정 차단
             // 정책: 상위(자식 보유) 카테고리에는 거래(분할)를 둘 수 없음.
             if (expenseCategoryRepository.hasChildren(category.getRowId())) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
@@ -88,6 +89,14 @@ public class ExpenseSplitServiceImpl implements ExpenseSplitService {
             log.warn("분할 합계 불일치 - expenseRowId={}, expected={}, actual={}",
                 expense.getRowId(), expected, sum);
             throw new InvalidValueException(DeskErrorCode.EXPENSE_SPLIT_AMOUNT_MISMATCH);
+        }
+    }
+
+    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
+        if (!category.getUser().getRowId().equals(userRowId)) {
+            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
+                category.getRowId(), category.getUser().getRowId(), userRowId);
+            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
         }
     }
 
