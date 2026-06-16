@@ -93,4 +93,21 @@ class TodoServiceImplTest {
         assertThatThrownBy(() -> sut.createTodo(cmd))
                 .isInstanceOf(ForbiddenException.class);
     }
+
+    @Test
+    @DisplayName("updateTodo — 남의 프로젝트로 이동 불가(소유권 검증 누락 보강)")
+    void updateRejectsOthersProject() {
+        Todo todo = mock(Todo.class);
+        given(todo.getUser()).willReturn(user(USER_ID));
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        TodoProject othersProject = mock(TodoProject.class);
+        given(othersProject.getUser()).willReturn(user(999L));
+        given(todoProjectRepository.findById(20L)).willReturn(Optional.of(othersProject));
+
+        var cmd = new TodoServiceDto.UpdateCommand(
+                "수정", null, null, null, null, 20L, null);
+
+        assertThatThrownBy(() -> sut.updateTodo(5L, USER_ID, cmd))
+                .isInstanceOf(ForbiddenException.class);
+    }
 }
