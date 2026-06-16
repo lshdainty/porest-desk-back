@@ -7,6 +7,7 @@ import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
@@ -160,6 +161,39 @@ class ExpenseServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("updateExpense — 금액 상향으로 예산 임계를 넘으면 알림이 발생한다(수정 경로 알림 누락 보강)")
+    void updateCrossingBudgetThresholdNotifies() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        // 수정 전 1,000원 거래(예산 10,000 중 10%)
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 1_000L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+        // 전체 예산(카테고리 null) 10,000원, warn 임계 85%
+        ExpenseBudget budget = mock(ExpenseBudget.class);
+        given(budget.getBudgetAmount()).willReturn(10_000L);
+        given(budget.getCategory()).willReturn(null);
+        given(budget.getRowId()).willReturn(1L);
+        given(expenseBudgetRepository.findByUser(eq(USER_ID), eq(2026), eq(6))).willReturn(List.of(budget));
+        given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(85);
+        // 월간 집계: 수정된 이 거래(9,900)만 존재 → 99% 사용
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(expense));
+
+        // 1,000 → 9,900 으로 상향 수정
+        var cmd = new ExpenseServiceDto.UpdateCommand(
+                10L, null, ExpenseType.EXPENSE, 9_900L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+
+        sut.updateExpense(5L, USER_ID, cmd);
+
+        verify(notificationService).createNotification(any());
     }
 
     @Test
