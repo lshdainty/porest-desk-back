@@ -61,10 +61,11 @@ public class ExpenseServiceDto {
             return new ExpenseInfo(
                 expense.getRowId(),
                 expense.getUser().getRowId(),
-                expense.getCategory().getRowId(),
-                expense.getCategory().getCategoryName(),
-                expense.getCategory().getIcon(),
-                expense.getCategory().getColor(),
+                // category 는 nullable(미분류 거래·카테고리 정리 등) — null-safe 매핑
+                expense.getCategory() != null ? expense.getCategory().getRowId() : null,
+                expense.getCategory() != null ? expense.getCategory().getCategoryName() : null,
+                expense.getCategory() != null ? expense.getCategory().getIcon() : null,
+                expense.getCategory() != null ? expense.getCategory().getColor() : null,
                 expense.getAsset() != null ? expense.getAsset().getRowId() : null,
                 expense.getAsset() != null ? expense.getAsset().getAssetName() : null,
                 expense.getExpenseType(),
