@@ -8,6 +8,7 @@ import com.porest.desk.expense.domain.ExpenseTemplate;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.ExpenseTemplateRepository;
+import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
@@ -23,9 +24,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * 경비 템플릿 정책 회귀 방지 단위 테스트 — 거래와 동일하게 leaf 카테고리만, 소유권 검증.
@@ -132,5 +135,30 @@ class ExpenseTemplateServiceImplTest {
 
         assertThatThrownBy(() -> sut.useTemplate(5L, USER_ID, LocalDate.of(2026, 6, 1)))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("useTemplate — 성공 시 템플릿 값으로 거래 생성 + 사용횟수 증가")
+    void useTemplateCreatesExpenseAndIncrementsUseCount() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        ExpenseTemplate template = mock(ExpenseTemplate.class);
+        given(template.getUser()).willReturn(u);
+        given(template.getCategory()).willReturn(leaf);
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        given(template.getAsset()).willReturn(null);
+        given(template.getExpenseType()).willReturn(ExpenseType.EXPENSE);
+        given(template.getAmount()).willReturn(15_000L);
+        given(template.getDescription()).willReturn("점심");
+        given(template.getMerchant()).willReturn("식당");
+        given(template.getPaymentMethod()).willReturn("CARD");
+        given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(template));
+
+        ExpenseServiceDto.ExpenseInfo info = sut.useTemplate(5L, USER_ID, LocalDate.of(2026, 7, 1));
+
+        assertThat(info.amount()).isEqualTo(15_000L);
+        assertThat(info.description()).isEqualTo("점심");
+        verify(expenseRepository).save(org.mockito.ArgumentMatchers.any());
+        verify(template).incrementUseCount();
     }
 }
