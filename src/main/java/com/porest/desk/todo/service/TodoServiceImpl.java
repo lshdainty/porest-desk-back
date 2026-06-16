@@ -127,6 +127,8 @@ public class TodoServiceImpl implements TodoService {
         if (command.projectRowId() != null) {
             project = todoProjectRepository.findById(command.projectRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_PROJECT_NOT_FOUND));
+            // createTodo 와 동일하게 프로젝트 소유권 검증 — 남의 프로젝트로 이동 차단(누락 보강).
+            validateProjectOwnership(project, userRowId);
         }
 
         todo.updateTodo(
