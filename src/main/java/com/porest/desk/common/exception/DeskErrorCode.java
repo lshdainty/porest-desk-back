@@ -12,6 +12,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     INTERNAL_SERVER_ERROR("COMMON_500", "error.common.internal", HttpStatus.INTERNAL_SERVER_ERROR),
     INVALID_INPUT("COMMON_400", "error.common.invalid.input", HttpStatus.BAD_REQUEST),
     VALIDATION_FAILED("COMMON_422", "error.common.validation.failed", HttpStatus.UNPROCESSABLE_ENTITY),
+    CONCURRENT_MODIFICATION("COMMON_409", "error.common.concurrent.modification", HttpStatus.CONFLICT),
 
     // Auth
     AUTH_INVALID_TOKEN("AUTH_001", "error.auth.invalid.token", HttpStatus.UNAUTHORIZED),
