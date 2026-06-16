@@ -168,6 +168,7 @@ public class DutchPayServiceImpl implements DutchPayService {
 
     private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
         if (participants == null) return;
+        validateNoDuplicateParticipants(participants);
         for (DutchPayServiceDto.ParticipantCommand pc : participants) {
             // amount 는 not-null 컬럼 — null/0/음수는 정산 데이터를 오염시키므로 영속화 전에 차단.
             if (pc.amount() == null || pc.amount() <= 0) {
@@ -182,6 +183,27 @@ public class DutchPayServiceImpl implements DutchPayService {
                 dutchPay, participantUser, pc.participantName(), pc.amount()
             );
             dutchPay.addParticipant(participant);
+        }
+    }
+
+    /**
+     * 한 더치페이 내 참가자 중복 금지. 수정 시 전체 교체(clearParticipants→재추가) 구조라
+     * 활성 참가자 집합은 곧 이 요청의 목록이므로 요청 내 중복만 막으면 충분하다.
+     * 등록 사용자(user_row_id)는 사용자 기준, 이름만 있는 참가자(user=null)는 이름 기준으로 판정.
+     */
+    private void validateNoDuplicateParticipants(List<DutchPayServiceDto.ParticipantCommand> participants) {
+        java.util.Set<Long> seenUserIds = new java.util.HashSet<>();
+        java.util.Set<String> seenNamesNoUser = new java.util.HashSet<>();
+        for (DutchPayServiceDto.ParticipantCommand pc : participants) {
+            if (pc.userRowId() != null) {
+                if (!seenUserIds.add(pc.userRowId())) {
+                    throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_DUPLICATE_PARTICIPANT);
+                }
+            } else if (pc.participantName() != null) {
+                if (!seenNamesNoUser.add(pc.participantName())) {
+                    throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_DUPLICATE_PARTICIPANT);
+                }
+            }
         }
     }
 
