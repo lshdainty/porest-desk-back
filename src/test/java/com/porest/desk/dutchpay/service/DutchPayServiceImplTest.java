@@ -119,6 +119,38 @@ class DutchPayServiceImplTest {
     }
 
     @Test
+    @DisplayName("createDutchPay — 같은 등록 사용자를 중복 참가자로 추가하면 거부")
+    void createRejectsDuplicateRegisteredParticipant() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new DutchPayServiceDto.CreateCommand(
+                USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
+                LocalDate.of(2026, 6, 1),
+                List.of(
+                        new DutchPayServiceDto.ParticipantCommand(50L, "철수", 5_000L),
+                        new DutchPayServiceDto.ParticipantCommand(50L, "철수(중복)", 5_000L)));
+
+        assertThatThrownBy(() -> sut.createDutchPay(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 이름만 있는 참가자(이름 중복)도 거부")
+    void createRejectsDuplicateNameOnlyParticipant() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new DutchPayServiceDto.CreateCommand(
+                USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
+                LocalDate.of(2026, 6, 1),
+                List.of(
+                        new DutchPayServiceDto.ParticipantCommand(null, "영희", 5_000L),
+                        new DutchPayServiceDto.ParticipantCommand(null, "영희", 5_000L)));
+
+        assertThatThrownBy(() -> sut.createDutchPay(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
     @DisplayName("settleAll — 남의 더치페이는 전체 정산 불가")
     void settleAllRejectsOthers() {
         DutchPay d = othersDutchPay();
