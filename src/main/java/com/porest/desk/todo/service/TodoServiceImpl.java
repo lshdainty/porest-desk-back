@@ -185,6 +185,7 @@ public class TodoServiceImpl implements TodoService {
 
         for (TodoServiceDto.ReorderCommand.ReorderItem item : command.items()) {
             Todo todo = findTodoOrThrow(item.todoId());
+            validateTodoOwnership(todo, userRowId); // 남의 할일 순서 조작 차단
             todo.updateSortOrder(item.sortOrder());
         }
 

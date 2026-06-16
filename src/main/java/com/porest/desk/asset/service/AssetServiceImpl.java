@@ -293,6 +293,7 @@ public class AssetServiceImpl implements AssetService {
 
         for (AssetServiceDto.ReorderItem item : items) {
             Asset asset = findAssetOrThrow(item.assetId());
+            validateAssetOwnership(asset, userRowId); // 남의 자산 순서 조작 차단
             asset.updateSortOrder(item.sortOrder());
         }
 

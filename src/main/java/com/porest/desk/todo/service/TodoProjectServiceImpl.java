@@ -71,6 +71,7 @@ public class TodoProjectServiceImpl implements TodoProjectService {
 
         for (TodoProjectServiceDto.ReorderCommand.ReorderItem item : command.items()) {
             TodoProject project = findProjectOrThrow(item.projectId());
+            validateProjectOwnership(project, userRowId); // 남의 프로젝트 순서 조작 차단
             project.updateSortOrder(item.sortOrder());
         }
 
