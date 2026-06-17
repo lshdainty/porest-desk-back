@@ -34,7 +34,9 @@ public class ExpenseApiDto {
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
-        Long todoRowId
+        Long todoRowId,
+        // 분할 내역 동시 수정(선택). null = 분할 미변경, 리스트 = 새 분할로 교체(금액과 합 일치 필요).
+        List<ExpenseSplitApiDto.SplitRequest> splits
     ) {}
 
     public record Response(

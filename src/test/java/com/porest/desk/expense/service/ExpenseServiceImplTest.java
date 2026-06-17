@@ -9,11 +9,13 @@ import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.domain.ExpenseSplit;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.service.NotificationService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
@@ -61,6 +63,7 @@ class ExpenseServiceImplTest {
     @Mock private ExpenseCategoryRepository expenseCategoryRepository;
     @Mock private ExpenseBudgetRepository expenseBudgetRepository;
     @Mock private ExpenseSplitRepository expenseSplitRepository;
+    @Mock private ExpenseSplitService expenseSplitService;
     @Mock private NotificationService notificationService;
     @Mock private UserService userService;
     @Mock private AssetRepository assetRepository;
@@ -94,7 +97,7 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new ExpenseServiceDto.UpdateCommand(
                 categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null);
+                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null);
     }
 
     @Test
@@ -181,7 +184,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, 20L, ExpenseType.EXPENSE, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null);
 
         assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -272,7 +275,7 @@ class ExpenseServiceImplTest {
         // 1,000 → 9,900 으로 상향 수정
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null);
 
         sut.updateExpense(5L, USER_ID, cmd);
 
@@ -411,7 +414,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, null, ExpenseType.EXPENSE, 9_999L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null);
         sut.updateExpense(5L, USER_ID, cmd);
 
         // before 0.99, after 0.9999: OVER(>=1.0) 거짓, WARN(이미 0.99>=0.85) 미돌파 → 알림 없음
@@ -436,7 +439,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, null, ExpenseType.EXPENSE, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null);
         sut.updateExpense(5L, USER_ID, cmd);
 
         verify(notificationService, times(1)).createNotification(any()); // before 0.99<1.0, after 1.0>=1.0 → OVER
@@ -464,5 +467,104 @@ class ExpenseServiceImplTest {
     void getMonthlyTrendRejectsNegativeMonths() {
         assertThatThrownBy(() -> sut.getMonthlyTrend(USER_ID, -3))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    // ── 분할 합 일치화 (거래 금액 ↔ 분할 합 불변식) ─────────────────────────────
+    private Expense expenseWithRowId(User u, ExpenseCategory leaf, long amount) {
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, amount,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        return expense;
+    }
+
+    private ExpenseServiceDto.UpdateCommand updateCmdWithSplits(
+            long categoryRowId, long amount, List<ExpenseSplitServiceDto.SplitCommand> splits) {
+        return new ExpenseServiceDto.UpdateCommand(
+                categoryRowId, null, ExpenseType.EXPENSE, amount,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, splits);
+    }
+
+    @Test
+    @DisplayName("updateExpense — 금액을 바꿔 기존 분할 합과 어긋나는데 분할을 함께 안 보내면 거부")
+    void updateRejectsAmountChangeDesyncingExistingSplits() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = expenseWithRowId(u, leaf, 10_000L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        // 기존 분할 합 10,000 (6,000 + 4,000)
+        given(expenseSplitRepository.findByExpense(5L)).willReturn(List.of(
+                ExpenseSplit.create(expense, leaf, 6_000L, "a", 0),
+                ExpenseSplit.create(expense, leaf, 4_000L, "b", 1)));
+
+        // 금액을 20,000 으로 바꾸면서 분할 미전달(null) → 합 10,000 ≠ 20,000 → 거부
+        assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, updateCmdWithSplits(10L, 20_000L, null)))
+                .isInstanceOf(InvalidValueException.class);
+        verify(expenseSplitService, never()).replaceSplits(any());
+    }
+
+    @Test
+    @DisplayName("updateExpense — 분할 합이 새 금액과 일치하면(미전달) 그대로 허용")
+    void updateAllowsWhenExistingSplitSumMatches() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = expenseWithRowId(u, leaf, 10_000L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        given(expenseSplitRepository.findByExpense(5L)).willReturn(List.of(
+                ExpenseSplit.create(expense, leaf, 6_000L, "a", 0),
+                ExpenseSplit.create(expense, leaf, 4_000L, "b", 1)));
+
+        // 금액 10,000 유지 → 분할 합 10,000 == 10,000 → 허용, 분할 교체 호출 없음
+        var info = sut.updateExpense(5L, USER_ID, updateCmdWithSplits(10L, 10_000L, null));
+
+        assertThat(info.amount()).isEqualTo(10_000L);
+        verify(expenseSplitService, never()).replaceSplits(any());
+    }
+
+    @Test
+    @DisplayName("updateExpense — 맞춘 분할을 함께 보내면 원자적으로 교체(replaceSplits 위임)")
+    void updateWithReconciledSplitsReplacesAtomically() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = expenseWithRowId(u, leaf, 10_000L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+        // 20,000 으로 상향하면서 합이 20,000 인 분할을 함께 전달
+        var splits = List.of(
+                new ExpenseSplitServiceDto.SplitCommand(10L, 12_000L, "a", 0),
+                new ExpenseSplitServiceDto.SplitCommand(10L, 8_000L, "b", 1));
+
+        sut.updateExpense(5L, USER_ID, updateCmdWithSplits(10L, 20_000L, splits));
+
+        ArgumentCaptor<ExpenseSplitServiceDto.ReplaceCommand> captor =
+                ArgumentCaptor.forClass(ExpenseSplitServiceDto.ReplaceCommand.class);
+        verify(expenseSplitService).replaceSplits(captor.capture());
+        assertThat(captor.getValue().expenseRowId()).isEqualTo(5L);
+        assertThat(captor.getValue().userRowId()).isEqualTo(USER_ID);
+        assertThat(captor.getValue().splits()).hasSize(2);
+        // 합 검증은 replaceSplits 책임 → 위임만 확인(미전달 분기 가드 미진입)
+        verify(expenseSplitRepository, never()).findByExpense(any());
+    }
+
+    @Test
+    @DisplayName("updateExpense — 분할이 없는 거래는 금액만 바꿔도 통과(불변식 무관)")
+    void updateWithoutExistingSplitsPasses() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = expenseWithRowId(u, leaf, 10_000L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        given(expenseSplitRepository.findByExpense(5L)).willReturn(List.of()); // 분할 없음
+
+        var info = sut.updateExpense(5L, USER_ID, updateCmdWithSplits(10L, 20_000L, null));
+
+        assertThat(info.amount()).isEqualTo(20_000L);
+        verify(expenseSplitService, never()).replaceSplits(any());
     }
 }
