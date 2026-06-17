@@ -681,4 +681,29 @@ class ExpenseServiceImplTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).splitCategoryRowIds()).containsExactlyInAnyOrder(8L, 2L);
     }
+
+    @Test
+    @DisplayName("searchExpenses — 분할 거래는 splitCategoryRowIds 노출(검색 필터 split-aware용, 목록과 대칭)")
+    void searchExposesSplitCategoryIds() {
+        User u = user(USER_ID);
+        ExpenseCategory p7 = parentCat(7L, u, "생활");
+        ExpenseCategory l8 = leafUnder(8L, u, p7);
+        ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
+        ExpenseCategory l2 = leafUnder(2L, u, p1);
+        Expense e = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null);
+        ReflectionTestUtils.setField(e, "rowId", 60L);
+        given(expenseRepository.search(eq(USER_ID), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .willReturn(List.of(e));
+        ExpenseSplit s1 = ExpenseSplit.create(e, l8, 6_000L, "생활", 0);
+        ExpenseSplit s2 = ExpenseSplit.create(e, l2, 4_000L, "식비", 1);
+        given(expenseSplitRepository.findByExpenseIds(any())).willReturn(List.of(s1, s2));
+
+        var cmd = new ExpenseServiceDto.SearchCommand(
+                USER_ID, null, null, null, "쿠팡", null, null, null, null, null);
+        var result = sut.searchExpenses(cmd);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).splitCategoryRowIds()).containsExactlyInAnyOrder(8L, 2L);
+    }
 }
