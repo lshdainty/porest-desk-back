@@ -57,7 +57,9 @@ public class ExpenseApiDto {
         Long calendarEventRowId,
         Long todoRowId,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터 split-aware 용.
+        List<Long> splitCategoryRowIds
     ) {
         public static Response from(ExpenseServiceDto.ExpenseInfo info) {
             return new Response(
@@ -78,7 +80,8 @@ public class ExpenseApiDto {
                 info.calendarEventRowId(),
                 info.todoRowId(),
                 info.createAt(),
-                info.modifyAt()
+                info.modifyAt(),
+                info.splitCategoryRowIds()
             );
         }
     }
