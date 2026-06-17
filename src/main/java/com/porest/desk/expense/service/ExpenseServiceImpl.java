@@ -143,9 +143,22 @@ public class ExpenseServiceImpl implements ExpenseService {
         allExpenses.sort(java.util.Comparator.comparing(Expense::getExpenseDate).reversed()
             .thenComparing(java.util.Comparator.comparing(Expense::getRowId).reversed()));
 
+        // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
+        Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(allExpenses);
         return allExpenses.stream()
-            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .map(e -> ExpenseServiceDto.ExpenseInfo.from(
+                e, splitCatsByExpense.getOrDefault(e.getRowId(), List.of())))
             .toList();
+    }
+
+    /** 거래 목록의 활성 분할 카테고리 id 를 거래별로 묶어 반환(N+1 회피용 bulk 적재). */
+    private Map<Long, List<Long>> loadSplitCategoryIdsByExpense(List<Expense> expenses) {
+        List<Long> ids = expenses.stream().map(Expense::getRowId).toList();
+        if (ids.isEmpty()) return Map.of();
+        return expenseSplitRepository.findByExpenseIds(ids).stream()
+            .collect(Collectors.groupingBy(
+                s -> s.getExpense().getRowId(),
+                Collectors.mapping(s -> s.getCategory().getRowId(), Collectors.toList())));
     }
 
     @Override

@@ -58,9 +58,15 @@ public class ExpenseServiceDto {
         Long calendarEventRowId,
         Long todoRowId,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
+        List<Long> splitCategoryRowIds
     ) {
         public static ExpenseInfo from(Expense expense) {
+            return from(expense, List.of());
+        }
+
+        public static ExpenseInfo from(Expense expense, List<Long> splitCategoryRowIds) {
             return new ExpenseInfo(
                 expense.getRowId(),
                 expense.getUser().getRowId(),
@@ -80,7 +86,8 @@ public class ExpenseServiceDto {
                 expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
                 expense.getTodo() != null ? expense.getTodo().getRowId() : null,
                 expense.getCreateAt(),
-                expense.getModifyAt()
+                expense.getModifyAt(),
+                splitCategoryRowIds != null ? splitCategoryRowIds : List.of()
             );
         }
     }
