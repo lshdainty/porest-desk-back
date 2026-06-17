@@ -118,4 +118,45 @@ class ExpenseBudgetServiceComplianceTest {
         assertThat(result.get(0).totalLimit()).isEqualTo(0L);
         assertThat(result.get(0).compliancePercent()).isEqualTo(0.0);
     }
+
+    @Test
+    @DisplayName("이행률 — 8,500/10,000 = 85.0%")
+    void compliance85() {
+        givenBudgets(List.of(overallBudget(10_000L)));
+        givenExpenses(List.of(expense(ExpenseType.EXPENSE, 8_500L)));
+
+        var result = sut.getCompliance(USER_ID, 1);
+
+        assertThat(result.get(0).totalLimit()).isEqualTo(10_000L);
+        assertThat(result.get(0).totalSpent()).isEqualTo(8_500L);
+        assertThat(result.get(0).compliancePercent()).isEqualTo(85.0); // 8500/10000=0.85
+    }
+
+    @Test
+    @DisplayName("이행률 0.1% 반올림 — 8,450/10,000 = 84.5% (명확한 내림 경계)")
+    void complianceRoundsToOneDecimal() {
+        givenBudgets(List.of(overallBudget(10_000L)));
+        givenExpenses(List.of(expense(ExpenseType.EXPENSE, 8_450L)));
+
+        var result = sut.getCompliance(USER_ID, 1);
+
+        // round(845.0)/10 = 84.5
+        assertThat(result.get(0).compliancePercent()).isEqualTo(84.5);
+    }
+
+    @Test
+    @DisplayName("이행률 100% 경계 — 10,000/10,000=100.0, 9,994/10,000=99.9")
+    void compliance100Boundary() {
+        givenBudgets(List.of(overallBudget(10_000L)));
+        givenExpenses(List.of(expense(ExpenseType.EXPENSE, 10_000L)));
+        assertThat(sut.getCompliance(USER_ID, 1).get(0).compliancePercent()).isEqualTo(100.0);
+    }
+
+    @Test
+    @DisplayName("이행률 — 9,994/10,000 = 99.9% (round(999.4)/10)")
+    void complianceJustBelow100() {
+        givenBudgets(List.of(overallBudget(10_000L)));
+        givenExpenses(List.of(expense(ExpenseType.EXPENSE, 9_994L)));
+        assertThat(sut.getCompliance(USER_ID, 1).get(0).compliancePercent()).isEqualTo(99.9);
+    }
 }
