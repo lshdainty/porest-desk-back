@@ -477,8 +477,11 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.minAmount(), command.maxAmount(), command.startDate(), command.endDate()
         );
 
+        // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 검색 결과의 카테고리 필터도 split-aware 하게 (getExpenses 와 대칭).
+        Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(expenses);
         return expenses.stream()
-            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .map(e -> ExpenseServiceDto.ExpenseInfo.from(
+                e, splitCatsByExpense.getOrDefault(e.getRowId(), List.of())))
             .toList();
     }
 
