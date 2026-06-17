@@ -1,6 +1,7 @@
 package com.porest.desk.memo.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.type.YNType;
 import com.porest.desk.memo.domain.Memo;
 import com.porest.desk.memo.domain.MemoFolder;
 import com.porest.desk.memo.repository.MemoFolderRepository;
@@ -19,6 +20,7 @@ import com.porest.desk.memo.service.dto.MemoServiceDto;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -93,5 +95,34 @@ class MemoServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateMemo(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    // ── 정상 CRUD 결과 정확성 ─────────────────────────────
+    @Test
+    @DisplayName("createMemo — isPinned=N·필드 1:1 매핑, folder 없으면 folderId=null")
+    void createMemoDefaults() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new MemoServiceDto.CreateCommand(USER_ID, null, "회의록", "본문", "work", "#FF0000");
+        MemoServiceDto.MemoInfo info = sut.createMemo(cmd);
+
+        assertThat(info.userRowId()).isEqualTo(USER_ID);
+        assertThat(info.folderId()).isNull();
+        assertThat(info.title()).isEqualTo("회의록");
+        assertThat(info.content()).isEqualTo("본문");
+        assertThat(info.tag()).isEqualTo("work");
+        assertThat(info.color()).isEqualTo("#FF0000");
+        assertThat(info.isPinned()).isEqualTo(YNType.N);
+    }
+
+    @Test
+    @DisplayName("togglePin — N→Y, 한 번 더 Y→N")
+    void togglePinFlips() {
+        Memo memo = Memo.createMemo(user(USER_ID), null, "old", "body", "tag", "#000000");
+        ReflectionTestUtils.setField(memo, "rowId", 202L);
+        given(memoRepository.findById(202L)).willReturn(Optional.of(memo));
+
+        assertThat(sut.togglePin(202L, USER_ID).isPinned()).isEqualTo(YNType.Y); // N→Y
+        assertThat(sut.togglePin(202L, USER_ID).isPinned()).isEqualTo(YNType.N); // Y→N
     }
 }
