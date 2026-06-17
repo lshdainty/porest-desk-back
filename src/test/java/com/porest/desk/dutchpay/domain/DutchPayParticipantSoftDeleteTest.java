@@ -67,4 +67,51 @@ class DutchPayParticipantSoftDeleteTest {
 
         assertThat(dp.getIsSettled()).isEqualTo(YNType.Y);
     }
+
+    @Test
+    @DisplayName("settleAll — 활성 전원 markPaid·isSettled=Y, 금액은 입력 그대로 보존")
+    void settleAllMarksAllAndPreservesAmounts() {
+        DutchPay dp = dutchPay();
+        participant(dp, "A", 12_000L);
+        participant(dp, "B", 10_000L);
+        participant(dp, "C", 8_000L);
+
+        dp.settleAll();
+
+        assertThat(dp.getIsSettled()).isEqualTo(YNType.Y);
+        assertThat(dp.getActiveParticipants()).allMatch(p -> p.getIsPaid() == YNType.Y);
+        // settleAll 은 금액을 재계산/변경하지 않음 → 입력 합 12,000+10,000+8,000=30,000 보존
+        assertThat(dp.getActiveParticipants().stream().mapToLong(DutchPayParticipant::getAmount).sum())
+                .isEqualTo(30_000L);
+    }
+
+    @Test
+    @DisplayName("checkSettled — 일부 납부면 N, 전원 납부면 Y 로 전이")
+    void checkSettledPartialThenAll() {
+        DutchPay dp = dutchPay();
+        DutchPayParticipant a = participant(dp, "A", 10_000L);
+        DutchPayParticipant b = participant(dp, "B", 10_000L);
+        DutchPayParticipant c = participant(dp, "C", 10_000L);
+
+        a.markPaid();
+        dp.checkSettled();
+        assertThat(dp.getIsSettled()).isEqualTo(YNType.N);
+
+        b.markPaid();
+        c.markPaid();
+        dp.checkSettled();
+        assertThat(dp.getIsSettled()).isEqualTo(YNType.Y);
+    }
+
+    @Test
+    @DisplayName("checkSettled — 활성 0명이면 N (빈 목록 vacuous-true 가드)")
+    void checkSettledEmptyIsNotSettled() {
+        DutchPay dp = dutchPay();
+        DutchPayParticipant only = participant(dp, "A", 10_000L);
+        only.deleteParticipant(); // 유일 참가자 soft-delete → 활성 0명
+
+        dp.checkSettled();
+
+        assertThat(dp.getIsSettled()).isEqualTo(YNType.N);
+    }
 }
