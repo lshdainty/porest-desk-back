@@ -16,6 +16,7 @@ import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.service.NotificationService;
+import com.porest.desk.notification.service.dto.NotificationServiceDto;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -23,6 +24,7 @@ import com.porest.desk.user.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -338,6 +340,24 @@ class ExpenseServiceImplTest {
         sut.createExpense(createCmdAmount(10L, 8_499L));
 
         verify(notificationService, never()).createNotification(any()); // 0.8499 < 0.85
+    }
+
+    @Test
+    @DisplayName("createExpense — 99.5%(9,950) WARN 라벨은 '100%' 아닌 '99%' 로 표기(반올림 cap)")
+    void createWarnLabelCappedAt99() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        givenOverallBudget(10_000L, 85, u, leaf, 9_950L); // 99.5% — OVER 아님(<100%)
+
+        sut.createExpense(createCmdAmount(10L, 9_950L));
+
+        ArgumentCaptor<NotificationServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(NotificationServiceDto.CreateCommand.class);
+        verify(notificationService).createNotification(captor.capture());
+        assertThat(captor.getValue().title()).contains("99%").doesNotContain("100%");
     }
 
     @Test
