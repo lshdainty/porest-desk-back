@@ -23,6 +23,7 @@ import com.porest.desk.user.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -39,6 +40,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -256,6 +258,39 @@ class ExpenseServiceImplTest {
         sut.updateExpense(5L, USER_ID, cmd);
 
         verify(notificationService).createNotification(any());
+    }
+
+    // ── 자산 잔액 이력 연동(잔액 정확성 와이어링) ─────────────────────────────
+    @Test
+    @DisplayName("updateExpense — 잔액 이력은 removeExpense 먼저, 그 다음 recordExpense 순서로 재적재")
+    void updateExpenseRemoveThenRecordInOrder() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 1_000L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+        sut.updateExpense(5L, USER_ID, updateCmd(10L));
+
+        InOrder ord = inOrder(balanceHistoryService);
+        ord.verify(balanceHistoryService).removeExpense(5L);                       // 먼저 기존 flow 제거
+        ord.verify(balanceHistoryService).recordExpense(any(), eq(5L), any(), any(), any()); // 그 다음 재적재
+    }
+
+    @Test
+    @DisplayName("deleteExpense — removeExpense 만 호출(recordExpense 없음)")
+    void deleteExpenseRemovesOnly() {
+        Expense expense = mock(Expense.class);
+        given(expense.getUser()).willReturn(user(USER_ID));
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+
+        sut.deleteExpense(5L, USER_ID);
+
+        verify(balanceHistoryService).removeExpense(5L);
+        verify(balanceHistoryService, never()).recordExpense(any(), any(), any(), any(), any());
     }
 
     // ── 예산 임계 경계 (정상 동작 정확성) ─────────────────────────────

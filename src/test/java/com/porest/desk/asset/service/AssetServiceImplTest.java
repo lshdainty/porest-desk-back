@@ -23,8 +23,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * 자산 서비스 소유권 가드 회귀 방지 단위 테스트 — 남의 자산/이체는 조회·수정·삭제·이체할 수 없다.
@@ -136,6 +138,22 @@ class AssetServiceImplTest {
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("createTransfer — 성공 시 잔액 이력(recordTransfer)을 기록한다")
+    void transferRecordsBalanceHistory() {
+        Asset fromAsset = assetOwnedBy(USER_ID);
+        Asset toAsset = assetOwnedBy(USER_ID);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(assetRepository.findById(10L)).willReturn(Optional.of(fromAsset));
+        given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 11L, 30_000L, 1_000L, "이체", LocalDate.of(2026, 6, 1));
+        sut.createTransfer(cmd);
+
+        verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));
     }
 
     @Test
