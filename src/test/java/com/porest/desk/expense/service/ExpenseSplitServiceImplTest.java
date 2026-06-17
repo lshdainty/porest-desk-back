@@ -78,12 +78,34 @@ class ExpenseSplitServiceImplTest {
         Expense expense = mock(Expense.class);
         given(expense.getUser()).willReturn(u);
         given(expense.getAmount()).willReturn(10_000L);
+        given(expense.getExpenseType()).willReturn(ExpenseType.EXPENSE); // 유형 검증 통과 후 leaf 검증까지 도달
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
-        ExpenseCategory parent = category(10L, u);
+        ExpenseCategory parent = category(10L, u); // category() 는 EXPENSE 타입
         given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(parent));
         given(expenseCategoryRepository.hasChildren(10L)).willReturn(true);
 
         var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(10L, 10_000L, "전부", 0));
+
+        assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("replaceSplits — 분할 카테고리 유형이 거래 유형과 다르면 거부(타입 일치 강제)")
+    void rejectTypeMismatch() {
+        User u = user(USER_ID);
+        Expense expense = mock(Expense.class);
+        given(expense.getUser()).willReturn(u);
+        given(expense.getAmount()).willReturn(10_000L);
+        given(expense.getExpenseType()).willReturn(ExpenseType.EXPENSE);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        // INCOME 타입 카테고리를 EXPENSE 거래의 분할에 지정 → 거부
+        ExpenseCategory incomeCat = ExpenseCategory.createCategory(u, "급여", "tag", "#fff", ExpenseType.INCOME, null);
+        ReflectionTestUtils.setField(incomeCat, "rowId", 30L);
+        given(expenseCategoryRepository.findById(30L)).willReturn(Optional.of(incomeCat));
+
+        // 합계는 거래 금액과 일치(타입 검증 분기까지 도달하도록)
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(30L, 10_000L, "전부", 0));
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);

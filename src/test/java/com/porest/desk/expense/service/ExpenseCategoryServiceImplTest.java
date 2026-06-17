@@ -6,6 +6,7 @@ import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.repository.RecurringTransactionRepository;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
@@ -43,6 +44,7 @@ class ExpenseCategoryServiceImplTest {
     @Mock private ExpenseCategoryRepository expenseCategoryRepository;
     @Mock private ExpenseBudgetRepository expenseBudgetRepository;
     @Mock private ExpenseRepository expenseRepository;
+    @Mock private ExpenseSplitRepository expenseSplitRepository;
     @Mock private RecurringTransactionRepository recurringTransactionRepository;
     @Mock private UserRepository userRepository;
 
@@ -142,6 +144,24 @@ class ExpenseCategoryServiceImplTest {
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
                     USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, 30L);
+
+            assertThatThrownBy(() -> sut.createCategory(command))
+                    .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("분할(split)에만 쓰인 카테고리도 부모가 될 수 없다")
+        void rejectWhenParentHasSplits() {
+            User u = user(USER_ID);
+            ExpenseCategory parent = category(31L, u, null, ExpenseType.EXPENSE);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(31L)).willReturn(Optional.of(parent));
+            given(expenseRepository.existsByCategory(31L)).willReturn(false);
+            given(recurringTransactionRepository.existsByCategory(31L)).willReturn(false);
+            given(expenseSplitRepository.existsActiveByCategory(31L)).willReturn(true);
+
+            var command = new ExpenseCategoryServiceDto.CreateCommand(
+                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, 31L);
 
             assertThatThrownBy(() -> sut.createCategory(command))
                     .isInstanceOf(InvalidValueException.class);
