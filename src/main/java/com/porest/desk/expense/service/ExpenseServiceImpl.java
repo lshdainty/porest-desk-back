@@ -117,8 +117,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
 
-        // 예산 임계 도달 시 알림 (생성이므로 이전 반영액 0)
-        notifyBudgetThresholdIfCrossed(expense, 0L);
+        // 예산 임계 도달 시 알림 (생성이므로 이전 기여분 없음). 생성 시점엔 분할이 아직 없어 거래 카테고리로 귀속.
+        notifyBudgetThresholdIfCrossed(expense, 0L, Map.of());
 
         log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
 
@@ -156,9 +156,12 @@ public class ExpenseServiceImpl implements ExpenseService {
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
 
-        // 수정 전 EXPENSE 예산에 반영돼 있던 금액 (수정 후 임계 돌파 판정용 delta 기준)
-        long previousCountedAmount = (expense.getExpenseType() == ExpenseType.EXPENSE
+        // 수정 전 이 거래의 EXPENSE 기여분 (수정 후 임계 돌파 판정용 delta 기준) — 총액 + 카테고리별(split-aware).
+        // 변경 전 값으로 캡처해야 하므로 expense.updateExpense(...) 전에 계산한다. 분할이 있으면 그 분할로 귀속.
+        long previousTotal = (expense.getExpenseType() == ExpenseType.EXPENSE
                 && expense.getAmount() != null) ? expense.getAmount() : 0L;
+        Map<Long, Long> previousByCat = expenseSpendRollup(
+                List.of(expense), loadSplitsByExpense(List.of(expense)));
 
         ExpenseCategory category = expenseCategoryRepository.findById(command.categoryRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
@@ -209,9 +212,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             expense.setTodo(null);
         }
 
-        // 예산 임계 도달 시 알림 — 수정 전 금액을 기준으로 돌파 여부 판정 (create 와 대칭)
-        notifyBudgetThresholdIfCrossed(expense, previousCountedAmount);
-
         // 분할 합 일치화: 분할이 있는 거래는 거래 금액과 분할 합이 항상 같아야 한다.
         // - splits != null: 클라이언트가 맞춘 분할로 교체. 합 == abs(금액) 검증은 replaceSplits 가 수행
         //   (이 시점 expense 는 새 금액으로 갱신돼 있으므로 새 금액 기준으로 검증된다) → 원자적 동시 수정.
@@ -233,6 +233,9 @@ public class ExpenseServiceImpl implements ExpenseService {
                 }
             }
         }
+
+        // 예산 임계 도달 시 알림 — 분할 영속화 이후에 실행해 새 분할까지 반영된 카테고리 귀속으로 판정.
+        notifyBudgetThresholdIfCrossed(expense, previousTotal, previousByCat);
 
         log.info("지출 수정 완료: expenseId={}", expenseId);
 
@@ -541,16 +544,53 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     /**
-     * 이번 지출로 해당 월 예산이 85% / 100% 임계를 "처음으로" 넘었을 때만 알림 생성.
-     * 대상 예산: 전체(overall, categoryRowId=null) / 지출 카테고리 본인 / 지출 카테고리의 부모.
-     * 실패는 무시(알림 실패가 지출 저장을 막으면 안 됨).
+     * 해당 월의 EXPENSE 지출을 카테고리별로 집계해 반환(split-aware).
+     * 분할이 있는 거래는 분할 항목 카테고리로, 없으면 거래 카테고리로 귀속하며,
+     * 각 leaf 금액을 leaf 키와 부모 키 모두에 누적(롤업)한다.
      */
+    @Override
+    public Map<Long, Long> getMonthlyExpenseSpendByCategory(Long userRowId, int year, int month) {
+        LocalDate ms = LocalDate.of(year, month, 1);
+        LocalDate me = ms.plusMonths(1).minusDays(1);
+        List<Expense> monthly = expenseRepository.findByDateRange(userRowId, ms, me);
+        return expenseSpendRollup(monthly, loadSplitsByExpense(monthly));
+    }
+
+    /** 거래 id 목록의 활성 분할을 거래별로 묶어 반환. */
+    private Map<Long, List<ExpenseSplit>> loadSplitsByExpense(List<Expense> expenses) {
+        List<Long> ids = expenses.stream().map(Expense::getRowId).toList();
+        if (ids.isEmpty()) return Map.of();
+        return expenseSplitRepository.findByExpenseIds(ids).stream()
+            .collect(Collectors.groupingBy(s -> s.getExpense().getRowId()));
+    }
+
     /**
-     * 예산 임계 도달 알림.
-     * @param previousCountedAmount 이번 변경 전에 이미 EXPENSE 예산에 반영돼 있던 금액
-     *        (생성=0, 수정=수정 전 금액). delta = 현재금액 - previousCountedAmount 로
-     *        임계 "돌파"를 판정해, 수정 시 금액 전체가 새로 더해진 것으로 오판하지 않도록 한다.
+     * EXPENSE 거래를 split-aware 하게 카테고리별 합계로 집계(leaf + 부모 롤업).
+     * 분할이 있으면 분할 항목 카테고리로, 없으면 거래 카테고리로 귀속.
      */
+    private Map<Long, Long> expenseSpendRollup(List<Expense> expenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
+        Map<Long, Long> spent = new HashMap<>();
+        for (Expense e : expenses) {
+            if (e.getExpenseType() != ExpenseType.EXPENSE || e.getAmount() == null) continue;
+            List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
+            if (es != null && !es.isEmpty()) {
+                for (ExpenseSplit s : es) addSpendRollup(spent, s.getCategory(), s.getAmount());
+            } else {
+                addSpendRollup(spent, e.getCategory(), e.getAmount());
+            }
+        }
+        return spent;
+    }
+
+    /** 금액을 카테고리 leaf 키와 (있으면) 부모 키 양쪽에 누적. */
+    private void addSpendRollup(Map<Long, Long> spent, ExpenseCategory category, Long amount) {
+        if (category == null || amount == null) return;
+        spent.merge(category.getRowId(), amount, Long::sum);
+        if (category.getParent() != null) {
+            spent.merge(category.getParent().getRowId(), amount, Long::sum);
+        }
+    }
+
     /** 기간 조회 공통 검증 — 시작일이 종료일보다 늦으면 조용히 빈/부분 결과를 내지 않고 거부. */
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
@@ -558,7 +598,16 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
     }
 
-    private void notifyBudgetThresholdIfCrossed(Expense expense, long previousCountedAmount) {
+    /**
+     * 이번 지출 변경으로 월 예산이 warn/100% 임계를 "처음으로" 넘었을 때만 알림 생성 (split-aware).
+     * 대상 예산: 전체(null) / 거래·분할이 귀속되는 카테고리(leaf) 및 그 부모.
+     *
+     * @param previousTotal 변경 전 이 거래가 EXPENSE 로 반영하던 총액(생성=0).
+     * @param previousByCat 변경 전 이 거래의 카테고리별(leaf+부모 롤업) 기여분(생성=빈 맵).
+     *        카테고리별 delta = 현재 기여분 − previousByCat 으로 임계 "돌파"를 판정(수정 시 전체가 새로
+     *        더해진 것으로 오판 방지 + warn→over 에스컬레이션 유지). 실패는 무시(저장을 막지 않음).
+     */
+    private void notifyBudgetThresholdIfCrossed(Expense expense, long previousTotal, Map<Long, Long> previousByCat) {
         try {
             if (expense == null || expense.getExpenseType() != ExpenseType.EXPENSE) return;
             if (expense.getAmount() == null || expense.getAmount() <= 0) return;
@@ -574,40 +623,34 @@ public class ExpenseServiceImpl implements ExpenseService {
             Integer warnPercent = userService.getBudgetAlertThreshold(userRowId);
             double warnThreshold = (warnPercent != null ? warnPercent : 85) / 100.0;
 
-            Long catId = expense.getCategory() != null ? expense.getCategory().getRowId() : null;
-            Long parentId = (expense.getCategory() != null && expense.getCategory().getParent() != null)
-                ? expense.getCategory().getParent().getRowId()
-                : null;
-
-            // 해당 월의 총 지출/카테고리별 지출 집계 (방금 저장된 이 expense 포함)
+            // 해당 월의 split-aware 카테고리 지출(leaf+부모 롤업) + 전체 합계 (방금 저장된 이 expense 포함)
             LocalDate ms = LocalDate.of(year, month, 1);
             LocalDate me = ms.plusMonths(1).minusDays(1);
             List<Expense> monthly = expenseRepository.findByDateRange(userRowId, ms, me);
-            long totalSpent = 0L;
-            Map<Long, Long> spentByCat = new HashMap<>();
-            for (Expense e : monthly) {
-                if (e.getExpenseType() != ExpenseType.EXPENSE) continue;
-                totalSpent += e.getAmount();
-                if (e.getCategory() == null) continue;
-                spentByCat.merge(e.getCategory().getRowId(), e.getAmount(), Long::sum);
-                if (e.getCategory().getParent() != null) {
-                    spentByCat.merge(e.getCategory().getParent().getRowId(), e.getAmount(), Long::sum);
-                }
-            }
+            Map<Long, List<ExpenseSplit>> splitsByExpense = loadSplitsByExpense(monthly);
+            Map<Long, Long> spentByCat = expenseSpendRollup(monthly, splitsByExpense);
+            long totalSpent = monthly.stream()
+                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE && e.getAmount() != null)
+                .mapToLong(Expense::getAmount).sum();
 
-            long delta = expense.getAmount() - previousCountedAmount;
+            // 이번 거래의 현재 기여분(leaf+부모) — delta(=현재−이전) 산정용
+            Map<Long, Long> currentByCat = expenseSpendRollup(List.of(expense), splitsByExpense);
+            long currentTotal = expense.getAmount();
 
             for (ExpenseBudget budget : budgets) {
                 if (budget.getBudgetAmount() == null || budget.getBudgetAmount() <= 0) continue;
                 Long bCatId = budget.getCategory() != null ? budget.getCategory().getRowId() : null;
 
-                // 이 예산이 방금 지출과 관련 있는가?
+                // 이 예산이 이번 거래(현재 또는 이전 기여)와 관련 있는가?
                 boolean matches = bCatId == null
-                    || bCatId.equals(catId)
-                    || (parentId != null && bCatId.equals(parentId));
+                    || currentByCat.containsKey(bCatId)
+                    || previousByCat.containsKey(bCatId);
                 if (!matches) continue;
 
                 long afterSpent = (bCatId == null) ? totalSpent : spentByCat.getOrDefault(bCatId, 0L);
+                long delta = (bCatId == null)
+                    ? (currentTotal - previousTotal)
+                    : (currentByCat.getOrDefault(bCatId, 0L) - previousByCat.getOrDefault(bCatId, 0L));
                 long beforeSpent = afterSpent - delta;
                 double limit = budget.getBudgetAmount();
                 double beforePct = beforeSpent / limit;
