@@ -48,6 +48,10 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId());
+            // 거래 유형 == 카테고리 유형 강제 (혼재 시 집계 오염 방지).
+            if (category.getExpenseType() != command.expenseType()) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
+            }
             // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
             if (expenseCategoryRepository.hasChildren(category.getRowId())) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
@@ -95,6 +99,10 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         if (command.categoryRowId() != null) {
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+            // 거래 유형 == 카테고리 유형 강제 (create 와 대칭).
+            if (category.getExpenseType() != command.expenseType()) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
+            }
             // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
             if (expenseCategoryRepository.hasChildren(category.getRowId())) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);

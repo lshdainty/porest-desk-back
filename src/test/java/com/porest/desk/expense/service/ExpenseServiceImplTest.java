@@ -123,6 +123,23 @@ class ExpenseServiceImplTest {
     }
 
     @Test
+    @DisplayName("createExpense — 거래 유형 ≠ 카테고리 유형이면 거부(타입 일치 강제)")
+    void createRejectsTypeMismatch() {
+        User u = user(USER_ID);
+        ExpenseCategory expenseCat = category(10L, u); // EXPENSE 타입 카테고리
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(expenseCat));
+
+        // INCOME 거래를 EXPENSE 카테고리에 등록 시도
+        var cmd = new ExpenseServiceDto.CreateCommand(
+                USER_ID, 10L, null, ExpenseType.INCOME, 10_000L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+
+        assertThatThrownBy(() -> sut.createExpense(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
     @DisplayName("updateExpense — 자식 보유(상위) 카테고리로 변경 불가")
     void updateRejectsNonLeafCategory() {
         User u = user(USER_ID);
