@@ -10,6 +10,7 @@ import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.domain.ExpenseSplit;
+import com.porest.desk.expense.domain.ExpenseSplit;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -36,6 +37,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -566,5 +568,94 @@ class ExpenseServiceImplTest {
 
         assertThat(info.amount()).isEqualTo(20_000L);
         verify(expenseSplitService, never()).replaceSplits(any());
+    }
+
+    // ── split-aware 카테고리 집계 (B안: 분할은 분할 leaf+부모로 귀속) ─────────────
+    private ExpenseCategory leafUnder(long rowId, User u, ExpenseCategory parent) {
+        ExpenseCategory c = ExpenseCategory.createCategory(u, "leaf" + rowId, "t", "#fff", ExpenseType.EXPENSE, parent);
+        ReflectionTestUtils.setField(c, "rowId", rowId);
+        return c;
+    }
+
+    private ExpenseCategory parentCat(long rowId, User u, String name) {
+        ExpenseCategory c = ExpenseCategory.createCategory(u, name, "t", "#fff", ExpenseType.EXPENSE, null);
+        ReflectionTestUtils.setField(c, "rowId", rowId);
+        return c;
+    }
+
+    @Test
+    @DisplayName("getMonthlyExpenseSpendByCategory — 분할은 분할 카테고리 leaf+부모로 귀속(다른 부모 트리로 분산)")
+    void monthlySpendIsSplitAwareWithParentRollup() {
+        User u = user(USER_ID);
+        ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
+        ExpenseCategory l2 = leafUnder(2L, u, p1);   // 식비
+        ExpenseCategory p7 = parentCat(7L, u, "생활");
+        ExpenseCategory l8 = leafUnder(8L, u, p7);   // 생활용품
+
+        // A: 비분할 거래 5,000 (식비 l2)
+        Expense a = Expense.createExpense(u, l2, null, ExpenseType.EXPENSE, 5_000L, "a",
+                LocalDateTime.of(2026, 6, 3, 12, 0), null, null);
+        ReflectionTestUtils.setField(a, "rowId", 100L);
+        // B: 쿠팡 10,000, 분할 [생활용품 6,000 + 식비 4,000] (선언 카테고리는 l8)
+        Expense b = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null);
+        ReflectionTestUtils.setField(b, "rowId", 200L);
+        ExpenseSplit b1 = ExpenseSplit.create(b, l8, 6_000L, "생활", 0);
+        ExpenseSplit b2 = ExpenseSplit.create(b, l2, 4_000L, "식비", 1);
+
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(a, b));
+        given(expenseSplitRepository.findByExpenseIds(any())).willReturn(List.of(b1, b2));
+
+        Map<Long, Long> spend = sut.getMonthlyExpenseSpendByCategory(USER_ID, 2026, 6);
+
+        // 식비 leaf(2) = A 5,000 + B분할 4,000 = 9,000 → 부모 식비/음료(1) 9,000
+        // 생활용품 leaf(8) = B분할 6,000 → 부모 생활(7) 6,000
+        assertThat(spend).containsEntry(2L, 9_000L).containsEntry(1L, 9_000L)
+                .containsEntry(8L, 6_000L).containsEntry(7L, 6_000L)
+                .hasSize(4);
+    }
+
+    @Test
+    @DisplayName("updateExpense — 다른 카테고리로 분할하면 그 카테고리(부모) 예산 초과 알림 발생(분할 무시 회귀 방지)")
+    void updateWithCrossCategorySplitAlertsSplitCategoryBudget() {
+        User u = user(USER_ID);
+        ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
+        ExpenseCategory l2 = leafUnder(2L, u, p1);   // 식비
+        ExpenseCategory p7 = parentCat(7L, u, "생활");
+        ExpenseCategory l8 = leafUnder(8L, u, p7);   // 생활용품(거래 선언 카테고리)
+
+        // 거래: 선언 카테고리 생활용품(8), 10,000원, 분할 없음 상태에서 시작.
+        Expense expense = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(8L)).willReturn(Optional.of(l8));
+        given(expenseCategoryRepository.hasChildren(8L)).willReturn(false);
+
+        // 식비/음료(부모 1) 예산 4,000원, warn 85%
+        ExpenseBudget budget = ExpenseBudget.createBudget(u, p1, 4_000L, 2026, 6);
+        ReflectionTestUtils.setField(budget, "rowId", 1L);
+        given(expenseBudgetRepository.findByUser(eq(USER_ID), eq(2026), eq(6))).willReturn(List.of(budget));
+        given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(85);
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(expense));
+
+        // findByExpenseIds: 1번째(변경 전 기여분 캡처)=분할 없음, 2번째(notify)=새 분할 [식비 4,000 + 생활용품 6,000]
+        ExpenseSplit sp2 = ExpenseSplit.create(expense, l2, 4_000L, "식비", 0);
+        ExpenseSplit sp8 = ExpenseSplit.create(expense, l8, 6_000L, "생활", 1);
+        given(expenseSplitRepository.findByExpenseIds(any())).willReturn(List.of(), List.of(sp2, sp8));
+
+        var cmd = new ExpenseServiceDto.UpdateCommand(
+                8L, null, ExpenseType.EXPENSE, 10_000L,
+                "쿠팡", LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null,
+                List.of(new ExpenseSplitServiceDto.SplitCommand(2L, 4_000L, "식비", 0),
+                        new ExpenseSplitServiceDto.SplitCommand(8L, 6_000L, "생활", 1)));
+
+        sut.updateExpense(5L, USER_ID, cmd);
+
+        // 식비/음료(1) 예산이 분할 4,000 으로 100% 도달 → OVER 알림. (구 로직은 전액을 생활용품에만 귀속해 누락)
+        ArgumentCaptor<NotificationServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(NotificationServiceDto.CreateCommand.class);
+        verify(notificationService).createNotification(captor.capture());
+        assertThat(captor.getValue().title()).contains("식비/음료");
     }
 }
