@@ -1,6 +1,7 @@
 package com.porest.desk.todo.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.type.YNType;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.domain.TodoProject;
 import com.porest.desk.todo.repository.TodoProjectRepository;
@@ -8,6 +9,9 @@ import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
+import com.porest.desk.todo.type.TodoPriority;
+import com.porest.desk.todo.type.TodoStatus;
+import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -18,10 +22,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
@@ -110,6 +118,89 @@ class TodoServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateTodo(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    // ── 정상 CRUD 결과 정확성 ─────────────────────────────
+    @Test
+    @DisplayName("createTodo — TASK 기본값(status=PENDING, sortOrder=0, isPinned=N)·필드 1:1 매핑")
+    void createTodoTaskDefaults() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(todoRepository.save(any(Todo.class))).willAnswer(inv -> {
+            Todo t = inv.getArgument(0);
+            ReflectionTestUtils.setField(t, "rowId", 100L);
+            return t;
+        });
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var cmd = new TodoServiceDto.CreateCommand(
+                USER_ID, "기획서 작성", "초안", TodoPriority.HIGH, "업무",
+                LocalDate.of(2026, 6, 20), null, null, null, TodoType.TASK);
+        var info = sut.createTodo(cmd);
+
+        assertThat(info.type()).isEqualTo(TodoType.TASK);
+        assertThat(info.title()).isEqualTo("기획서 작성");
+        assertThat(info.content()).isEqualTo("초안");
+        assertThat(info.priority()).isEqualTo(TodoPriority.HIGH);
+        assertThat(info.category()).isEqualTo("업무");
+        assertThat(info.status()).isEqualTo(TodoStatus.PENDING);
+        assertThat(info.sortOrder()).isEqualTo(0);
+        assertThat(info.isPinned()).isEqualTo(YNType.N);
+        assertThat(info.completedAt()).isNull();
+        assertThat(info.subtaskCount()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("createTodo — NOTE 타입은 priority 가 LOW 로 강제된다")
+    void createTodoNoteForcesLowPriority() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(todoRepository.save(any(Todo.class))).willAnswer(inv -> {
+            Todo t = inv.getArgument(0);
+            ReflectionTestUtils.setField(t, "rowId", 101L);
+            return t;
+        });
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var cmd = new TodoServiceDto.CreateCommand(
+                USER_ID, "메모성 노트", null, TodoPriority.HIGH, null, null, null, null, null, TodoType.NOTE);
+        var info = sut.createTodo(cmd);
+
+        assertThat(info.type()).isEqualTo(TodoType.NOTE);
+        assertThat(info.priority()).isEqualTo(TodoPriority.LOW); // 입력 HIGH 무시
+    }
+
+    @Test
+    @DisplayName("toggleStatus — PENDING→COMPLETED, completedAt 세팅")
+    void toggleStatusToCompleted() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
+                LocalDate.of(2026, 6, 10), null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 7L);
+        given(todoRepository.findById(7L)).willReturn(Optional.of(todo));
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.toggleStatus(7L, USER_ID);
+
+        assertThat(info.status()).isEqualTo(TodoStatus.COMPLETED);
+        assertThat(info.completedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("toggleStatus — COMPLETED→PENDING, completedAt 클리어")
+    void toggleStatusBackToPending() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
+                LocalDate.of(2026, 6, 10), null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 8L);
+        todo.toggleStatus(); // 먼저 COMPLETED 로
+        given(todoRepository.findById(8L)).willReturn(Optional.of(todo));
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.toggleStatus(8L, USER_ID);
+
+        assertThat(info.status()).isEqualTo(TodoStatus.PENDING);
+        assertThat(info.completedAt()).isNull();
     }
 
     @Test
