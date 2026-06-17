@@ -1,7 +1,9 @@
 package com.porest.desk.expense.service;
 
+import com.porest.core.type.YNType;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
+import com.porest.desk.expense.domain.RecurringTransaction;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.RecurringTransactionRepository;
@@ -20,9 +22,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
 /**
@@ -88,5 +92,75 @@ class RecurringTransactionNextDateTest {
         LocalDate next = info.nextExecutionDate();
         assertThat(next.getDayOfMonth()).isEqualTo(15);       // 시작일(5일) 이후 같은 달 15일
         assertThat(next.getMonth()).isEqualTo(FUTURE_START.getMonth());
+    }
+
+    // ── 실행경로(executeDueTransactions) 다음 실행일·생성 결과 정확성 ───────
+    private RecurringTransaction recurring(RecurringFrequency freq, int interval, Integer dayOfMonth,
+                                           LocalDate next, Integer maxOccurrences) {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        RecurringTransaction r = RecurringTransaction.createRecurring(
+                u, null, null, null, ExpenseType.EXPENSE, 10_000L, null, null, null,
+                freq, interval, null, dayOfMonth, next, null, maxOccurrences, next, true, true);
+        ReflectionTestUtils.setField(r, "rowId", 100L);
+        return r;
+    }
+
+    private void execute(RecurringTransaction r) {
+        given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
+        sut.executeDueTransactions();
+    }
+
+    @Test
+    @DisplayName("실행 MONTHLY 31일 → 짧은 달 클램프 (Jan 31 → Feb 28, 비윤년)")
+    void executeMonthEndClamp() {
+        RecurringTransaction r = recurring(RecurringFrequency.MONTHLY, 1, 31, LocalDate.of(2026, 1, 31), null);
+        execute(r);
+        assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2026, 2, 28));
+        assertThat(r.getExecutedCount()).isEqualTo(1);
+        assertThat(r.getIsActive()).isEqualTo(YNType.Y);
+    }
+
+    @Test
+    @DisplayName("실행 MONTHLY 긴 달에서 dom=31 복원 (Feb 28 → Mar 31)")
+    void executeDomRestoreOnLongMonth() {
+        RecurringTransaction r = recurring(RecurringFrequency.MONTHLY, 1, 31, LocalDate.of(2026, 2, 28), null);
+        execute(r);
+        assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2026, 3, 31));
+    }
+
+    @Test
+    @DisplayName("실행 YEARLY 윤일 2/29 → 비윤년 2/28 (2024→2025)")
+    void executeYearlyLeapClamp() {
+        RecurringTransaction r = recurring(RecurringFrequency.YEARLY, 1, null, LocalDate.of(2024, 2, 29), null);
+        execute(r);
+        assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2025, 2, 28));
+    }
+
+    @Test
+    @DisplayName("실행 MONTHLY dom=29 → 윤년 2월은 29 유지 (2024-01-29 → 2024-02-29)")
+    void executeLeapFebDom29() {
+        RecurringTransaction r = recurring(RecurringFrequency.MONTHLY, 1, 29, LocalDate.of(2024, 1, 29), null);
+        execute(r);
+        assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2024, 2, 29));
+    }
+
+    @Test
+    @DisplayName("실행 WEEKLY interval=2 → +14일, 요일 보존")
+    void executeWeeklyInterval2() {
+        RecurringTransaction r = recurring(RecurringFrequency.WEEKLY, 2, null, LocalDate.of(2026, 6, 1), null);
+        execute(r);
+        assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2026, 6, 15)); // 월요일 보존
+    }
+
+    @Test
+    @DisplayName("실행 maxOccurrences 도달 시 isActive=N 자동 비활성화")
+    void executeMaxOccurrencesDeactivates() {
+        RecurringTransaction r = recurring(RecurringFrequency.DAILY, 1, null, LocalDate.of(2026, 6, 10), 3);
+        ReflectionTestUtils.setField(r, "executedCount", 2); // 직전 2회 실행 상태
+        execute(r);
+        assertThat(r.getExecutedCount()).isEqualTo(3);
+        assertThat(r.getIsActive()).isEqualTo(YNType.N);
+        assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2026, 6, 11));
     }
 }
