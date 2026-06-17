@@ -6,6 +6,7 @@ import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.expense.controller.dto.ExpenseApiDto;
 import com.porest.desk.expense.service.ExpenseService;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -68,6 +69,14 @@ public class ExpenseApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody ExpenseApiDto.UpdateRequest request) {
+        // null = 분할 미변경(기존 유지), 리스트 = 새 분할로 교체. null 의미를 보존하기 위해 null 체크.
+        List<ExpenseSplitServiceDto.SplitCommand> splits = request.splits() == null
+            ? null
+            : request.splits().stream()
+                .map(s -> new ExpenseSplitServiceDto.SplitCommand(
+                    s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
+                .toList();
+
         ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, loginUser.getRowId(), new ExpenseServiceDto.UpdateCommand(
             request.categoryRowId(),
             request.assetRowId(),
@@ -78,7 +87,8 @@ public class ExpenseApiController {
             request.merchant(),
             request.paymentMethod(),
             request.calendarEventRowId(),
-            request.todoRowId()
+            request.todoRowId(),
+            splits
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }

@@ -18,6 +18,7 @@ import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.service.NotificationService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
@@ -51,6 +52,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
+    private final ExpenseSplitService expenseSplitService;
     private final NotificationService notificationService;
     private final UserService userService;
     private final AssetRepository assetRepository;
@@ -209,6 +211,28 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 예산 임계 도달 시 알림 — 수정 전 금액을 기준으로 돌파 여부 판정 (create 와 대칭)
         notifyBudgetThresholdIfCrossed(expense, previousCountedAmount);
+
+        // 분할 합 일치화: 분할이 있는 거래는 거래 금액과 분할 합이 항상 같아야 한다.
+        // - splits != null: 클라이언트가 맞춘 분할로 교체. 합 == abs(금액) 검증은 replaceSplits 가 수행
+        //   (이 시점 expense 는 새 금액으로 갱신돼 있으므로 새 금액 기준으로 검증된다) → 원자적 동시 수정.
+        // - splits == null 인데 기존 활성 분할이 새 금액과 어긋남: 거부하여 클라이언트가 분할을
+        //   맞춰 다시 저장하도록 유도(거래 금액↔분할 합 불변식 보호).
+        if (command.splits() != null) {
+            expenseSplitService.replaceSplits(new ExpenseSplitServiceDto.ReplaceCommand(
+                expenseId, userRowId, command.splits()));
+            // replaceSplits 가 영속성 컨텍스트를 flush·clear 하므로 응답은 재조회로 구성한다.
+            expense = findExpenseOrThrow(expenseId);
+        } else if (command.amount() != null) {
+            List<ExpenseSplit> existingSplits = expenseSplitRepository.findByExpense(expenseId);
+            if (!existingSplits.isEmpty()) {
+                long splitSum = existingSplits.stream().mapToLong(ExpenseSplit::getAmount).sum();
+                if (splitSum != Math.abs(command.amount())) {
+                    log.warn("분할 합 불일치로 지출 수정 거부 - expenseId={}, splitSum={}, amount={}",
+                        expenseId, splitSum, command.amount());
+                    throw new InvalidValueException(DeskErrorCode.EXPENSE_SPLIT_AMOUNT_MISMATCH);
+                }
+            }
+        }
 
         log.info("지출 수정 완료: expenseId={}", expenseId);
 

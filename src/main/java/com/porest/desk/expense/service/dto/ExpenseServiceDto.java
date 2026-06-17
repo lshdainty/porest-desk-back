@@ -34,7 +34,10 @@ public class ExpenseServiceDto {
         String merchant,
         String paymentMethod,
         Long calendarEventRowId,
-        Long todoRowId
+        Long todoRowId,
+        // 분할 내역 동시 수정. null = 분할 미변경(기존 유지), 비어있지 않은 리스트 = 새 분할로 교체.
+        // 금액 변경으로 기존 분할 합이 어긋날 때 클라이언트가 맞춘 분할을 함께 전달하면 원자적으로 일치화.
+        List<ExpenseSplitServiceDto.SplitCommand> splits
     ) {}
 
     public record ExpenseInfo(
