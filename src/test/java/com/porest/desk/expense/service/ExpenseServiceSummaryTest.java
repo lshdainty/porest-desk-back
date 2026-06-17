@@ -8,6 +8,7 @@ import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.desk.expense.domain.ExpenseSplit;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -29,6 +30,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -74,6 +77,10 @@ class ExpenseServiceSummaryTest {
     private Expense expenseIn(ExpenseCategory cat, ExpenseType type, long amount) {
         return Expense.createExpense(null, cat, null, type, amount, null,
                 LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
+    }
+
+    private Expense expenseOn(ExpenseCategory cat, ExpenseType type, long amount, LocalDateTime at) {
+        return Expense.createExpense(null, cat, null, type, amount, null, at, null, null);
     }
 
     private Asset asset(long rowId, String name) {
@@ -158,6 +165,71 @@ class ExpenseServiceSummaryTest {
         var foodEntry = summary.categoryBreakdown().stream()
                 .filter(b -> b.categoryRowId().equals(20L)).findFirst().orElseThrow();
         assertThat(foodEntry.parentCategoryRowId()).isNull();           // 최상위는 부모 없음
+    }
+
+    @Test
+    @DisplayName("getRangeSummary — split 거래는 분할 카테고리별 집계, totalExpense는 부모 raw amount 기준(합 일치)")
+    void rangeSummarySplitBreakdown() {
+        ExpenseCategory food = category(20L, "식비", null);
+        ExpenseCategory coffee = category(31L, "커피", null);
+        ExpenseCategory lunch = category(32L, "점심", null);
+        Expense e1 = expenseIn(food, ExpenseType.EXPENSE, 30_000L);   // split 2건으로 분할
+        ReflectionTestUtils.setField(e1, "rowId", 100L);
+        Expense e2 = expenseIn(lunch, ExpenseType.EXPENSE, 10_000L);  // split 없음
+        ReflectionTestUtils.setField(e2, "rowId", 101L);
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(e1, e2));
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of(
+                ExpenseSplit.create(e1, coffee, 12_000L, "커피", 0),
+                ExpenseSplit.create(e1, lunch, 18_000L, "점심", 1)
+        ));
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        // totalExpense 는 raw amount 합(분할 무관): 30,000 + 10,000
+        assertThat(summary.totalExpense()).isEqualTo(40_000L);
+        Map<Long, Long> byId = summary.categoryBreakdown().stream()
+                .collect(Collectors.toMap(ExpenseServiceDto.CategoryBreakdown::categoryRowId,
+                        ExpenseServiceDto.CategoryBreakdown::totalAmount));
+        // 식비(20)는 split 으로 대체되어 등장하지 않음; leaf 키 = {커피31, 점심32}
+        assertThat(byId).containsOnlyKeys(31L, 32L);
+        assertThat(byId.get(31L)).isEqualTo(12_000L);            // 커피 split
+        assertThat(byId.get(32L)).isEqualTo(28_000L);            // 점심 split 18,000 + e2 직접 10,000
+        // breakdown 합 == totalExpense (split 합이 부모와 일치하는 정상 케이스)
+        assertThat(byId.values().stream().mapToLong(Long::longValue).sum()).isEqualTo(40_000L);
+    }
+
+    @Test
+    @DisplayName("getRangeSummary — 여러 월 혼재 시 빈 달 0 포함 연속 슬롯으로 type별 정확 합산")
+    void rangeSummaryMonthlyBuckets() {
+        ExpenseCategory food = category(20L, "식비", null);
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(
+                        expenseOn(food, ExpenseType.EXPENSE, 50_000L, LocalDateTime.of(2026, 4, 10, 12, 0)),
+                        expenseOn(food, ExpenseType.INCOME, 200_000L, LocalDateTime.of(2026, 4, 25, 12, 0)),
+                        expenseOn(food, ExpenseType.EXPENSE, 30_000L, LocalDateTime.of(2026, 6, 5, 12, 0)),
+                        expenseOn(food, ExpenseType.EXPENSE, 20_000L, LocalDateTime.of(2026, 6, 20, 12, 0))
+                ));   // 5월 거래 없음
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 4, 1), LocalDate.of(2026, 6, 30));
+
+        assertThat(summary.totalIncome()).isEqualTo(200_000L);
+        assertThat(summary.totalExpense()).isEqualTo(100_000L);   // 50,000+30,000+20,000
+        List<ExpenseServiceDto.RangeMonthlyBucket> buckets = summary.monthlyBuckets();
+        assertThat(buckets).hasSize(3);                            // 4,5,6월 연속 슬롯
+        assertThat(buckets.get(0).year()).isEqualTo(2026);
+        assertThat(buckets.get(0).month()).isEqualTo(4);
+        assertThat(buckets.get(0).totalIncome()).isEqualTo(200_000L);
+        assertThat(buckets.get(0).totalExpense()).isEqualTo(50_000L);
+        assertThat(buckets.get(1).month()).isEqualTo(5);          // 빈 달
+        assertThat(buckets.get(1).totalIncome()).isEqualTo(0L);
+        assertThat(buckets.get(1).totalExpense()).isEqualTo(0L);
+        assertThat(buckets.get(2).month()).isEqualTo(6);
+        assertThat(buckets.get(2).totalIncome()).isEqualTo(0L);
+        assertThat(buckets.get(2).totalExpense()).isEqualTo(50_000L);   // 30,000+20,000
     }
 
     @Test
