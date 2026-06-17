@@ -40,6 +40,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -254,6 +256,118 @@ class ExpenseServiceImplTest {
         sut.updateExpense(5L, USER_ID, cmd);
 
         verify(notificationService).createNotification(any());
+    }
+
+    // ── 예산 임계 경계 (정상 동작 정확성) ─────────────────────────────
+    private ExpenseServiceDto.CreateCommand createCmdAmount(long categoryRowId, long amount) {
+        return new ExpenseServiceDto.CreateCommand(
+                USER_ID, categoryRowId, null, ExpenseType.EXPENSE, amount,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+    }
+
+    private void givenOverallBudget(long limit, int warnPct, User u, ExpenseCategory leaf, long monthlyTotal) {
+        // 실제 ExpenseBudget(전체, category=null) 사용 — mock 불필요 스터빙 회피
+        ExpenseBudget budget = ExpenseBudget.createBudget(u, null, limit, 2026, 6);
+        given(expenseBudgetRepository.findByUser(eq(USER_ID), eq(2026), eq(6))).willReturn(List.of(budget));
+        given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(warnPct);
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(
+                Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, monthlyTotal,
+                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null)));
+    }
+
+    @Test
+    @DisplayName("createExpense — 정확히 85%(8,500/10,000)에서 warn 알림 발생")
+    void createWarnAtExactly85() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        givenOverallBudget(10_000L, 85, u, leaf, 8_500L);
+
+        sut.createExpense(createCmdAmount(10L, 8_500L));
+
+        verify(notificationService, times(1)).createNotification(any()); // 0→0.85 돌파
+    }
+
+    @Test
+    @DisplayName("createExpense — 84.99%(8,499)에서는 알림 없음(경계 1원 미달)")
+    void createNoAlertJustBelow85() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        givenOverallBudget(10_000L, 85, u, leaf, 8_499L);
+
+        sut.createExpense(createCmdAmount(10L, 8_499L));
+
+        verify(notificationService, never()).createNotification(any()); // 0.8499 < 0.85
+    }
+
+    @Test
+    @DisplayName("createExpense — 0→100% 점프 시 OVER 우선(알림 정확히 1건, WARN 중복 아님)")
+    void createOverPriorityAt100() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        givenOverallBudget(10_000L, 85, u, leaf, 10_000L);
+
+        sut.createExpense(createCmdAmount(10L, 10_000L));
+
+        // if(OVER) else-if(WARN) → 85·100 동시 초과여도 알림은 1건만(OVER)
+        verify(notificationService, times(1)).createNotification(any());
+    }
+
+    @Test
+    @DisplayName("updateExpense — 99.99%(9,900→9,999)에서는 초과 알림 없음")
+    void updateNoOverJustBelow100() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        ExpenseBudget budget = ExpenseBudget.createBudget(u, null, 10_000L, 2026, 6);
+        given(expenseBudgetRepository.findByUser(eq(USER_ID), eq(2026), eq(6))).willReturn(List.of(budget));
+        given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(85);
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(expense));
+
+        var cmd = new ExpenseServiceDto.UpdateCommand(
+                10L, null, ExpenseType.EXPENSE, 9_999L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+        sut.updateExpense(5L, USER_ID, cmd);
+
+        // before 0.99, after 0.9999: OVER(>=1.0) 거짓, WARN(이미 0.99>=0.85) 미돌파 → 알림 없음
+        verify(notificationService, never()).createNotification(any());
+    }
+
+    @Test
+    @DisplayName("updateExpense — 정확히 100%(9,900→10,000)에서 초과 알림 발생")
+    void updateOverAtExactly100() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        ExpenseBudget budget = ExpenseBudget.createBudget(u, null, 10_000L, 2026, 6);
+        given(expenseBudgetRepository.findByUser(eq(USER_ID), eq(2026), eq(6))).willReturn(List.of(budget));
+        given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(85);
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(expense));
+
+        var cmd = new ExpenseServiceDto.UpdateCommand(
+                10L, null, ExpenseType.EXPENSE, 10_000L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
+        sut.updateExpense(5L, USER_ID, cmd);
+
+        verify(notificationService, times(1)).createNotification(any()); // before 0.99<1.0, after 1.0>=1.0 → OVER
     }
 
     @Test
