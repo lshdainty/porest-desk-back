@@ -593,7 +593,9 @@ public class ExpenseServiceImpl implements ExpenseService {
                         budget.getRowId()
                     ));
                 } else if (beforePct < warnThreshold && afterPct >= warnThreshold) {
-                    int pct = (int) Math.round(afterPct * 100);
+                    // WARN 분기는 정의상 afterPct < 1.0(초과 아님). 반올림이 100 이 되어
+                    // '100% 사용' 으로 오표기되지 않도록 99 로 cap (초과는 위 OVER 분기가 담당).
+                    int pct = Math.min(99, (int) Math.round(afterPct * 100));
                     notificationService.createNotification(new NotificationServiceDto.CreateCommand(
                         userRowId,
                         NotificationType.BUDGET_ALERT,
