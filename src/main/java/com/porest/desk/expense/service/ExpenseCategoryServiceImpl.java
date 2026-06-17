@@ -9,6 +9,7 @@ import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.repository.RecurringTransactionRepository;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
@@ -31,6 +32,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseRepository expenseRepository;
+    private final ExpenseSplitRepository expenseSplitRepository;
     private final RecurringTransactionRepository recurringTransactionRepository;
     private final UserRepository userRepository;
 
@@ -169,10 +171,11 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         return ExpenseCategoryServiceDto.CategoryInfo.from(category);
     }
 
-    /** 거래 또는 반복 거래가 있는 카테고리는 부모(상위)가 될 수 없다. */
+    /** 거래·반복 거래·분할(split) 항목이 있는 카테고리는 부모(상위)가 될 수 없다(부모는 직접 거래 불가). */
     private void validateCanBecomeParent(Long categoryId) {
         if (expenseRepository.existsByCategory(categoryId)
-            || recurringTransactionRepository.existsByCategory(categoryId)) {
+            || recurringTransactionRepository.existsByCategory(categoryId)
+            || expenseSplitRepository.existsActiveByCategory(categoryId)) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_PARENT_HAS_TX);
         }
     }

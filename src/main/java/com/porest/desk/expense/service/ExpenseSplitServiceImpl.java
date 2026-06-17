@@ -55,6 +55,11 @@ public class ExpenseSplitServiceImpl implements ExpenseSplitService {
             ExpenseCategory category = expenseCategoryRepository.findById(sc.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId()); // 남의 카테고리를 분할에 지정 차단
+            // 거래 유형 == 분할 카테고리 유형 강제 (수입 거래엔 수입 카테고리만).
+            // 분할은 부모 거래 유형으로 집계되므로 유형이 다르면 카테고리 통계가 오염된다(거래/템플릿과 대칭, #2 확장).
+            if (category.getExpenseType() != expense.getExpenseType()) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
+            }
             // 정책: 상위(자식 보유) 카테고리에는 거래(분할)를 둘 수 없음.
             if (expenseCategoryRepository.hasChildren(category.getRowId())) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
