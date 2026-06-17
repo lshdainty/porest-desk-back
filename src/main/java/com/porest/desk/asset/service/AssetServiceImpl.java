@@ -215,6 +215,9 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     public List<AssetServiceDto.NetWorthTrendPoint> getNetWorthTrend(Long userRowId, Integer months) {
+        if (months != null && months < 0) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
         int n = (months == null || months < 1) ? 12 : Math.min(months, 36);
         log.debug("순자산 추이 조회: userRowId={}, months={}", userRowId, n);
 
@@ -238,6 +241,9 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     public List<AssetServiceDto.AssetBalancePoint> getAssetBalanceTrend(Long assetId, Long userRowId, Integer weeks) {
+        if (weeks != null && weeks < 0) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
         int n = (weeks == null || weeks < 1) ? 12 : Math.min(weeks, 104);
         log.debug("자산 잔액 추이 조회: assetId={}, weeks={}", assetId, n);
 

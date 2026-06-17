@@ -138,4 +138,11 @@ class RecurringTransactionServiceImplTest {
         assertThatThrownBy(() -> sut.updateRecurring(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
     }
+
+    @Test
+    @DisplayName("getRecurrings — 음수 limit 은 거부(전체 반환 방지)")
+    void getRecurringsRejectsNegativeLimit() {
+        assertThatThrownBy(() -> sut.getRecurrings(USER_ID, false, -1))
+                .isInstanceOf(InvalidValueException.class);
+    }
 }

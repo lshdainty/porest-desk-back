@@ -160,4 +160,18 @@ class AssetServiceImplTest {
         assertThatThrownBy(() -> sut.deleteTransfer(7L, USER_ID))
                 .isInstanceOf(ForbiddenException.class);
     }
+
+    @Test
+    @DisplayName("getNetWorthTrend — 음수 months 는 거부")
+    void netWorthTrendRejectsNegativeMonths() {
+        assertThatThrownBy(() -> sut.getNetWorthTrend(USER_ID, -1))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("getAssetBalanceTrend — 음수 weeks 는 거부")
+    void balanceTrendRejectsNegativeWeeks() {
+        assertThatThrownBy(() -> sut.getAssetBalanceTrend(5L, USER_ID, -1))
+                .isInstanceOf(InvalidValueException.class);
+    }
 }
