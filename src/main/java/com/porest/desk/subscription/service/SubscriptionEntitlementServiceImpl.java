@@ -1,7 +1,5 @@
 package com.porest.desk.subscription.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -13,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 @Slf4j
@@ -20,10 +19,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SubscriptionEntitlementServiceImpl implements SubscriptionEntitlementService {
 
-    private static final TypeReference<List<String>> FEATURES_TYPE = new TypeReference<>() {};
-
     private final UserSubscriptionRepository subscriptionRepository;
-    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional(readOnly = true)
@@ -58,15 +54,27 @@ public class SubscriptionEntitlementServiceImpl implements SubscriptionEntitleme
             .toList();
     }
 
+    /**
+     * features JSON 배열(예: {@code ["SECURITIES","A"]})을 코드 목록으로 파싱.
+     * 코드는 대문자 식별자뿐이라 외부 JSON 라이브러리 없이 간단 파싱한다(ObjectMapper 빈 의존 제거).
+     */
     private List<String> parseFeatures(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
         }
-        try {
-            return objectMapper.readValue(json, FEATURES_TYPE);
-        } catch (Exception e) {
-            log.warn("구독 플랜 features 파싱 실패: {}", json, e);
+        String inner = json.trim();
+        if (inner.startsWith("[")) {
+            inner = inner.substring(1);
+        }
+        if (inner.endsWith("]")) {
+            inner = inner.substring(0, inner.length() - 1);
+        }
+        if (inner.isBlank()) {
             return List.of();
         }
+        return Arrays.stream(inner.split(","))
+            .map(s -> s.trim().replaceAll("^\"|\"$", ""))
+            .filter(s -> !s.isEmpty())
+            .toList();
     }
 }
