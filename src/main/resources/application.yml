@@ -85,6 +85,9 @@ app:
     base-url: ${SSO_API_URL}
   cors:
     allowed-origins: ${CORS_ORIGINS}
+  # 민감값 암호화 키 (토스 크리덴셜 등). Base64 32바이트, env 로만 주입
+  security:
+    encryption-key: ${APP_ENCRYPTION_KEY:}
   # 토스증권 Open API 연동 (조회 프록시). 인증정보는 .env 로만 주입
   toss:
     base-url: ${TOSS_API_URL:https://openapi.tossinvest.com}

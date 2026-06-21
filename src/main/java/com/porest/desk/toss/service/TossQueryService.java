@@ -52,8 +52,8 @@ public interface TossQueryService {
     // === Account / Asset (계좌·보유자산) ===
 
     /** 계좌 목록 조회 */
-    List<TossAccountDto.Account> getAccounts();
+    List<TossAccountDto.Account> getAccounts(Long userRowId);
 
     /** 보유 주식 조회 (accountSeq = 토스증권 계좌 식별 키) */
-    TossAccountDto.HoldingsOverview getHoldings(Long accountSeq, String symbol);
+    TossAccountDto.HoldingsOverview getHoldings(Long userRowId, Long accountSeq, String symbol);
 }

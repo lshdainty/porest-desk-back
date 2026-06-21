@@ -117,7 +117,7 @@ public class TossApiController {
     @GetMapping("/accounts")
     public ApiResponse<List<TossAccountDto.Account>> getAccounts(
             @LoginUser UserPrincipal loginUser) {
-        return ApiResponse.success(tossQueryService.getAccounts());
+        return ApiResponse.success(tossQueryService.getAccounts(loginUser.getRowId()));
     }
 
     @GetMapping("/holdings")
@@ -125,6 +125,6 @@ public class TossApiController {
             @LoginUser UserPrincipal loginUser,
             @RequestParam Long accountSeq,
             @RequestParam(required = false) String symbol) {
-        return ApiResponse.success(tossQueryService.getHoldings(accountSeq, symbol));
+        return ApiResponse.success(tossQueryService.getHoldings(loginUser.getRowId(), accountSeq, symbol));
     }
 }

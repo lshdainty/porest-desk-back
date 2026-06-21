@@ -133,18 +133,20 @@ public class TossQueryServiceImpl implements TossQueryService {
     // === Account / Asset ===
 
     @Override
-    public List<TossAccountDto.Account> getAccounts() {
-        return client.get("/api/v1/accounts", null,
+    public List<TossAccountDto.Account> getAccounts(Long userRowId) {
+        // 계좌목록은 키 주인 본인 계좌 → 사용자 개인 토큰
+        return client.getForUser(userRowId, "/api/v1/accounts", null, null,
                 new ParameterizedTypeReference<TossEnvelope<List<TossAccountDto.Account>>>() {});
     }
 
     @Override
-    public TossAccountDto.HoldingsOverview getHoldings(Long accountSeq, String symbol) {
+    public TossAccountDto.HoldingsOverview getHoldings(Long userRowId, Long accountSeq, String symbol) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         if (symbol != null) {
             q.add("symbol", symbol);
         }
-        return client.get("/api/v1/holdings", q, accountSeq,
+        // 보유주식은 본인 계좌 → 사용자 개인 토큰 + X-Tossinvest-Account
+        return client.getForUser(userRowId, "/api/v1/holdings", q, accountSeq,
                 new ParameterizedTypeReference<TossEnvelope<TossAccountDto.HoldingsOverview>>() {});
     }
 }

@@ -130,6 +130,14 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     TOSS_NOT_CONFIGURED("TOSS_001", "error.toss.not.configured", HttpStatus.SERVICE_UNAVAILABLE),
     TOSS_AUTH_ERROR("TOSS_002", "error.toss.auth.error", HttpStatus.BAD_GATEWAY),
     TOSS_API_ERROR("TOSS_003", "error.toss.api.error", HttpStatus.BAD_GATEWAY),
+    TOSS_CREDENTIAL_REQUIRED("TOSS_004", "error.toss.credential.required", HttpStatus.FORBIDDEN),
+    TOSS_CREDENTIAL_INVALID("TOSS_005", "error.toss.credential.invalid", HttpStatus.BAD_GATEWAY),
+
+    // Subscription (구독·기능권한)
+    SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),
+    SUBSCRIPTION_NOT_FOUND("SUBS_002", "error.notfound.subscription", HttpStatus.NOT_FOUND),
+    SUBSCRIPTION_PLAN_NOT_FOUND("SUBS_003", "error.notfound.subscription.plan", HttpStatus.NOT_FOUND),
+    SUBSCRIPTION_ALREADY_ACTIVE("SUBS_004", "error.subscription.already.active", HttpStatus.CONFLICT),
     ;
 
     private final String code;

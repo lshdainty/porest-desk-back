@@ -5,15 +5,8 @@ import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.toss.client.dto.TossTokenResponse;
 import com.porest.desk.toss.config.TossProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
 
 /**
  * 토스증권 OAuth2 액세스 토큰 관리자.<br>
@@ -40,15 +33,14 @@ public class TossTokenManager {
     private record TokenSnapshot(String token, long expiresAtMillis) {
     }
 
-    private final RestTemplate tossRestTemplate;
+    private final TossTokenIssuer issuer;
     private final TossProperties tossProperties;
 
     /** 현재 토큰 스냅샷 (없으면 null). 단일 volatile 참조로 원자적 publish. */
     private volatile TokenSnapshot snapshot;
 
-    public TossTokenManager(@Qualifier("tossRestTemplate") RestTemplate tossRestTemplate,
-                            TossProperties tossProperties) {
-        this.tossRestTemplate = tossRestTemplate;
+    public TossTokenManager(TossTokenIssuer issuer, TossProperties tossProperties) {
+        this.issuer = issuer;
         this.tossProperties = tossProperties;
     }
 
@@ -89,17 +81,8 @@ public class TossTokenManager {
             throw new ExternalServiceException(DeskErrorCode.TOSS_NOT_CONFIGURED);
         }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("grant_type", "client_credentials");
-        form.add("client_id", tossProperties.getClientId());
-        form.add("client_secret", tossProperties.getClientSecret());
-
         try {
-            TossTokenResponse res = tossRestTemplate.postForObject(
-                    "/oauth2/token", new HttpEntity<>(form, headers), TossTokenResponse.class);
+            TossTokenResponse res = issuer.issue(tossProperties.getClientId(), tossProperties.getClientSecret());
             if (res == null || res.accessToken() == null) {
                 throw new ExternalServiceException(DeskErrorCode.TOSS_AUTH_ERROR);
             }

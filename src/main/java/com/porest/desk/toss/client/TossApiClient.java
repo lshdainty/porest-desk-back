@@ -41,41 +41,51 @@ public class TossApiClient {
 
     private final RestTemplate tossRestTemplate;
     private final TossTokenManager tokenManager;
+    private final PerUserTossTokenManager perUserTokenManager;
     private final TossProperties tossProperties;
 
     public TossApiClient(@Qualifier("tossRestTemplate") RestTemplate tossRestTemplate,
                          TossTokenManager tokenManager,
+                         PerUserTossTokenManager perUserTokenManager,
                          TossProperties tossProperties) {
         this.tossRestTemplate = tossRestTemplate;
         this.tokenManager = tokenManager;
+        this.perUserTokenManager = perUserTokenManager;
         this.tossProperties = tossProperties;
     }
 
     /**
-     * 계좌 비귀속 조회(시세·종목·시장정보·계좌목록).
+     * 시장 데이터 조회(공용 앱 토큰). 시세·종목·시장정보 등 사용자 무관 데이터.
      */
     public <T> T get(String path, MultiValueMap<String, String> query,
                      ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
-        return get(path, query, null, typeRef);
-    }
-
-    /**
-     * 계좌 귀속 조회(보유주식 등). accountSeq 가 있으면 {@code X-Tossinvest-Account} 헤더를 추가한다.
-     */
-    public <T> T get(String path, MultiValueMap<String, String> query, Long accountSeq,
-                     ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
-        return execute(path, null, query, accountSeq, typeRef, true);
+        return execute(path, null, query, null, typeRef, true,
+            tokenManager::getAccessToken, tokenManager::invalidate);
     }
 
     /**
-     * 경로에 동적 세그먼트가 있는 조회(예: {@code /api/v1/stocks/{symbol}/warnings}).
+     * 경로에 동적 세그먼트가 있는 시장 데이터 조회(예: {@code /api/v1/stocks/{symbol}/warnings}).
      * pathVars 의 값은 URI 변수로 안전하게 인코딩된다.
      */
     public <T> T getPath(String pathTemplate, Map<String, ?> pathVars,
                          ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
-        return execute(pathTemplate, pathVars, null, null, typeRef, true);
+        return execute(pathTemplate, pathVars, null, null, typeRef, true,
+            tokenManager::getAccessToken, tokenManager::invalidate);
+    }
+
+    /**
+     * 계좌 데이터 조회(사용자 개인 토큰). 계좌목록·보유주식 등 본인 계좌 데이터.
+     * accountSeq 가 있으면 {@code X-Tossinvest-Account} 헤더를 추가한다.
+     * 본인 크리덴셜 미등록 시 {@code TOSS_CREDENTIAL_REQUIRED}.
+     */
+    public <T> T getForUser(Long userRowId, String path, MultiValueMap<String, String> query, Long accountSeq,
+                            ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
+        ensureConfigured();
+        return execute(path, null, query, accountSeq, typeRef, true,
+            () -> perUserTokenManager.getAccessToken(userRowId),
+            () -> perUserTokenManager.invalidate(userRowId));
     }
 
     private void ensureConfigured() {
@@ -87,9 +97,10 @@ public class TossApiClient {
 
     private <T> T execute(String pathTemplate, Map<String, ?> pathVars, MultiValueMap<String, String> query,
                           Long accountSeq, ParameterizedTypeReference<TossEnvelope<T>> typeRef,
-                          boolean retryOnUnauthorized) {
+                          boolean retryOnUnauthorized,
+                          java.util.function.Supplier<String> tokenSupplier, Runnable tokenInvalidator) {
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(tokenManager.getAccessToken());
+        headers.setBearerAuth(tokenSupplier.get());
         if (accountSeq != null) {
             headers.set(ACCOUNT_HEADER, String.valueOf(accountSeq));
         }
@@ -109,8 +120,8 @@ public class TossApiClient {
             if (retryOnUnauthorized) {
                 // 토큰이 무효화되었을 수 있으므로 1회 재발급 후 재시도한다.
                 log.debug("토스증권 401 - 토큰 재발급 후 재시도");
-                tokenManager.invalidate();
-                return execute(pathTemplate, pathVars, query, accountSeq, typeRef, false);
+                tokenInvalidator.run();
+                return execute(pathTemplate, pathVars, query, accountSeq, typeRef, false, tokenSupplier, tokenInvalidator);
             }
             throw toExternalException(e, pathTemplate);
         } catch (HttpStatusCodeException e) {
