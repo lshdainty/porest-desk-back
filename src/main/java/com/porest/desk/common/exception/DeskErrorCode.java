@@ -125,6 +125,11 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CARD_BILLING_NOT_CREDIT_CARD("CARD_005", "error.card.billing.not.credit.card", HttpStatus.BAD_REQUEST),
     CARD_BILLING_PAYMENT_ASSET_REQUIRED("CARD_006", "error.card.billing.payment.asset.required", HttpStatus.BAD_REQUEST),
     CARD_BILLING_INSUFFICIENT_BALANCE("CARD_007", "error.card.billing.insufficient.balance", HttpStatus.BAD_REQUEST),
+
+    // Toss Securities (토스증권 Open API 연동)
+    TOSS_NOT_CONFIGURED("TOSS_001", "error.toss.not.configured", HttpStatus.SERVICE_UNAVAILABLE),
+    TOSS_AUTH_ERROR("TOSS_002", "error.toss.auth.error", HttpStatus.BAD_GATEWAY),
+    TOSS_API_ERROR("TOSS_003", "error.toss.api.error", HttpStatus.BAD_GATEWAY),
     ;
 
     private final String code;
