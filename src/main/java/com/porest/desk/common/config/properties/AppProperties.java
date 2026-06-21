@@ -12,11 +12,19 @@ import org.springframework.stereotype.Component;
 public class AppProperties {
     private Sso sso = new Sso();
     private Cors cors = new Cors();
+    private Security security = new Security();
 
     @Getter
     @Setter
     public static class Sso {
         private String baseUrl;
+    }
+
+    @Getter
+    @Setter
+    public static class Security {
+        /** 민감값 AES-256-GCM 암호화 키 (Base64 인코딩된 32바이트). env 로만 주입. */
+        private String encryptionKey;
     }
 
     @Getter
