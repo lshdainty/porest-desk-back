@@ -108,6 +108,21 @@ class SubscriptionServiceImplTest {
     }
 
     @Test
+    @DisplayName("활성 플랜 목록을 정렬순으로 반환")
+    void getActivePlans() {
+        SubscriptionPlan p = plan(1);
+        org.mockito.Mockito.lenient().when(p.getPlanCode()).thenReturn("SECURITIES");
+        org.mockito.Mockito.lenient().when(p.getPlanName()).thenReturn("증권 구독");
+        given(planRepository.findByIsActiveAndIsDeletedOrderBySortOrderAsc(YNType.Y, YNType.N))
+            .willReturn(List.of(p));
+
+        List<SubscriptionService.PlanInfo> plans = sut.getActivePlans();
+
+        assertThat(plans).hasSize(1);
+        assertThat(plans.get(0).planCode()).isEqualTo("SECURITIES");
+    }
+
+    @Test
     @DisplayName("만료 배치: auto_renew=Y 는 기간 연장, N 은 EXPIRED")
     void processExpiry_renewVsExpire() {
         UserSubscription renewable = UserSubscription.activate(USER, plan(1), LocalDateTime.now(), true);

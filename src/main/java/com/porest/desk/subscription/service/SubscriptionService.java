@@ -24,6 +24,15 @@ public interface SubscriptionService {
     /** 만료 배치: 만료된 구독을 auto_renew 면 기간연장, 아니면 EXPIRED. 처리 건수 반환. */
     int processExpiry();
 
+    /** 판매중(활성) 플랜 목록 — 플랜 화면용. */
+    java.util.List<PlanInfo> getActivePlans();
+
+    record PlanInfo(String planCode, String planName, Integer durationMonths) {
+        public static PlanInfo from(com.porest.desk.subscription.domain.SubscriptionPlan p) {
+            return new PlanInfo(p.getPlanCode(), p.getPlanName(), p.getDurationMonths());
+        }
+    }
+
     record SubscriptionInfo(
         String planCode,
         String planName,

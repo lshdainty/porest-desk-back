@@ -25,6 +25,12 @@ public class SubscriptionApiController {
 
     private final SubscriptionService subscriptionService;
 
+    /** 판매중 플랜 목록 (플랜 화면용). 인증만 필요. */
+    @GetMapping("/plans")
+    public ApiResponse<java.util.List<SubscriptionService.PlanInfo>> getPlans() {
+        return ApiResponse.success(subscriptionService.getActivePlans());
+    }
+
     @PostMapping
     public ApiResponse<SubscriptionResponse> subscribe(
             @LoginUser UserPrincipal loginUser,

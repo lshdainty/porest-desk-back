@@ -63,6 +63,13 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<PlanInfo> getActivePlans() {
+        return planRepository.findByIsActiveAndIsDeletedOrderBySortOrderAsc(YNType.Y, YNType.N)
+            .stream().map(PlanInfo::from).toList();
+    }
+
+    @Override
     @Transactional
     public int processExpiry() {
         LocalDateTime now = LocalDateTime.now();
