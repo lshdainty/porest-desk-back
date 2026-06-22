@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 사용자별 토스 액세스 토큰 관리자(데이터격리). userRowId 별로 본인 크리덴셜로 발급한 토큰을 캐시한다.
- * 공용 앱 토큰({@link TossTokenManager})과 분리 — 계좌데이터(보유주식·계좌목록)만 이 경로를 쓴다.
+ * 토스 API는 시세·계좌 구분 없이 발급된 토큰으로만 호출하므로(scope 없음), 모든 조회가 이 경로를 쓴다.
  */
 @Slf4j
 @Component

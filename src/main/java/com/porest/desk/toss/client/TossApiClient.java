@@ -40,39 +40,40 @@ public class TossApiClient {
     private static final String ACCOUNT_HEADER = "X-Tossinvest-Account";
 
     private final RestTemplate tossRestTemplate;
-    private final TossTokenManager tokenManager;
     private final PerUserTossTokenManager perUserTokenManager;
     private final TossProperties tossProperties;
 
     public TossApiClient(@Qualifier("tossRestTemplate") RestTemplate tossRestTemplate,
-                         TossTokenManager tokenManager,
                          PerUserTossTokenManager perUserTokenManager,
                          TossProperties tossProperties) {
         this.tossRestTemplate = tossRestTemplate;
-        this.tokenManager = tokenManager;
         this.perUserTokenManager = perUserTokenManager;
         this.tossProperties = tossProperties;
     }
 
     /**
-     * 시장 데이터 조회(공용 앱 토큰). 시세·종목·시장정보 등 사용자 무관 데이터.
+     * 시장 데이터 조회(사용자 개인 토큰). 시세·종목·시장정보 등.
+     * 토스 API는 시세도 발급된 access token 으로만 호출하며 권한 scope 구분이 없으므로,
+     * porest-desk 는 사용자가 등록한 본인 키로 대리 조회한다(본인 키 미등록 시 {@code TOSS_CREDENTIAL_REQUIRED}).
      */
-    public <T> T get(String path, MultiValueMap<String, String> query,
+    public <T> T get(Long userRowId, String path, MultiValueMap<String, String> query,
                      ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
         return execute(path, null, query, null, typeRef, true,
-            tokenManager::getAccessToken, tokenManager::invalidate);
+            () -> perUserTokenManager.getAccessToken(userRowId),
+            () -> perUserTokenManager.invalidate(userRowId));
     }
 
     /**
      * 경로에 동적 세그먼트가 있는 시장 데이터 조회(예: {@code /api/v1/stocks/{symbol}/warnings}).
-     * pathVars 의 값은 URI 변수로 안전하게 인코딩된다.
+     * pathVars 의 값은 URI 변수로 안전하게 인코딩된다. 사용자 개인 토큰 사용.
      */
-    public <T> T getPath(String pathTemplate, Map<String, ?> pathVars,
+    public <T> T getPath(Long userRowId, String pathTemplate, Map<String, ?> pathVars,
                          ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
         return execute(pathTemplate, pathVars, null, null, typeRef, true,
-            tokenManager::getAccessToken, tokenManager::invalidate);
+            () -> perUserTokenManager.getAccessToken(userRowId),
+            () -> perUserTokenManager.invalidate(userRowId));
     }
 
     /**
