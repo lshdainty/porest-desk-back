@@ -35,14 +35,14 @@ public class TossApiController {
     public ApiResponse<TossMarketDto.OrderbookResponse> getOrderbook(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbol) {
-        return ApiResponse.success(tossQueryService.getOrderbook(symbol));
+        return ApiResponse.success(tossQueryService.getOrderbook(loginUser.getRowId(), symbol));
     }
 
     @GetMapping("/prices")
     public ApiResponse<List<TossMarketDto.PriceResponse>> getPrices(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbols) {
-        return ApiResponse.success(tossQueryService.getPrices(symbols));
+        return ApiResponse.success(tossQueryService.getPrices(loginUser.getRowId(), symbols));
     }
 
     @GetMapping("/trades")
@@ -50,14 +50,14 @@ public class TossApiController {
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbol,
             @RequestParam(required = false) Integer count) {
-        return ApiResponse.success(tossQueryService.getTrades(symbol, count));
+        return ApiResponse.success(tossQueryService.getTrades(loginUser.getRowId(), symbol, count));
     }
 
     @GetMapping("/price-limits")
     public ApiResponse<TossMarketDto.PriceLimitResponse> getPriceLimits(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbol) {
-        return ApiResponse.success(tossQueryService.getPriceLimits(symbol));
+        return ApiResponse.success(tossQueryService.getPriceLimits(loginUser.getRowId(), symbol));
     }
 
     @GetMapping("/candles")
@@ -68,7 +68,7 @@ public class TossApiController {
             @RequestParam(required = false) Integer count,
             @RequestParam(required = false) String before,
             @RequestParam(required = false) Boolean adjusted) {
-        return ApiResponse.success(tossQueryService.getCandles(symbol, interval, count, before, adjusted));
+        return ApiResponse.success(tossQueryService.getCandles(loginUser.getRowId(), symbol, interval, count, before, adjusted));
     }
 
     // === Stock Info (종목 정보) ===
@@ -77,14 +77,14 @@ public class TossApiController {
     public ApiResponse<List<TossStockDto.StockInfo>> getStocks(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbols) {
-        return ApiResponse.success(tossQueryService.getStocks(symbols));
+        return ApiResponse.success(tossQueryService.getStocks(loginUser.getRowId(), symbols));
     }
 
     @GetMapping("/stocks/{symbol}/warnings")
     public ApiResponse<List<TossStockDto.StockWarning>> getStockWarnings(
             @LoginUser UserPrincipal loginUser,
             @PathVariable String symbol) {
-        return ApiResponse.success(tossQueryService.getStockWarnings(symbol));
+        return ApiResponse.success(tossQueryService.getStockWarnings(loginUser.getRowId(), symbol));
     }
 
     // === Market Info (환율·장 일정) ===
@@ -95,21 +95,21 @@ public class TossApiController {
             @RequestParam String baseCurrency,
             @RequestParam String quoteCurrency,
             @RequestParam(required = false) String dateTime) {
-        return ApiResponse.success(tossQueryService.getExchangeRate(baseCurrency, quoteCurrency, dateTime));
+        return ApiResponse.success(tossQueryService.getExchangeRate(loginUser.getRowId(), baseCurrency, quoteCurrency, dateTime));
     }
 
     @GetMapping("/market-calendar/KR")
     public ApiResponse<TossMarketInfoDto.KrMarketCalendarResponse> getKrMarketCalendar(
             @LoginUser UserPrincipal loginUser,
             @RequestParam(required = false) String date) {
-        return ApiResponse.success(tossQueryService.getKrMarketCalendar(date));
+        return ApiResponse.success(tossQueryService.getKrMarketCalendar(loginUser.getRowId(), date));
     }
 
     @GetMapping("/market-calendar/US")
     public ApiResponse<TossMarketInfoDto.UsMarketCalendarResponse> getUsMarketCalendar(
             @LoginUser UserPrincipal loginUser,
             @RequestParam(required = false) String date) {
-        return ApiResponse.success(tossQueryService.getUsMarketCalendar(date));
+        return ApiResponse.success(tossQueryService.getUsMarketCalendar(loginUser.getRowId(), date));
     }
 
     // === Account / Asset (계좌·보유자산) ===

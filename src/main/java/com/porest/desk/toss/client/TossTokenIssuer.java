@@ -12,8 +12,8 @@ import org.springframework.web.client.RestTemplate;
 
 /**
  * 토스 OAuth2 Client Credentials 토큰을 임의 크리덴셜로 발급하는 공통 컴포넌트.
- * 공용 앱 키({@link TossTokenManager})·사용자 개인 키({@link PerUserTossTokenManager})·
- * 크리덴셜 등록 검증(TossCredentialService)이 모두 이 발급기를 공유한다.
+ * 사용자 개인 키({@link PerUserTossTokenManager})·크리덴셜 등록 검증(TossCredentialService)이
+ * 모두 이 발급기를 공유한다.
  */
 @Component
 public class TossTokenIssuer {

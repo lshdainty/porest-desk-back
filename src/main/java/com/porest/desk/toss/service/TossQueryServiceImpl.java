@@ -28,42 +28,42 @@ public class TossQueryServiceImpl implements TossQueryService {
     // === Market Data ===
 
     @Override
-    public TossMarketDto.OrderbookResponse getOrderbook(String symbol) {
+    public TossMarketDto.OrderbookResponse getOrderbook(Long userRowId, String symbol) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbol", symbol);
-        return client.get("/api/v1/orderbook", q,
+        return client.get(userRowId, "/api/v1/orderbook", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketDto.OrderbookResponse>>() {});
     }
 
     @Override
-    public List<TossMarketDto.PriceResponse> getPrices(String symbols) {
+    public List<TossMarketDto.PriceResponse> getPrices(Long userRowId, String symbols) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbols", symbols);
-        return client.get("/api/v1/prices", q,
+        return client.get(userRowId, "/api/v1/prices", q,
                 new ParameterizedTypeReference<TossEnvelope<List<TossMarketDto.PriceResponse>>>() {});
     }
 
     @Override
-    public List<TossMarketDto.Trade> getTrades(String symbol, Integer count) {
+    public List<TossMarketDto.Trade> getTrades(Long userRowId, String symbol, Integer count) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbol", symbol);
         if (count != null) {
             q.add("count", String.valueOf(count));
         }
-        return client.get("/api/v1/trades", q,
+        return client.get(userRowId, "/api/v1/trades", q,
                 new ParameterizedTypeReference<TossEnvelope<List<TossMarketDto.Trade>>>() {});
     }
 
     @Override
-    public TossMarketDto.PriceLimitResponse getPriceLimits(String symbol) {
+    public TossMarketDto.PriceLimitResponse getPriceLimits(Long userRowId, String symbol) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbol", symbol);
-        return client.get("/api/v1/price-limits", q,
+        return client.get(userRowId, "/api/v1/price-limits", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketDto.PriceLimitResponse>>() {});
     }
 
     @Override
-    public TossMarketDto.CandlePageResponse getCandles(String symbol, String interval, Integer count, String before, Boolean adjusted) {
+    public TossMarketDto.CandlePageResponse getCandles(Long userRowId, String symbol, String interval, Integer count, String before, Boolean adjusted) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbol", symbol);
         q.add("interval", interval);
@@ -76,57 +76,57 @@ public class TossQueryServiceImpl implements TossQueryService {
         if (adjusted != null) {
             q.add("adjusted", String.valueOf(adjusted));
         }
-        return client.get("/api/v1/candles", q,
+        return client.get(userRowId, "/api/v1/candles", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketDto.CandlePageResponse>>() {});
     }
 
     // === Stock Info ===
 
     @Override
-    public List<TossStockDto.StockInfo> getStocks(String symbols) {
+    public List<TossStockDto.StockInfo> getStocks(Long userRowId, String symbols) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbols", symbols);
-        return client.get("/api/v1/stocks", q,
+        return client.get(userRowId, "/api/v1/stocks", q,
                 new ParameterizedTypeReference<TossEnvelope<List<TossStockDto.StockInfo>>>() {});
     }
 
     @Override
-    public List<TossStockDto.StockWarning> getStockWarnings(String symbol) {
-        return client.getPath("/api/v1/stocks/{symbol}/warnings", Map.of("symbol", symbol),
+    public List<TossStockDto.StockWarning> getStockWarnings(Long userRowId, String symbol) {
+        return client.getPath(userRowId, "/api/v1/stocks/{symbol}/warnings", Map.of("symbol", symbol),
                 new ParameterizedTypeReference<TossEnvelope<List<TossStockDto.StockWarning>>>() {});
     }
 
     // === Market Info ===
 
     @Override
-    public TossMarketInfoDto.ExchangeRateResponse getExchangeRate(String baseCurrency, String quoteCurrency, String dateTime) {
+    public TossMarketInfoDto.ExchangeRateResponse getExchangeRate(Long userRowId, String baseCurrency, String quoteCurrency, String dateTime) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("baseCurrency", baseCurrency);
         q.add("quoteCurrency", quoteCurrency);
         if (dateTime != null) {
             q.add("dateTime", dateTime);
         }
-        return client.get("/api/v1/exchange-rate", q,
+        return client.get(userRowId, "/api/v1/exchange-rate", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketInfoDto.ExchangeRateResponse>>() {});
     }
 
     @Override
-    public TossMarketInfoDto.KrMarketCalendarResponse getKrMarketCalendar(String date) {
+    public TossMarketInfoDto.KrMarketCalendarResponse getKrMarketCalendar(Long userRowId, String date) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         if (date != null) {
             q.add("date", date);
         }
-        return client.get("/api/v1/market-calendar/KR", q,
+        return client.get(userRowId, "/api/v1/market-calendar/KR", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketInfoDto.KrMarketCalendarResponse>>() {});
     }
 
     @Override
-    public TossMarketInfoDto.UsMarketCalendarResponse getUsMarketCalendar(String date) {
+    public TossMarketInfoDto.UsMarketCalendarResponse getUsMarketCalendar(Long userRowId, String date) {
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         if (date != null) {
             q.add("date", date);
         }
-        return client.get("/api/v1/market-calendar/US", q,
+        return client.get(userRowId, "/api/v1/market-calendar/US", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketInfoDto.UsMarketCalendarResponse>>() {});
     }
 
