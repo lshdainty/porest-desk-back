@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * 모든 HTTP 요청/응답에 대한 포괄적인 로깅을 수행하는 필터
@@ -42,6 +43,33 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
             "/favicon.ico",
             "/api/v1/notifications/stream"
     );
+
+    /**
+     * 로그에서 값을 마스킹할 민감 필드명(대소문자 무시).
+     * 비밀번호 외에 토스증권 클라이언트 키, OAuth 토큰류를 포함한다.
+     */
+    private static final List<String> SENSITIVE_KEYS = List.of(
+            "password", "user_pw",
+            "clientSecret", "client_secret",
+            "clientId", "client_id",
+            "secret",
+            "accessToken", "access_token",
+            "refreshToken", "refresh_token"
+    );
+
+    // 민감 키 alternation. 모든 키가 [A-Za-z_]+ 라 정규식 메타문자가 없어 그대로 결합 가능.
+    private static final String KEY_ALTERNATION = String.join("|", SENSITIVE_KEYS);
+
+    // JSON 본문 "key":"value" — 값은 이스케이프(\")를 건너뛰며 종료 따옴표까지 매칭(부분 노출 방지).
+    // 분기가 상호배타라 선형(ReDoS 없음)이고, 전체 키를 한 패턴으로 묶어 본문당 매칭 1회로 끝낸다.
+    // 참고: 값이 따옴표로 감싸인 문자열만 대상으로 한다(민감 필드는 모두 문자열). 숫자/불리언/null
+    // 형태의 값(예: {"accessToken":12345})은 마스킹하지 않는다.
+    private static final Pattern JSON_PATTERN = Pattern.compile(
+            "(?i)(\"(?:" + KEY_ALTERNATION + ")\"\\s*:\\s*\")(?:\\\\.|[^\"\\\\])*\"");
+
+    // 쿼리스트링/폼 key=value (문자열 시작 또는 ? & 뒤)
+    private static final Pattern QUERY_PATTERN = Pattern.compile(
+            "(?i)((?:^|[?&])(?:" + KEY_ALTERNATION + ")=)[^&]*");
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -113,8 +141,8 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
             String requestBody = getRequestBody(request);
             String responseBody = getResponseBody(response);
 
-            // URI에 쿼리스트링 포함
-            String fullUri = queryString != null ? uri + "?" + queryString : uri;
+            // URI에 쿼리스트링 포함 (쿼리스트링에 담긴 민감값도 마스킹)
+            String fullUri = queryString != null ? uri + "?" + maskSensitiveData(queryString) : uri;
 
             // Body 잘림 여부 확인
             boolean requestBodyTruncated = requestBody != null && requestBody.length() > MAX_BODY_LENGTH;
@@ -229,7 +257,8 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     private String getResponseBody(ContentCachingResponseWrapper response) {
         byte[] content = response.getContentAsByteArray();
         if (content.length > 0) {
-            return new String(content, StandardCharsets.UTF_8);
+            String body = new String(content, StandardCharsets.UTF_8);
+            return maskSensitiveData(body);
         }
         return null;
     }
@@ -251,15 +280,15 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 민감한 정보 마스킹 (비밀번호, 토큰 등)
+     * 민감한 정보 마스킹 (비밀번호, 토스 클라이언트 키, OAuth 토큰 등).
+     * JSON 본문의 {@code "key":"value"} 와 쿼리/폼의 {@code key=value} 양쪽을 모두 처리하며,
+     * 키 비교는 대소문자를 무시한다. 요청·응답 본문과 URL 쿼리스트링 로깅 전에 호출한다.
      */
-    private String maskSensitiveData(String body) {
-        if (body.contains("password") || body.contains("user_pw")) {
-            body = body.replaceAll("(\"password\"\\s*:\\s*\")([^\"]+)(\")", "$1***$3")
-                      .replaceAll("(\"user_pw\"\\s*:\\s*\")([^\"]+)(\")", "$1***$3")
-                      .replaceAll("(&|\\?)password=([^&]+)", "$1password=***")
-                      .replaceAll("(&|\\?)user_pw=([^&]+)", "$1user_pw=***");
+    String maskSensitiveData(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
         }
-        return body;
+        String masked = JSON_PATTERN.matcher(text).replaceAll("$1***\"");
+        return QUERY_PATTERN.matcher(masked).replaceAll("$1***");
     }
 }
