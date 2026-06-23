@@ -1,6 +1,7 @@
 package com.porest.desk.toss.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.core.controller.dto.CursorResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.toss.dto.TossAccountDto;
@@ -60,15 +61,19 @@ public class TossApiController {
         return ApiResponse.success(tossQueryService.getPriceLimits(loginUser.getRowId(), symbol));
     }
 
+    /**
+     * 캔들 차트 조회. 커서 기반 단일 페이지(요청당 {@code size}개, 토스 상한 200).
+     * 더 과거가 있으면 응답 {@code meta.nextCursor}를 다음 요청 {@code cursor}로 전달한다(시간 역방향 lazy-load).
+     */
     @GetMapping("/candles")
-    public ApiResponse<TossMarketDto.CandlePageResponse> getCandles(
+    public ApiResponse<CursorResponse<TossMarketDto.Candle>> getCandles(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbol,
             @RequestParam String interval,
-            @RequestParam(required = false) Integer count,
-            @RequestParam(required = false) String before,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Boolean adjusted) {
-        return ApiResponse.success(tossQueryService.getCandles(loginUser.getRowId(), symbol, interval, count, before, adjusted));
+        return ApiResponse.success(tossQueryService.getCandles(loginUser.getRowId(), symbol, interval, size, cursor, adjusted));
     }
 
     // === Stock Info (종목 정보) ===

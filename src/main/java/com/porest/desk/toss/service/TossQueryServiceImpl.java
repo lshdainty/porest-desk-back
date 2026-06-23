@@ -1,5 +1,6 @@
 package com.porest.desk.toss.service;
 
+import com.porest.core.controller.dto.CursorResponse;
 import com.porest.desk.toss.client.TossApiClient;
 import com.porest.desk.toss.client.dto.TossEnvelope;
 import com.porest.desk.toss.dto.TossAccountDto;
@@ -24,6 +25,9 @@ import java.util.Map;
 public class TossQueryServiceImpl implements TossQueryService {
 
     private final TossApiClient client;
+
+    /** 토스 candles count 상한(min:1 max:200). 한 페이지 최대 크기. */
+    private static final int TOSS_CANDLE_MAX = 200;
 
     // === Market Data ===
 
@@ -63,21 +67,29 @@ public class TossQueryServiceImpl implements TossQueryService {
     }
 
     @Override
-    public TossMarketDto.CandlePageResponse getCandles(Long userRowId, String symbol, String interval, Integer count, String before, Boolean adjusted) {
+    public CursorResponse<TossMarketDto.Candle> getCandles(Long userRowId, String symbol, String interval, Integer size, String cursor, Boolean adjusted) {
+        int pageSize = (size == null || size <= 0) ? TOSS_CANDLE_MAX : Math.min(size, TOSS_CANDLE_MAX);
+
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("symbol", symbol);
         q.add("interval", interval);
-        if (count != null) {
-            q.add("count", String.valueOf(count));
-        }
-        if (before != null) {
-            q.add("before", before);
+        q.add("count", String.valueOf(pageSize));
+        if (cursor != null && !cursor.isBlank()) {
+            // 커서 = 직전 페이지의 nextBefore. 토스는 before 파라미터로 더 과거 페이지를 가리킨다.
+            q.add("before", cursor);
         }
         if (adjusted != null) {
             q.add("adjusted", String.valueOf(adjusted));
         }
-        return client.get(userRowId, "/api/v1/candles", q,
+
+        TossMarketDto.CandlePageResponse page = client.get(userRowId, "/api/v1/candles", q,
                 new ParameterizedTypeReference<TossEnvelope<TossMarketDto.CandlePageResponse>>() {});
+
+        List<TossMarketDto.Candle> candles = (page == null || page.candles() == null) ? List.of() : page.candles();
+        String nextBefore = page == null ? null : page.nextBefore();
+        boolean hasNext = nextBefore != null && !nextBefore.isBlank();
+        // 토스 nextBefore -> CursorResponse.meta.nextCursor (forward-only, 시간 역방향). 수동 of 로 트리밍 없이 그대로 매핑.
+        return CursorResponse.of(candles, pageSize, hasNext, nextBefore);
     }
 
     // === Stock Info ===
