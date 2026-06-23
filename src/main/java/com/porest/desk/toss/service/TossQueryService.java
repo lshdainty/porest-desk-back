@@ -1,5 +1,6 @@
 package com.porest.desk.toss.service;
 
+import com.porest.core.controller.dto.CursorResponse;
 import com.porest.desk.toss.dto.TossAccountDto;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.dto.TossMarketInfoDto;
@@ -31,8 +32,15 @@ public interface TossQueryService {
     /** 상/하한가 조회 */
     TossMarketDto.PriceLimitResponse getPriceLimits(Long userRowId, String symbol);
 
-    /** 캔들 차트 조회 (interval: 1m | 1d) */
-    TossMarketDto.CandlePageResponse getCandles(Long userRowId, String symbol, String interval, Integer count, String before, Boolean adjusted);
+    /**
+     * 캔들 차트 조회 (interval: 1m | 1d). 커서 기반 단일 페이지 프록시.
+     * <p>요청당 {@code size} 개(토스 상한 200)를 조회하며, 더 과거 페이지가 있으면
+     * {@code CursorResponse.meta.nextCursor}(= 토스 nextBefore)를 다음 {@code cursor}로 전달한다.
+     *
+     * @param size   페이지 크기(null/0이하면 200, 200 초과 시 200으로 cap)
+     * @param cursor 직전 페이지의 nextCursor(= 토스 before). 첫 페이지면 null
+     */
+    CursorResponse<TossMarketDto.Candle> getCandles(Long userRowId, String symbol, String interval, Integer size, String cursor, Boolean adjusted);
 
     // === Stock Info (종목 정보) ===
 
