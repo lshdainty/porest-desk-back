@@ -25,7 +25,8 @@ public class WithLoginUserSecurityContextFactory
                 annotation.userId(),
                 annotation.userName(),
                 annotation.userEmail(),
-                annotation.rowId()
+                annotation.rowId(),
+                "access"
         ));
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList());

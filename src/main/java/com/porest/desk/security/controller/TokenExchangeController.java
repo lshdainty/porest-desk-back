@@ -4,6 +4,7 @@ import com.porest.core.controller.ApiResponse;
 import com.porest.desk.common.config.properties.JwtProperties;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.controller.dto.TokenExchangeDto;
+import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.security.service.TokenExchangeService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TokenExchangeController {
     private final TokenExchangeService tokenExchangeService;
     private final JwtProperties jwtProperties;
+    private final JwtTokenProvider jwtTokenProvider;
 
     public static final String ACCESS_TOKEN_COOKIE = "desk_access_token";
 
@@ -48,6 +50,24 @@ public class TokenExchangeController {
             loginUser.getUserName(),
             loginUser.getUserEmail(),
             "Asia/Seoul"
+        ));
+    }
+
+    /**
+     * 임베드(차트 WebView 등) 단명 컨텍스트용 60초 토큰 발급.
+     * 인증된 사용자만 호출 가능. 발급된 토큰은 Authorization: Bearer 로 사용하며,
+     * JwtAuthenticationFilter 는 typ=embed 토큰의 쿠키 갱신을 skip 한다.
+     */
+    @PostMapping("/embed-token")
+    public ApiResponse<TokenExchangeDto.EmbedTokenResponse> issueEmbedToken(@LoginUser UserPrincipal loginUser) {
+        String token = jwtTokenProvider.createEmbedToken(
+            loginUser.getUserId(),
+            loginUser.getUserName(),
+            loginUser.getUserEmail(),
+            loginUser.getRowId()
+        );
+        return ApiResponse.success(new TokenExchangeDto.EmbedTokenResponse(
+            token, JwtTokenProvider.EMBED_TOKEN_EXPIRATION_MS / 1000
         ));
     }
 
