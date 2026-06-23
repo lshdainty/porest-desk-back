@@ -21,6 +21,9 @@ import java.util.Date;
 public class JwtTokenProvider {
     private final JwtProperties jwtProperties;
 
+    /** 임베드 토큰 만료(ms). 60초 — 차트 임베드 등 단명 컨텍스트 전용. */
+    public static final long EMBED_TOKEN_EXPIRATION_MS = 60_000L;
+
     public String createAccessToken(String userId, String userName, String userEmail, Long userRowId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtProperties.getAccessTokenExpiration());
@@ -30,6 +33,28 @@ public class JwtTokenProvider {
             .claim("userName", userName)
             .claim("userEmail", userEmail)
             .claim("userRowId", userRowId)
+            .claim("typ", "access")
+            .issuedAt(now)
+            .expiration(expiry)
+            .signWith(getSigningKey())
+            .compact();
+    }
+
+    /**
+     * 임베드용 단명(60초) 토큰. 메인 secret 으로 서명되어 JwtAuthenticationFilter 가
+     * 그대로 인식한다. claim {@code typ=embed} 로 필터의 쿠키 갱신을 skip 시킨다.
+     * 차트 WebView 처럼 외부 컨텍스트로 한 번 노출되는 단명 컨텍스트에 사용.
+     */
+    public String createEmbedToken(String userId, String userName, String userEmail, Long userRowId) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + EMBED_TOKEN_EXPIRATION_MS);
+
+        return Jwts.builder()
+            .subject(userId)
+            .claim("userName", userName)
+            .claim("userEmail", userEmail)
+            .claim("userRowId", userRowId)
+            .claim("typ", "embed")
             .issuedAt(now)
             .expiration(expiry)
             .signWith(getSigningKey())
@@ -43,11 +68,13 @@ public class JwtTokenProvider {
             .parseSignedClaims(token)
             .getPayload();
 
+        String typ = claims.get("typ", String.class);
         return new JwtClaimsPrincipal(
             claims.getSubject(),
             claims.get("userName", String.class),
             claims.get("userEmail", String.class),
-            claims.get("userRowId", Long.class)
+            claims.get("userRowId", Long.class),
+            typ == null ? "access" : typ // 기존 토큰 호환(typ 미존재 → access)
         );
     }
 

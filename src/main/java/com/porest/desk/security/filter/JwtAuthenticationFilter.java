@@ -52,14 +52,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             );
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            long remainingMs = jwtTokenProvider.getRemainingExpiration(token);
-            if (remainingMs > 0 && remainingMs < RENEWAL_THRESHOLD_MS) {
-                String newToken = jwtTokenProvider.createAccessToken(
-                    claims.userId(), claims.userName(),
-                    claims.userEmail(), claims.userRowId()
-                );
-                renewAccessTokenCookie(response, newToken);
-                log.debug("Token renewed for user: {}", claims.userId());
+            // 임베드 토큰(typ=embed)은 단명 컨텍스트 전용이라 쿠키 갱신 대상에서 제외한다.
+            // 60초 < RENEWAL_THRESHOLD 라 항상 갱신 트리거되는 부작용을 막고,
+            // 임베드용 토큰이 access cookie 로 승격되지 않도록 보장한다.
+            if (!claims.isEmbed()) {
+                long remainingMs = jwtTokenProvider.getRemainingExpiration(token);
+                if (remainingMs > 0 && remainingMs < RENEWAL_THRESHOLD_MS) {
+                    String newToken = jwtTokenProvider.createAccessToken(
+                        claims.userId(), claims.userName(),
+                        claims.userEmail(), claims.userRowId()
+                    );
+                    renewAccessTokenCookie(response, newToken);
+                    log.debug("Token renewed for user: {}", claims.userId());
+                }
             }
         }
 
