@@ -132,6 +132,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     TOSS_API_ERROR("TOSS_003", "error.toss.api.error", HttpStatus.BAD_GATEWAY),
     TOSS_CREDENTIAL_REQUIRED("TOSS_004", "error.toss.credential.required", HttpStatus.FORBIDDEN),
     TOSS_CREDENTIAL_INVALID("TOSS_005", "error.toss.credential.invalid", HttpStatus.BAD_GATEWAY),
+    TOSS_SYMBOL_INVALID("TOSS_006", "error.toss.symbol.invalid", HttpStatus.BAD_REQUEST),
 
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),
