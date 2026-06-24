@@ -51,6 +51,13 @@ public class AssetBalanceHistoryService {
         recompute(asset);
     }
 
+    /** 투자 평가액 갱신 — 절대 앵커(점프). 토스 시세×수량 등 외부 평가액 반영 지점(추이용). */
+    public void recordValuation(Asset asset, long valuation, LocalDateTime effectiveAt) {
+        repository.save(AssetBalanceHistory.of(
+            asset.getUser(), asset, BalanceSourceType.VALUATION, asset.getRowId(), valuation, effectiveAt));
+        recompute(asset);
+    }
+
     /** 수입/지출 거래 — flow(INCOME=+, EXPENSE=-). asset 미연결/널이면 no-op. */
     public void recordExpense(Asset asset, Long expenseId, ExpenseType type, Long amount, LocalDateTime effectiveAt) {
         if (asset == null || type == null || amount == null) {

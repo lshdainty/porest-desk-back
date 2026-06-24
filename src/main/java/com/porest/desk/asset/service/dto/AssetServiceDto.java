@@ -80,8 +80,8 @@ public class AssetServiceDto {
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
-        Long tossAccountSeq,
         String tossSymbol,
+        Long tossQuantity,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -102,8 +102,8 @@ public class AssetServiceDto {
                 asset.getCreditLimit(),
                 asset.getPaymentDay(),
                 asset.getPaymentAsset() != null ? asset.getPaymentAsset().getRowId() : null,
-                asset.getTossAccountSeq(),
                 asset.getTossSymbol(),
+                asset.getTossQuantity(),
                 asset.getCreateAt(),
                 asset.getModifyAt()
             );
