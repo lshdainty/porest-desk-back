@@ -7,7 +7,11 @@ import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
+import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.repository.CardCatalogRepository;
+import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.subscription.service.SubscriptionEntitlementService;
+import com.porest.desk.toss.credential.service.TossCredentialService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -39,10 +44,16 @@ class AssetServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private CardCatalogRepository cardCatalogRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
+    @Mock private SubscriptionEntitlementService entitlementService;
+    @Mock private TossCredentialService tossCredentialService;
 
     @InjectMocks private AssetServiceImpl sut;
 
     private static final long USER_ID = 1L;
+
+    private TossCredentialService.CredentialStatus connected() {
+        return new TossCredentialService.CredentialStatus(true, true, null);
+    }
 
     private User user(long rowId) {
         User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
@@ -191,5 +202,93 @@ class AssetServiceImplTest {
     void balanceTrendRejectsNegativeWeeks() {
         assertThatThrownBy(() -> sut.getAssetBalanceTrend(5L, USER_ID, -1))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    // === 토스 연결 게이트 ===
+
+    @Test
+    @DisplayName("linkTossSymbol — 프로(SECURITIES) 미구독은 연결 불가")
+    void linkRejectsNonPro() {
+        willThrow(new ForbiddenException(DeskErrorCode.SUBSCRIPTION_REQUIRED))
+                .given(entitlementService).requireFeature(USER_ID, "SECURITIES");
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — 토스 미연결 사용자는 연결 불가")
+    void linkRejectsTossNotConnected() {
+        given(tossCredentialService.getStatus(USER_ID))
+                .willReturn(TossCredentialService.CredentialStatus.notConnected());
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — symbol 이 비어있으면 거부")
+    void linkRejectsBlankSymbol() {
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "  "))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — INVESTMENT 가 아닌 자산은 연결 불가")
+    void linkRejectsNonInvestment() {
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+        Asset asset = assetOwnedBy(USER_ID);
+        given(asset.getAssetType()).willReturn(AssetType.BANK_ACCOUNT);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — 남의 자산은 연결 불가")
+    void linkRejectsOthers() {
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+        Asset asset = assetOwnedBy(999L);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — 게이트 통과 + INVESTMENT 면 종목을 연결한다")
+    void linkSuccess() {
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+        Asset asset = assetOwnedBy(USER_ID);
+        given(asset.getAssetType()).willReturn(AssetType.INVESTMENT);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+
+        sut.linkTossSymbol(5L, USER_ID, 100L, "005930");
+
+        verify(asset).linkToss(100L, "005930");
+    }
+
+    @Test
+    @DisplayName("unlinkTossSymbol — 남의 자산은 해제 불가")
+    void unlinkRejectsOthers() {
+        Asset asset = assetOwnedBy(999L);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+
+        assertThatThrownBy(() -> sut.unlinkTossSymbol(5L, USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("unlinkTossSymbol — 본인 자산은 연결을 해제한다(구독 없이도 가능)")
+    void unlinkSuccess() {
+        Asset asset = assetOwnedBy(USER_ID);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+
+        sut.unlinkTossSymbol(5L, USER_ID);
+
+        verify(asset).unlinkToss();
     }
 }
