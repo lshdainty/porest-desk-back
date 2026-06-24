@@ -184,6 +184,11 @@ public class AssetServiceImpl implements AssetService {
             log.warn("자산 토스 연결 거부 - INVESTMENT 자산 아님: assetId={}, type={}", assetId, asset.getAssetType());
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
+        // 토스가 시세를 주는 유효 종목인지 검증 — 잘못된 코드 연결 차단(정합성의 최종 판정).
+        if (!isTossPriceAvailable(userRowId, symbol)) {
+            log.warn("자산 토스 연결 거부 - 토스 미인식 종목: symbol={}", symbol);
+            throw new InvalidValueException(DeskErrorCode.TOSS_SYMBOL_INVALID);
+        }
 
         asset.linkToss(symbol, quantity);
         log.info("자산 토스 연결 완료: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
@@ -254,6 +259,18 @@ public class AssetServiceImpl implements AssetService {
                 // 사용자 단위 격리 — 한 명의 토스 조회 실패가 전체를 막지 않게.
                 log.warn("토스 평가액 스냅샷 실패 - userRowId={}: {}", userRowId, ex.getMessage());
             }
+        }
+    }
+
+    /** 토스가 해당 종목코드의 시세를 제공하는지 — 유효 종목 검증(미인식/조회실패 시 false). */
+    private boolean isTossPriceAvailable(Long userRowId, String symbol) {
+        try {
+            List<TossMarketDto.PriceResponse> prices = tossQueryService.getPrices(userRowId, symbol);
+            return prices != null && prices.stream().anyMatch(p ->
+                symbol.equalsIgnoreCase(p.symbol()) && p.lastPrice() != null && !p.lastPrice().isBlank());
+        } catch (Exception ex) {
+            log.warn("토스 종목 시세 검증 실패 - symbol={}: {}", symbol, ex.getMessage());
+            return false;
         }
     }
 

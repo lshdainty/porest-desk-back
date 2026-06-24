@@ -269,10 +269,25 @@ class AssetServiceImplTest {
         Asset asset = assetOwnedBy(USER_ID);
         given(asset.getAssetType()).willReturn(AssetType.INVESTMENT);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+        given(tossQueryService.getPrices(USER_ID, "005930")).willReturn(List.of(
+                new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "70000", "KRW")));
 
         sut.linkTossSymbol(5L, USER_ID, "005930", 10L);
 
         verify(asset).linkToss("005930", 10L);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — 토스가 시세를 못 주는 종목은 거부")
+    void linkRejectsInvalidSymbol() {
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+        Asset asset = assetOwnedBy(USER_ID);
+        given(asset.getAssetType()).willReturn(AssetType.INVESTMENT);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+        given(tossQueryService.getPrices(USER_ID, "999999")).willReturn(List.of());
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "999999", 10L))
+                .isInstanceOf(InvalidValueException.class);
     }
 
     @Test
