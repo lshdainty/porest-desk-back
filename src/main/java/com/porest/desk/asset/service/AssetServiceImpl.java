@@ -16,6 +16,8 @@ import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.toss.credential.service.TossCredentialService;
+import com.porest.desk.toss.dto.TossMarketDto;
+import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,10 +32,12 @@ import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,6 +54,7 @@ public class AssetServiceImpl implements AssetService {
     private final AssetBalanceHistoryService balanceHistoryService;
     private final SubscriptionEntitlementService entitlementService;
     private final TossCredentialService tossCredentialService;
+    private final TossQueryService tossQueryService;
 
     @Override
     @Transactional
@@ -158,8 +163,8 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public AssetServiceDto.AssetInfo linkTossSymbol(Long assetId, Long userRowId, Long accountSeq, String symbol) {
-        log.debug("자산 토스 연결 시작: assetId={}, accountSeq={}, symbol={}", assetId, accountSeq, symbol);
+    public AssetServiceDto.AssetInfo linkTossSymbol(Long assetId, Long userRowId, String symbol, Long quantity) {
+        log.debug("자산 토스 연결 시작: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
 
         // 게이트: 프로(SECURITIES) 구독 + 토스 연결 사용자만 연결 가능.
         entitlementService.requireFeature(userRowId, FEATURE_SECURITIES);
@@ -167,20 +172,21 @@ public class AssetServiceImpl implements AssetService {
             log.warn("자산 토스 연결 거부 - 토스 미연결: userRowId={}", userRowId);
             throw new ForbiddenException(DeskErrorCode.TOSS_CREDENTIAL_REQUIRED);
         }
-        if (accountSeq == null || symbol == null || symbol.isBlank()) {
+        // 종목코드 + 보유수량(양수) 필수. 평가액 = 토스 시세 × 수량.
+        if (symbol == null || symbol.isBlank() || quantity == null || quantity <= 0) {
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
 
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
-        // 개별 종목 연결은 투자(INVESTMENT) 자산에만 허용.
+        // 종목 연결은 투자(INVESTMENT) 자산에만 허용.
         if (asset.getAssetType() != AssetType.INVESTMENT) {
             log.warn("자산 토스 연결 거부 - INVESTMENT 자산 아님: assetId={}, type={}", assetId, asset.getAssetType());
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
 
-        asset.linkToss(accountSeq, symbol);
-        log.info("자산 토스 연결 완료: assetId={}, symbol={}", assetId, symbol);
+        asset.linkToss(symbol, quantity);
+        log.info("자산 토스 연결 완료: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
         return AssetServiceDto.AssetInfo.from(asset);
     }
 
@@ -196,6 +202,70 @@ public class AssetServiceImpl implements AssetService {
         asset.unlinkToss();
         log.info("자산 토스 연결 해제 완료: assetId={}", assetId);
         return AssetServiceDto.AssetInfo.from(asset);
+    }
+
+    @Override
+    @Transactional
+    public void snapshotTossValuations() {
+        List<Asset> linked = assetRepository.findAllByType(AssetType.INVESTMENT).stream()
+            .filter(Asset::isTossLinked)
+            .toList();
+        if (linked.isEmpty()) {
+            return;
+        }
+        // 사용자별로 묶어 시세를 1회 조회 → 종목별 (현재가 × 보유수량)을 VALUATION 앵커로 적재.
+        Map<Long, List<Asset>> byUser = linked.stream()
+            .collect(Collectors.groupingBy(a -> a.getUser().getRowId()));
+
+        for (Map.Entry<Long, List<Asset>> entry : byUser.entrySet()) {
+            Long userRowId = entry.getKey();
+            List<Asset> userAssets = entry.getValue();
+            try {
+                // 게이트: 구독 만료/토스 해제된 사용자는 스냅샷 생략.
+                if (!entitlementService.hasFeature(userRowId, FEATURE_SECURITIES)) {
+                    continue;
+                }
+                if (!tossCredentialService.getStatus(userRowId).connected()) {
+                    continue;
+                }
+                String symbols = userAssets.stream()
+                    .map(Asset::getTossSymbol)
+                    .distinct()
+                    .collect(Collectors.joining(","));
+                List<TossMarketDto.PriceResponse> prices = tossQueryService.getPrices(userRowId, symbols);
+                Map<String, Double> priceBySymbol = new HashMap<>();
+                for (TossMarketDto.PriceResponse p : prices) {
+                    Double v = parsePrice(p.lastPrice());
+                    if (v != null) {
+                        priceBySymbol.put(p.symbol(), v);
+                    }
+                }
+                LocalDateTime now = LocalDateTime.now();
+                for (Asset a : userAssets) {
+                    Double price = priceBySymbol.get(a.getTossSymbol());
+                    Long qty = a.getTossQuantity();
+                    if (price == null || qty == null) {
+                        continue;
+                    }
+                    long valuation = Math.round(price * qty);
+                    balanceHistoryService.recordValuation(a, valuation, now);
+                }
+            } catch (Exception ex) {
+                // 사용자 단위 격리 — 한 명의 토스 조회 실패가 전체를 막지 않게.
+                log.warn("토스 평가액 스냅샷 실패 - userRowId={}: {}", userRowId, ex.getMessage());
+            }
+        }
+    }
+
+    private static Double parsePrice(String s) {
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(s);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     @Override

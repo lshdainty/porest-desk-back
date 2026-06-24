@@ -85,13 +85,14 @@ public class Asset extends AuditingFieldsWithIp {
     @JoinColumn(name = "payment_asset_row_id")
     private Asset paymentAsset;
 
-    // 토스증권 연동 (INVESTMENT 자산 전용) — 연결되면 평가액을 토스 보유종목에서 자동 동기화.
+    // 토스증권 연동 (INVESTMENT 자산 전용) — 종목코드(toss_symbol)와 보유수량(toss_quantity)을 등록하면
+    // 토스 시세(현재가) × 수량으로 평가액을 실시간 계산한다. 타 증권사 보유분도 토스 시세를 빌려 평가.
     // 프로(SECURITIES) + 토스 연결 사용자만 설정 가능. 미연결이면 둘 다 NULL → 기존 수동 입력 유지.
-    @Column(name = "toss_account_seq")
-    private Long tossAccountSeq;
-
     @Column(name = "toss_symbol", length = 30)
     private String tossSymbol;
+
+    @Column(name = "toss_quantity")
+    private Long tossQuantity;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
@@ -145,15 +146,15 @@ public class Asset extends AuditingFieldsWithIp {
         this.balance = balance;
     }
 
-    /** 토스 보유종목과 1:1 연결 (개별 종목 단위). 평가액 자동 동기화 대상이 된다. */
-    public void linkToss(Long tossAccountSeq, String tossSymbol) {
-        this.tossAccountSeq = tossAccountSeq;
+    /** 토스 종목 1:1 연결 — 종목코드 + 보유수량. 토스 시세 × 수량으로 평가액 실시간 계산. */
+    public void linkToss(String tossSymbol, Long tossQuantity) {
         this.tossSymbol = tossSymbol;
+        this.tossQuantity = tossQuantity;
     }
 
     /** 토스 연결 해제 — 다시 수동 입력 잔액으로 복귀. */
     public void unlinkToss() {
-        this.tossAccountSeq = null;
+        this.tossQuantity = null;
         this.tossSymbol = null;
     }
 

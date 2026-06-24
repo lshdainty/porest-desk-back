@@ -28,9 +28,12 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -46,6 +49,7 @@ class AssetServiceImplTest {
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private TossCredentialService tossCredentialService;
+    @Mock private com.porest.desk.toss.service.TossQueryService tossQueryService;
 
     @InjectMocks private AssetServiceImpl sut;
 
@@ -212,7 +216,7 @@ class AssetServiceImplTest {
         willThrow(new ForbiddenException(DeskErrorCode.SUBSCRIPTION_REQUIRED))
                 .given(entitlementService).requireFeature(USER_ID, "SECURITIES");
 
-        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "005930", 10L))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -222,7 +226,7 @@ class AssetServiceImplTest {
         given(tossCredentialService.getStatus(USER_ID))
                 .willReturn(TossCredentialService.CredentialStatus.notConnected());
 
-        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "005930", 10L))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -231,7 +235,7 @@ class AssetServiceImplTest {
     void linkRejectsBlankSymbol() {
         given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
 
-        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "  "))
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "  ", 10L))
                 .isInstanceOf(InvalidValueException.class);
     }
 
@@ -243,7 +247,7 @@ class AssetServiceImplTest {
         given(asset.getAssetType()).willReturn(AssetType.BANK_ACCOUNT);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
 
-        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "005930", 10L))
                 .isInstanceOf(InvalidValueException.class);
     }
 
@@ -254,7 +258,7 @@ class AssetServiceImplTest {
         Asset asset = assetOwnedBy(999L);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
 
-        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, 100L, "005930"))
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "005930", 10L))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -266,9 +270,18 @@ class AssetServiceImplTest {
         given(asset.getAssetType()).willReturn(AssetType.INVESTMENT);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
 
-        sut.linkTossSymbol(5L, USER_ID, 100L, "005930");
+        sut.linkTossSymbol(5L, USER_ID, "005930", 10L);
 
-        verify(asset).linkToss(100L, "005930");
+        verify(asset).linkToss("005930", 10L);
+    }
+
+    @Test
+    @DisplayName("linkTossSymbol — 보유수량이 0 이하면 거부")
+    void linkRejectsNonPositiveQuantity() {
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+
+        assertThatThrownBy(() -> sut.linkTossSymbol(5L, USER_ID, "005930", 0L))
+                .isInstanceOf(InvalidValueException.class);
     }
 
     @Test
@@ -290,5 +303,47 @@ class AssetServiceImplTest {
         sut.unlinkTossSymbol(5L, USER_ID);
 
         verify(asset).unlinkToss();
+    }
+
+    // === 토스 평가액 스냅샷 (추이) ===
+
+    private Asset tossLinked(long ownerRowId, String symbol, long quantity) {
+        Asset a = mock(Asset.class);
+        given(a.getUser()).willReturn(user(ownerRowId));
+        given(a.isTossLinked()).willReturn(true);
+        given(a.getTossSymbol()).willReturn(symbol);
+        given(a.getTossQuantity()).willReturn(quantity);
+        return a;
+    }
+
+    @Test
+    @DisplayName("snapshotTossValuations — 시세×수량을 VALUATION 으로 적재")
+    void snapshotRecordsValuation() {
+        Asset linked = tossLinked(USER_ID, "005930", 10L);
+        given(assetRepository.findAllByType(com.porest.desk.asset.type.AssetType.INVESTMENT))
+                .willReturn(List.of(linked));
+        given(entitlementService.hasFeature(USER_ID, "SECURITIES")).willReturn(true);
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+        given(tossQueryService.getPrices(USER_ID, "005930")).willReturn(List.of(
+                new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "70000", "KRW")));
+
+        sut.snapshotTossValuations();
+
+        verify(balanceHistoryService).recordValuation(eq(linked), eq(700_000L), any());
+    }
+
+    @Test
+    @DisplayName("snapshotTossValuations — 프로 미보유 사용자는 스냅샷하지 않음")
+    void snapshotSkipsNonPro() {
+        Asset linked = mock(Asset.class);
+        given(linked.getUser()).willReturn(user(USER_ID));
+        given(linked.isTossLinked()).willReturn(true);
+        given(assetRepository.findAllByType(com.porest.desk.asset.type.AssetType.INVESTMENT))
+                .willReturn(List.of(linked));
+        given(entitlementService.hasFeature(USER_ID, "SECURITIES")).willReturn(false);
+
+        sut.snapshotTossValuations();
+
+        verify(balanceHistoryService, never()).recordValuation(any(), anyLong(), any());
     }
 }
