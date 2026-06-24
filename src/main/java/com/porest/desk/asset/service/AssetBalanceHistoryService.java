@@ -51,6 +51,13 @@ public class AssetBalanceHistoryService {
         recompute(asset);
     }
 
+    /** 투자 평가액 갱신 — 절대 앵커. 토스 연동 자산의 종가 평가액을 하루 1회 스냅샷으로 적재(추이 반영). */
+    public void recordValuation(Asset asset, long valuation, LocalDateTime effectiveAt) {
+        repository.save(AssetBalanceHistory.of(
+            asset.getUser(), asset, BalanceSourceType.VALUATION, asset.getRowId(), valuation, effectiveAt));
+        recompute(asset);
+    }
+
     /** 수입/지출 거래 — flow(INCOME=+, EXPENSE=-). asset 미연결/널이면 no-op. */
     public void recordExpense(Asset asset, Long expenseId, ExpenseType type, Long amount, LocalDateTime effectiveAt) {
         if (asset == null || type == null || amount == null) {

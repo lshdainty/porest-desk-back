@@ -16,6 +16,8 @@ import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.toss.credential.service.TossCredentialService;
+import com.porest.desk.toss.dto.TossAccountDto;
+import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,10 +32,12 @@ import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,6 +54,7 @@ public class AssetServiceImpl implements AssetService {
     private final AssetBalanceHistoryService balanceHistoryService;
     private final SubscriptionEntitlementService entitlementService;
     private final TossCredentialService tossCredentialService;
+    private final TossQueryService tossQueryService;
 
     @Override
     @Transactional
@@ -196,6 +201,77 @@ public class AssetServiceImpl implements AssetService {
         asset.unlinkToss();
         log.info("자산 토스 연결 해제 완료: assetId={}", assetId);
         return AssetServiceDto.AssetInfo.from(asset);
+    }
+
+    @Override
+    @Transactional
+    public void snapshotTossValuations() {
+        List<Asset> linked = assetRepository.findAllByType(AssetType.INVESTMENT).stream()
+            .filter(Asset::isTossLinked)
+            .toList();
+        if (linked.isEmpty()) {
+            log.debug("토스 평가액 스냅샷 - 연결된 자산 없음");
+            return;
+        }
+
+        // 사용자별 그룹 → 사용자 단위 게이트 후 계좌별 holdings 1회 조회.
+        Map<Long, List<Asset>> byUser = linked.stream()
+            .collect(Collectors.groupingBy(a -> a.getUser().getRowId()));
+
+        int snapshotCount = 0;
+        for (Map.Entry<Long, List<Asset>> userEntry : byUser.entrySet()) {
+            Long userRowId = userEntry.getKey();
+            // 프로(SECURITIES) 구독 + 토스 연결 사용자만.
+            if (!entitlementService.hasFeature(userRowId, FEATURE_SECURITIES)) {
+                continue;
+            }
+            if (!tossCredentialService.getStatus(userRowId).connected()) {
+                continue;
+            }
+
+            // 계좌별 그룹 — 계좌당 holdings 1회 조회.
+            Map<Long, List<Asset>> byAccount = userEntry.getValue().stream()
+                .filter(a -> a.getTossAccountSeq() != null)
+                .collect(Collectors.groupingBy(Asset::getTossAccountSeq));
+
+            for (Map.Entry<Long, List<Asset>> accEntry : byAccount.entrySet()) {
+                Long accountSeq = accEntry.getKey();
+                // 한 계좌 조회/파싱 실패가 전체 롤백/중단되지 않게 격리.
+                try {
+                    TossAccountDto.HoldingsOverview holdings =
+                        tossQueryService.getHoldings(userRowId, accountSeq, null);
+                    Map<String, Long> valBySymbol = new HashMap<>();
+                    if (holdings != null && holdings.items() != null) {
+                        for (TossAccountDto.HoldingsItem item : holdings.items()) {
+                            if (item.symbol() == null || item.marketValue() == null
+                                || item.marketValue().amount() == null) {
+                                continue;
+                            }
+                            try {
+                                // marketValue.amount 는 토스가 내려주는 원화 평가금액.
+                                long krw = Math.round(Double.parseDouble(item.marketValue().amount()));
+                                valBySymbol.put(item.symbol(), krw);
+                            } catch (NumberFormatException nfe) {
+                                log.warn("토스 평가액 파싱 실패: symbol={}, amount={}",
+                                    item.symbol(), item.marketValue().amount());
+                            }
+                        }
+                    }
+                    LocalDateTime now = LocalDateTime.now();
+                    for (Asset asset : accEntry.getValue()) {
+                        Long valuation = valBySymbol.get(asset.getTossSymbol());
+                        if (valuation != null) {
+                            balanceHistoryService.recordValuation(asset, valuation, now);
+                            snapshotCount++;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("토스 평가액 스냅샷 실패 - userRowId={}, accountSeq={}: {}",
+                        userRowId, accountSeq, e.getMessage());
+                }
+            }
+        }
+        log.info("토스 평가액 스냅샷 완료: {}건 적재", snapshotCount);
     }
 
     @Override

@@ -17,6 +17,9 @@ public interface AssetService {
 
     /** 토스 연결 해제 — 다시 수동 입력 잔액으로 복귀. */
     AssetServiceDto.AssetInfo unlinkTossSymbol(Long assetId, Long userRowId);
+
+    /** 토스 연결 투자 자산의 평가액을 하루 1회 VALUATION 스냅샷으로 적재(순자산 추이 반영, 스케줄러용). */
+    void snapshotTossValuations();
     AssetServiceDto.AssetSummary getAssetSummary(Long userRowId, Integer year, Integer month);
     List<AssetServiceDto.NetWorthTrendPoint> getNetWorthTrend(Long userRowId, Integer months);
     List<AssetServiceDto.AssetBalancePoint> getAssetBalanceTrend(Long assetId, Long userRowId, Integer weeks);

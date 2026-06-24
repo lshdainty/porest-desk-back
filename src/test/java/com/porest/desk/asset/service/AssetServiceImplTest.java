@@ -12,6 +12,8 @@ import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.toss.credential.service.TossCredentialService;
+import com.porest.desk.toss.dto.TossAccountDto;
+import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -23,14 +25,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -46,6 +52,7 @@ class AssetServiceImplTest {
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private TossCredentialService tossCredentialService;
+    @Mock private TossQueryService tossQueryService;
 
     @InjectMocks private AssetServiceImpl sut;
 
@@ -290,5 +297,64 @@ class AssetServiceImplTest {
         sut.unlinkTossSymbol(5L, USER_ID);
 
         verify(asset).unlinkToss();
+    }
+
+    // === 토스 평가액 스냅샷 (Phase 1b) ===
+
+    private Asset linkedInvestment(long ownerRowId) {
+        Asset a = mock(Asset.class);
+        given(a.isTossLinked()).willReturn(true);
+        given(a.getUser()).willReturn(user(ownerRowId));
+        return a;
+    }
+
+    private TossAccountDto.HoldingsOverview holdings(String symbol, String krwAmount) {
+        TossAccountDto.MarketValue mv = new TossAccountDto.MarketValue(null, krwAmount, null);
+        TossAccountDto.HoldingsItem item = new TossAccountDto.HoldingsItem(
+            symbol, "삼성전자", "KR", "KRW", "10", "100000", "90000", mv, null, null, null);
+        return new TossAccountDto.HoldingsOverview(null, null, null, null, List.of(item));
+    }
+
+    @Test
+    @DisplayName("snapshotTossValuations — 프로+토스 연결 사용자의 연결 자산에 평가액을 적재한다")
+    void snapshotRecordsValuation() {
+        Asset a = linkedInvestment(USER_ID);
+        given(a.getTossAccountSeq()).willReturn(100L);
+        given(a.getTossSymbol()).willReturn("005930");
+        given(assetRepository.findAllByType(AssetType.INVESTMENT)).willReturn(List.of(a));
+        given(entitlementService.hasFeature(USER_ID, "SECURITIES")).willReturn(true);
+        given(tossCredentialService.getStatus(USER_ID)).willReturn(connected());
+        given(tossQueryService.getHoldings(USER_ID, 100L, null))
+                .willReturn(holdings("005930", "1000000"));
+
+        sut.snapshotTossValuations();
+
+        verify(balanceHistoryService).recordValuation(eq(a), eq(1_000_000L), any(LocalDateTime.class));
+    }
+
+    @Test
+    @DisplayName("snapshotTossValuations — 프로 미구독 사용자는 적재하지 않는다")
+    void snapshotSkipsNonPro() {
+        Asset a = linkedInvestment(USER_ID);
+        given(assetRepository.findAllByType(AssetType.INVESTMENT)).willReturn(List.of(a));
+        given(entitlementService.hasFeature(USER_ID, "SECURITIES")).willReturn(false);
+
+        sut.snapshotTossValuations();
+
+        verify(balanceHistoryService, never()).recordValuation(any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("snapshotTossValuations — 토스 미연결 사용자는 적재하지 않는다")
+    void snapshotSkipsTossNotConnected() {
+        Asset a = linkedInvestment(USER_ID);
+        given(assetRepository.findAllByType(AssetType.INVESTMENT)).willReturn(List.of(a));
+        given(entitlementService.hasFeature(USER_ID, "SECURITIES")).willReturn(true);
+        given(tossCredentialService.getStatus(USER_ID))
+                .willReturn(TossCredentialService.CredentialStatus.notConnected());
+
+        sut.snapshotTossValuations();
+
+        verify(balanceHistoryService, never()).recordValuation(any(), anyLong(), any());
     }
 }
