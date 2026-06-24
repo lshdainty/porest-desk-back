@@ -71,6 +71,8 @@ public class AssetApiDto {
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
+        Long tossAccountSeq,
+        String tossSymbol,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -81,10 +83,17 @@ public class AssetApiDto {
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
+                info.tossAccountSeq(), info.tossSymbol(),
                 info.createAt(), info.modifyAt()
             );
         }
     }
+
+    /** 투자 자산 ↔ 토스 보유종목 연결 요청 (개별 종목 1:1). */
+    public record TossLinkRequest(
+        Long accountSeq,
+        String symbol
+    ) {}
 
     public record AssetListResponse(List<AssetResponse> assets) {
         public static AssetListResponse from(List<AssetServiceDto.AssetInfo> infos) {

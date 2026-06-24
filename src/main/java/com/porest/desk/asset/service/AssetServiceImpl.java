@@ -14,6 +14,8 @@ import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.domain.CardCatalog;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.subscription.service.SubscriptionEntitlementService;
+import com.porest.desk.toss.credential.service.TossCredentialService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,12 +41,15 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class AssetServiceImpl implements AssetService {
     private static final Set<AssetType> DEBT_TYPES = Set.of(AssetType.CREDIT_CARD, AssetType.LOAN);
+    private static final String FEATURE_SECURITIES = "SECURITIES";
 
     private final AssetRepository assetRepository;
     private final AssetTransferRepository assetTransferRepository;
     private final UserRepository userRepository;
     private final CardCatalogRepository cardCatalogRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
+    private final SubscriptionEntitlementService entitlementService;
+    private final TossCredentialService tossCredentialService;
 
     @Override
     @Transactional
@@ -149,6 +154,48 @@ public class AssetServiceImpl implements AssetService {
         asset.deleteAsset();
 
         log.info("자산 삭제 완료: assetId={}", assetId);
+    }
+
+    @Override
+    @Transactional
+    public AssetServiceDto.AssetInfo linkTossSymbol(Long assetId, Long userRowId, Long accountSeq, String symbol) {
+        log.debug("자산 토스 연결 시작: assetId={}, accountSeq={}, symbol={}", assetId, accountSeq, symbol);
+
+        // 게이트: 프로(SECURITIES) 구독 + 토스 연결 사용자만 연결 가능.
+        entitlementService.requireFeature(userRowId, FEATURE_SECURITIES);
+        if (!tossCredentialService.getStatus(userRowId).connected()) {
+            log.warn("자산 토스 연결 거부 - 토스 미연결: userRowId={}", userRowId);
+            throw new ForbiddenException(DeskErrorCode.TOSS_CREDENTIAL_REQUIRED);
+        }
+        if (accountSeq == null || symbol == null || symbol.isBlank()) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
+
+        Asset asset = findAssetOrThrow(assetId);
+        validateAssetOwnership(asset, userRowId);
+        // 개별 종목 연결은 투자(INVESTMENT) 자산에만 허용.
+        if (asset.getAssetType() != AssetType.INVESTMENT) {
+            log.warn("자산 토스 연결 거부 - INVESTMENT 자산 아님: assetId={}, type={}", assetId, asset.getAssetType());
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
+
+        asset.linkToss(accountSeq, symbol);
+        log.info("자산 토스 연결 완료: assetId={}, symbol={}", assetId, symbol);
+        return AssetServiceDto.AssetInfo.from(asset);
+    }
+
+    @Override
+    @Transactional
+    public AssetServiceDto.AssetInfo unlinkTossSymbol(Long assetId, Long userRowId) {
+        log.debug("자산 토스 연결 해제 시작: assetId={}", assetId);
+
+        // 해제는 구독 만료 후에도 가능해야 하므로 소유권만 검증.
+        Asset asset = findAssetOrThrow(assetId);
+        validateAssetOwnership(asset, userRowId);
+
+        asset.unlinkToss();
+        log.info("자산 토스 연결 해제 완료: assetId={}", assetId);
+        return AssetServiceDto.AssetInfo.from(asset);
     }
 
     @Override
