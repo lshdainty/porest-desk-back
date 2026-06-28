@@ -320,6 +320,24 @@ class AssetServiceImplTest {
         verify(asset).unlinkToss();
     }
 
+    @Test
+    @DisplayName("unlinkTossSymbol — 해제 시 마지막 평가액(시세×수량)을 자산 금액으로 굳힌다")
+    void unlinkFreezesValuation() {
+        Asset asset = mock(Asset.class);
+        given(asset.getUser()).willReturn(user(USER_ID));
+        given(asset.isTossLinked()).willReturn(true);
+        given(asset.getTossSymbol()).willReturn("005930");
+        given(asset.getTossQuantity()).willReturn(10L);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+        given(tossQueryService.getPrices(USER_ID, "005930")).willReturn(List.of(
+                new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "70000", "KRW")));
+
+        sut.unlinkTossSymbol(5L, USER_ID);
+
+        verify(balanceHistoryService).recordManual(eq(asset), eq(700_000L), any());
+        verify(asset).unlinkToss();
+    }
+
     // === 토스 평가액 스냅샷 (추이) ===
 
     private Asset tossLinked(long ownerRowId, String symbol, long quantity) {

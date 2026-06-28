@@ -204,6 +204,15 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
 
+        // 해제 순간의 마지막 평가액(시세×수량)을 자산 금액으로 굳힌다 — 자동 연동만 끄고 마지막 본 금액 유지.
+        // 토스 시세 미수신(미연결/조회실패) 시엔 굳히지 않고 기존 잔액을 유지한다.
+        if (asset.isTossLinked() && asset.getTossQuantity() != null) {
+            Long valuation = computeTossValuationKrw(userRowId, asset.getTossSymbol(), asset.getTossQuantity());
+            if (valuation != null) {
+                balanceHistoryService.recordManual(asset, valuation, LocalDateTime.now());
+            }
+        }
+
         asset.unlinkToss();
         log.info("자산 토스 연결 해제 완료: assetId={}", assetId);
         return AssetServiceDto.AssetInfo.from(asset);
@@ -297,6 +306,36 @@ public class AssetServiceImpl implements AssetService {
         } catch (Exception ex) {
             log.warn("토스 종목 시세 검증 실패 - symbol={}: {}", symbol, ex.getMessage());
             return false;
+        }
+    }
+
+    /** 토스 시세(외화면 환율 환산) × 수량 = 원화 평가액. 시세 미수신/조회 실패 시 null. */
+    private Long computeTossValuationKrw(Long userRowId, String symbol, long quantity) {
+        try {
+            TossMarketDto.PriceResponse p = tossQueryService.getPrices(userRowId, symbol).stream()
+                .filter(x -> symbol.equalsIgnoreCase(x.symbol()))
+                .findFirst().orElse(null);
+            if (p == null) {
+                return null;
+            }
+            Double price = parsePrice(p.lastPrice());
+            if (price == null) {
+                return null;
+            }
+            double krw;
+            if (p.currency() == null || "KRW".equals(p.currency())) {
+                krw = price;
+            } else {
+                Double r = parsePrice(tossQueryService.getExchangeRate(userRowId, "USD", "KRW", null).rate());
+                if (r == null || r <= 0) {
+                    return null;
+                }
+                krw = price * r;
+            }
+            return Math.round(krw * quantity);
+        } catch (Exception ex) {
+            log.warn("토스 평가액 계산 실패 - symbol={}: {}", symbol, ex.getMessage());
+            return null;
         }
     }
 
