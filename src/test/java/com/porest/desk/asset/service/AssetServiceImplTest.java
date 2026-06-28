@@ -275,6 +275,8 @@ class AssetServiceImplTest {
         sut.linkTossSymbol(5L, USER_ID, "005930", 10L);
 
         verify(asset).linkToss("005930", 10L);
+        // 연결 즉시 평가액 스냅샷 (70000 × 10).
+        verify(balanceHistoryService).recordValuation(eq(asset), eq(700_000L), any());
     }
 
     @Test
