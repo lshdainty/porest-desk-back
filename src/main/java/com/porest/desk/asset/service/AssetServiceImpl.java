@@ -191,6 +191,11 @@ public class AssetServiceImpl implements AssetService {
         }
 
         asset.linkToss(symbol, quantity);
+        // 연결 즉시 평가액 1회 스냅샷 — 추이 그래프에 바로 반영(환율 미확보 외화면 생략).
+        Long valuation = computeTossValuationKrw(userRowId, symbol, quantity);
+        if (valuation != null) {
+            balanceHistoryService.recordValuation(asset, valuation, LocalDateTime.now());
+        }
         log.info("자산 토스 연결 완료: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
         return AssetServiceDto.AssetInfo.from(asset);
     }
