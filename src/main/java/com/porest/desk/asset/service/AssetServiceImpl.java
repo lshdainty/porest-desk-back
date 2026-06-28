@@ -238,21 +238,47 @@ public class AssetServiceImpl implements AssetService {
                     .distinct()
                     .collect(Collectors.joining(","));
                 List<TossMarketDto.PriceResponse> prices = tossQueryService.getPrices(userRowId, symbols);
-                Map<String, Double> priceBySymbol = new HashMap<>();
+                Map<String, TossMarketDto.PriceResponse> priceBySymbol = new HashMap<>();
+                boolean hasForeign = false;
                 for (TossMarketDto.PriceResponse p : prices) {
-                    Double v = parsePrice(p.lastPrice());
-                    if (v != null) {
-                        priceBySymbol.put(p.symbol(), v);
+                    priceBySymbol.put(p.symbol(), p);
+                    if (p.currency() != null && !"KRW".equals(p.currency())) {
+                        hasForeign = true;
+                    }
+                }
+                // 해외 종목(외화)이 있으면 환율(USD→KRW) 1회 조회해 원화 환산.
+                double fx = 0;
+                if (hasForeign) {
+                    try {
+                        Double r = parsePrice(
+                            tossQueryService.getExchangeRate(userRowId, "USD", "KRW", null).rate());
+                        if (r != null) {
+                            fx = r;
+                        }
+                    } catch (Exception ex) {
+                        log.warn("토스 환율 조회 실패 - userRowId={}: {}", userRowId, ex.getMessage());
                     }
                 }
                 LocalDateTime now = LocalDateTime.now();
                 for (Asset a : userAssets) {
-                    Double price = priceBySymbol.get(a.getTossSymbol());
+                    TossMarketDto.PriceResponse p = priceBySymbol.get(a.getTossSymbol());
                     Long qty = a.getTossQuantity();
-                    if (price == null || qty == null) {
+                    if (p == null || qty == null) {
                         continue;
                     }
-                    long valuation = Math.round(price * qty);
+                    Double price = parsePrice(p.lastPrice());
+                    if (price == null) {
+                        continue;
+                    }
+                    double krw;
+                    if (p.currency() == null || "KRW".equals(p.currency())) {
+                        krw = price;
+                    } else if (fx > 0) {
+                        krw = price * fx;
+                    } else {
+                        continue; // 외화인데 환율 미확보 → 적재 생략(왜곡 방지)
+                    }
+                    long valuation = Math.round(krw * qty);
                     balanceHistoryService.recordValuation(a, valuation, now);
                 }
             } catch (Exception ex) {
