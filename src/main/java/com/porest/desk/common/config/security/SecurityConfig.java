@@ -39,6 +39,7 @@ public class SecurityConfig {
                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(
                     "/api/v1/auth/exchange",
+                    "/api/v1/auth/exchange-code",
                     "/api/v1/auth/logout",
                     "/actuator/health",
                     "/actuator/prometheus",

@@ -4,6 +4,7 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.UnauthorizedException;
 import com.porest.desk.calendar.service.UserCalendarService;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.controller.dto.TokenExchangeDto;
 import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.user.domain.User;
@@ -25,6 +26,18 @@ public class TokenExchangeService {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final UserCalendarService userCalendarService;
+    private final SsoOAuth2Client ssoOAuth2Client;
+
+    /**
+     * Authorization Code 교환 — SSO {@code /oauth2/token} 에 code+code_verifier 를 교환해
+     * SSO access_token 을 받은 뒤, 기존 {@link #exchangeToken} 경로로 검증·자체 desk JWT 발급한다.
+     * (BFF: 자체 desk JWT 를 httpOnly 쿠키로 내려준다.)
+     */
+    @Transactional
+    public TokenExchangeDto.Response exchangeCode(String code, String codeVerifier, String redirectUri) {
+        String ssoToken = ssoOAuth2Client.exchangeCodeForToken(code, codeVerifier, redirectUri);
+        return exchangeToken(ssoToken);
+    }
 
     @Transactional
     public TokenExchangeDto.Response exchangeToken(String ssoToken) {
