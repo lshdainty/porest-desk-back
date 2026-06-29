@@ -54,6 +54,9 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-impl:0.12.6'
     implementation 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
+    // SSO RS256 토큰 검증용 JWKS (nimbus)
+    implementation 'com.nimbusds:nimbus-jose-jwt:10.4'
+
     // ==================== Redis ====================
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 

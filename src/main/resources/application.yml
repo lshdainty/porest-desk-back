@@ -78,6 +78,8 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: ${JWT_ACCESS_EXPIRATION:3600000}
   sso-secret: ${JWT_SSO_SECRET}
+  # SSO RS256 토큰 검증용 JWKS (기본값은 SSO_API_URL 에서 파생)
+  sso-jwks-uri: ${SSO_JWKS_URI:${SSO_API_URL}/.well-known/jwks.json}
 
 # 어플리케이션 정보
 app:

@@ -31,7 +31,8 @@ class JwtTokenProviderTest {
         props.setSecret(SECRET);
         props.setAccessTokenExpiration(ACCESS_EXP_MS);
         props.setSsoSecret("test-sso-secret-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        sut = new JwtTokenProvider(props);
+        // 자체 토큰(HMAC) 발급·검증만 테스트하므로 SSO JWKS Locator 는 불필요 → null.
+        sut = new JwtTokenProvider(props, null);
         signingKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
     }
 
