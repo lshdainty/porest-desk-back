@@ -5,6 +5,7 @@ import com.porest.desk.security.principal.JwtClaimsPrincipal;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.Locator;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.Key;
 import java.util.Collections;
 import java.util.Date;
 
@@ -20,6 +22,8 @@ import java.util.Date;
 @RequiredArgsConstructor
 public class JwtTokenProvider {
     private final JwtProperties jwtProperties;
+    /** SSO RS256 토큰 검증용 JWKS 공개키 Locator(kid 매칭). */
+    private final Locator<Key> ssoSigningKeyLocator;
 
     /** 임베드 토큰 만료(ms). 60초 — 차트 임베드 등 단명 컨텍스트 전용. */
     public static final long EMBED_TOKEN_EXPIRATION_MS = 60_000L;
@@ -78,15 +82,23 @@ public class JwtTokenProvider {
         );
     }
 
+    /**
+     * SSO 토큰(RS256) 검증 — SSO JWKS 의 공개키로 서명 검증 후 claims 반환.
+     * (SSO 가 HMAC 공유 secret → RS256 비대칭 서명으로 전환됨. 클라는 공개키 검증만.)
+     */
     public Claims validateSsoToken(String ssoToken) {
-        SecretKey ssoKey = Keys.hmacShaKeyFor(jwtProperties.getSsoSecret().getBytes(StandardCharsets.UTF_8));
         return Jwts.parser()
-            .verifyWith(ssoKey)
+            .keyLocator(ssoSigningKeyLocator)
             .build()
             .parseSignedClaims(ssoToken)
             .getPayload();
     }
 
+    /**
+     * desk→SSO 서비스 호출용 단명 토큰(비밀번호 변경 프록시 등). 아직 공유 secret(HMAC) 서명.
+     * <p>⚠️ SSO 가 RS256 전용이 되면 이 HMAC 토큰은 SSO 에서 거부된다 — 별도 마이그레이션 필요
+     * (서비스 간 인증을 SSO 가 따로 수용하거나, 사용자 SSO 토큰을 위임하는 방식).
+     */
     public String createServiceToken(String userId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + 60000); // 1분 유효
