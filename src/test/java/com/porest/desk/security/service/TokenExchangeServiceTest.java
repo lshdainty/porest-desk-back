@@ -35,6 +35,7 @@ class TokenExchangeServiceTest {
     @Mock private JwtTokenProvider jwtTokenProvider;
     @Mock private UserRepository userRepository;
     @Mock private UserCalendarService userCalendarService;
+    @Mock private com.porest.desk.security.client.SsoOAuth2Client ssoOAuth2Client;
 
     @InjectMocks private TokenExchangeService sut;
 
@@ -82,5 +83,22 @@ class TokenExchangeServiceTest {
 
         verify(userCalendarService, never()).getOrCreateDefault(eq(7L));
         verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("exchangeCode — SSO 에 code 교환으로 ssoToken 받아 desk 토큰을 발급한다")
+    void exchangeCode_exchangesViaSsoThenIssuesDeskToken() {
+        given(ssoOAuth2Client.exchangeCodeForToken("authcode", "verifier", "https://desk/auth/callback"))
+                .willReturn("sso");
+        Claims claims = deskClaims();
+        given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
+        given(userRepository.findByUserId("tester")).willReturn(Optional.of(user(7L)));
+        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong()))
+                .willReturn("desk-access");
+
+        var resp = sut.exchangeCode("authcode", "verifier", "https://desk/auth/callback");
+
+        org.assertj.core.api.Assertions.assertThat(resp.accessToken()).isEqualTo("desk-access");
+        verify(ssoOAuth2Client).exchangeCodeForToken("authcode", "verifier", "https://desk/auth/callback");
     }
 }

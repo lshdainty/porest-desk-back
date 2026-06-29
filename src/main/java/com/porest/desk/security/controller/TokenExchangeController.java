@@ -36,6 +36,20 @@ public class TokenExchangeController {
         return ApiResponse.success(exchangeResponse);
     }
 
+    /**
+     * OAuth2 Authorization Code 교환 — 인가코드(code)+PKCE code_verifier 를 SSO 에 교환해
+     * 자체 desk JWT 를 발급(httpOnly 쿠키). 표준 전환용. 기존 /exchange 와 병행.
+     */
+    @PostMapping("/exchange-code")
+    public ApiResponse<TokenExchangeDto.Response> exchangeCode(
+            @RequestBody TokenExchangeDto.CodeRequest request,
+            HttpServletResponse response) {
+        TokenExchangeDto.Response exchangeResponse = tokenExchangeService.exchangeCode(
+                request.code(), request.codeVerifier(), request.redirectUri());
+        setAccessTokenCookie(response, exchangeResponse.accessToken());
+        return ApiResponse.success(exchangeResponse);
+    }
+
     @PostMapping("/logout")
     public ApiResponse<Void> logout(HttpServletResponse response) {
         clearAccessTokenCookie(response);
