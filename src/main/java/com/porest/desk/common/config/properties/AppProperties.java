@@ -18,6 +18,8 @@ public class AppProperties {
     @Setter
     public static class Sso {
         private String baseUrl;
+        /** client_credentials 그랜트용 desk 클라이언트 시크릿 (desk→SSO 서비스 토큰 발급). env 로만 주입. */
+        private String clientSecret;
     }
 
     @Getter

@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
-import java.util.Collections;
 import java.util.Date;
 
 @Slf4j
@@ -92,25 +91,6 @@ public class JwtTokenProvider {
             .build()
             .parseSignedClaims(ssoToken)
             .getPayload();
-    }
-
-    /**
-     * desk→SSO 서비스 호출용 단명 토큰(비밀번호 변경 프록시 등). 아직 공유 secret(HMAC) 서명.
-     * <p>⚠️ SSO 가 RS256 전용이 되면 이 HMAC 토큰은 SSO 에서 거부된다 — 별도 마이그레이션 필요
-     * (서비스 간 인증을 SSO 가 따로 수용하거나, 사용자 SSO 토큰을 위임하는 방식).
-     */
-    public String createServiceToken(String userId) {
-        Date now = new Date();
-        Date expiry = new Date(now.getTime() + 60000); // 1분 유효
-        SecretKey ssoKey = Keys.hmacShaKeyFor(jwtProperties.getSsoSecret().getBytes(StandardCharsets.UTF_8));
-        return Jwts.builder()
-            .subject(userId)
-            .issuedAt(now)
-            .expiration(expiry)
-            .claim("type", "access")            // SSO JwtAuthenticationFilter의 isAccessToken() 통과 필수
-            .claim("services", Collections.emptyList()) // getServices() NPE 방지
-            .signWith(ssoKey)
-            .compact();
     }
 
     public long getRemainingExpiration(String token) {

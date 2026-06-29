@@ -77,7 +77,6 @@ logging:
 jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: ${JWT_ACCESS_EXPIRATION:3600000}
-  sso-secret: ${JWT_SSO_SECRET}
   # SSO RS256 토큰 검증용 JWKS (기본값은 SSO_API_URL 에서 파생)
   sso-jwks-uri: ${SSO_JWKS_URI:${SSO_API_URL}/.well-known/jwks.json}
 
@@ -85,6 +84,8 @@ jwt:
 app:
   sso:
     base-url: ${SSO_API_URL}
+    # client_credentials 그랜트용 desk 클라이언트 시크릿 (desk→SSO 서비스 토큰 발급)
+    client-secret: ${SSO_CLIENT_SECRET:}
   cors:
     allowed-origins: ${CORS_ORIGINS}
   # 민감값 암호화 키 (토스 크리덴셜 등). Base64 32바이트, env 로만 주입

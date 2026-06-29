@@ -5,7 +5,7 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
-import com.porest.desk.security.jwt.JwtTokenProvider;
+import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.user.controller.dto.UserApiDto.PreferencesResponse;
 import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 import com.porest.desk.user.domain.User;
@@ -35,7 +35,7 @@ public class UserServiceImpl implements UserService {
     private static final String SSO_CHANGE_PASSWORD_PATH = "/api/v1/auth/password/change";
     private static final String SSO_VERIFY_PASSWORD_PATH = "/api/v1/auth/password/verify";
 
-    private final JwtTokenProvider jwtTokenProvider;
+    private final SsoOAuth2Client ssoOAuth2Client;
     private final UserRepository userRepository;
 
     @Qualifier("ssoRestTemplate")
@@ -43,14 +43,16 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void changePassword(String userId, String currentPassword, String newPassword, String confirmPassword) {
-        // SSO 서비스 호출을 위한 단기 토큰 생성
-        String serviceToken = jwtTokenProvider.createServiceToken(userId);
+        // SSO 호출용 서비스 토큰(RS256)을 client_credentials 그랜트로 발급
+        String serviceToken = ssoOAuth2Client.issueServiceToken();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(serviceToken);
 
+        // 서비스 토큰에는 사용자 식별자가 없으므로 대상 userId 를 body 에 담아 전달(SSO 가 body userId 수용)
         Map<String, String> requestBody = Map.of(
+                "userId", userId,
                 "currentPassword", currentPassword,
                 "newPassword", newPassword,
                 "confirmPassword", confirmPassword
@@ -86,13 +88,14 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void verifyPassword(String userId, String password) {
-        String serviceToken = jwtTokenProvider.createServiceToken(userId);
+        String serviceToken = ssoOAuth2Client.issueServiceToken();
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(serviceToken);
 
-        Map<String, String> requestBody = Map.of("password", password);
+        // 서비스 토큰에는 사용자 식별자가 없으므로 대상 userId 를 body 에 담아 전달
+        Map<String, String> requestBody = Map.of("userId", userId, "password", password);
         HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
 
         try {
