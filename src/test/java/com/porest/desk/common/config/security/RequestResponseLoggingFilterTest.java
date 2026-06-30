@@ -42,6 +42,21 @@ class RequestResponseLoggingFilterTest {
     }
 
     @Test
+    @DisplayName("비밀번호 변경 필드(currentPassword·newPassword·confirmPassword)가 마스킹된다")
+    void masks_password_change_fields() {
+        String body = "{\"currentPassword\":\"1q2w3e$R\",\"newPassword\":\"qwer!@#$\","
+                + "\"confirmPassword\":\"qwer!@#$\"}";
+
+        String masked = sut.maskSensitiveData(body);
+
+        assertThat(masked).contains("\"currentPassword\":\"***\"");
+        assertThat(masked).contains("\"newPassword\":\"***\"");
+        assertThat(masked).contains("\"confirmPassword\":\"***\"");
+        assertThat(masked).doesNotContain("1q2w3e$R");
+        assertThat(masked).doesNotContain("qwer!@#$");
+    }
+
+    @Test
     @DisplayName("OAuth 토큰류(access_token·refreshToken)가 마스킹된다")
     void masks_tokens() {
         String body = "{\"access_token\":\"abc.def.ghi\",\"refreshToken\":\"rrr-111\"}";
