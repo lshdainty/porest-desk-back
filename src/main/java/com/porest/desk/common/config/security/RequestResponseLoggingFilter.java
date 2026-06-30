@@ -46,10 +46,12 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
 
     /**
      * 로그에서 값을 마스킹할 민감 필드명(대소문자 무시).
-     * 비밀번호 외에 토스증권 클라이언트 키, OAuth 토큰류를 포함한다.
+     * 비밀번호(변경 필드 포함) 외에 토스증권 클라이언트 키, OAuth 토큰류를 포함한다.
      */
     private static final List<String> SENSITIVE_KEYS = List.of(
             "password", "user_pw",
+            // 비밀번호 변경 필드 — 정확매칭이라 "password" 만으로는 안 걸리므로 명시 추가
+            "currentPassword", "newPassword", "confirmPassword", "newPasswordConfirm",
             "clientSecret", "client_secret",
             "clientId", "client_id",
             "secret",
