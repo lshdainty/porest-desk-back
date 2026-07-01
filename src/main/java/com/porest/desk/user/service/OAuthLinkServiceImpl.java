@@ -1,0 +1,177 @@
+package com.porest.desk.user.service;
+
+import com.porest.core.controller.ApiResponse;
+import com.porest.core.exception.ExternalServiceException;
+import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.security.client.SsoOAuth2Client;
+import com.porest.desk.user.controller.dto.OAuthLinkDto.ProviderInfoResp;
+import com.porest.desk.user.controller.dto.OAuthLinkDto.StartUrlResp;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 소셜 계정 연동(link) 프록시 서비스.
+ *
+ * <p>비밀번호 변경 프록시({@code UserServiceImpl})와 동일한 BFF 패턴 —
+ * client_credentials 서비스 토큰을 Bearer 로, 대상 userId 를 SSO 계약(body/쿼리)으로 relay 한다.
+ * 서비스 토큰에는 사용자 식별자가 없으므로 desk 쿠키에서 얻은 userId 를 SSO 에 대신 전달한다.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OAuthLinkServiceImpl implements OAuthLinkService {
+
+    private static final String SSO_LINK_PATH = "/api/v1/oauth/link/";
+    private static final String SSO_PROVIDERS_PATH = "/api/v1/oauth/providers";
+
+    private final SsoOAuth2Client ssoOAuth2Client;
+
+    @Qualifier("ssoRestTemplate")
+    private final RestTemplate ssoRestTemplate;
+
+    @Override
+    public String startLink(String userId, String provider, String returnUrl) {
+        // SSO 호출용 서비스 토큰(RS256)을 client_credentials 그랜트로 발급
+        String serviceToken = ssoOAuth2Client.issueServiceToken();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(serviceToken);
+
+        // 서비스 토큰에는 사용자 식별자가 없으므로 대상 userId 를 body 에 담아 전달
+        Map<String, String> requestBody = Map.of(
+                "userId", userId,
+                "returnUrl", returnUrl == null ? "" : returnUrl
+        );
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody, headers);
+
+        try {
+            ResponseEntity<ApiResponse<StartUrlResp>> response = ssoRestTemplate.exchange(
+                    SSO_LINK_PATH + provider.toLowerCase(),
+                    HttpMethod.POST,
+                    entity,
+                    new ParameterizedTypeReference<ApiResponse<StartUrlResp>>() {}
+            );
+
+            ApiResponse<StartUrlResp> body = response.getBody();
+            if (body != null && !body.isSuccess()) {
+                throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, body.getMessage());
+            }
+
+            log.info("OAuth link started for user {} provider {}", userId, provider);
+            return body != null && body.getData() != null ? body.getData().getStartUrl() : null;
+
+        } catch (HttpClientErrorException e) {
+            log.warn("SSO oauth link client error for user {} provider {}: {}", userId, provider, e.getMessage());
+            String errorMessage = extractSsoErrorMessage(e);
+            throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, errorMessage);
+        } catch (RestClientException e) {
+            log.error("SSO oauth link request failed for user {} provider {}: {}", userId, provider, e.getMessage(), e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 계정 연동 API 호출 실패", e);
+        }
+    }
+
+    @Override
+    public List<ProviderInfoResp> getProviders(String userId) {
+        String serviceToken = ssoOAuth2Client.issueServiceToken();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(serviceToken);
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<ApiResponse<List<ProviderInfoResp>>> response = ssoRestTemplate.exchange(
+                    SSO_PROVIDERS_PATH + "?userId=" + URLEncoder.encode(userId, StandardCharsets.UTF_8),
+                    HttpMethod.GET,
+                    entity,
+                    new ParameterizedTypeReference<ApiResponse<List<ProviderInfoResp>>>() {}
+            );
+
+            ApiResponse<List<ProviderInfoResp>> body = response.getBody();
+            if (body != null && !body.isSuccess()) {
+                throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, body.getMessage());
+            }
+
+            return body != null ? body.getData() : null;
+
+        } catch (HttpClientErrorException e) {
+            log.warn("SSO oauth providers client error for user {}: {}", userId, e.getMessage());
+            String errorMessage = extractSsoErrorMessage(e);
+            throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, errorMessage);
+        } catch (RestClientException e) {
+            log.error("SSO oauth providers request failed for user {}: {}", userId, e.getMessage(), e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 연동 제공자 조회 API 호출 실패", e);
+        }
+    }
+
+    @Override
+    public void unlink(String userId, String provider) {
+        String serviceToken = ssoOAuth2Client.issueServiceToken();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(serviceToken);
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<ApiResponse<Void>> response = ssoRestTemplate.exchange(
+                    SSO_LINK_PATH + provider.toLowerCase() + "?userId=" + URLEncoder.encode(userId, StandardCharsets.UTF_8),
+                    HttpMethod.DELETE,
+                    entity,
+                    new ParameterizedTypeReference<ApiResponse<Void>>() {}
+            );
+
+            ApiResponse<Void> body = response.getBody();
+            if (body != null && !body.isSuccess()) {
+                throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, body.getMessage());
+            }
+
+            log.info("OAuth unlink done for user {} provider {}", userId, provider);
+
+        } catch (HttpClientErrorException e) {
+            log.warn("SSO oauth unlink client error for user {} provider {}: {}", userId, provider, e.getMessage());
+            String errorMessage = extractSsoErrorMessage(e);
+            throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, errorMessage);
+        } catch (RestClientException e) {
+            log.error("SSO oauth unlink request failed for user {} provider {}: {}", userId, provider, e.getMessage(), e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 계정 연동 해제 API 호출 실패", e);
+        }
+    }
+
+    private String extractSsoErrorMessage(HttpClientErrorException e) {
+        try {
+            String responseBody = e.getResponseBodyAsString();
+            // JSON에서 message 필드 추출 (간단한 파싱)
+            if (responseBody.contains("\"message\"")) {
+                int start = responseBody.indexOf("\"message\"") + 11;
+                int end = responseBody.indexOf("\"", start);
+                if (end > start) {
+                    return responseBody.substring(start, end);
+                }
+            }
+        } catch (Exception ex) {
+            log.debug("Failed to extract SSO error message", ex);
+        }
+        return "계정 연동에 실패했습니다";
+    }
+}

@@ -1,0 +1,29 @@
+package com.porest.desk.user.service;
+
+import com.porest.desk.user.controller.dto.OAuthLinkDto.ProviderInfoResp;
+
+import java.util.List;
+
+/**
+ * 소셜 계정 연동(link) 프록시 서비스 인터페이스.
+ *
+ * <p>desk 쿠키로 인증된 사용자의 userId 를 서비스 토큰(client_credentials)으로 SSO 에 relay 한다(BFF).
+ */
+public interface OAuthLinkService {
+
+    /**
+     * 소셜 계정 연동 시작 — SSO 로부터 브라우저가 이동할 연동 시작 URL 을 받아온다.
+     *
+     * @param userId    desk 쿠키에서 얻은 사용자 ID(SSO sub)
+     * @param provider  연동 제공자(예: google) — SSO 로는 소문자로 전달
+     * @param returnUrl 연동 완료 후 돌아올 desk-front 경로(선택, null 허용)
+     * @return SSO 연동 시작 URL(startUrl)
+     */
+    String startLink(String userId, String provider, String returnUrl);
+
+    /** 연동 가능한 제공자 목록과 사용자별 연동 상태 조회. */
+    List<ProviderInfoResp> getProviders(String userId);
+
+    /** 소셜 계정 연동 해제. */
+    void unlink(String userId, String provider);
+}
