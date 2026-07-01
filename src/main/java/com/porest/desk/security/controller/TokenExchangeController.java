@@ -27,15 +27,6 @@ public class TokenExchangeController {
 
     public static final String ACCESS_TOKEN_COOKIE = "desk_access_token";
 
-    @PostMapping("/exchange")
-    public ApiResponse<TokenExchangeDto.Response> exchangeToken(
-            @RequestBody TokenExchangeDto.Request request,
-            HttpServletResponse response) {
-        TokenExchangeDto.Response exchangeResponse = tokenExchangeService.exchangeToken(request.ssoToken());
-        setAccessTokenCookie(response, exchangeResponse.accessToken());
-        return ApiResponse.success(exchangeResponse);
-    }
-
     /**
      * OAuth2 Authorization Code 교환 — 인가코드(code)+PKCE code_verifier 를 SSO 에 교환해
      * 자체 desk JWT 를 발급(httpOnly 쿠키). 표준 전환용. 기존 /exchange 와 병행.
