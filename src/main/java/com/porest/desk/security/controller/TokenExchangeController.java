@@ -29,7 +29,7 @@ public class TokenExchangeController {
 
     /**
      * OAuth2 Authorization Code 교환 — 인가코드(code)+PKCE code_verifier 를 SSO 에 교환해
-     * 자체 desk JWT 를 발급(httpOnly 쿠키). 표준 전환용. 기존 /exchange 와 병행.
+     * 자체 desk JWT 를 발급(httpOnly 쿠키). SSO 로그인 완료 후 desk 세션 진입점.
      */
     @PostMapping("/exchange-code")
     public ApiResponse<TokenExchangeDto.Response> exchangeCode(
