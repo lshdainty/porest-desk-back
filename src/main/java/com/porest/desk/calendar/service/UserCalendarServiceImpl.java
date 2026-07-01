@@ -194,6 +194,10 @@ public class UserCalendarServiceImpl implements UserCalendarService {
 
         UserCalendarMember member = memberRepository.findById(memberId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_MEMBER_NOT_FOUND));
+        // 무결성: 멤버가 이 캘린더 소속이어야 함(타 캘린더 memberId 로 교차 조작하는 IDOR 차단).
+        if (member.getCalendar() == null || !member.getCalendar().getRowId().equals(calendarId)) {
+            throw new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_MEMBER_NOT_FOUND);
+        }
         if (member.getPermission() == CalendarRole.OWNER) {
             throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_OWNER_REMOVE);
         }
@@ -213,6 +217,10 @@ public class UserCalendarServiceImpl implements UserCalendarService {
 
         UserCalendarMember member = memberRepository.findById(memberId)
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_MEMBER_NOT_FOUND));
+        // 무결성: 멤버가 이 캘린더 소속이어야 함(타 캘린더 memberId 로 교차 조작하는 IDOR 차단).
+        if (member.getCalendar() == null || !member.getCalendar().getRowId().equals(calendarId)) {
+            throw new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_MEMBER_NOT_FOUND);
+        }
         if (member.getPermission() == CalendarRole.OWNER) {
             throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_OWNER_REMOVE);
         }

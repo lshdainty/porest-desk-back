@@ -1,5 +1,6 @@
 package com.porest.desk.calendar.service;
 
+import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
@@ -77,11 +78,40 @@ class UserCalendarServiceImplTest {
     @DisplayName("removeMember — 소유자(OWNER)는 제거 불가")
     void removeMemberRejectsOwner() {
         UserCalendarMember member = mock(UserCalendarMember.class);
+        UserCalendar calendar = mock(UserCalendar.class);
+        given(calendar.getRowId()).willReturn(CAL_ID);
+        given(member.getCalendar()).willReturn(calendar);
         given(member.getPermission()).willReturn(CalendarRole.OWNER);
         given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
 
         assertThatThrownBy(() -> sut.removeMember(CAL_ID, MEMBER_ID, USER_ID))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("removeMember — 다른 캘린더 소속 memberId 는 조작 불가(교차 IDOR)")
+    void removeMemberRejectsCrossCalendar() {
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        UserCalendar otherCalendar = mock(UserCalendar.class);
+        given(otherCalendar.getRowId()).willReturn(999L);
+        given(member.getCalendar()).willReturn(otherCalendar);
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> sut.removeMember(CAL_ID, MEMBER_ID, USER_ID))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("changeMemberRole — 다른 캘린더 소속 memberId 는 조작 불가(교차 IDOR)")
+    void changeMemberRoleRejectsCrossCalendar() {
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        UserCalendar otherCalendar = mock(UserCalendar.class);
+        given(otherCalendar.getRowId()).willReturn(999L);
+        given(member.getCalendar()).willReturn(otherCalendar);
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> sut.changeMemberRole(CAL_ID, MEMBER_ID, CalendarRole.EDIT, USER_ID))
+                .isInstanceOf(EntityNotFoundException.class);
     }
 
     @Test
