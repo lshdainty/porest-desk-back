@@ -50,19 +50,17 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
 
-  # 에러 정보 표시
-  web:
-    error:
-      include-stacktrace: ${ERROR_STACKTRACE:never}
-      include-message: ${ERROR_MESSAGE:never}
-      include-exception: ${ERROR_EXCEPTION:false}
-      include-binding-errors: ${ERROR_BINDING:never}
-
 # 서버 설정
 server:
   port: ${SERVER_PORT:8002}
   shutdown: ${SERVER_SHUTDOWN:graceful}
   forward-headers-strategy: framework
+  # 에러 응답 노출 제어 (server.error.*). 각 값 의미는 .env.example 참고
+  error:
+    include-stacktrace: ${ERROR_STACKTRACE:never}
+    include-message: ${ERROR_MESSAGE:never}
+    include-exception: ${ERROR_EXCEPTION:false}
+    include-binding-errors: ${ERROR_BINDING:never}
 
 # 로깅 설정
 logging:
