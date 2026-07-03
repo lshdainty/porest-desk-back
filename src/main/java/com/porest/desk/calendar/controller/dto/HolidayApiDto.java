@@ -1,7 +1,5 @@
 package com.porest.desk.calendar.controller.dto;
 
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import com.porest.core.type.YNType;
 import com.porest.desk.calendar.service.dto.HolidayServiceDto;
 import com.porest.desk.calendar.type.HolidayType;
@@ -12,7 +10,6 @@ import java.util.List;
 
 public class HolidayApiDto {
 
-    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CreateRequest(
         LocalDate holidayDate,
         String holidayName,
@@ -20,7 +17,6 @@ public class HolidayApiDto {
         YNType isRecurring
     ) {}
 
-    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record UpdateRequest(
         LocalDate holidayDate,
         String holidayName,
@@ -28,7 +24,6 @@ public class HolidayApiDto {
         YNType isRecurring
     ) {}
 
-    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Response(
         Long rowId,
         LocalDate holidayDate,
@@ -51,7 +46,6 @@ public class HolidayApiDto {
         }
     }
 
-    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record ListResponse(
         List<Response> holidays
     ) {
