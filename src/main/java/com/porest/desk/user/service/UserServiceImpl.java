@@ -82,7 +82,7 @@ public class UserServiceImpl implements UserService {
             throw new InvalidValueException(DeskErrorCode.USER_PASSWORD_CHANGE_FAILED, errorMessage);
         } catch (RestClientException e) {
             log.error("SSO password change request failed for user {}: {}", userId, e.getMessage(), e);
-            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 비밀번호 변경 API 호출 실패", e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, e);
         }
     }
 
@@ -116,7 +116,7 @@ public class UserServiceImpl implements UserService {
             throw new InvalidValueException(DeskErrorCode.USER_PASSWORD_VERIFY_FAILED, errorMessage);
         } catch (RestClientException e) {
             log.error("SSO password verify request failed for user {}: {}", userId, e.getMessage(), e);
-            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 비밀번호 검증 API 호출 실패", e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, e);
         }
     }
 
