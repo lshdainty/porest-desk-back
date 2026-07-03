@@ -84,7 +84,7 @@ public class OAuthLinkServiceImpl implements OAuthLinkService {
             throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, errorMessage);
         } catch (RestClientException e) {
             log.error("SSO oauth link request failed for user {} provider {}: {}", userId, provider, e.getMessage(), e);
-            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 계정 연동 API 호출 실패", e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, e);
         }
     }
 
@@ -119,7 +119,7 @@ public class OAuthLinkServiceImpl implements OAuthLinkService {
             throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, errorMessage);
         } catch (RestClientException e) {
             log.error("SSO oauth providers request failed for user {}: {}", userId, e.getMessage(), e);
-            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 연동 제공자 조회 API 호출 실패", e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, e);
         }
     }
 
@@ -154,7 +154,7 @@ public class OAuthLinkServiceImpl implements OAuthLinkService {
             throw new InvalidValueException(DeskErrorCode.OAUTH_LINK_FAILED, errorMessage);
         } catch (RestClientException e) {
             log.error("SSO oauth unlink request failed for user {} provider {}: {}", userId, provider, e.getMessage(), e);
-            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, "SSO 계정 연동 해제 API 호출 실패", e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, e);
         }
     }
 
