@@ -8,6 +8,8 @@ import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.security.resolver.LoginUserArgumentResolver;
 import com.porest.desk.security.service.TokenExchangeService;
 import com.porest.desk.support.security.WithLoginUser;
+import com.porest.desk.user.domain.User;
+import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,11 +22,15 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,6 +53,7 @@ class TokenExchangeControllerTest {
     @MockitoBean private JwtProperties jwtProperties;
     @MockitoBean private JwtTokenProvider jwtTokenProvider;
     @MockitoBean private MessageResolver messageResolver;
+    @MockitoBean private UserRepository userRepository;
 
     @Test
     @DisplayName("POST /api/v1/auth/embed-token — 로그인 사용자 정보로 createEmbedToken 호출 + 60초 만료 응답")
@@ -60,5 +67,34 @@ class TokenExchangeControllerTest {
                 .andExpect(jsonPath("$.data.expiresIn").value(60));
 
         verify(jwtTokenProvider).createEmbedToken("user7", "User7", "u7@e.com", 7L);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/check — 로그인 사용자 정보 + 가입일시(joinedAt=User.createAt) 응답")
+    void checkLogin_returnsUserInfoWithJoinedAt() throws Exception {
+        User user = mock(User.class);
+        given(user.getCreateAt()).willReturn(LocalDateTime.of(2024, 11, 5, 9, 30));
+        given(userRepository.findById(7L)).willReturn(Optional.of(user));
+
+        mockMvc.perform(get("/api/v1/auth/check"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rowId").value(7))
+                .andExpect(jsonPath("$.data.userId").value("user7"))
+                .andExpect(jsonPath("$.data.userName").value("User7"))
+                .andExpect(jsonPath("$.data.userEmail").value("u7@e.com"))
+                .andExpect(jsonPath("$.data.joinedAt").exists());
+
+        verify(userRepository).findById(7L);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/auth/check — 유저 미조회 시 joinedAt=null (그 외 필드 정상 응답)")
+    void checkLogin_userNotFound_joinedAtNull() throws Exception {
+        given(userRepository.findById(7L)).willReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/auth/check"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value("user7"))
+                .andExpect(jsonPath("$.data.joinedAt").value(nullValue()));
     }
 }
