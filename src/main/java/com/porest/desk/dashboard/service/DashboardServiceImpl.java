@@ -131,7 +131,7 @@ public class DashboardServiceImpl implements DashboardService {
             .toList();
 
         // Build result
-        var todoSummary = new DashboardServiceDto.TodoSummary(stats[0], stats[1], stats[2], stats[3], stats[4]);
+        var todoSummary = new DashboardServiceDto.TodoSummary(stats[0], stats[1], stats[2], stats[3], stats[4], stats[5]);
         var calendarSummary = new DashboardServiceDto.CalendarSummary(todayEventCount, upcomingEvents.size(), nextEventDate);
         var expenseSummary = new DashboardServiceDto.ExpenseSummary(todayIncome, todayExpenseAmount, monthlyIncome, monthlyExpenseAmount);
         var memoSummary = new DashboardServiceDto.MemoSummary(stats[6], stats[7], recentMemoTitle);

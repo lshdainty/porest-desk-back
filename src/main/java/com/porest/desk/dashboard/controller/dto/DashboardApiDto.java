@@ -29,9 +29,9 @@ public class DashboardApiDto {
         }
     }
 
-    public record TodoSummary(long totalCount, long pendingCount, long inProgressCount, long completedCount, long todayDueCount) {
+    public record TodoSummary(long totalCount, long pendingCount, long inProgressCount, long completedCount, long todayDueCount, long overDueCount) {
         public static TodoSummary from(DashboardServiceDto.TodoSummary s) {
-            return new TodoSummary(s.totalCount(), s.pendingCount(), s.inProgressCount(), s.completedCount(), s.todayDueCount());
+            return new TodoSummary(s.totalCount(), s.pendingCount(), s.inProgressCount(), s.completedCount(), s.todayDueCount(), s.overDueCount());
         }
     }
 

@@ -118,7 +118,7 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — countStatsByUser 배열 인덱스를 todo/memo 요약에 정확히 매핑 (memo는 [6],[7])")
     void todoAndMemoSummaryMapStatsArrayIndices() {
         primeSummaryDefaults();
-        // [total, pending, inProgress, completed, todayDue, overDue(미사용), note, pinnedNote]
+        // [total, pending, inProgress, completed, todayDue, overDue, note, pinnedNote]
         given(todoRepository.countStatsByUser(eq(USER_ID), any(LocalDate.class)))
                 .willReturn(new long[]{12, 5, 3, 4, 2, 9, 7, 2});
         given(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
@@ -133,6 +133,7 @@ class DashboardServiceImplTest {
         assertThat(todo.inProgressCount()).isEqualTo(3L);
         assertThat(todo.completedCount()).isEqualTo(4L);
         assertThat(todo.todayDueCount()).isEqualTo(2L);
+        assertThat(todo.overDueCount()).isEqualTo(9L);        // stats[5]
 
         DashboardServiceDto.MemoSummary memo = result.memoSummary();
         assertThat(memo.totalCount()).isEqualTo(7L);          // stats[6]

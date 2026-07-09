@@ -54,7 +54,7 @@ class DashboardApiControllerTest {
 
     private DashboardServiceDto.DashboardSummary sampleSummary() {
         return new DashboardServiceDto.DashboardSummary(
-                new DashboardServiceDto.TodoSummary(5, 1, 2, 2, 1),
+                new DashboardServiceDto.TodoSummary(5, 1, 2, 2, 1, 3),
                 new DashboardServiceDto.CalendarSummary(1, 3, LocalDate.of(2026, 7, 10)),
                 new DashboardServiceDto.ExpenseSummary(100, 50, 1000, 500),
                 new DashboardServiceDto.MemoSummary(4, 1, "최근 메모"),
@@ -73,6 +73,7 @@ class DashboardApiControllerTest {
         mockMvc.perform(get("/api/v1/dashboard/summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.todoSummary.totalCount").value(5))
+                .andExpect(jsonPath("$.data.todoSummary.overDueCount").value(3))
                 .andExpect(jsonPath("$.data.expenseSummary.monthlyIncome").value(1000))
                 .andExpect(jsonPath("$.data.upcomingEvents[0].title").value("회의"))
                 .andExpect(jsonPath("$.data.recentTodos[0].rowId").value(22));

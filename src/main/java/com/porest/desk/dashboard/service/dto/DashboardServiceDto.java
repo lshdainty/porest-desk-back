@@ -20,7 +20,8 @@ public class DashboardServiceDto {
         long pendingCount,
         long inProgressCount,
         long completedCount,
-        long todayDueCount
+        long todayDueCount,
+        long overDueCount
     ) {}
 
     public record CalendarSummary(
