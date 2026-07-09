@@ -7,7 +7,10 @@ import com.porest.desk.security.controller.dto.TokenExchangeDto;
 import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.security.service.TokenExchangeService;
+import com.porest.desk.user.domain.User;
+import com.porest.desk.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
@@ -24,6 +27,7 @@ public class TokenExchangeController {
     private final TokenExchangeService tokenExchangeService;
     private final JwtProperties jwtProperties;
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserRepository userRepository;
 
     public static final String ACCESS_TOKEN_COOKIE = "desk_access_token";
 
@@ -49,12 +53,17 @@ public class TokenExchangeController {
 
     @GetMapping("/check")
     public ApiResponse<TokenExchangeDto.CheckResponse> checkLogin(@LoginUser UserPrincipal loginUser) {
+        // 가입일시(User.createAt) 노출 — PK 단건 조회. 유저 미존재/미조회 시 null.
+        LocalDateTime joinedAt = userRepository.findById(loginUser.getRowId())
+            .map(User::getCreateAt)
+            .orElse(null);
         return ApiResponse.success(new TokenExchangeDto.CheckResponse(
             loginUser.getRowId(),
             loginUser.getUserId(),
             loginUser.getUserName(),
             loginUser.getUserEmail(),
-            "Asia/Seoul"
+            "Asia/Seoul",
+            joinedAt
         ));
     }
 
