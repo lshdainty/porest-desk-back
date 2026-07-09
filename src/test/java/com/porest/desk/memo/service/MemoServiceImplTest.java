@@ -34,6 +34,7 @@ class MemoServiceImplTest {
     @Mock private MemoRepository memoRepository;
     @Mock private MemoFolderRepository memoFolderRepository;
     @Mock private UserRepository userRepository;
+    @Mock private com.porest.desk.constellation.service.StarlightService starlightService;
 
     @InjectMocks private MemoServiceImpl sut;
 

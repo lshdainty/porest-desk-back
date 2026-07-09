@@ -3,6 +3,7 @@ package com.porest.desk.memo.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.constellation.service.StarlightService;
 import com.porest.desk.memo.domain.Memo;
 import com.porest.desk.memo.domain.MemoFolder;
 import com.porest.desk.memo.repository.MemoFolderRepository;
@@ -25,6 +26,7 @@ public class MemoServiceImpl implements MemoService {
     private final MemoRepository memoRepository;
     private final MemoFolderRepository memoFolderRepository;
     private final UserRepository userRepository;
+    private final StarlightService starlightService;
 
     @Override
     @Transactional
@@ -48,6 +50,8 @@ public class MemoServiceImpl implements MemoService {
             command.tag(), command.color());
 
         memoRepository.save(memo);
+        // 별자리 게이미피케이션 — 기록하면 오늘의 별빛이 된다 (+1, 일 최대 2)
+        starlightService.onMemoCreated(memo);
         log.info("메모 등록 완료: memoId={}, userRowId={}", memo.getRowId(), command.userRowId());
 
         return MemoServiceDto.MemoInfo.from(memo);
@@ -121,6 +125,8 @@ public class MemoServiceImpl implements MemoService {
         Memo memo = findMemoOrThrow(memoId);
         validateMemoOwnership(memo, userRowId);
         memo.deleteMemo();
+        // 별자리 게이미피케이션 — 당일 적립분이면 별빛 회수
+        starlightService.onMemoDeleted(memo);
 
         log.info("메모 삭제 완료: memoId={}", memoId);
     }
