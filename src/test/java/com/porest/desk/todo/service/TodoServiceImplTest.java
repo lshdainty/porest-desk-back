@@ -44,6 +44,7 @@ class TodoServiceImplTest {
     @Mock private TodoTagRepository todoTagRepository;
     @Mock private TodoTagMappingRepository todoTagMappingRepository;
     @Mock private UserRepository userRepository;
+    @Mock private com.porest.desk.constellation.service.StarlightService starlightService;
 
     @InjectMocks private TodoServiceImpl sut;
 

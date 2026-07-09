@@ -3,6 +3,7 @@ package com.porest.desk.todo.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.constellation.service.StarlightService;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.domain.TodoProject;
 import com.porest.desk.todo.domain.TodoTag;
@@ -37,6 +38,7 @@ public class TodoServiceImpl implements TodoService {
     private final TodoTagRepository todoTagRepository;
     private final TodoTagMappingRepository todoTagMappingRepository;
     private final UserRepository userRepository;
+    private final StarlightService starlightService;
 
     @Override
     @Transactional
@@ -158,6 +160,8 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = findTodoOrThrow(todoId);
         validateTodoOwnership(todo, userRowId);
         todo.toggleStatus();
+        // 별자리 게이미피케이션 — 완료 전이면 별빛 적립, 해제면 당일 회수 (같은 트랜잭션)
+        starlightService.onTodoStatusToggled(todo);
 
         log.info("할일 상태 토글 완료: todoId={}, newStatus={}", todoId, todo.getStatus());
 
