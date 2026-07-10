@@ -34,7 +34,7 @@ class ConstellationRepositoryTest {
 
     private Constellation persistConstellation(String key, int starCount, int sortOrder) {
         return em.persist(Constellation.createConstellation(
-            key, key + "명", "설명", "blue", starCount, "{\"pts\":[],\"edges\":[]}", sortOrder));
+            key, key + "명", key + "-en", "설명", "desc", "blue", starCount, "{\"pts\":[],\"edges\":[]}", sortOrder));
     }
 
     @Test

@@ -47,7 +47,7 @@ class ConstellationApiControllerTest {
 
     private ConstellationServiceDto.ConstellationInfo dipperInfo() {
         return new ConstellationServiceDto.ConstellationInfo(
-            10L, "dipper", "북두칠성", "국자 모양 일곱 별", "blue", 7,
+            10L, "dipper", "북두칠성", "Big Dipper", "국자 모양 일곱 별", "Seven bright stars", "blue", 7,
             "{\"pts\":[[88,30]],\"edges\":[[0,1]]}", 1);
     }
 
@@ -59,6 +59,8 @@ class ConstellationApiControllerTest {
         mockMvc.perform(get("/api/v1/constellations"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.constellations[0].constellationKey").value("dipper"))
+            .andExpect(jsonPath("$.data.constellations[0].nameEn").value("Big Dipper"))
+            .andExpect(jsonPath("$.data.constellations[0].descriptionEn").value("Seven bright stars"))
             .andExpect(jsonPath("$.data.constellations[0].starCount").value(7))
             .andExpect(jsonPath("$.data.constellations[0].starMap").exists());
     }

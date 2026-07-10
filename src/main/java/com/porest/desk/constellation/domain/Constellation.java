@@ -40,8 +40,14 @@ public class Constellation extends AuditingFieldsWithIp {
     @Column(name = "name", nullable = false, length = 50)
     private String name;
 
+    @Column(name = "name_en", nullable = false, length = 80)
+    private String nameEn;
+
     @Column(name = "description", length = 200)
     private String description;
+
+    @Column(name = "description_en", length = 200)
+    private String descriptionEn;
 
     @Column(name = "color_key", nullable = false, length = 20)
     private String colorKey;
@@ -63,12 +69,15 @@ public class Constellation extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Constellation createConstellation(String constellationKey, String name, String description,
+    public static Constellation createConstellation(String constellationKey, String name, String nameEn,
+                                                    String description, String descriptionEn,
                                                     String colorKey, int starCount, String starMap, int sortOrder) {
         Constellation constellation = new Constellation();
         constellation.constellationKey = constellationKey;
         constellation.name = name;
+        constellation.nameEn = nameEn;
         constellation.description = description;
+        constellation.descriptionEn = descriptionEn;
         constellation.colorKey = colorKey;
         constellation.starCount = starCount;
         constellation.starMap = starMap;

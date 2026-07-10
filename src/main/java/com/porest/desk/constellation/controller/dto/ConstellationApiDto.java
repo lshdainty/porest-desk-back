@@ -12,7 +12,9 @@ public class ConstellationApiDto {
         Long rowId,
         String constellationKey,
         String name,
+        String nameEn,
         String description,
+        String descriptionEn,
         String colorKey,
         int starCount,
         String starMap,
@@ -20,7 +22,8 @@ public class ConstellationApiDto {
     ) {
         public static ConstellationResponse from(ConstellationServiceDto.ConstellationInfo info) {
             return new ConstellationResponse(
-                info.rowId(), info.constellationKey(), info.name(), info.description(),
+                info.rowId(), info.constellationKey(), info.name(), info.nameEn(),
+                info.description(), info.descriptionEn(),
                 info.colorKey(), info.starCount(), info.starMap(), info.sortOrder()
             );
         }
