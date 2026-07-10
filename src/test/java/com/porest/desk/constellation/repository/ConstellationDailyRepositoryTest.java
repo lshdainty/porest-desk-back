@@ -41,7 +41,7 @@ class ConstellationDailyRepositoryTest {
 
     private Constellation persistConstellation(String key) {
         return em.persist(Constellation.createConstellation(
-            key, key + "명", "설명", "blue", 7, "{\"pts\":[],\"edges\":[]}", 1));
+            key, key + "명", key + "-en", "설명", "desc", "blue", 7, "{\"pts\":[],\"edges\":[]}", 1));
     }
 
     private ConstellationDaily persistDaily(User user, LocalDate date, Constellation c, boolean grown) {

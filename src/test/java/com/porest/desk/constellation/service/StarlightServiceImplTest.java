@@ -63,7 +63,7 @@ class StarlightServiceImplTest {
 
     private Constellation dipper() {
         Constellation c = Constellation.createConstellation(
-            "dipper", "북두칠성", "국자 모양 일곱 별", "blue", 7, "{\"pts\":[],\"edges\":[]}", 1);
+            "dipper", "북두칠성", "Big Dipper", "국자 모양 일곱 별", "Seven bright stars", "blue", 7, "{\"pts\":[],\"edges\":[]}", 1);
         ReflectionTestUtils.setField(c, "rowId", 10L);
         return c;
     }
@@ -382,7 +382,7 @@ class StarlightServiceImplTest {
     void dailyTargetDeterministicRotation() {
         Constellation c1 = dipper();
         Constellation c2 = Constellation.createConstellation(
-            "cass", "카시오페이아", "W자 여왕", "violet", 5, "{\"pts\":[],\"edges\":[]}", 2);
+            "cass", "카시오페이아", "Cassiopeia", "W자 여왕", "The W queen", "violet", 5, "{\"pts\":[],\"edges\":[]}", 2);
         given(constellationRepository.findAllActive()).willReturn(List.of(c1, c2));
 
         LocalDate date = LocalDate.of(2026, 7, 10);

@@ -59,7 +59,7 @@ class ConstellationServiceImplTest {
 
     private Constellation constellation(long rowId, String key, int starCount, int sortOrder) {
         Constellation c = Constellation.createConstellation(
-            key, key + "명", "설명", "blue", starCount, "{\"pts\":[],\"edges\":[]}", sortOrder);
+            key, key + "명", key + "-en", "설명", "desc", "blue", starCount, "{\"pts\":[],\"edges\":[]}", sortOrder);
         ReflectionTestUtils.setField(c, "rowId", rowId);
         return c;
     }
