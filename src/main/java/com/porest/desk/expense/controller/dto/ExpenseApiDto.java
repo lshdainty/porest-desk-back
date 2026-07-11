@@ -141,10 +141,23 @@ public class ExpenseApiDto {
         Integer year,
         Integer month,
         Long totalIncome,
-        Long totalExpense
+        Long totalExpense,
+        // 그 달의 카테고리별 지출(EXPENSE만, split-aware) — 카테고리 월별 추이 차트용
+        List<CategoryAmountResponse> categoryExpenses
     ) {
         public static RangeMonthlyBucketResponse from(ExpenseServiceDto.RangeMonthlyBucket b) {
-            return new RangeMonthlyBucketResponse(b.year(), b.month(), b.totalIncome(), b.totalExpense());
+            return new RangeMonthlyBucketResponse(
+                b.year(), b.month(), b.totalIncome(), b.totalExpense(),
+                b.categoryExpenses().stream().map(CategoryAmountResponse::from).toList());
+        }
+    }
+
+    public record CategoryAmountResponse(
+        Long categoryRowId,
+        Long amount
+    ) {
+        public static CategoryAmountResponse from(ExpenseServiceDto.CategoryAmount c) {
+            return new CategoryAmountResponse(c.categoryRowId(), c.amount());
         }
     }
 

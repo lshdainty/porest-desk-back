@@ -112,7 +112,15 @@ public class ExpenseServiceDto {
         Integer year,
         Integer month,
         Long totalIncome,
-        Long totalExpense
+        Long totalExpense,
+        // 그 달의 카테고리별 지출(EXPENSE만, split-aware). 카테고리 월별 추이(TOP N stacked) 차트용.
+        List<CategoryAmount> categoryExpenses
+    ) {}
+
+    /// 카테고리 단위 금액(월별 지출 분해 등). categoryRowId = leaf(분할 시 분할) 카테고리.
+    public record CategoryAmount(
+        Long categoryRowId,
+        Long amount
     ) {}
 
     public record MonthlyTrend(

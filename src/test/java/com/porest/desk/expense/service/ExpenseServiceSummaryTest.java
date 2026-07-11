@@ -233,6 +233,47 @@ class ExpenseServiceSummaryTest {
     }
 
     @Test
+    @DisplayName("getRangeSummary — 월별 버킷에 split-aware EXPENSE 카테고리 분해 포함(수입 제외, 빈 달은 빈 리스트)")
+    void rangeSummaryMonthlyCategoryExpenses() {
+        ExpenseCategory food = category(20L, "식비", null);
+        ExpenseCategory coffee = category(31L, "커피", null);
+        ExpenseCategory lunch = category(32L, "점심", null);
+        Expense e1 = expenseOn(food, ExpenseType.EXPENSE, 30_000L, LocalDateTime.of(2026, 4, 10, 12, 0)); // 4월·split
+        ReflectionTestUtils.setField(e1, "rowId", 100L);
+        Expense e2 = expenseOn(food, ExpenseType.EXPENSE, 20_000L, LocalDateTime.of(2026, 6, 5, 12, 0));  // 6월·직접
+        ReflectionTestUtils.setField(e2, "rowId", 101L);
+        Expense e3 = expenseOn(food, ExpenseType.INCOME, 200_000L, LocalDateTime.of(2026, 6, 25, 12, 0)); // 6월·수입(제외)
+        ReflectionTestUtils.setField(e3, "rowId", 102L);
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(e1, e2, e3));
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of(
+                ExpenseSplit.create(e1, coffee, 12_000L, "커피", 0),
+                ExpenseSplit.create(e1, lunch, 18_000L, "점심", 1)
+        ));
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 4, 1), LocalDate.of(2026, 6, 30));
+
+        List<ExpenseServiceDto.RangeMonthlyBucket> buckets = summary.monthlyBuckets();
+        assertThat(buckets).hasSize(3);
+        // 4월 — split 분해: 커피 12,000 / 점심 18,000 (부모 식비 미등장)
+        Map<Long, Long> apr = buckets.get(0).categoryExpenses().stream()
+                .collect(Collectors.toMap(ExpenseServiceDto.CategoryAmount::categoryRowId,
+                        ExpenseServiceDto.CategoryAmount::amount));
+        assertThat(apr).containsOnlyKeys(31L, 32L);
+        assertThat(apr.get(31L)).isEqualTo(12_000L);
+        assertThat(apr.get(32L)).isEqualTo(18_000L);
+        // 5월 — 빈 달
+        assertThat(buckets.get(1).categoryExpenses()).isEmpty();
+        // 6월 — 식비 직접 20,000 (수입 200,000 제외)
+        Map<Long, Long> jun = buckets.get(2).categoryExpenses().stream()
+                .collect(Collectors.toMap(ExpenseServiceDto.CategoryAmount::categoryRowId,
+                        ExpenseServiceDto.CategoryAmount::amount));
+        assertThat(jun).containsOnlyKeys(20L);
+        assertThat(jun.get(20L)).isEqualTo(20_000L);
+    }
+
+    @Test
     @DisplayName("getAssetSummary — 지출만, 자산별 합산·건수·내림차순, 자산 없는 거래 제외")
     void assetSummaryGroupsFiltersSorts() {
         Asset bank = asset(1L, "통장");

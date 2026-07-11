@@ -306,7 +306,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             .mapToLong(Expense::getAmount)
             .sum();
 
-        List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = buildCategoryBreakdown(expenses);
+        // 분할(split)을 1회만 조회해 전체·월별 카테고리 집계에 공유(중복 쿼리 회피).
+        Map<Long, List<ExpenseSplit>> splitsByExpense = loadSplits(expenses);
+        List<ExpenseServiceDto.CategoryBreakdown> categoryBreakdown = buildCategoryBreakdown(expenses, splitsByExpense);
 
         // 추이 차트용 월별 버킷 — startDate~endDate 안의 모든 (year, month) 슬롯을 보장 (0 인 달도 포함)
         Map<String, List<Expense>> grouped = expenses.stream()
@@ -325,7 +327,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             long expense = bucket.stream()
                 .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
                 .mapToLong(Expense::getAmount).sum();
-            monthlyBuckets.add(new ExpenseServiceDto.RangeMonthlyBucket(y, m, income, expense));
+            monthlyBuckets.add(new ExpenseServiceDto.RangeMonthlyBucket(
+                y, m, income, expense, expenseCategoryAmounts(bucket, splitsByExpense)));
             cursor = cursor.plusMonths(1);
         }
 
@@ -338,13 +341,9 @@ public class ExpenseServiceImpl implements ExpenseService {
      * 분할(ExpenseSplit) 항목이 있는 거래는 부모 카테고리 대신 분할 카테고리별로 집계.
      * 분할 합계는 부모 amount 와 일치하므로 totalIncome/totalExpense 는 영향 없음.
      */
-    private List<ExpenseServiceDto.CategoryBreakdown> buildCategoryBreakdown(List<Expense> expenses) {
+    private List<ExpenseServiceDto.CategoryBreakdown> buildCategoryBreakdown(
+            List<Expense> expenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
         if (expenses.isEmpty()) return List.of();
-
-        List<Long> expenseIds = expenses.stream().map(Expense::getRowId).toList();
-        List<ExpenseSplit> splits = expenseSplitRepository.findByExpenseIds(expenseIds);
-        Map<Long, List<ExpenseSplit>> splitsByExpense = splits.stream()
-            .collect(Collectors.groupingBy(s -> s.getExpense().getRowId()));
 
         Map<Long, ExpenseServiceDto.CategoryBreakdown> agg = new HashMap<>();
         for (Expense e : expenses) {
@@ -385,6 +384,38 @@ public class ExpenseServiceImpl implements ExpenseService {
                 existing.totalAmount() + amount
             ));
         }
+    }
+
+    /** 거래들의 활성 분할을 expenseId → splits 맵으로 1회 로딩(없으면 빈 맵). */
+    private Map<Long, List<ExpenseSplit>> loadSplits(List<Expense> expenses) {
+        if (expenses.isEmpty()) return Map.of();
+        List<Long> expenseIds = expenses.stream().map(Expense::getRowId).toList();
+        return expenseSplitRepository.findByExpenseIds(expenseIds).stream()
+            .collect(Collectors.groupingBy(s -> s.getExpense().getRowId()));
+    }
+
+    /**
+     * 한 달치 거래를 EXPENSE 만 카테고리(leaf/split)별로 합산.
+     * split 거래는 분할 카테고리로 분해, 아니면 거래 카테고리. 수입·미분류는 제외.
+     */
+    private List<ExpenseServiceDto.CategoryAmount> expenseCategoryAmounts(
+            List<Expense> monthExpenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
+        Map<Long, Long> agg = new HashMap<>();
+        for (Expense e : monthExpenses) {
+            if (e.getExpenseType() != ExpenseType.EXPENSE) continue;
+            List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
+            if (es != null && !es.isEmpty()) {
+                for (ExpenseSplit s : es) {
+                    if (s.getCategory() == null) continue;
+                    agg.merge(s.getCategory().getRowId(), s.getAmount(), Long::sum);
+                }
+            } else if (e.getCategory() != null) {
+                agg.merge(e.getCategory().getRowId(), e.getAmount(), Long::sum);
+            }
+        }
+        return agg.entrySet().stream()
+            .map(en -> new ExpenseServiceDto.CategoryAmount(en.getKey(), en.getValue()))
+            .toList();
     }
 
     @Override
