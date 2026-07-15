@@ -1,0 +1,94 @@
+package com.porest.desk.dataimport.controller;
+
+import com.porest.core.controller.ApiResponse;
+import com.porest.desk.dataimport.controller.dto.ImportApiDto;
+import com.porest.desk.dataimport.service.ImportService;
+import com.porest.desk.dataimport.service.StandardRow;
+import com.porest.desk.dataimport.type.ImportSource;
+import com.porest.desk.security.annotation.LoginUser;
+import com.porest.desk.security.principal.UserPrincipal;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 데이터 가져오기 — 파일 분석(미리보기) + 실제 저장.
+ *
+ * <p>둘 다 multipart 업로드. analyze 는 파일+소스로 자동매핑·미리보기를 돌려주고,
+ * execute 는 파일 + (사용자 보정 매핑·옵션 JSON part)로 거래를 생성한다(stateless 재업로드).
+ */
+@RestController
+@RequestMapping("/api/v1")
+@RequiredArgsConstructor
+public class ImportApiController {
+
+    private final ImportService importService;
+
+    /** 파일 분석 — 자동매핑 제안 + 미리보기 + 유효/중복 건수. */
+    @PostMapping(value = "/import/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<ImportApiDto.AnalyzeResponse> analyze(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("source") ImportSource source) {
+        ImportService.AnalyzeResult result = importService.analyze(file, source, loginUser.getRowId());
+        return ApiResponse.success(toAnalyzeResponse(result));
+    }
+
+    /** 실제 저장 — 최종 매핑·옵션대로 거래 생성. */
+    @PostMapping(value = "/import/execute", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<ImportApiDto.ExecuteResponse> execute(
+            @LoginUser UserPrincipal loginUser,
+            @RequestPart("file") MultipartFile file,
+            @RequestPart("request") ImportApiDto.ExecuteRequest request) {
+        ImportService.ExecuteResult result = importService.execute(
+            file, request.source(), request.mapping(),
+            request.dupSkip(), request.autoCat(), loginUser.getRowId());
+        List<ImportApiDto.FailureRow> failures = result.failures().stream()
+            .map(f -> new ImportApiDto.FailureRow(f.lineNo(), f.reason()))
+            .toList();
+        return ApiResponse.success(new ImportApiDto.ExecuteResponse(
+            result.imported(), result.skipped(), result.failed(), failures));
+    }
+
+    // ── 매핑 헬퍼 ────────────────────────────────────────────
+
+    private ImportApiDto.AnalyzeResponse toAnalyzeResponse(ImportService.AnalyzeResult r) {
+        List<ImportApiDto.ColumnInfo> columns = new ArrayList<>();
+        for (int i = 0; i < r.columns().size(); i++) {
+            columns.add(new ImportApiDto.ColumnInfo(i, r.columns().get(i)));
+        }
+        List<ImportApiDto.PreviewRow> preview = r.preview().stream()
+            .map(ImportApiController::toPreview)
+            .toList();
+        return new ImportApiDto.AnalyzeResponse(
+            r.fileName(), r.totalRows(), r.validRows(), r.duplicateCount(),
+            columns, r.suggestedMapping(), preview);
+    }
+
+    private static ImportApiDto.PreviewRow toPreview(StandardRow s) {
+        return new ImportApiDto.PreviewRow(
+            s.lineNo(),
+            s.date() == null ? null : s.date().toString(),
+            s.type() == null ? null : s.type().name(),
+            s.amount(),
+            s.category(),
+            s.asset(),
+            mergeMemo(s.subcategory(), s.memo()),
+            s.duplicate(),
+            s.error());
+    }
+
+    private static String mergeMemo(String sub, String memo) {
+        if (sub != null && memo != null) return sub + " " + memo;
+        if (sub != null) return sub;
+        return memo;
+    }
+}
