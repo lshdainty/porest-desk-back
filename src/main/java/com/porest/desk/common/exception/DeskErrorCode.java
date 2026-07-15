@@ -145,6 +145,12 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     SUBSCRIPTION_NOT_FOUND("SUBS_002", "error.notfound.subscription", HttpStatus.NOT_FOUND),
     SUBSCRIPTION_PLAN_NOT_FOUND("SUBS_003", "error.notfound.subscription.plan", HttpStatus.NOT_FOUND),
     SUBSCRIPTION_ALREADY_ACTIVE("SUBS_004", "error.subscription.already.active", HttpStatus.CONFLICT),
+
+    // Data Import (데이터 가져오기)
+    IMPORT_EMPTY_FILE("IMPORT_001", "error.import.empty.file", HttpStatus.BAD_REQUEST),
+    IMPORT_PARSE_FAILED("IMPORT_002", "error.import.parse.failed", HttpStatus.BAD_REQUEST),
+    IMPORT_UNSUPPORTED_FORMAT("IMPORT_003", "error.import.unsupported.format", HttpStatus.BAD_REQUEST),
+    IMPORT_MAPPING_REQUIRED("IMPORT_004", "error.import.mapping.required", HttpStatus.BAD_REQUEST),
     ;
 
     private final String code;
