@@ -67,7 +67,7 @@ class TodoApiControllerTest {
                 100L, 1L, TodoType.TASK, "할일 제목", "내용",
                 TodoPriority.HIGH, "work", TodoStatus.PENDING,
                 LocalDate.of(2026, 7, 3), null, 0, YNType.N,
-                5L, "프로젝트", null, List.of(), 0, 0, null, null);
+                null, List.of(), 0, 0, null, null);
     }
 
     @Test
@@ -77,7 +77,7 @@ class TodoApiControllerTest {
 
         String body = """
                 {"title":"할일 제목","content":"내용","priority":"HIGH","category":"work",
-                 "dueDate":"2026-07-03","projectRowId":5,"parentRowId":null,
+                 "dueDate":"2026-07-03","parentRowId":null,
                  "tagIds":[1,2],"type":"TASK"}
                 """;
 
@@ -94,14 +94,13 @@ class TodoApiControllerTest {
         assertThat(captor.getValue().title()).isEqualTo("할일 제목");
         assertThat(captor.getValue().priority()).isEqualTo(TodoPriority.HIGH);
         assertThat(captor.getValue().type()).isEqualTo(TodoType.TASK);
-        assertThat(captor.getValue().projectRowId()).isEqualTo(5L);
         assertThat(captor.getValue().tagIds()).containsExactly(1L, 2L);
     }
 
     @Test
     @DisplayName("GET /todos — 쿼리 파라미터가 enum·타입으로 변환되어 서비스에 전달")
     void getTodos_withFilters() throws Exception {
-        given(todoService.getTodos(eq(1L), any(), any(), any(), any(), any(), any(), any()))
+        given(todoService.getTodos(eq(1L), any(), any(), any(), any(), any(), any()))
                 .willReturn(List.of(sampleTodo()));
 
         mockMvc.perform(get("/api/v1/todos")
@@ -110,25 +109,24 @@ class TodoApiControllerTest {
                         .param("category", "work")
                         .param("startDate", "2026-01-01")
                         .param("endDate", "2026-12-31")
-                        .param("projectRowId", "5")
                         .param("type", "TASK"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.todos[0].rowId").value(100));
 
         verify(todoService).getTodos(1L, TodoStatus.PENDING, TodoPriority.HIGH, "work",
-                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), 5L, TodoType.TASK);
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), TodoType.TASK);
     }
 
     @Test
     @DisplayName("GET /todos — 파라미터 없으면 null 로 전달")
     void getTodos_noFilters() throws Exception {
-        given(todoService.getTodos(eq(1L), any(), any(), any(), any(), any(), any(), any()))
+        given(todoService.getTodos(eq(1L), any(), any(), any(), any(), any(), any()))
                 .willReturn(List.of());
 
         mockMvc.perform(get("/api/v1/todos"))
                 .andExpect(status().isOk());
 
-        verify(todoService).getTodos(1L, null, null, null, null, null, null, null);
+        verify(todoService).getTodos(1L, null, null, null, null, null, null);
     }
 
     @Test
@@ -151,7 +149,7 @@ class TodoApiControllerTest {
 
         String body = """
                 {"title":"수정 제목","content":"수정 내용","priority":"LOW","category":"life",
-                 "dueDate":"2026-08-01","projectRowId":9,"tagIds":[3]}
+                 "dueDate":"2026-08-01","tagIds":[3]}
                 """;
 
         mockMvc.perform(put("/api/v1/todo/{id}", 100L)
@@ -163,7 +161,6 @@ class TodoApiControllerTest {
         verify(todoService).updateTodo(eq(100L), eq(1L), captor.capture());
         assertThat(captor.getValue().title()).isEqualTo("수정 제목");
         assertThat(captor.getValue().priority()).isEqualTo(TodoPriority.LOW);
-        assertThat(captor.getValue().projectRowId()).isEqualTo(9L);
         assertThat(captor.getValue().tagIds()).containsExactly(3L);
     }
 

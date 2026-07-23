@@ -33,7 +33,7 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
-    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type) {
+    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type) {
         StringBuilder jpql = new StringBuilder("SELECT t FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted");
         List<String> conditions = new ArrayList<>();
 
@@ -55,10 +55,6 @@ public class TodoJpaRepository implements TodoRepository {
         if (endDate != null) {
             conditions.add(" AND t.dueDate <= :endDate");
         }
-        if (projectRowId != null) {
-            conditions.add(" AND t.project.rowId = :projectRowId");
-        }
-
         for (String condition : conditions) {
             jpql.append(condition);
         }
@@ -86,20 +82,7 @@ public class TodoJpaRepository implements TodoRepository {
         if (endDate != null) {
             query.setParameter("endDate", endDate);
         }
-        if (projectRowId != null) {
-            query.setParameter("projectRowId", projectRowId);
-        }
-
         return query.getResultList();
-    }
-
-    @Override
-    public List<Todo> findByProject(Long projectRowId) {
-        return entityManager.createQuery(
-            "SELECT t FROM Todo t WHERE t.project.rowId = :projectRowId AND t.isDeleted = :isDeleted ORDER BY t.sortOrder ASC, t.rowId DESC", Todo.class)
-            .setParameter("projectRowId", projectRowId)
-            .setParameter("isDeleted", YNType.N)
-            .getResultList();
     }
 
     @Override

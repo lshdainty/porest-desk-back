@@ -5,10 +5,8 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.constellation.service.StarlightService;
 import com.porest.desk.todo.domain.Todo;
-import com.porest.desk.todo.domain.TodoProject;
 import com.porest.desk.todo.domain.TodoTag;
 import com.porest.desk.todo.domain.TodoTagMapping;
-import com.porest.desk.todo.repository.TodoProjectRepository;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
@@ -34,7 +32,6 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class TodoServiceImpl implements TodoService {
     private final TodoRepository todoRepository;
-    private final TodoProjectRepository todoProjectRepository;
     private final TodoTagRepository todoTagRepository;
     private final TodoTagMappingRepository todoTagMappingRepository;
     private final UserRepository userRepository;
@@ -47,13 +44,6 @@ public class TodoServiceImpl implements TodoService {
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
-
-        TodoProject project = null;
-        if (command.projectRowId() != null) {
-            project = todoProjectRepository.findById(command.projectRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_PROJECT_NOT_FOUND));
-            validateProjectOwnership(project, command.userRowId());
-        }
 
         Todo parent = null;
         if (command.parentRowId() != null) {
@@ -69,7 +59,7 @@ public class TodoServiceImpl implements TodoService {
 
         Todo todo = Todo.createTodo(
             user, command.title(), command.content(), priority,
-            command.category(), command.dueDate(), project, parent, type
+            command.category(), command.dueDate(), parent, type
         );
 
         todoRepository.save(todo);
@@ -88,10 +78,10 @@ public class TodoServiceImpl implements TodoService {
     }
 
     @Override
-    public List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type) {
+    public List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type) {
         log.debug("할일 목록 조회: userRowId={}, status={}, priority={}, type={}", userRowId, status, priority, type);
 
-        List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate, projectRowId, type);
+        List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate, type);
 
         // Batch load tags and subtask counts
         List<Long> todoIds = todos.stream().map(Todo::getRowId).toList();
@@ -125,17 +115,9 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = findTodoOrThrow(todoId);
         validateTodoOwnership(todo, userRowId);
 
-        TodoProject project = null;
-        if (command.projectRowId() != null) {
-            project = todoProjectRepository.findById(command.projectRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_PROJECT_NOT_FOUND));
-            // createTodo 와 동일하게 프로젝트 소유권 검증 — 남의 프로젝트로 이동 차단(누락 보강).
-            validateProjectOwnership(project, userRowId);
-        }
-
         todo.updateTodo(
             command.title(), command.content(), command.priority(),
-            command.category(), command.dueDate(), project
+            command.category(), command.dueDate()
         );
 
         // Update tags if provided
@@ -266,14 +248,6 @@ public class TodoServiceImpl implements TodoService {
         if (!todo.getUser().getRowId().equals(userRowId)) {
             log.warn("할일 소유권 검증 실패 - todoId={}, ownerRowId={}, requestUserRowId={}",
                 todo.getRowId(), todo.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
-        }
-    }
-
-    private void validateProjectOwnership(TodoProject project, Long userRowId) {
-        if (!project.getUser().getRowId().equals(userRowId)) {
-            log.warn("프로젝트 소유권 검증 실패 - projectId={}, ownerRowId={}, requestUserRowId={}",
-                project.getRowId(), project.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
         }
     }

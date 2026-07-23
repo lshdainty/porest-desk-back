@@ -3,8 +3,6 @@ package com.porest.desk.todo.service;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
 import com.porest.desk.todo.domain.Todo;
-import com.porest.desk.todo.domain.TodoProject;
-import com.porest.desk.todo.repository.TodoProjectRepository;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
@@ -40,7 +38,6 @@ import static org.mockito.Mockito.mock;
 class TodoServiceImplTest {
 
     @Mock private TodoRepository todoRepository;
-    @Mock private TodoProjectRepository todoProjectRepository;
     @Mock private TodoTagRepository todoTagRepository;
     @Mock private TodoTagMappingRepository todoTagMappingRepository;
     @Mock private UserRepository userRepository;
@@ -89,38 +86,6 @@ class TodoServiceImplTest {
                 .isInstanceOf(ForbiddenException.class);
     }
 
-    @Test
-    @DisplayName("createTodo — 남의 프로젝트에는 할일 생성 불가")
-    void createRejectsOthersProject() {
-        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
-        TodoProject project = mock(TodoProject.class);
-        given(project.getUser()).willReturn(user(999L));
-        given(todoProjectRepository.findById(20L)).willReturn(Optional.of(project));
-
-        var cmd = new TodoServiceDto.CreateCommand(
-                USER_ID, "할일", null, null, null, null, 20L, null, null, null);
-
-        assertThatThrownBy(() -> sut.createTodo(cmd))
-                .isInstanceOf(ForbiddenException.class);
-    }
-
-    @Test
-    @DisplayName("updateTodo — 남의 프로젝트로 이동 불가(소유권 검증 누락 보강)")
-    void updateRejectsOthersProject() {
-        Todo todo = mock(Todo.class);
-        given(todo.getUser()).willReturn(user(USER_ID));
-        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
-        TodoProject othersProject = mock(TodoProject.class);
-        given(othersProject.getUser()).willReturn(user(999L));
-        given(todoProjectRepository.findById(20L)).willReturn(Optional.of(othersProject));
-
-        var cmd = new TodoServiceDto.UpdateCommand(
-                "수정", null, null, null, null, 20L, null);
-
-        assertThatThrownBy(() -> sut.updateTodo(5L, USER_ID, cmd))
-                .isInstanceOf(ForbiddenException.class);
-    }
-
     // ── 정상 CRUD 결과 정확성 ─────────────────────────────
     @Test
     @DisplayName("createTodo — TASK 기본값(status=PENDING, sortOrder=0, isPinned=N)·필드 1:1 매핑")
@@ -136,7 +101,7 @@ class TodoServiceImplTest {
 
         var cmd = new TodoServiceDto.CreateCommand(
                 USER_ID, "기획서 작성", "초안", TodoPriority.HIGH, "업무",
-                LocalDate.of(2026, 6, 20), null, null, null, TodoType.TASK);
+                LocalDate.of(2026, 6, 20), null, null, TodoType.TASK);
         var info = sut.createTodo(cmd);
 
         assertThat(info.type()).isEqualTo(TodoType.TASK);
@@ -164,7 +129,7 @@ class TodoServiceImplTest {
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var cmd = new TodoServiceDto.CreateCommand(
-                USER_ID, "메모성 노트", null, TodoPriority.HIGH, null, null, null, null, null, TodoType.NOTE);
+                USER_ID, "메모성 노트", null, TodoPriority.HIGH, null, null, null, null, TodoType.NOTE);
         var info = sut.createTodo(cmd);
 
         assertThat(info.type()).isEqualTo(TodoType.NOTE);
@@ -175,7 +140,7 @@ class TodoServiceImplTest {
     @DisplayName("toggleStatus — PENDING→COMPLETED, completedAt 세팅")
     void toggleStatusToCompleted() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 7L);
         given(todoRepository.findById(7L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
@@ -191,7 +156,7 @@ class TodoServiceImplTest {
     @DisplayName("toggleStatus — COMPLETED→PENDING, completedAt 클리어")
     void toggleStatusBackToPending() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 8L);
         todo.toggleStatus(); // 먼저 COMPLETED 로
         given(todoRepository.findById(8L)).willReturn(Optional.of(todo));

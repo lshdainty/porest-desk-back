@@ -18,7 +18,6 @@ public class TodoApiDto {
         TodoPriority priority,
         String category,
         LocalDate dueDate,
-        Long projectRowId,
         Long parentRowId,
         List<Long> tagIds,
         TodoType type
@@ -30,7 +29,6 @@ public class TodoApiDto {
         TodoPriority priority,
         String category,
         LocalDate dueDate,
-        Long projectRowId,
         List<Long> tagIds
     ) {}
 
@@ -60,8 +58,6 @@ public class TodoApiDto {
         LocalDateTime completedAt,
         Integer sortOrder,
         YNType isPinned,
-        Long projectRowId,
-        String projectName,
         Long parentRowId,
         List<TagResponse> tags,
         int subtaskCount,
@@ -83,8 +79,6 @@ public class TodoApiDto {
                 info.completedAt(),
                 info.sortOrder(),
                 info.isPinned(),
-                info.projectRowId(),
-                info.projectName(),
                 info.parentRowId(),
                 info.tags() != null ? info.tags().stream().map(TagResponse::from).toList() : List.of(),
                 info.subtaskCount(),

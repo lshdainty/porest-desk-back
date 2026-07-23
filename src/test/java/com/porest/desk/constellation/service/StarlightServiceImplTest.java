@@ -69,7 +69,7 @@ class StarlightServiceImplTest {
     }
 
     private Todo task(long rowId, TodoPriority priority) {
-        Todo todo = Todo.createTodo(user(), "t", "c", priority, null, today, null, null, TodoType.TASK);
+        Todo todo = Todo.createTodo(user(), "t", "c", priority, null, today, null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", rowId);
         todo.toggleStatus(); // COMPLETED 상태로
         return todo;
@@ -111,7 +111,7 @@ class StarlightServiceImplTest {
     @Test
     @DisplayName("NOTE 타입 완료는 별빛 대상 아님")
     void noteTypeIgnored() {
-        Todo note = Todo.createTodo(user(), "n", "c", TodoPriority.HIGH, null, today, null, null, TodoType.NOTE);
+        Todo note = Todo.createTodo(user(), "n", "c", TodoPriority.HIGH, null, today, null, TodoType.NOTE);
         ReflectionTestUtils.setField(note, "rowId", 7L);
         note.toggleStatus();
 

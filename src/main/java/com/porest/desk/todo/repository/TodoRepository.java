@@ -12,12 +12,11 @@ import java.util.Optional;
 
 public interface TodoRepository {
     Optional<Todo> findById(Long rowId);
-    List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type);
+    List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type);
     List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<Todo> findSubtasks(Long parentRowId);
     /** 여러 부모 ID에 대한 서브태스크 카운트를 한 번의 쿼리로 조회 (parentId -> [total, completed]) */
     Map<Long, int[]> findSubtaskCountsByParentIds(List<Long> parentIds);
-    List<Todo> findByProject(Long projectRowId);
 
     /**
      * 사용자의 할일 통계를 단일 집계 쿼리로 조회 (전체 엔티티 로드 대신 COUNT만)

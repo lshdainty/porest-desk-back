@@ -198,7 +198,7 @@ public class ExportDataService {
     }
 
     private ExportTable todoTable(Long userRowId, LocalDate start, LocalDate end, boolean mask) {
-        List<String> headers = List.of("제목", "유형", "상태", "우선순위", "카테고리", "마감일", "완료일", "프로젝트", "내용");
+        List<String> headers = List.of("제목", "유형", "상태", "우선순위", "카테고리", "마감일", "완료일", "내용");
         List<List<String>> rows = new ArrayList<>();
         todoRepository.findByUserAndDueDateBetween(userRowId, start, end).forEach(t -> {
             TodoServiceDto.TodoInfo i = TodoServiceDto.TodoInfo.from(t);
@@ -210,7 +210,6 @@ public class ExportDataService {
                 cell(i.category()),
                 cell(i.dueDate()),
                 cell(i.completedAt()),
-                cell(i.projectName()),
                 cell(i.content())
             ));
         });

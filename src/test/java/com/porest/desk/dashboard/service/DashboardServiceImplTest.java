@@ -59,14 +59,14 @@ class DashboardServiceImplTest {
     // ── entity builders ─────────────────────────────────────────────
 
     private Todo todoTask(long rowId, TodoStatus status, TodoPriority priority, String title, LocalDate dueDate) {
-        Todo t = Todo.createTodo(null, title, null, priority, null, dueDate, null, null, TodoType.TASK);
+        Todo t = Todo.createTodo(null, title, null, priority, null, dueDate, null, TodoType.TASK);
         ReflectionTestUtils.setField(t, "rowId", rowId);
         ReflectionTestUtils.setField(t, "status", status);
         return t;
     }
 
     private Todo todoNote(long rowId, String title) {
-        Todo n = Todo.createTodo(null, title, null, TodoPriority.MEDIUM, null, null, null, null, TodoType.NOTE);
+        Todo n = Todo.createTodo(null, title, null, TodoPriority.MEDIUM, null, null, null, TodoType.NOTE);
         ReflectionTestUtils.setField(n, "rowId", rowId);
         return n;
     }
@@ -99,9 +99,9 @@ class DashboardServiceImplTest {
         lenient().when(todoRepository.countStatsByUser(eq(USER_ID), any(LocalDate.class)))
                 .thenReturn(new long[]{0, 0, 0, 0, 0, 0, 0, 0});
         lenient().when(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), eq(TodoType.TASK))).thenReturn(List.of());
+                isNull(), eq(TodoType.TASK))).thenReturn(List.of());
         lenient().when(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), eq(TodoType.NOTE))).thenReturn(List.of());
+                isNull(), eq(TodoType.NOTE))).thenReturn(List.of());
         lenient().when(calendarEventRepository.findByUserAndDateRange(eq(USER_ID),
                 any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(List.of());
         lenient().when(expenseRepository.findDailySummary(eq(USER_ID), any(LocalDate.class)))
@@ -122,7 +122,7 @@ class DashboardServiceImplTest {
         given(todoRepository.countStatsByUser(eq(USER_ID), any(LocalDate.class)))
                 .willReturn(new long[]{12, 5, 3, 4, 2, 9, 7, 2});
         given(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), eq(TodoType.NOTE)))
+                isNull(), eq(TodoType.NOTE)))
                 .willReturn(List.of(todoNote(50L, "쇼핑 리스트"), todoNote(51L, "회의록")));
 
         DashboardServiceDto.DashboardSummary result = sut.getDashboardSummary(USER_ID);
@@ -162,7 +162,7 @@ class DashboardServiceImplTest {
         Todo f = todoTask(4L, TodoStatus.PENDING, TodoPriority.LOW, "F", null);
         // 입력 순서 뒤섞음
         given(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), eq(TodoType.TASK))).willReturn(List.of(completed, f, b, a));
+                isNull(), eq(TodoType.TASK))).willReturn(List.of(completed, f, b, a));
 
         List<DashboardServiceDto.RecentTodo> todos = sut.getDashboardSummary(USER_ID).recentTodos();
 
@@ -193,7 +193,7 @@ class DashboardServiceImplTest {
         Todo t15 = todoTask(15L, TodoStatus.PENDING, TodoPriority.LOW, "d5", today.plusDays(5));
         Todo t16 = todoTask(16L, TodoStatus.PENDING, TodoPriority.LOW, "d6", today.plusDays(6));
         given(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
-                isNull(), isNull(), eq(TodoType.TASK)))
+                isNull(), eq(TodoType.TASK)))
                 .willReturn(List.of(t16, t13, t11, t15, t12, t14));
 
         List<DashboardServiceDto.RecentTodo> todos = sut.getDashboardSummary(USER_ID).recentTodos();

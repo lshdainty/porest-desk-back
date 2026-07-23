@@ -19,7 +19,6 @@ public class TodoServiceDto {
         TodoPriority priority,
         String category,
         LocalDate dueDate,
-        Long projectRowId,
         Long parentRowId,
         List<Long> tagIds,
         TodoType type
@@ -31,7 +30,6 @@ public class TodoServiceDto {
         TodoPriority priority,
         String category,
         LocalDate dueDate,
-        Long projectRowId,
         List<Long> tagIds
     ) {}
 
@@ -57,8 +55,6 @@ public class TodoServiceDto {
         LocalDateTime completedAt,
         Integer sortOrder,
         YNType isPinned,
-        Long projectRowId,
-        String projectName,
         Long parentRowId,
         List<TagInfo> tags,
         int subtaskCount,
@@ -84,8 +80,6 @@ public class TodoServiceDto {
                 todo.getCompletedAt(),
                 todo.getSortOrder(),
                 todo.getIsPinned(),
-                todo.getProject() != null ? todo.getProject().getRowId() : null,
-                todo.getProject() != null ? todo.getProject().getProjectName() : null,
                 todo.getParent() != null ? todo.getParent().getRowId() : null,
                 tags,
                 subtaskCount,
