@@ -35,14 +35,13 @@ public class TodoQueryDslRepository implements TodoRepository {
         return Optional.ofNullable(
             queryFactory.selectFrom(todo)
                 .leftJoin(todo.user).fetchJoin()
-                .leftJoin(todo.project).fetchJoin()
-                .where(todo.rowId.eq(rowId), todo.isDeleted.eq(YNType.N))
+                    .where(todo.rowId.eq(rowId), todo.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
     }
 
     @Override
-    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type) {
+    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type) {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(todo.user.rowId.eq(userRowId));
         builder.and(todo.isDeleted.eq(YNType.N));
@@ -66,13 +65,8 @@ public class TodoQueryDslRepository implements TodoRepository {
         if (endDate != null) {
             builder.and(todo.dueDate.loe(endDate));
         }
-        if (projectRowId != null) {
-            builder.and(todo.project.rowId.eq(projectRowId));
-        }
-
         return queryFactory.selectFrom(todo)
             .leftJoin(todo.user).fetchJoin()
-            .leftJoin(todo.project).fetchJoin()
             .where(builder)
             .orderBy(todo.sortOrder.asc(), todo.rowId.desc())
             .fetch();
@@ -82,7 +76,6 @@ public class TodoQueryDslRepository implements TodoRepository {
     public List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate) {
         return queryFactory.selectFrom(todo)
             .leftJoin(todo.user).fetchJoin()
-            .leftJoin(todo.project).fetchJoin()
             .where(
                 todo.user.rowId.eq(userRowId),
                 todo.isDeleted.eq(YNType.N),
@@ -97,7 +90,6 @@ public class TodoQueryDslRepository implements TodoRepository {
     public List<Todo> findSubtasks(Long parentRowId) {
         return queryFactory.selectFrom(todo)
             .leftJoin(todo.user).fetchJoin()
-            .leftJoin(todo.project).fetchJoin()
             .where(todo.parent.rowId.eq(parentRowId), todo.isDeleted.eq(YNType.N))
             .orderBy(todo.sortOrder.asc(), todo.rowId.asc())
             .fetch();
@@ -188,16 +180,6 @@ public class TodoQueryDslRepository implements TodoRepository {
             stats[i] = val != null ? val : 0;
         }
         return stats;
-    }
-
-    @Override
-    public List<Todo> findByProject(Long projectRowId) {
-        return queryFactory.selectFrom(todo)
-            .leftJoin(todo.user).fetchJoin()
-            .leftJoin(todo.project).fetchJoin()
-            .where(todo.project.rowId.eq(projectRowId), todo.isDeleted.eq(YNType.N), todo.parent.isNull())
-            .orderBy(todo.sortOrder.asc(), todo.rowId.desc())
-            .fetch();
     }
 
     @Override

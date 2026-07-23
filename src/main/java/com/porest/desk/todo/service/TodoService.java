@@ -10,7 +10,7 @@ import java.util.List;
 
 public interface TodoService {
     TodoServiceDto.TodoInfo createTodo(TodoServiceDto.CreateCommand command);
-    List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, Long projectRowId, TodoType type);
+    List<TodoServiceDto.TodoInfo> getTodos(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type);
     TodoServiceDto.TodoInfo getTodo(Long todoId, Long userRowId);
     TodoServiceDto.TodoInfo updateTodo(Long todoId, Long userRowId, TodoServiceDto.UpdateCommand command);
     TodoServiceDto.TodoInfo toggleStatus(Long todoId, Long userRowId);

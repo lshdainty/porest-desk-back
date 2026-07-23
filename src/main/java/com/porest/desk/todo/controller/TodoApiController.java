@@ -42,7 +42,6 @@ public class TodoApiController {
             request.priority(),
             request.category(),
             request.dueDate(),
-            request.projectRowId(),
             request.parentRowId(),
             request.tagIds(),
             request.type()
@@ -58,10 +57,9 @@ public class TodoApiController {
             @RequestParam(required = false) String category,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam(required = false) Long projectRowId,
             @RequestParam(required = false) TodoType type) {
         List<TodoServiceDto.TodoInfo> infos = todoService.getTodos(
-            loginUser.getRowId(), status, priority, category, startDate, endDate, projectRowId, type
+            loginUser.getRowId(), status, priority, category, startDate, endDate, type
         );
         return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
     }
@@ -85,7 +83,6 @@ public class TodoApiController {
             request.priority(),
             request.category(),
             request.dueDate(),
-            request.projectRowId(),
             request.tagIds()
         ));
         return ApiResponse.success(TodoApiDto.Response.from(info));

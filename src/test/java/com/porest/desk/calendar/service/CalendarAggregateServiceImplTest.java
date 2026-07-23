@@ -82,7 +82,7 @@ class CalendarAggregateServiceImplTest {
 
     private Todo todo(long rowId) {
         Todo t = Todo.createTodo(owner, "할일" + rowId, null, TodoPriority.MEDIUM, null,
-                LocalDate.of(2026, 6, 10), null, null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
         ReflectionTestUtils.setField(t, "rowId", rowId);
         return t;
     }

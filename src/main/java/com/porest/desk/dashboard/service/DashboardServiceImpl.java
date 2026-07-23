@@ -49,7 +49,7 @@ public class DashboardServiceImpl implements DashboardService {
         // [0]=totalTask, [1]=pending, [2]=inProgress, [3]=completed, [4]=todayDue, [5]=overDue, [6]=noteCount, [7]=pinnedNoteCount
 
         // 최근 미완료 TASK 5개만 조회 (전체 로드 대신 필터된 쿼리)
-        List<Todo> recentIncompleteTasks = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null, TodoType.TASK);
+        List<Todo> recentIncompleteTasks = todoRepository.findAllByUser(userRowId, null, null, null, null, null, TodoType.TASK);
         List<DashboardServiceDto.RecentTodo> recentTodoList = recentIncompleteTasks.stream()
             .filter(t -> t.getStatus() != TodoStatus.COMPLETED)
             .sorted(Comparator.comparing(Todo::getDueDate, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -64,7 +64,7 @@ public class DashboardServiceImpl implements DashboardService {
             .toList();
 
         // 최근 메모 제목 — NOTE 타입 1개만 조회
-        List<Todo> recentNotes = todoRepository.findAllByUser(userRowId, null, null, null, null, null, null, TodoType.NOTE);
+        List<Todo> recentNotes = todoRepository.findAllByUser(userRowId, null, null, null, null, null, TodoType.NOTE);
         String recentMemoTitle = recentNotes.isEmpty() ? null : recentNotes.get(0).getTitle();
 
         // Calendar summary — 1주일 범위 한번만 쿼리, 오늘 이벤트는 메모리에서 필터

@@ -41,7 +41,7 @@ class TodoTagMappingRepositoryTest {
     }
 
     private Todo persistTodo(User user, String title) {
-        return em.persist(Todo.createTodo(user, title, null, TodoPriority.MEDIUM, null, null, null, null, TodoType.TASK));
+        return em.persist(Todo.createTodo(user, title, null, TodoPriority.MEDIUM, null, null, null, TodoType.TASK));
     }
 
     private TodoTag persistTag(User user, String name) {

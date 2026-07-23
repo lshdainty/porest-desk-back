@@ -34,7 +34,6 @@ public enum DeskErrorCode implements ErrorCodeProvider {
 
     // Todo
     TODO_NOT_FOUND("TODO_001", "error.notfound.todo", HttpStatus.NOT_FOUND),
-    TODO_PROJECT_NOT_FOUND("TODO_002", "error.notfound.todo.project", HttpStatus.NOT_FOUND),
     TODO_TAG_NOT_FOUND("TODO_003", "error.notfound.todo.tag", HttpStatus.NOT_FOUND),
     TODO_ACCESS_DENIED("TODO_004", "error.todo.access.denied", HttpStatus.FORBIDDEN),
     TODO_TAG_DUPLICATE_NAME("TODO_005", "error.duplicate.todo.tag", HttpStatus.CONFLICT),

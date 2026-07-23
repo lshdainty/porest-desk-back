@@ -44,10 +44,6 @@ public class Todo extends AuditingFieldsWithIp {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "project_row_id")
-    private TodoProject project;
-
-    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_row_id")
     private Todo parent;
 
@@ -93,7 +89,7 @@ public class Todo extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoProject project, Todo parent, TodoType type) {
+    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, Todo parent, TodoType type) {
         Todo todo = new Todo();
         todo.user = user;
         todo.type = type != null ? type : TodoType.TASK;
@@ -103,7 +99,6 @@ public class Todo extends AuditingFieldsWithIp {
         todo.category = category;
         todo.status = TodoStatus.PENDING;
         todo.dueDate = dueDate;
-        todo.project = project;
         todo.parent = parent;
         todo.sortOrder = 0;
         todo.isPinned = YNType.N;
@@ -111,13 +106,12 @@ public class Todo extends AuditingFieldsWithIp {
         return todo;
     }
 
-    public void updateTodo(String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoProject project) {
+    public void updateTodo(String title, String content, TodoPriority priority, String category, LocalDate dueDate) {
         this.title = title;
         this.content = content;
         this.priority = priority;
         this.category = category;
         this.dueDate = dueDate;
-        this.project = project;
     }
 
     public void toggleStatus() {
