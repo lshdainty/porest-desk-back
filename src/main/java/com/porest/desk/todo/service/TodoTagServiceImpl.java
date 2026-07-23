@@ -5,6 +5,7 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.todo.domain.TodoTag;
+import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.user.domain.User;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +24,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class TodoTagServiceImpl implements TodoTagService {
     private final TodoTagRepository todoTagRepository;
+    private final TodoRepository todoRepository;
     private final UserRepository userRepository;
 
     @Override
@@ -49,8 +52,11 @@ public class TodoTagServiceImpl implements TodoTagService {
     public List<TodoTagServiceDto.TagInfo> getTags(Long userRowId) {
         log.debug("태그 목록 조회: userRowId={}", userRowId);
 
+        // 태그별 사용 할일 수 — category(태그명) GROUP BY 1회 집계(N+1 금지).
+        Map<String, Long> usage = todoRepository.countByCategory(userRowId);
         return todoTagRepository.findAllByUser(userRowId).stream()
-            .map(TodoTagServiceDto.TagInfo::from)
+            .map(tag -> TodoTagServiceDto.TagInfo.from(
+                tag, usage.getOrDefault(tag.getTagName(), 0L)))
             .toList();
     }
 

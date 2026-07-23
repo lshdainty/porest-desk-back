@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Repository
 @Primary
@@ -180,6 +181,25 @@ public class TodoQueryDslRepository implements TodoRepository {
             stats[i] = val != null ? val : 0;
         }
         return stats;
+    }
+
+    @Override
+    public Map<String, Long> countByCategory(Long userRowId) {
+        return queryFactory
+            .select(todo.category, todo.count())
+            .from(todo)
+            .where(
+                todo.user.rowId.eq(userRowId),
+                todo.category.isNotNull(),
+                todo.isDeleted.eq(YNType.N)
+            )
+            .groupBy(todo.category)
+            .fetch()
+            .stream()
+            .collect(Collectors.toMap(
+                t -> t.get(todo.category),
+                t -> t.get(todo.count()) == null ? 0L : t.get(todo.count())
+            ));
     }
 
     @Override

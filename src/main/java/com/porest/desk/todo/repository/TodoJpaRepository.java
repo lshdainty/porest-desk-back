@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Repository("todoJpaRepository")
 @RequiredArgsConstructor
@@ -30,6 +31,18 @@ public class TodoJpaRepository implements TodoRepository {
             .setParameter("isDeleted", YNType.N)
             .getResultStream()
             .findFirst();
+    }
+
+    @Override
+    public Map<String, Long> countByCategory(Long userRowId) {
+        return entityManager.createQuery(
+                "SELECT t.category, COUNT(t) FROM Todo t "
+                    + "WHERE t.user.rowId = :userRowId AND t.category IS NOT NULL AND t.isDeleted = :isDeleted "
+                    + "GROUP BY t.category", Object[].class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultStream()
+            .collect(Collectors.toMap(r -> (String) r[0], r -> (Long) r[1]));
     }
 
     @Override
