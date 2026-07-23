@@ -1,6 +1,9 @@
 package com.porest.desk.calendar.repository;
 
+import com.porest.core.type.YNType;
+import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.EventLabel;
+import com.porest.desk.calendar.type.CalendarEventType;
 import com.porest.desk.common.config.QueryDslConfig;
 import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
@@ -14,7 +17,9 @@ import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -108,5 +113,38 @@ class EventLabelRepositoryTest {
         // order0(b, c: rowId 오름차순) → order2(a)
         assertThat(result).extracting(EventLabel::getLabelName)
                 .containsExactly("B(order0)", "C(order0)", "A(order2)");
+    }
+
+    @Test
+    @DisplayName("countEventsByLabel — 라벨별 미삭제 일정 수(GROUP BY), 삭제·타인 라벨 제외")
+    void countEventsByLabelGroupsAndExcludes() {
+        User user = persistUser("u1");
+        User other = persistUser("u2");
+        EventLabel used = persistLabel(user, "사용중", 0);
+        EventLabel unused = persistLabel(user, "미사용", 1);
+        EventLabel othersLabel = persistLabel(other, "남의라벨", 0);
+
+        CalendarEvent e1 = persistEvent(user, "e1", used);
+        persistEvent(user, "e2", used);
+        CalendarEvent deleted = persistEvent(user, "삭제", used);
+        deleted.deleteEvent();
+        persistEvent(user, "라벨없음", null);
+        persistEvent(other, "남의일정", othersLabel);
+        em.flush();
+        em.clear();
+        assertThat(e1.getRowId()).isNotNull();
+
+        Map<Long, Long> counts = repository.countEventsByLabel(user.getRowId());
+
+        assertThat(counts).containsEntry(used.getRowId(), 2L);
+        assertThat(counts).doesNotContainKey(unused.getRowId());
+        assertThat(counts).doesNotContainKey(othersLabel.getRowId());
+    }
+
+    private CalendarEvent persistEvent(User user, String title, EventLabel label) {
+        return em.persist(CalendarEvent.createEvent(
+                user, title, null, CalendarEventType.PERSONAL, null,
+                LocalDateTime.of(2026, 7, 1, 10, 0), LocalDateTime.of(2026, 7, 1, 11, 0),
+                YNType.N, label, null, null, null));
     }
 }

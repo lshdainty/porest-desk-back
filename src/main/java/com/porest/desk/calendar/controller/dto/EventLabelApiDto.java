@@ -21,7 +21,8 @@ public class EventLabelApiDto {
         Long userRowId,
         String labelName,
         String color,
-        Integer sortOrder
+        Integer sortOrder,
+        long usageCount
     ) {
         public static Response from(EventLabelServiceDto.LabelInfo info) {
             return new Response(
@@ -29,7 +30,8 @@ public class EventLabelApiDto {
                 info.userRowId(),
                 info.labelName(),
                 info.color(),
-                info.sortOrder()
+                info.sortOrder(),
+                info.usageCount()
             );
         }
     }
