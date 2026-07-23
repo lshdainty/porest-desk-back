@@ -53,7 +53,7 @@ class EventLabelApiControllerTest {
     @MockitoBean private MessageResolver messageResolver;
 
     private EventLabelServiceDto.LabelInfo sampleInfo() {
-        return new EventLabelServiceDto.LabelInfo(30L, 1L, "중요", "#f00", 0);
+        return new EventLabelServiceDto.LabelInfo(30L, 1L, "중요", "#f00", 0, 0L);
     }
 
     @Test

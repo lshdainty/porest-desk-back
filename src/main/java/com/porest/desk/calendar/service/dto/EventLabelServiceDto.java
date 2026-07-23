@@ -20,15 +20,21 @@ public class EventLabelServiceDto {
         Long userRowId,
         String labelName,
         String color,
-        Integer sortOrder
+        Integer sortOrder,
+        long usageCount
     ) {
         public static LabelInfo from(EventLabel label) {
+            return from(label, 0L);
+        }
+
+        public static LabelInfo from(EventLabel label, long usageCount) {
             return new LabelInfo(
                 label.getRowId(),
                 label.getUser().getRowId(),
                 label.getLabelName(),
                 label.getColor(),
-                label.getSortOrder()
+                label.getSortOrder(),
+                usageCount
             );
         }
     }

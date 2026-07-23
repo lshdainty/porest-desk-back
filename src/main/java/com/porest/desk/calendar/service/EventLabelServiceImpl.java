@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -50,8 +51,11 @@ public class EventLabelServiceImpl implements EventLabelService {
     @Override
     public List<EventLabelServiceDto.LabelInfo> getLabels(Long userRowId) {
         log.debug("일정 라벨 목록 조회: userRowId={}", userRowId);
+        // 라벨별 사용 일정 수 — GROUP BY 1회 집계(N+1 금지).
+        Map<Long, Long> usage = eventLabelRepository.countEventsByLabel(userRowId);
         return eventLabelRepository.findAllByUser(userRowId).stream()
-            .map(EventLabelServiceDto.LabelInfo::from)
+            .map(label -> EventLabelServiceDto.LabelInfo.from(
+                label, usage.getOrDefault(label.getRowId(), 0L)))
             .toList();
     }
 
