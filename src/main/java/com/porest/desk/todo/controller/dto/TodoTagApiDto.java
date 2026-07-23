@@ -23,7 +23,8 @@ public class TodoTagApiDto {
         String tagName,
         String color,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        long usageCount
     ) {
         public static Response from(TodoTagServiceDto.TagInfo info) {
             return new Response(
@@ -32,7 +33,8 @@ public class TodoTagApiDto {
                 info.tagName(),
                 info.color(),
                 info.createAt(),
-                info.modifyAt()
+                info.modifyAt(),
+                info.usageCount()
             );
         }
     }

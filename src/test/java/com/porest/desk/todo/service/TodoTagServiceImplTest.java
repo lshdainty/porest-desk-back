@@ -3,6 +3,7 @@ package com.porest.desk.todo.service;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.todo.domain.TodoTag;
+import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.user.domain.User;
@@ -28,6 +29,7 @@ import static org.mockito.Mockito.mock;
 class TodoTagServiceImplTest {
 
     @Mock private TodoTagRepository todoTagRepository;
+    @Mock private TodoRepository todoRepository;
     @Mock private UserRepository userRepository;
 
     @InjectMocks private TodoTagServiceImpl sut;

@@ -52,7 +52,7 @@ class TodoTagApiControllerTest {
     @MockitoBean private MessageResolver messageResolver;
 
     private TodoTagServiceDto.TagInfo sampleTag() {
-        return new TodoTagServiceDto.TagInfo(100L, 1L, "긴급", "#ff0000", null, null);
+        return new TodoTagServiceDto.TagInfo(100L, 1L, "긴급", "#ff0000", null, null, 0L);
     }
 
     @Test

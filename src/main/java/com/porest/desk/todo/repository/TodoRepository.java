@@ -13,6 +13,8 @@ import java.util.Optional;
 public interface TodoRepository {
     Optional<Todo> findById(Long rowId);
     List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type);
+    /** category(태그명)별 미삭제 할일 수 — GROUP BY 1회 (태그 usageCount 용). */
+    Map<String, Long> countByCategory(Long userRowId);
     List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<Todo> findSubtasks(Long parentRowId);
     /** 여러 부모 ID에 대한 서브태스크 카운트를 한 번의 쿼리로 조회 (parentId -> [total, completed]) */

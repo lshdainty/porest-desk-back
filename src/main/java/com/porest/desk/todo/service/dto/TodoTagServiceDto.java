@@ -23,16 +23,22 @@ public class TodoTagServiceDto {
         String tagName,
         String color,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        long usageCount
     ) {
         public static TagInfo from(TodoTag tag) {
+            return from(tag, 0L);
+        }
+
+        public static TagInfo from(TodoTag tag, long usageCount) {
             return new TagInfo(
                 tag.getRowId(),
                 tag.getUser().getRowId(),
                 tag.getTagName(),
                 tag.getColor(),
                 tag.getCreateAt(),
-                tag.getModifyAt()
+                tag.getModifyAt(),
+                usageCount
             );
         }
     }
