@@ -42,7 +42,10 @@ public class CardPaymentServiceDto {
 
     /**
      * 카드 청구 화면용 종합 응답.
-     * - upcomingAmount: 현재 사이클 결제예정액 = abs(card.balance)
+     * - upcomingAmount: 다가오는 결제 회차의 결제예정액
+     *   = 청구 기간(결제일의 전월 1일~말일) 순사용액 − 같은 회차 기결제액(선결제 차감).
+     *   결제일 미설정 시에만 잔액 전액 fallback(기간 null).
+     * - upcomingPeriodStart/End: 다가오는 회차의 청구 기간(전월 1일~말일)
      * - nextPaymentDate: payment_day 기준 다음 결제예정일(말일 보정)
      * - paymentAssetRowId: 지정된 결제 출금계좌(없으면 null)
      * - history: 과거 청구 이력(최신순)
@@ -50,6 +53,8 @@ public class CardPaymentServiceDto {
     public record CardBillingInfo(
         Long cardAssetRowId,
         Long upcomingAmount,
+        LocalDate upcomingPeriodStart,
+        LocalDate upcomingPeriodEnd,
         LocalDate nextPaymentDate,
         Integer paymentDay,
         Long paymentAssetRowId,

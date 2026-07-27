@@ -34,6 +34,8 @@ public class CardBillingApiDto {
     public record CardBillingResponse(
         Long cardAssetRowId,
         Long upcomingAmount,
+        LocalDate upcomingPeriodStart,
+        LocalDate upcomingPeriodEnd,
         LocalDate nextPaymentDate,
         Integer paymentDay,
         Long paymentAssetRowId,
@@ -43,6 +45,8 @@ public class CardBillingApiDto {
             return new CardBillingResponse(
                 info.cardAssetRowId(),
                 info.upcomingAmount(),
+                info.upcomingPeriodStart(),
+                info.upcomingPeriodEnd(),
                 info.nextPaymentDate(),
                 info.paymentDay(),
                 info.paymentAssetRowId(),

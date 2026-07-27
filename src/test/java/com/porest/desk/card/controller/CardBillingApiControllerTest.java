@@ -64,13 +64,16 @@ class CardBillingApiControllerTest {
     @DisplayName("GET /asset/{id}/billing — id·로그인 사용자로 청구 조회 위임")
     void getCardBilling() throws Exception {
         CardPaymentServiceDto.CardBillingInfo info = new CardPaymentServiceDto.CardBillingInfo(
-                50L, 12000L, LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()));
+                50L, 12000L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()));
         given(cardPaymentService.getCardBilling(50L, 1L)).willReturn(info);
 
         mockMvc.perform(get("/api/v1/asset/{id}/billing", 50L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cardAssetRowId").value(50))
                 .andExpect(jsonPath("$.data.upcomingAmount").value(12000))
+                .andExpect(jsonPath("$.data.upcomingPeriodStart").value("2026-07-01"))
+                .andExpect(jsonPath("$.data.upcomingPeriodEnd").value("2026-07-31"))
                 .andExpect(jsonPath("$.data.paymentDay").value(15))
                 .andExpect(jsonPath("$.data.paymentAssetRowId").value(200))
                 .andExpect(jsonPath("$.data.history[0].rowId").value(1))
