@@ -15,6 +15,9 @@ public interface CardBillingRepository {
     /** 멱등성 체크 — 특정 카드의 특정 결제일에 COMPLETED 청구가 이미 존재하는지. */
     boolean existsCompletedByCardAndPaymentDate(Long cardAssetRowId, LocalDate paymentDate);
 
+    /** 특정 청구 회차(기간)에 이미 결제 완료된 금액 합 — 선결제 차감 계산용. */
+    long sumCompletedAmountByCardAndPeriod(Long cardAssetRowId, LocalDate periodStart, LocalDate periodEnd);
+
     /** 상태별 조회. */
     List<CardBilling> findByStatus(BillingStatus status);
 }

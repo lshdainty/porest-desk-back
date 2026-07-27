@@ -13,6 +13,8 @@ import com.porest.desk.card.domain.CardBilling;
 import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.service.dto.CardPaymentServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.core.type.YNType;
+import com.porest.desk.expense.type.ExpenseType;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 @Service
@@ -41,8 +44,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         validateOwnership(card, userRowId);
         validateCreditCard(card);
 
-        long upcomingAmount = absBalance(card);
         LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), LocalDate.now());
+        BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
 
         List<CardPaymentServiceDto.BillingInfo> history = cardBillingRepository
             .findByCardAssetRowId(cardRowId).stream()
@@ -51,7 +54,9 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
         return new CardPaymentServiceDto.CardBillingInfo(
             cardRowId,
-            upcomingAmount,
+            cycle.amount(),
+            cycle.periodStart(),
+            cycle.periodEnd(),
             nextPaymentDate,
             card.getPaymentDay(),
             card.getPaymentAsset() != null ? card.getPaymentAsset().getRowId() : null,
@@ -73,10 +78,14 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             throw new InvalidValueException(DeskErrorCode.CARD_BILLING_PAYMENT_ASSET_REQUIRED);
         }
 
-        long amount = absBalance(card);
+        // 수동 결제 = 다가오는 결제 회차의 선결제 — 금액·기간 귀속 모두 그 회차 기준.
+        // (종전엔 잔액 전액 + 실행일의 전월 라벨이라 회차·기간·금액이 어긋났음)
         LocalDate today = LocalDate.now();
-        LocalDate periodStart = periodStartFor(today);
-        LocalDate periodEnd = periodEndFor(today);
+        LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), today);
+        BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
+        long amount = cycle.amount();
+        LocalDate periodStart = cycle.periodStart();
+        LocalDate periodEnd = cycle.periodEnd();
 
         if (amount == 0L) {
             CardBilling billing = cardBillingRepository.save(
@@ -121,9 +130,11 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
                 Long userRowId = card.getUser().getRowId();
                 Asset paymentAsset = card.getPaymentAsset();
-                long amount = absBalance(card);
-                LocalDate periodStart = periodStartFor(today);
-                LocalDate periodEnd = periodEndFor(today);
+                // 결제일 당일 회차 = 전월 1일~말일 사용분(선결제 차감) — 잔액 전액 아님.
+                BillingCycle cycle = upcomingCycle(card, today);
+                long amount = cycle.amount();
+                LocalDate periodStart = cycle.periodStart();
+                LocalDate periodEnd = cycle.periodEnd();
 
                 if (amount == 0L) {
                     cardBillingRepository.save(
@@ -187,6 +198,44 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
     private static long absBalance(Asset card) {
         return Math.abs(card.getBalance() != null ? card.getBalance() : 0L);
+    }
+
+    /** 결제 회차 — 청구 기간(전월 1일~말일)과 그 회차의 결제 필요 잔여액. */
+    record BillingCycle(LocalDate periodStart, LocalDate periodEnd, long amount) {}
+
+    /**
+     * 다가오는 결제 회차 계산. 회차 금액 = 청구 기간(결제일의 전월 1일~말일) 카드 순사용액
+     * (지출 − 환불) − 같은 회차에 이미 결제 완료된 금액(선결제 차감), 최소 0.
+     * 결제일 미설정(paymentDay null)이면 회차를 정의할 수 없어 종전처럼 잔액 전액을 반환한다.
+     */
+    private BillingCycle upcomingCycle(Asset card, LocalDate nextPaymentDate) {
+        if (nextPaymentDate == null) {
+            return new BillingCycle(null, null, absBalance(card));
+        }
+        LocalDate periodStart = periodStartFor(nextPaymentDate);
+        LocalDate periodEnd = periodEndFor(nextPaymentDate);
+        long spend = cycleNetSpend(card.getRowId(), periodStart, periodEnd);
+        long alreadyPaid = cardBillingRepository
+            .sumCompletedAmountByCardAndPeriod(card.getRowId(), periodStart, periodEnd);
+        return new BillingCycle(periodStart, periodEnd, Math.max(0L, spend - alreadyPaid));
+    }
+
+    /** 청구 기간 내 카드 순사용액 — EXPENSE 합 − INCOME(환불/취소) 합. */
+    private long cycleNetSpend(Long cardRowId, LocalDate start, LocalDate end) {
+        Long sum = entityManager.createQuery(
+            "SELECT COALESCE(SUM(CASE WHEN e.expenseType = :expenseType THEN e.amount ELSE -e.amount END), 0) " +
+            "FROM Expense e " +
+            "WHERE e.asset.rowId = :cardRowId " +
+            "AND e.expenseDate >= :start AND e.expenseDate <= :end " +
+            "AND e.isDeleted = :isDeleted", Long.class)
+            .setParameter("expenseType", ExpenseType.EXPENSE)
+            .setParameter("cardRowId", cardRowId)
+            // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
+            .setParameter("start", start.atStartOfDay())
+            .setParameter("end", end.atTime(LocalTime.MAX))
+            .setParameter("isDeleted", YNType.N)
+            .getSingleResult();
+        return sum == null ? 0L : sum;
     }
 
     // === 결제일 / 청구기간 계산 (RecurringTransaction MONTHLY 말일 보정 로직 재활용) ===

@@ -36,6 +36,22 @@ public class CardBillingQueryDslRepository implements CardBillingRepository {
     }
 
     @Override
+    public long sumCompletedAmountByCardAndPeriod(Long cardAssetRowId, LocalDate periodStart, LocalDate periodEnd) {
+        // openfeign querydsl 7.x — sum() 집계 대신 fetch 후 합산(ExpenseQueryDslRepository 관례)
+        List<Long> amounts = queryFactory.select(billing.billingAmount)
+            .from(billing)
+            .where(
+                billing.cardAsset.rowId.eq(cardAssetRowId),
+                billing.periodStart.eq(periodStart),
+                billing.periodEnd.eq(periodEnd),
+                billing.status.eq(BillingStatus.COMPLETED),
+                billing.isDeleted.eq(YNType.N)
+            )
+            .fetch();
+        return amounts.stream().filter(java.util.Objects::nonNull).mapToLong(Long::longValue).sum();
+    }
+
+    @Override
     public boolean existsCompletedByCardAndPaymentDate(Long cardAssetRowId, LocalDate paymentDate) {
         Integer fetched = queryFactory.selectOne()
             .from(billing)
