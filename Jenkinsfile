@@ -16,9 +16,10 @@ pipeline {
         stage('Checkout') {
             steps {
                 dir("${SRC_DIR}") {
-                    git branch: "${params.GIT_REF}",
-                        url: "${REPO_URL}",
-                        credentialsId: 'github-credentials'
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: params.GIT_REF.startsWith('v') ? "refs/tags/${params.GIT_REF}" : "*/${params.GIT_REF}"]],
+                        userRemoteConfigs: [[url: "${REPO_URL}", credentialsId: 'github-credentials']]
+                    ])
                 }
             }
         }
