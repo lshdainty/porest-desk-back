@@ -33,11 +33,25 @@ pipeline {
                 }
             }
         }
+        stage('Resolve Version') {
+            steps {
+                dir("${SRC_DIR}") {
+                    script {
+                        // 태그 위면 v1.0.1, 태그 이후면 v1.0.1-3-gabc1234, 태그 없으면 커밋 해시
+                        env.APP_VERSION = sh(
+                            script: 'git describe --tags --always 2>/dev/null || echo unknown',
+                            returnStdout: true
+                        ).trim()
+                        echo "APP_VERSION = ${env.APP_VERSION}"
+                    }
+                }
+            }
+        }
         stage('Docker Build') {
             steps {
                 dir("${SRC_DIR}") {
                     withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
-                        sh 'docker build --build-arg GITHUB_ACTOR=$GH_USER --build-arg GITHUB_TOKEN=$GH_TOKEN -t ' + IMAGE_NAME + ':latest .'
+                        sh 'docker build --build-arg GITHUB_ACTOR=$GH_USER --build-arg GITHUB_TOKEN=$GH_TOKEN -t ' + IMAGE_NAME + ':latest -t ' + IMAGE_NAME + ':' + env.APP_VERSION + ' .'
                     }
                 }
             }
@@ -56,7 +70,8 @@ pipeline {
                         --env-file ${ENV_FILE_DEV} \
                         -e SPRING_PROFILES_ACTIVE=dev \
                         -e LOKI_URL=${env.LOKI_URL} \
-                        ${IMAGE_NAME}:latest
+                        -e APP_VERSION=${env.APP_VERSION} \
+                        ${IMAGE_NAME}:${env.APP_VERSION}
                 """
             }
         }
@@ -86,7 +101,8 @@ pipeline {
                         --env-file ${ENV_FILE_PROD} \
                         -e SPRING_PROFILES_ACTIVE=prod \
                         -e LOKI_URL=${env.LOKI_URL} \
-                        ${IMAGE_NAME}:latest
+                        -e APP_VERSION=${env.APP_VERSION} \
+                        ${IMAGE_NAME}:${env.APP_VERSION}
                 """
             }
         }

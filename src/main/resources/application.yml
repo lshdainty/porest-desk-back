@@ -119,6 +119,16 @@ management:
     web:
       exposure:
         include: prometheus, health, info, metrics
+  # info 엔드포인트에서 info.* 프로퍼티(APP_VERSION 등)를 노출하려면 필요
+  info:
+    env:
+      enabled: true
   metrics:
     tags:
       application: porest-desk
+
+# 배포 버전 (Jenkins 가 git describe 결과를 APP_VERSION 으로 주입)
+# 확인: GET /actuator/info
+info:
+  app:
+    version: ${APP_VERSION:unknown}
