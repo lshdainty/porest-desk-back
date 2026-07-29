@@ -2,7 +2,17 @@ pipeline {
     agent any
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'prod'], description: '배포 환경')
-        string(name: 'GIT_REF', defaultValue: 'main', description: '브랜치 또는 태그 (main, v1.0.0)')
+        gitParameter(
+            name: 'GIT_REF',
+            type: 'PT_BRANCH_TAG',
+            branchFilter: 'origin/(.*)',
+            tagFilter: '*',
+            defaultValue: 'main',
+            sortMode: 'DESCENDING_SMART',
+            selectedValue: 'DEFAULT',
+            quickFilterEnabled: true,
+            description: '배포할 브랜치 또는 태그'
+        )
     }
     environment {
         REPO_URL = "https://github.com/lshdainty/porest-desk-back.git"
