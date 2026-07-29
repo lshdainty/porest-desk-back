@@ -118,7 +118,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: prometheus, health, info, metrics
+        include: prometheus, health, info
   # info 엔드포인트에서 info.* 프로퍼티(APP_VERSION 등)를 노출하려면 필요
   info:
     env:
