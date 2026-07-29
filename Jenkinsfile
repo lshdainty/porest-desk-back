@@ -23,6 +23,16 @@ pipeline {
         CONTAINER_NAME = "desk-backend"
     }
     stages {
+        stage('Validate') {
+            steps {
+                script {
+                    // 운영은 릴리즈 태그(vX.Y.Z)만 배포할 수 있다. main 등 브랜치는 거부.
+                    if (params.DEPLOY_ENV == 'prod' && !(params.GIT_REF ==~ /v\d+\.\d+\.\d+/)) {
+                        error "운영 배포는 릴리즈 태그(vX.Y.Z)만 허용됩니다. 선택된 값: ${params.GIT_REF}"
+                    }
+                }
+            }
+        }
         stage('Checkout') {
             steps {
                 dir("${SRC_DIR}") {
@@ -37,11 +47,17 @@ pipeline {
             steps {
                 dir("${SRC_DIR}") {
                     script {
-                        // 태그 위면 v1.0.1, 태그 이후면 v1.0.1-3-gabc1234, 태그 없으면 커밋 해시
-                        env.APP_VERSION = sh(
-                            script: 'git describe --tags --always 2>/dev/null || echo unknown',
-                            returnStdout: true
-                        ).trim()
+                        if (params.DEPLOY_ENV == 'prod') {
+                            // Validate 에서 vX.Y.Z 임이 보장됨 — 선택한 태그가 곧 버전
+                            env.APP_VERSION = params.GIT_REF
+                        } else {
+                            // dev 는 태그 위여도 --long 으로 -0-g<hash> 를 붙여
+                            // 운영 이미지(vX.Y.Z)와 이름이 절대 겹치지 않게 한다
+                            env.APP_VERSION = sh(
+                                script: 'git describe --tags --always --long 2>/dev/null || echo unknown',
+                                returnStdout: true
+                            ).trim()
+                        }
                         echo "APP_VERSION = ${env.APP_VERSION}"
                     }
                 }
