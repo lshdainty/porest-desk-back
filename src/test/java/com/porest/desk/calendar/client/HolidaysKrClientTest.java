@@ -1,6 +1,5 @@
 package com.porest.desk.calendar.client;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.porest.desk.calendar.client.dto.ExternalHoliday;
 import com.porest.desk.calendar.config.HolidayProperties;
 import com.porest.desk.calendar.exception.HolidayProviderException;
@@ -39,7 +38,7 @@ class HolidaysKrClientTest {
         HolidayProperties properties = new HolidayProperties();
         properties.getFallback().setBaseUrl(BASE_URL);
 
-        sut = new HolidaysKrClient(restTemplate, properties, new ObjectMapper());
+        sut = new HolidaysKrClient(restTemplate, properties);
     }
 
     @Test
