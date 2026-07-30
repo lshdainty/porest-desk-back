@@ -41,16 +41,19 @@ public class KasiHolidayClient implements HolidayProvider {
     /** 공휴일은 연 30건을 넘지 않지만 임시공휴일·선거일이 겹치는 해를 감안해 넉넉히 잡는다. */
     private static final int NUM_OF_ROWS = 100;
 
+    /**
+     * 이 애플리케이션에는 Jackson 2 의 ObjectMapper 빈이 없다(Spring Boot 4 는 Jackson 3 을 쓴다).
+     * {@code ExportFileWriter} 와 같은 방식으로 직접 만들어 쓴다.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final RestTemplate restTemplate;
     private final HolidayProperties properties;
-    private final ObjectMapper objectMapper;
 
     public KasiHolidayClient(@Qualifier("kasiRestTemplate") RestTemplate restTemplate,
-                             HolidayProperties properties,
-                             ObjectMapper objectMapper) {
+                             HolidayProperties properties) {
         this.restTemplate = restTemplate;
         this.properties = properties;
-        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -118,7 +121,7 @@ public class KasiHolidayClient implements HolidayProvider {
 
         JsonNode root;
         try {
-            root = objectMapper.readTree(trimmed);
+            root = MAPPER.readTree(trimmed);
         } catch (Exception e) {
             throw new HolidayProviderException("특일정보 API 응답 파싱 실패: year=" + year, e);
         }

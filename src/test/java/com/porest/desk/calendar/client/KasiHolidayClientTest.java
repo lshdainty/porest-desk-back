@@ -1,6 +1,5 @@
 package com.porest.desk.calendar.client;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.porest.desk.calendar.client.dto.ExternalHoliday;
 import com.porest.desk.calendar.config.HolidayProperties;
 import com.porest.desk.calendar.exception.HolidayProviderException;
@@ -47,7 +46,7 @@ class KasiHolidayClientTest {
         properties.getKasi().setBaseUrl(BASE_URL);
         properties.getKasi().setServiceKey("test-service-key");
 
-        sut = new KasiHolidayClient(restTemplate, properties, new ObjectMapper());
+        sut = new KasiHolidayClient(restTemplate, properties);
     }
 
     private String body(String items, int totalCount) {

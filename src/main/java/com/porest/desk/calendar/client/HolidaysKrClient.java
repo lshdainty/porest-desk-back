@@ -37,16 +37,19 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "app.holiday.fallback", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class HolidaysKrClient implements HolidayProvider {
 
+    /**
+     * 이 애플리케이션에는 Jackson 2 의 ObjectMapper 빈이 없다(Spring Boot 4 는 Jackson 3 을 쓴다).
+     * {@code ExportFileWriter} 와 같은 방식으로 직접 만들어 쓴다.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final RestTemplate restTemplate;
     private final HolidayProperties properties;
-    private final ObjectMapper objectMapper;
 
     public HolidaysKrClient(@Qualifier("holidaysKrRestTemplate") RestTemplate restTemplate,
-                            HolidayProperties properties,
-                            ObjectMapper objectMapper) {
+                            HolidayProperties properties) {
         this.restTemplate = restTemplate;
         this.properties = properties;
-        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -81,7 +84,7 @@ public class HolidaysKrClient implements HolidayProvider {
 
         JsonNode root;
         try {
-            root = objectMapper.readTree(body);
+            root = MAPPER.readTree(body);
         } catch (Exception e) {
             throw new HolidayProviderException("폴백 소스 응답 파싱 실패: year=" + year, e);
         }
