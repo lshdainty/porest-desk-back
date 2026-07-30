@@ -11,7 +11,6 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 @Primary
@@ -22,35 +21,28 @@ public class HolidayQueryDslRepository implements HolidayRepository {
     private static final QHoliday holiday = QHoliday.holiday;
 
     @Override
-    public Optional<Holiday> findById(Long rowId) {
-        return Optional.ofNullable(
-            queryFactory.selectFrom(holiday)
-                .where(holiday.rowId.eq(rowId), holiday.isDeleted.eq(YNType.N))
-                .fetchOne()
-        );
-    }
-
-    @Override
     public List<Holiday> findByDateRange(LocalDate startDate, LocalDate endDate) {
         return queryFactory.selectFrom(holiday)
             .where(
                 holiday.isDeleted.eq(YNType.N),
-                holiday.isRecurring.eq(YNType.N),
                 holiday.holidayDate.goe(startDate),
                 holiday.holidayDate.loe(endDate)
             )
-            .orderBy(holiday.holidayDate.asc())
+            .orderBy(holiday.holidayDate.asc(), holiday.holidayName.asc())
             .fetch();
     }
 
     @Override
-    public List<Holiday> findAllRecurring() {
+    public List<Holiday> findByYearIncludingDeleted(int year) {
+        LocalDate from = LocalDate.of(year, 1, 1);
+        LocalDate to = LocalDate.of(year, 12, 31);
+
         return queryFactory.selectFrom(holiday)
             .where(
-                holiday.isDeleted.eq(YNType.N),
-                holiday.isRecurring.eq(YNType.Y)
+                holiday.holidayDate.goe(from),
+                holiday.holidayDate.loe(to)
             )
-            .orderBy(holiday.holidayDate.asc())
+            .orderBy(holiday.holidayDate.asc(), holiday.holidayName.asc())
             .fetch();
     }
 

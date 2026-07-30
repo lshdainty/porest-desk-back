@@ -101,6 +101,27 @@ app:
     base-url: ${TOSS_API_URL:https://openapi.tossinvest.com}
     connect-timeout: ${TOSS_CONNECT_TIMEOUT:5000}
     read-timeout: ${TOSS_READ_TIMEOUT:10000}
+  # 대한민국 공휴일 자동 동기화. 1차 소스는 한국천문연구원 특일정보 API, 실패 시 월력요항 기반 정적 소스로 폴백.
+  holiday:
+    kasi:
+      base-url: ${KASI_API_URL:https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService}
+      # 공공데이터포털 인증키(디코딩 키). 미설정 시 KASI 호출을 건너뛰고 폴백 소스만 사용한다.
+      service-key: ${KASI_SERVICE_KEY:}
+      connect-timeout: ${KASI_CONNECT_TIMEOUT:5000}
+      read-timeout: ${KASI_READ_TIMEOUT:10000}
+    fallback:
+      enabled: ${HOLIDAY_FALLBACK_ENABLED:true}
+      base-url: ${HOLIDAY_FALLBACK_URL:https://holidays.hyunbin.page}
+      connect-timeout: ${HOLIDAY_FALLBACK_CONNECT_TIMEOUT:5000}
+      read-timeout: ${HOLIDAY_FALLBACK_READ_TIMEOUT:10000}
+    sync:
+      enabled: ${HOLIDAY_SYNC_ENABLED:true}
+      cron: ${HOLIDAY_SYNC_CRON:0 0 12 * * *}
+      lookahead-years: ${HOLIDAY_SYNC_LOOKAHEAD_YEARS:1}
+    backfill:
+      # 초기 적재용. 한 번 돌린 뒤 다시 false 로 내린다.
+      enabled: ${HOLIDAY_BACKFILL_ENABLED:false}
+      start-year: ${HOLIDAY_BACKFILL_START_YEAR:2004}
 
 # Swagger 설정
 springdoc:
