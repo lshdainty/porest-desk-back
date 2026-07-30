@@ -1,6 +1,5 @@
 package com.porest.desk.calendar.controller.dto;
 
-import com.porest.core.type.YNType;
 import com.porest.desk.calendar.service.dto.HolidayServiceDto;
 import com.porest.desk.calendar.type.HolidayType;
 
@@ -10,26 +9,11 @@ import java.util.List;
 
 public class HolidayApiDto {
 
-    public record CreateRequest(
-        LocalDate holidayDate,
-        String holidayName,
-        HolidayType holidayType,
-        YNType isRecurring
-    ) {}
-
-    public record UpdateRequest(
-        LocalDate holidayDate,
-        String holidayName,
-        HolidayType holidayType,
-        YNType isRecurring
-    ) {}
-
     public record Response(
         Long rowId,
         LocalDate holidayDate,
         String holidayName,
         HolidayType holidayType,
-        YNType isRecurring,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -39,7 +23,6 @@ public class HolidayApiDto {
                 info.holidayDate(),
                 info.holidayName(),
                 info.holidayType(),
-                info.isRecurring(),
                 info.createAt(),
                 info.modifyAt()
             );
