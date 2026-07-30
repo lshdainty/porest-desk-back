@@ -110,7 +110,16 @@ public class HolidayYearSynchronizer {
 
     /** 등록된 소스를 순서대로 시도한다. 모두 실패하면 null. */
     private Fetched fetch(int year) {
+        boolean attempted = false;
+
         for (HolidayProvider provider : providers) {
+            // 인증정보 미설정 등으로 쓸 수 없는 소스는 매일 경고를 쌓지 않고 조용히 건너뛴다.
+            if (!provider.isAvailable()) {
+                log.debug("공휴일 소스를 쓸 수 없어 건너뜁니다: year={}, source={}", year, provider.source());
+                continue;
+            }
+
+            attempted = true;
             try {
                 return new Fetched(provider.source(), provider.fetch(year));
             } catch (HolidayProviderException e) {
@@ -118,7 +127,12 @@ public class HolidayYearSynchronizer {
                     year, provider.source(), e.getMessage());
             }
         }
-        log.error("공휴일 동기화 실패 - 모든 소스 호출 실패: year={}", year);
+
+        if (attempted) {
+            log.error("공휴일 동기화 실패 - 모든 소스 호출 실패: year={}", year);
+        } else {
+            log.error("공휴일 동기화 실패 - 사용 가능한 소스가 없습니다: year={}", year);
+        }
         return null;
     }
 

@@ -8,7 +8,6 @@ import com.porest.desk.calendar.exception.HolidayProviderException;
 import com.porest.desk.calendar.type.HolidaySource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
@@ -35,7 +34,6 @@ import java.util.List;
 @Slf4j
 @Component
 @Order(1)
-@ConditionalOnProperty(prefix = "app.holiday.kasi", name = "service-key")
 public class KasiHolidayClient implements HolidayProvider {
 
     private static final String OPERATION = "/getRestDeInfo";
@@ -58,6 +56,12 @@ public class KasiHolidayClient implements HolidayProvider {
     @Override
     public HolidaySource source() {
         return HolidaySource.KASI;
+    }
+
+    /** 인증키가 없으면 호출해도 인증 오류만 돌아오므로 소스에서 빠진다. */
+    @Override
+    public boolean isAvailable() {
+        return properties.getKasi().isConfigured();
     }
 
     @Override

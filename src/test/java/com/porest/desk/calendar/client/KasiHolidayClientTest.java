@@ -189,6 +189,22 @@ class KasiHolidayClientTest {
     }
 
     @Test
+    @DisplayName("인증키 유무로 가용 여부를 판정한다")
+    void isAvailableFollowsServiceKey() {
+        assertThat(sut.isAvailable()).isTrue();
+
+        // 공공데이터포털 키를 아직 못 받은 상태(빈 문자열 바인딩)에서는 소스에서 빠져야 한다.
+        properties.getKasi().setServiceKey("");
+        assertThat(sut.isAvailable()).isFalse();
+
+        properties.getKasi().setServiceKey("   ");
+        assertThat(sut.isAvailable()).isFalse();
+
+        properties.getKasi().setServiceKey(null);
+        assertThat(sut.isAvailable()).isFalse();
+    }
+
+    @Test
     @DisplayName("인코딩 인증키를 넣어도 이중 인코딩하지 않는다")
     void fetchDoesNotDoubleEncodeServiceKey() {
         // 포털이 주는 인코딩 키(a+b/c==) 형태. 그대로 붙이면 %252B 로 재인코딩돼 인증에 실패한다.

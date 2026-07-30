@@ -23,6 +23,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
@@ -43,7 +44,11 @@ class HolidayYearSynchronizerTest {
     @Mock private HolidayProvider fallbackProvider;
     @Mock private HolidayRepository holidayRepository;
 
+    /** mock 은 default 메서드도 false 로 스텁하므로 가용 상태를 명시해 준다. */
     private HolidayYearSynchronizer sut(HolidayProvider... providers) {
+        for (HolidayProvider provider : providers) {
+            given(provider.isAvailable()).willReturn(true);
+        }
         return new HolidayYearSynchronizer(List.of(providers), holidayRepository);
     }
 
@@ -198,6 +203,40 @@ class HolidayYearSynchronizerTest {
 
         assertThat(result.isFailed()).isTrue();
         verify(holidayRepository, never()).findByYearIncludingDeleted(any(Integer.class));
+        verify(holidayRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("인증키 미설정 등으로 쓸 수 없는 소스는 호출하지 않고 다음 소스로 넘어간다")
+    void skipsUnavailableProvider() {
+        given(kasiProvider.source()).willReturn(HolidaySource.KASI);
+        given(kasiProvider.isAvailable()).willReturn(false);
+        given(fallbackProvider.source()).willReturn(HolidaySource.HOLIDAYS_KR);
+        given(fallbackProvider.isAvailable()).willReturn(true);
+        given(fallbackProvider.fetch(2026)).willReturn(List.of(
+                external(LocalDate.of(2026, 7, 17), "제헌절", HolidayType.PUBLIC)));
+        given(holidayRepository.findByYearIncludingDeleted(2026)).willReturn(List.of());
+
+        HolidaySyncResult result = new HolidayYearSynchronizer(
+                List.of(kasiProvider, fallbackProvider), holidayRepository).sync(2026);
+
+        // 인증키가 없는 KASI 는 호출 자체를 하지 않는다(매일 경고 로그가 쌓이지 않도록).
+        verify(kasiProvider, never()).fetch(anyInt());
+        assertThat(result.source()).isEqualTo(HolidaySource.HOLIDAYS_KR);
+        assertThat(result.inserted()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("쓸 수 있는 소스가 하나도 없으면 실패 결과를 돌려주고 DB 는 건드리지 않는다")
+    void returnsFailedWhenNoProviderAvailable() {
+        given(kasiProvider.source()).willReturn(HolidaySource.KASI);
+        given(kasiProvider.isAvailable()).willReturn(false);
+
+        HolidaySyncResult result = new HolidayYearSynchronizer(
+                List.of(kasiProvider), holidayRepository).sync(2026);
+
+        assertThat(result.isFailed()).isTrue();
+        verify(kasiProvider, never()).fetch(anyInt());
         verify(holidayRepository, never()).save(any());
     }
 
