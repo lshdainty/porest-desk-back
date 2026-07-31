@@ -43,6 +43,7 @@ import static org.mockito.Mockito.verify;
 class AssetServiceImplTest {
 
     @Mock private AssetRepository assetRepository;
+    @Mock private com.porest.desk.asset.repository.AssetHoldingRepository assetHoldingRepository;
     @Mock private AssetTransferRepository assetTransferRepository;
     @Mock private UserRepository userRepository;
     @Mock private CardCatalogRepository cardCatalogRepository;

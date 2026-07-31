@@ -41,7 +41,8 @@ public class AssetApiController {
             request.institution(), request.memo(), request.sortOrder(),
             request.isIncludedInTotal(),
             request.cardCatalogRowId(),
-            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId()
+            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId(),
+            AssetApiDto.HoldingRequest.toCommands(request.holdings())
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -70,7 +71,8 @@ public class AssetApiController {
             request.currency(), request.color(),
             request.institution(), request.memo(), request.isIncludedInTotal(),
             request.cardCatalogRowId(),
-            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId()
+            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId(),
+            AssetApiDto.HoldingRequest.toCommands(request.holdings())
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }

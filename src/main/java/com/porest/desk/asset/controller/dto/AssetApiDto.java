@@ -24,7 +24,9 @@ public class AssetApiDto {
         Long cardCatalogRowId,
         Long creditLimit,
         Integer paymentDay,
-        Long paymentAssetRowId
+        Long paymentAssetRowId,
+        // 투자 보유 목록 (INVESTMENT 전용)
+        List<HoldingRequest> holdings
     ) {}
 
     public record UpdateAssetRequest(
@@ -39,8 +41,43 @@ public class AssetApiDto {
         Long cardCatalogRowId,
         Long creditLimit,
         Integer paymentDay,
-        Long paymentAssetRowId
+        Long paymentAssetRowId,
+        // 투자 보유 목록 — null=무변경, 리스트=전체 교체
+        List<HoldingRequest> holdings
     ) {}
+
+    /** 투자 보유 입력 — linked=true: tossSymbol+quantity / false: holdingName+holdingValue. */
+    public record HoldingRequest(
+        Boolean linked,
+        String tossSymbol,
+        Long quantity,
+        String holdingName,
+        Long holdingValue
+    ) {
+        public AssetServiceDto.HoldingCommand toCommand() {
+            return new AssetServiceDto.HoldingCommand(linked, tossSymbol, quantity, holdingName, holdingValue);
+        }
+
+        public static List<AssetServiceDto.HoldingCommand> toCommands(List<HoldingRequest> requests) {
+            return requests == null ? null : requests.stream().map(HoldingRequest::toCommand).toList();
+        }
+    }
+
+    public record HoldingResponse(
+        Long rowId,
+        boolean linked,
+        String tossSymbol,
+        Long quantity,
+        String holdingName,
+        Long holdingValue,
+        Integer sortOrder
+    ) {
+        public static HoldingResponse from(AssetServiceDto.HoldingInfo h) {
+            return new HoldingResponse(
+                h.rowId(), h.linked(), h.tossSymbol(), h.quantity(),
+                h.holdingName(), h.holdingValue(), h.sortOrder());
+        }
+    }
 
     public record CardCatalogBriefResponse(
         Long rowId,
@@ -73,6 +110,8 @@ public class AssetApiDto {
         Long paymentAssetRowId,
         String tossSymbol,
         Long tossQuantity,
+        // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 배열)
+        List<HoldingResponse> holdings,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
@@ -84,6 +123,7 @@ public class AssetApiDto {
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
                 info.tossSymbol(), info.tossQuantity(),
+                info.holdings().stream().map(HoldingResponse::from).toList(),
                 info.createAt(), info.modifyAt()
             );
         }
