@@ -122,6 +122,18 @@ app:
       # 초기 적재용. 한 번 돌린 뒤 다시 false 로 내린다.
       enabled: ${HOLIDAY_BACKFILL_ENABLED:false}
       start-year: ${HOLIDAY_BACKFILL_START_YEAR:2004}
+  # 한국투자증권 종목 마스터파일 동기화. 인증 없는 공개 다운로드라 API 키가 필요 없다.
+  kis:
+    master:
+      base-url: ${KIS_MASTER_BASE_URL:https://new.real.download.dws.co.kr/common/master}
+      connect-timeout: ${KIS_MASTER_CONNECT_TIMEOUT:5000}
+      read-timeout: ${KIS_MASTER_READ_TIMEOUT:30000}
+      sync:
+        enabled: ${KIS_MASTER_SYNC_ENABLED:true}
+        cron: ${KIS_MASTER_SYNC_CRON:0 0 7 * * *}
+      backfill:
+        # 기동 시 테이블이 비어 있으면 1회 적재. 이미 데이터가 있으면 아무것도 하지 않는다.
+        enabled: ${KIS_MASTER_BACKFILL_ENABLED:true}
 
 # Swagger 설정
 springdoc:
