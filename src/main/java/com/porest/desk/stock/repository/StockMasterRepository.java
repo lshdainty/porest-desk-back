@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface StockMasterRepository {
     /** 유효 종목 검색 (is_active=Y). 검색어가 없으면 시장·심볼 순 전체 페이징 */
@@ -19,6 +20,12 @@ public interface StockMasterRepository {
     List<StockMaster> findAllByMarketIncludingInactive(StockMarket market);
 
     long countAll();
+
+    /** (시장, 심볼) 정확 일치 유효 종목 1건 */
+    Optional<StockMaster> findActiveByMarketAndSymbol(StockMarket market, String symbol);
+
+    /** 심볼 정확 일치 유효 종목 전부 — 국내 005930·상해 600519 처럼 시장 간 충돌 가능 */
+    List<StockMaster> findAllActiveBySymbol(String symbol);
 
     StockMaster save(StockMaster stockMaster);
 }
