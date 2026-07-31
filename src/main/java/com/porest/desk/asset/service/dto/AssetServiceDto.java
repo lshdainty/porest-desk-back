@@ -2,6 +2,7 @@ package com.porest.desk.asset.service.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
+import com.porest.desk.asset.domain.AssetHolding;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.domain.CardCatalog;
@@ -27,7 +28,9 @@ public class AssetServiceDto {
         Long cardCatalogRowId,
         Long creditLimit,
         Integer paymentDay,
-        Long paymentAssetRowId
+        Long paymentAssetRowId,
+        // 투자 보유 목록 (INVESTMENT 전용). null=없음.
+        List<HoldingCommand> holdings
     ) {}
 
     public record UpdateAssetCommand(
@@ -42,8 +45,35 @@ public class AssetServiceDto {
         Long cardCatalogRowId,
         Long creditLimit,
         Integer paymentDay,
-        Long paymentAssetRowId
+        Long paymentAssetRowId,
+        // 투자 보유 목록 — null=무변경, 리스트=전체 교체(빈 리스트=전부 삭제).
+        List<HoldingCommand> holdings
     ) {}
+
+    /** 투자 보유 입력 — linked=true: tossSymbol+quantity 필수 / false: holdingName+holdingValue 필수. */
+    public record HoldingCommand(
+        Boolean linked,
+        String tossSymbol,
+        Long quantity,
+        String holdingName,
+        Long holdingValue
+    ) {}
+
+    public record HoldingInfo(
+        Long rowId,
+        boolean linked,
+        String tossSymbol,
+        Long quantity,
+        String holdingName,
+        Long holdingValue,
+        Integer sortOrder
+    ) {
+        public static HoldingInfo from(AssetHolding h) {
+            return new HoldingInfo(
+                h.getRowId(), h.isLinked(), h.getTossSymbol(), h.getQuantity(),
+                h.getHoldingName(), h.getHoldingValue(), h.getSortOrder());
+        }
+    }
 
     public record CardCatalogBrief(
         Long rowId,
@@ -82,10 +112,16 @@ public class AssetServiceDto {
         Long paymentAssetRowId,
         String tossSymbol,
         Long tossQuantity,
+        // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 리스트)
+        List<HoldingInfo> holdings,
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
         public static AssetInfo from(Asset asset) {
+            return from(asset, List.of());
+        }
+
+        public static AssetInfo from(Asset asset, List<HoldingInfo> holdings) {
             return new AssetInfo(
                 asset.getRowId(),
                 asset.getUser().getRowId(),
@@ -104,6 +140,7 @@ public class AssetServiceDto {
                 asset.getPaymentAsset() != null ? asset.getPaymentAsset().getRowId() : null,
                 asset.getTossSymbol(),
                 asset.getTossQuantity(),
+                holdings != null ? holdings : List.of(),
                 asset.getCreateAt(),
                 asset.getModifyAt()
             );

@@ -5,7 +5,9 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
+import com.porest.desk.asset.domain.AssetHolding;
 import com.porest.desk.asset.domain.AssetTransfer;
+import com.porest.desk.asset.repository.AssetHoldingRepository;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
@@ -48,6 +50,7 @@ public class AssetServiceImpl implements AssetService {
     private static final String FEATURE_SECURITIES = "SECURITIES";
 
     private final AssetRepository assetRepository;
+    private final AssetHoldingRepository assetHoldingRepository;
     private final AssetTransferRepository assetTransferRepository;
     private final UserRepository userRepository;
     private final CardCatalogRepository cardCatalogRepository;
@@ -63,6 +66,8 @@ public class AssetServiceImpl implements AssetService {
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        validateHoldings(command.assetType(), command.holdings());
 
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
         Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), command.userRowId());
@@ -85,19 +90,31 @@ public class AssetServiceImpl implements AssetService {
         );
 
         assetRepository.save(asset);
+        List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, command.holdings());
         // 잔액 이력: 초기 잔액 절대 앵커
         balanceHistoryService.recordInit(asset, LocalDateTime.now());
         log.info("자산 등록 완료: assetId={}, userRowId={}", asset.getRowId(), command.userRowId());
 
-        return AssetServiceDto.AssetInfo.from(asset);
+        return AssetServiceDto.AssetInfo.from(asset, holdings);
     }
 
     @Override
     public List<AssetServiceDto.AssetInfo> getAssets(Long userRowId) {
         log.debug("자산 목록 조회: userRowId={}", userRowId);
 
-        return assetRepository.findByUser(userRowId).stream()
-            .map(AssetServiceDto.AssetInfo::from)
+        List<Asset> assets = assetRepository.findByUser(userRowId);
+        if (assets.isEmpty()) {
+            return List.of();
+        }
+        // 보유는 in-query 1회 일괄 로딩 — 자산별 N+1 금지.
+        List<Long> ids = assets.stream().map(Asset::getRowId).toList();
+        Map<Long, List<AssetServiceDto.HoldingInfo>> holdingsByAsset =
+            assetHoldingRepository.findActiveByAssets(ids).stream()
+                .collect(Collectors.groupingBy(h -> h.getAsset().getRowId(),
+                    Collectors.mapping(AssetServiceDto.HoldingInfo::from, Collectors.toList())));
+
+        return assets.stream()
+            .map(a -> AssetServiceDto.AssetInfo.from(a, holdingsByAsset.getOrDefault(a.getRowId(), List.of())))
             .toList();
     }
 
@@ -107,7 +124,7 @@ public class AssetServiceImpl implements AssetService {
 
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
-        return AssetServiceDto.AssetInfo.from(asset);
+        return AssetServiceDto.AssetInfo.from(asset, activeHoldingInfos(assetId));
     }
 
     @Override
@@ -145,8 +162,20 @@ public class AssetServiceImpl implements AssetService {
             balanceHistoryService.recordManual(asset, newBalance, LocalDateTime.now());
         }
 
+        // 보유 교체 — null=무변경, 리스트=전체 교체(기존 활성 soft delete 후 신규 insert).
+        List<AssetServiceDto.HoldingInfo> holdings;
+        if (command.holdings() != null) {
+            validateHoldings(asset.getAssetType(), command.holdings());
+            for (AssetHolding old : assetHoldingRepository.findActiveByAsset(assetId)) {
+                old.deleteHolding(); // dirty checking — UPDATE 는 save 안 함
+            }
+            holdings = saveHoldings(asset, command.holdings());
+        } else {
+            holdings = activeHoldingInfos(assetId);
+        }
+
         log.info("자산 수정 완료: assetId={}", assetId);
-        return AssetServiceDto.AssetInfo.from(asset);
+        return AssetServiceDto.AssetInfo.from(asset, holdings);
     }
 
     @Override
@@ -223,11 +252,75 @@ public class AssetServiceImpl implements AssetService {
         return AssetServiceDto.AssetInfo.from(asset);
     }
 
+    /** 보유 입력 검증 — INVESTMENT 전용, linked=Y 는 종목코드+수량 / linked=N 은 이름+평가액 필수. */
+    private void validateHoldings(AssetType assetType, List<AssetServiceDto.HoldingCommand> holdings) {
+        if (holdings == null || holdings.isEmpty()) {
+            return;
+        }
+        if (assetType != AssetType.INVESTMENT) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
+        for (AssetServiceDto.HoldingCommand hc : holdings) {
+            boolean linked = Boolean.TRUE.equals(hc.linked());
+            if (linked) {
+                if (hc.tossSymbol() == null || hc.tossSymbol().isBlank() || hc.quantity() == null) {
+                    throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+                }
+            } else {
+                if (hc.holdingName() == null || hc.holdingName().isBlank() || hc.holdingValue() == null) {
+                    throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+                }
+            }
+        }
+    }
+
+    /** 보유 신규 저장 — sortOrder = 배열 인덱스. */
+    private List<AssetServiceDto.HoldingInfo> saveHoldings(Asset asset, List<AssetServiceDto.HoldingCommand> holdings) {
+        if (holdings == null || holdings.isEmpty()) {
+            return List.of();
+        }
+        List<AssetServiceDto.HoldingInfo> result = new ArrayList<>(holdings.size());
+        for (int i = 0; i < holdings.size(); i++) {
+            AssetServiceDto.HoldingCommand hc = holdings.get(i);
+            boolean linked = Boolean.TRUE.equals(hc.linked());
+            AssetHolding holding = AssetHolding.create(
+                asset,
+                linked ? YNType.Y : YNType.N,
+                linked ? hc.tossSymbol() : null,
+                linked ? hc.quantity() : null,
+                linked ? null : hc.holdingName(),
+                linked ? null : hc.holdingValue(),
+                i
+            );
+            assetHoldingRepository.save(holding);
+            result.add(AssetServiceDto.HoldingInfo.from(holding));
+        }
+        return result;
+    }
+
+    private List<AssetServiceDto.HoldingInfo> activeHoldingInfos(Long assetId) {
+        return assetHoldingRepository.findActiveByAsset(assetId).stream()
+            .map(AssetServiceDto.HoldingInfo::from)
+            .toList();
+    }
+
     @Override
     @Transactional
     public void snapshotTossValuations() {
-        List<Asset> linked = assetRepository.findAllByType(AssetType.INVESTMENT).stream()
-            .filter(Asset::isTossLinked)
+        List<Asset> investments = assetRepository.findAllByType(AssetType.INVESTMENT);
+        if (investments.isEmpty()) {
+            return;
+        }
+        // 자산별 유효 평가 소스: 활성 linked 보유(holdings)가 있으면 그 합산,
+        // 없으면 레거시 단일 연동(toss_symbol×toss_quantity). 이관 전후 모두 안전.
+        Map<Long, List<AssetHolding>> linkedHoldingsByAsset =
+            assetHoldingRepository.findActiveByAssets(investments.stream().map(Asset::getRowId).toList())
+                .stream()
+                .filter(AssetHolding::isLinked)
+                .collect(Collectors.groupingBy(h -> h.getAsset().getRowId()));
+
+        List<Asset> linked = investments.stream()
+            .filter(a -> linkedHoldingsByAsset.containsKey(a.getRowId()) || a.isTossLinked())
             .toList();
         if (linked.isEmpty()) {
             return;
@@ -248,7 +341,8 @@ public class AssetServiceImpl implements AssetService {
                     continue;
                 }
                 String symbols = userAssets.stream()
-                    .map(Asset::getTossSymbol)
+                    .flatMap(a -> valuationPairs(a, linkedHoldingsByAsset).stream())
+                    .map(SymbolQty::symbol)
                     .distinct()
                     .collect(Collectors.joining(","));
                 List<TossMarketDto.PriceResponse> prices = tossQueryService.getPrices(userRowId, symbols);
@@ -275,25 +369,35 @@ public class AssetServiceImpl implements AssetService {
                 }
                 LocalDateTime now = LocalDateTime.now();
                 for (Asset a : userAssets) {
-                    TossMarketDto.PriceResponse p = priceBySymbol.get(a.getTossSymbol());
-                    Long qty = a.getTossQuantity();
-                    if (p == null || qty == null) {
+                    // 보유(linked) 합산 평가 — 한 종목이라도 시세/환율 미확보면 자산 전체 생략(부분합 왜곡 방지).
+                    double sum = 0;
+                    boolean complete = true;
+                    List<SymbolQty> pairs = valuationPairs(a, linkedHoldingsByAsset);
+                    if (pairs.isEmpty()) {
                         continue;
                     }
-                    Double price = parsePrice(p.lastPrice());
-                    if (price == null) {
+                    for (SymbolQty pair : pairs) {
+                        TossMarketDto.PriceResponse p = priceBySymbol.get(pair.symbol());
+                        Double price = p != null ? parsePrice(p.lastPrice()) : null;
+                        if (price == null) {
+                            complete = false;
+                            break;
+                        }
+                        double krw;
+                        if (p.currency() == null || "KRW".equals(p.currency())) {
+                            krw = price;
+                        } else if (fx > 0) {
+                            krw = price * fx;
+                        } else {
+                            complete = false; // 외화인데 환율 미확보
+                            break;
+                        }
+                        sum += krw * pair.qty();
+                    }
+                    if (!complete) {
                         continue;
                     }
-                    double krw;
-                    if (p.currency() == null || "KRW".equals(p.currency())) {
-                        krw = price;
-                    } else if (fx > 0) {
-                        krw = price * fx;
-                    } else {
-                        continue; // 외화인데 환율 미확보 → 적재 생략(왜곡 방지)
-                    }
-                    long valuation = Math.round(krw * qty);
-                    balanceHistoryService.recordValuation(a, valuation, now);
+                    balanceHistoryService.recordValuation(a, Math.round(sum), now);
                 }
             } catch (Exception ex) {
                 // 사용자 단위 격리 — 한 명의 토스 조회 실패가 전체를 막지 않게.
@@ -301,6 +405,23 @@ public class AssetServiceImpl implements AssetService {
             }
         }
     }
+
+    /** 자산의 평가 대상 (종목코드, 수량) 목록 — 활성 linked 보유 우선, 없으면 레거시 단일 연동. */
+    private List<SymbolQty> valuationPairs(Asset asset, Map<Long, List<AssetHolding>> linkedHoldingsByAsset) {
+        List<AssetHolding> holdings = linkedHoldingsByAsset.get(asset.getRowId());
+        if (holdings != null && !holdings.isEmpty()) {
+            return holdings.stream()
+                .filter(h -> h.getTossSymbol() != null && h.getQuantity() != null)
+                .map(h -> new SymbolQty(h.getTossSymbol(), h.getQuantity()))
+                .toList();
+        }
+        if (asset.isTossLinked() && asset.getTossQuantity() != null) {
+            return List.of(new SymbolQty(asset.getTossSymbol(), asset.getTossQuantity()));
+        }
+        return List.of();
+    }
+
+    private record SymbolQty(String symbol, Long qty) {}
 
     /** 토스가 해당 종목코드의 시세를 제공하는지 — 유효 종목 검증(미인식/조회실패 시 false). */
     private boolean isTossPriceAvailable(Long userRowId, String symbol) {
