@@ -70,8 +70,18 @@ public class TossApiClient {
      */
     public <T> T getPath(Long userRowId, String pathTemplate, Map<String, ?> pathVars,
                          ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
+        return getPath(userRowId, pathTemplate, pathVars, null, typeRef);
+    }
+
+    /**
+     * 경로 동적 세그먼트와 쿼리 파라미터가 함께 있는 시장 데이터 조회
+     * (예: {@code /api/v1/market-indicators/{symbol}/candles?interval=1d}). 사용자 개인 토큰 사용.
+     */
+    public <T> T getPath(Long userRowId, String pathTemplate, Map<String, ?> pathVars,
+                         MultiValueMap<String, String> query,
+                         ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
-        return execute(pathTemplate, pathVars, null, null, typeRef, true,
+        return execute(pathTemplate, pathVars, query, null, typeRef, true,
             () -> perUserTokenManager.getAccessToken(userRowId),
             () -> perUserTokenManager.invalidate(userRowId));
     }

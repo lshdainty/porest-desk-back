@@ -2,8 +2,10 @@ package com.porest.desk.toss.service;
 
 import com.porest.core.controller.dto.CursorResponse;
 import com.porest.desk.toss.dto.TossAccountDto;
+import com.porest.desk.toss.dto.TossIndicatorDto;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.dto.TossMarketInfoDto;
+import com.porest.desk.toss.dto.TossRankingDto;
 import com.porest.desk.toss.dto.TossStockDto;
 
 import java.util.List;
@@ -49,6 +51,31 @@ public interface TossQueryService {
 
     /** 매수 유의사항 조회 */
     List<TossStockDto.StockWarning> getStockWarnings(Long userRowId, String symbol);
+
+    // === Rankings (주식 랭킹) ===
+
+    /**
+     * 주식 랭킹 조회. 상위 100위까지.
+     *
+     * @param type          MARKET_TRADING_AMOUNT | MARKET_TRADING_VOLUME | TOP_GAINERS | TOP_LOSERS
+     *                      | TOSS_SECURITIES_TRADING_AMOUNT | TOSS_SECURITIES_TRADING_VOLUME
+     * @param marketCountry KR | US
+     * @param duration      realtime | 1d | 1w | 1mo | 3mo | 6mo | 1y (TOP_GAINERS/LOSERS 는 realtime 미지원)
+     */
+    TossRankingDto.RankingResponse getRankings(Long userRowId, String type, String marketCountry,
+                                               String duration, Boolean excludeInvestmentCaution, Integer count);
+
+    // === Market Indicators (시장 지표: 국내 지수·국채) ===
+
+    /** 시장 지표 현재가 조회 (토스 카탈로그 8종: KOSPI, KOSDAQ, KR_BOND_2Y~30Y. 콤마 구분) */
+    List<TossIndicatorDto.IndicatorPriceResponse> getMarketIndicatorPrices(Long userRowId, String symbols);
+
+    /**
+     * 시장 지표 캔들 조회. 지수는 1m|1d, 국채는 1d 만 지원.
+     * 페이지네이션 규약은 {@link #getCandles} 와 동일 (nextCursor = 토스 nextBefore).
+     */
+    CursorResponse<TossIndicatorDto.IndicatorCandle> getMarketIndicatorCandles(Long userRowId, String symbol,
+                                                                               String interval, Integer size, String cursor);
 
     // === Market Info (환율·장 일정) ===
 
