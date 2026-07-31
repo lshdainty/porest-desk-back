@@ -4,8 +4,10 @@ import com.porest.core.controller.dto.CursorResponse;
 import com.porest.desk.toss.client.TossApiClient;
 import com.porest.desk.toss.client.dto.TossEnvelope;
 import com.porest.desk.toss.dto.TossAccountDto;
+import com.porest.desk.toss.dto.TossIndicatorDto;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.dto.TossMarketInfoDto;
+import com.porest.desk.toss.dto.TossRankingDto;
 import com.porest.desk.toss.dto.TossStockDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.ParameterizedTypeReference;
@@ -106,6 +108,57 @@ public class TossQueryServiceImpl implements TossQueryService {
     public List<TossStockDto.StockWarning> getStockWarnings(Long userRowId, String symbol) {
         return client.getPath(userRowId, "/api/v1/stocks/{symbol}/warnings", Map.of("symbol", symbol),
                 new ParameterizedTypeReference<TossEnvelope<List<TossStockDto.StockWarning>>>() {});
+    }
+
+    // === Rankings ===
+
+    @Override
+    public TossRankingDto.RankingResponse getRankings(Long userRowId, String type, String marketCountry,
+                                                      String duration, Boolean excludeInvestmentCaution, Integer count) {
+        MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
+        q.add("type", type);
+        q.add("marketCountry", marketCountry);
+        q.add("duration", duration);
+        if (excludeInvestmentCaution != null) {
+            q.add("excludeInvestmentCaution", String.valueOf(excludeInvestmentCaution));
+        }
+        if (count != null) {
+            q.add("count", String.valueOf(count));
+        }
+        return client.get(userRowId, "/api/v1/rankings", q,
+                new ParameterizedTypeReference<TossEnvelope<TossRankingDto.RankingResponse>>() {});
+    }
+
+    // === Market Indicators ===
+
+    @Override
+    public List<TossIndicatorDto.IndicatorPriceResponse> getMarketIndicatorPrices(Long userRowId, String symbols) {
+        MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
+        q.add("symbols", symbols);
+        return client.get(userRowId, "/api/v1/market-indicators/prices", q,
+                new ParameterizedTypeReference<TossEnvelope<List<TossIndicatorDto.IndicatorPriceResponse>>>() {});
+    }
+
+    @Override
+    public CursorResponse<TossIndicatorDto.IndicatorCandle> getMarketIndicatorCandles(Long userRowId, String symbol,
+                                                                                      String interval, Integer size, String cursor) {
+        int pageSize = (size == null || size <= 0) ? TOSS_CANDLE_MAX : Math.min(size, TOSS_CANDLE_MAX);
+
+        MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
+        q.add("interval", interval);
+        q.add("count", String.valueOf(pageSize));
+        if (cursor != null && !cursor.isBlank()) {
+            q.add("before", cursor);
+        }
+
+        TossIndicatorDto.IndicatorCandlePageResponse page = client.getPath(userRowId,
+                "/api/v1/market-indicators/{symbol}/candles", Map.of("symbol", symbol), q,
+                new ParameterizedTypeReference<TossEnvelope<TossIndicatorDto.IndicatorCandlePageResponse>>() {});
+
+        List<TossIndicatorDto.IndicatorCandle> candles = (page == null || page.candles() == null) ? List.of() : page.candles();
+        String nextBefore = page == null ? null : page.nextBefore();
+        boolean hasNext = nextBefore != null && !nextBefore.isBlank();
+        return CursorResponse.of(candles, pageSize, hasNext, nextBefore);
     }
 
     // === Market Info ===

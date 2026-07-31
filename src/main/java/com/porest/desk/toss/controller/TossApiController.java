@@ -5,8 +5,10 @@ import com.porest.core.controller.dto.CursorResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.toss.dto.TossAccountDto;
+import com.porest.desk.toss.dto.TossIndicatorDto;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.dto.TossMarketInfoDto;
+import com.porest.desk.toss.dto.TossRankingDto;
 import com.porest.desk.toss.dto.TossStockDto;
 import com.porest.desk.toss.service.TossQueryService;
 import lombok.RequiredArgsConstructor;
@@ -90,6 +92,46 @@ public class TossApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable String symbol) {
         return ApiResponse.success(tossQueryService.getStockWarnings(loginUser.getRowId(), symbol));
+    }
+
+    // === Rankings (주식 랭킹) ===
+
+    /**
+     * 주식 랭킹 조회 (상위 100위, 등락률·거래량·거래대금 포함).
+     * type: MARKET_TRADING_AMOUNT|MARKET_TRADING_VOLUME|TOP_GAINERS|TOP_LOSERS|TOSS_SECURITIES_*
+     */
+    @GetMapping("/rankings")
+    public ApiResponse<TossRankingDto.RankingResponse> getRankings(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam String type,
+            @RequestParam String marketCountry,
+            @RequestParam String duration,
+            @RequestParam(required = false) Boolean excludeInvestmentCaution,
+            @RequestParam(required = false) Integer count) {
+        return ApiResponse.success(tossQueryService.getRankings(
+                loginUser.getRowId(), type, marketCountry, duration, excludeInvestmentCaution, count));
+    }
+
+    // === Market Indicators (시장 지표: 국내 지수·국채) ===
+
+    /** 시장 지표 현재가 조회 (토스 카탈로그 8종: KOSPI, KOSDAQ, KR_BOND_2Y~30Y) */
+    @GetMapping("/market-indicators/prices")
+    public ApiResponse<List<TossIndicatorDto.IndicatorPriceResponse>> getMarketIndicatorPrices(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam String symbols) {
+        return ApiResponse.success(tossQueryService.getMarketIndicatorPrices(loginUser.getRowId(), symbols));
+    }
+
+    /** 시장 지표 캔들 조회. 페이지네이션 규약은 /candles 와 동일 */
+    @GetMapping("/market-indicators/{symbol}/candles")
+    public ApiResponse<CursorResponse<TossIndicatorDto.IndicatorCandle>> getMarketIndicatorCandles(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable String symbol,
+            @RequestParam String interval,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return ApiResponse.success(tossQueryService.getMarketIndicatorCandles(
+                loginUser.getRowId(), symbol, interval, size, cursor));
     }
 
     // === Market Info (환율·장 일정) ===
