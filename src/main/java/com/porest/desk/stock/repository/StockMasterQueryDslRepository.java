@@ -19,6 +19,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 @Primary
@@ -67,6 +68,30 @@ public class StockMasterQueryDslRepository implements StockMasterRepository {
             .from(stockMaster)
             .fetchOne();
         return total == null ? 0L : total;
+    }
+
+    @Override
+    public Optional<StockMaster> findActiveByMarketAndSymbol(StockMarket market, String symbol) {
+        StockMaster result = queryFactory.selectFrom(stockMaster)
+            .where(
+                stockMaster.marketCode.eq(market),
+                stockMaster.symbol.eq(symbol),
+                stockMaster.isActive.eq(YNType.Y),
+                stockMaster.isDeleted.eq(YNType.N)
+            )
+            .fetchOne();
+        return Optional.ofNullable(result);
+    }
+
+    @Override
+    public List<StockMaster> findAllActiveBySymbol(String symbol) {
+        return queryFactory.selectFrom(stockMaster)
+            .where(
+                stockMaster.symbol.eq(symbol),
+                stockMaster.isActive.eq(YNType.Y),
+                stockMaster.isDeleted.eq(YNType.N)
+            )
+            .fetch();
     }
 
     @Override

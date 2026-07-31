@@ -146,6 +146,14 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     IMPORT_PARSE_FAILED("IMPORT_002", "error.import.parse.failed", HttpStatus.BAD_REQUEST),
     IMPORT_UNSUPPORTED_FORMAT("IMPORT_003", "error.import.unsupported.format", HttpStatus.BAD_REQUEST),
     IMPORT_MAPPING_REQUIRED("IMPORT_004", "error.import.mapping.required", HttpStatus.BAD_REQUEST),
+
+    // Stock (종목 마스터·관심목록)
+    STOCK_NOT_FOUND("STOCK_001", "error.notfound.stock", HttpStatus.NOT_FOUND),
+    STOCK_WATCH_GROUP_NOT_FOUND("STOCK_002", "error.notfound.stock.watch.group", HttpStatus.NOT_FOUND),
+    STOCK_WATCH_ITEM_NOT_FOUND("STOCK_003", "error.notfound.stock.watch.item", HttpStatus.NOT_FOUND),
+    STOCK_WATCH_GROUP_LIMIT_EXCEEDED("STOCK_004", "error.stock.watch.group.limit", HttpStatus.BAD_REQUEST),
+    STOCK_WATCH_ITEM_LIMIT_EXCEEDED("STOCK_005", "error.stock.watch.item.limit", HttpStatus.BAD_REQUEST),
+    STOCK_WATCH_GROUP_NAME_DUPLICATE("STOCK_006", "error.duplicate.stock.watch.group.name", HttpStatus.CONFLICT),
     ;
 
     private final String code;
