@@ -110,7 +110,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(10L)).willReturn(Optional.of(fromAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1));
+                USER_ID, 10L, 11L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -126,7 +126,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1));
+                USER_ID, 10L, 11L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -138,7 +138,7 @@ class AssetServiceImplTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 10L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1));
+                USER_ID, 10L, 10L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -150,7 +150,7 @@ class AssetServiceImplTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, -50_000L, 0L, "이체", LocalDate.of(2026, 6, 1));
+                USER_ID, 10L, 11L, -50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -166,7 +166,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 1_000L, "이체", LocalDate.of(2026, 6, 1));
+                USER_ID, 10L, 11L, 30_000L, 1_000L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
         sut.createTransfer(cmd);
 
         verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));

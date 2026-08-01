@@ -206,7 +206,7 @@ public class AssetApiDto {
         Long amount,
         Long fee,
         String description,
-        LocalDate transferDate
+        LocalDateTime transferDate
     ) {}
 
     public record TransferResponse(
@@ -219,7 +219,7 @@ public class AssetApiDto {
         Long amount,
         Long fee,
         String description,
-        LocalDate transferDate,
+        LocalDateTime transferDate,
         LocalDateTime createAt
     ) {
         public static TransferResponse from(AssetServiceDto.TransferInfo info) {

@@ -18,7 +18,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "asset_transfer")
@@ -52,7 +52,7 @@ public class AssetTransfer extends AuditingFieldsWithIp {
     private String description;
 
     @Column(name = "transfer_date", nullable = false)
-    private LocalDate transferDate;
+    private LocalDateTime transferDate;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
@@ -60,7 +60,7 @@ public class AssetTransfer extends AuditingFieldsWithIp {
 
     public static AssetTransfer createTransfer(User user, Asset fromAsset, Asset toAsset,
                                                 Long amount, Long fee, String description,
-                                                LocalDate transferDate) {
+                                                LocalDateTime transferDate) {
         AssetTransfer transfer = new AssetTransfer();
         transfer.user = user;
         transfer.fromAsset = fromAsset;

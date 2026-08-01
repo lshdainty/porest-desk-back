@@ -76,7 +76,8 @@ public class AssetBalanceHistoryService {
 
     /** 자산 이체 — 출금자산 -(amount+fee), 입금자산 +amount 의 flow 두 row. */
     public void recordTransfer(AssetTransfer transfer) {
-        LocalDateTime effectiveAt = transfer.getTransferDate().atStartOfDay();
+        // transfer_date 가 DATETIME 이라 실제 시각 그대로 — 지출(expense_date)과 같은 기준.
+        LocalDateTime effectiveAt = transfer.getTransferDate();
         long fee = transfer.getFee() != null ? transfer.getFee() : 0L;
         repository.save(AssetBalanceHistory.of(
             transfer.getUser(), transfer.getFromAsset(), BalanceSourceType.TRANSFER, transfer.getRowId(),

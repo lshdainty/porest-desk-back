@@ -75,6 +75,18 @@ class AssetBalanceResolverTest {
     }
 
     @Test
+    @DisplayName("같은 날 잔액수정(오전) 뒤에 한 이체(오후)는 앵커에 지워지지 않는다")
+    void sameDayTransferAfterManualSurvives() {
+        // 이체가 DATE 였을 때는 오후 3시에 해도 그날 00:00 으로 적재돼, 오전 10시 MANUAL 앵커보다
+        // 앞선 것으로 정렬돼 통째로 사라졌다. DATETIME 으로 바뀌어 실제 시각이 들어가면서 해결된다.
+        var r = resolver(1L, List.of(
+                row(BalanceSourceType.INIT, 0L, LocalDateTime.of(2026, 6, 1, 0, 0)),
+                row(BalanceSourceType.MANUAL, 1_000_000L, LocalDateTime.of(2026, 6, 15, 10, 0)),
+                row(BalanceSourceType.TRANSFER, 398_500L, LocalDateTime.of(2026, 6, 15, 15, 0))));
+        assertThat(r.balanceAt(1L, LocalDateTime.of(2026, 6, 16, 0, 0))).isEqualTo(1_398_500L);
+    }
+
+    @Test
     @DisplayName("기준시각 cutoff — at 이후 행은 제외(과거 시점 잔액)")
     void cutoffExcludesFuture() {
         var r = resolver(1L, List.of(
