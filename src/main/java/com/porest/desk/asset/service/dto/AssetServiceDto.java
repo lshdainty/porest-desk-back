@@ -189,7 +189,7 @@ public class AssetServiceDto {
         Long amount,
         Long fee,
         String description,
-        LocalDate transferDate
+        LocalDateTime transferDate
     ) {}
 
     public record TransferInfo(
@@ -202,7 +202,7 @@ public class AssetServiceDto {
         Long amount,
         Long fee,
         String description,
-        LocalDate transferDate,
+        LocalDateTime transferDate,
         LocalDateTime createAt
     ) {
         public static TransferInfo from(AssetTransfer transfer) {

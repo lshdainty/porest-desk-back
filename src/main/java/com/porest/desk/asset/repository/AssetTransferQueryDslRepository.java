@@ -37,11 +37,13 @@ public class AssetTransferQueryDslRepository implements AssetTransferRepository 
         builder.and(transfer.user.rowId.eq(userRowId));
         builder.and(transfer.isDeleted.eq(YNType.N));
 
+        // transfer_date 가 DATETIME 이 되면서 날짜 범위 필터는 경계를 하루로 넓혀 비교한다.
+        // (endDate 를 그대로 loe 하면 그날 00:00 이후 이체가 전부 빠진다)
         if (startDate != null) {
-            builder.and(transfer.transferDate.goe(startDate));
+            builder.and(transfer.transferDate.goe(startDate.atStartOfDay()));
         }
         if (endDate != null) {
-            builder.and(transfer.transferDate.loe(endDate));
+            builder.and(transfer.transferDate.lt(endDate.plusDays(1).atStartOfDay()));
         }
 
         return queryFactory.selectFrom(transfer)
