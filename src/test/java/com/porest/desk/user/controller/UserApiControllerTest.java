@@ -78,10 +78,28 @@ class UserApiControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /users/me/password — newPassword 8자 미만이면 400")
-    void changePassword_tooShort_returns400() throws Exception {
+    @DisplayName("PATCH /users/me/password — 비밀번호 정책은 SSO 소유: 짧은 값도 판단하지 않고 위임")
+    void changePassword_policyIsOwnedBySso() throws Exception {
+        // desk-back 은 비밀번호를 소유하지 않는 프록시다. 여기서 길이·문자 규칙을 함께 들고 있으면
+        // SSO 가 정책을 바꿨을 때 조용히 어긋난다(= 여기서만 거부되는 값이 생긴다).
+        // 채워졌는지(@NotBlank)만 보고 판단은 SSO 에 맡긴다.
         String body = """
                 {"currentPassword":"oldpw123","newPassword":"short","confirmPassword":"short"}
+                """;
+
+        mockMvc.perform(patch("/api/v1/users/me/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(userService).changePassword("user1", "oldpw123", "short", "short");
+    }
+
+    @Test
+    @DisplayName("PATCH /users/me/password — newPassword 가 비면 400")
+    void changePassword_blank_returns400() throws Exception {
+        String body = """
+                {"currentPassword":"oldpw123","newPassword":"","confirmPassword":""}
                 """;
 
         mockMvc.perform(patch("/api/v1/users/me/password")
