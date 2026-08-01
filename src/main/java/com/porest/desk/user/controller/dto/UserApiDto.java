@@ -6,7 +6,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -19,8 +18,8 @@ public class UserApiDto {
         @NotBlank(message = "현재 비밀번호를 입력해주세요")
         private String currentPassword;
 
+        // 길이·문자 규칙은 SSO 가 소유한다. 여기에 복제하면 SSO 정책 변경 때 조용히 어긋난다.
         @NotBlank(message = "새 비밀번호를 입력해주세요")
-        @Size(min = 8, message = "비밀번호는 최소 8자 이상이어야 합니다")
         private String newPassword;
 
         @NotBlank(message = "새 비밀번호 확인을 입력해주세요")
