@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 
 /**
  * 반복 거래 "다음 실행일" 계산 로직 회귀 방지 테스트.
@@ -44,6 +45,11 @@ class RecurringTransactionNextDateTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private UserRepository userRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
+    // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
+    // 서비스 기준(Asia/Seoul)으로 폴백한다.
+    @Spy private UserClock userClock = new UserClock(
+            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
+            new ServiceClock("Asia/Seoul"));
     // 배치 날짜 판정용 — 실제 동작이 필요하므로 mock 대신 실물 주입
     @Spy private ServiceClock serviceClock = new ServiceClock("Asia/Seoul");
 

@@ -16,6 +16,7 @@ import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class TodoServiceImpl implements TodoService {
     private final TodoRepository todoRepository;
+    private final UserClock userClock;
     private final TodoTagRepository todoTagRepository;
     private final TodoTagMappingRepository todoTagMappingRepository;
     private final UserRepository userRepository;
@@ -236,7 +238,7 @@ public class TodoServiceImpl implements TodoService {
     public TodoServiceDto.TodoStats getStats(Long userRowId) {
         log.debug("할일 통계 조회: userRowId={}", userRowId);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         // 단일 집계 쿼리로 모든 카운트를 한번에 조회 (전체 엔티티 로드 대신)
         long[] stats = todoRepository.countStatsByUser(userRowId, today);
         // [0]=totalTask, [1]=pending, [2]=inProgress, [3]=completed, [4]=todayDue, [5]=overDue, [6]=noteCount, [7]=pinnedNoteCount

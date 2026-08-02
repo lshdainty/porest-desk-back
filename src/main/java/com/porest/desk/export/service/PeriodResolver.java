@@ -14,8 +14,11 @@ public class PeriodResolver {
 
     public record DateRange(LocalDate start, LocalDate end) {}
 
-    public DateRange resolve(ExportPeriod period, LocalDate customStart, LocalDate customEnd) {
-        LocalDate today = LocalDate.now();
+    /**
+     * @param today 기준 "오늘". 서버(UTC) 기준으로 잡으면 한국 사용자에게 하루 어긋나므로
+     *              호출자가 사용자 타임존 기준 날짜를 넘긴다.
+     */
+    public DateRange resolve(ExportPeriod period, LocalDate customStart, LocalDate customEnd, LocalDate today) {
         YearMonth thisMonth = YearMonth.from(today);
 
         return switch (period) {

@@ -11,6 +11,7 @@ import com.porest.desk.constellation.repository.TodoStarlightRepository;
 import com.porest.desk.constellation.service.dto.ConstellationServiceDto;
 import com.porest.desk.constellation.type.DailyStatus;
 import com.porest.desk.constellation.type.StarlightSourceType;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class ConstellationServiceImpl implements ConstellationService {
     private static final int STREAK_LOOKBACK_DAYS = 400;
 
     private final ConstellationRepository constellationRepository;
+    private final UserClock userClock;
     private final ConstellationProfileRepository profileRepository;
     private final TodoStarlightRepository starlightRepository;
     private final ConstellationDailyRepository dailyRepository;
@@ -51,7 +53,7 @@ public class ConstellationServiceImpl implements ConstellationService {
         log.debug("오늘의 별자리 현황 조회: userRowId={}", userRowId);
         starlightService.reconcileGuards(userRowId);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         ConstellationDaily daily = dailyRepository.findByUserAndDate(userRowId, today).orElse(null);
         // 오늘 행이 있으면 그 행의 별자리(적립 시점 고정)를, 없으면 오늘의 순환 목표를 사용
         Constellation target = daily != null ? daily.getConstellation() : starlightService.dailyTarget(today);
@@ -77,7 +79,7 @@ public class ConstellationServiceImpl implements ConstellationService {
     @Override
     public List<ConstellationServiceDto.SkyDay> getSky(Long userRowId, int days) {
         log.debug("나의 밤하늘 조회: userRowId={}, days={}", userRowId, days);
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         LocalDate from = today.minusDays(days - 1L);
 
         Map<LocalDate, ConstellationDaily> byDate = dailyRepository

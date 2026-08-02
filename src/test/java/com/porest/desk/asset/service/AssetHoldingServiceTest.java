@@ -18,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -31,6 +32,8 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 
 /**
  * 투자 자산 다중 보유(holdings) 프로세스 단위 테스트 —
@@ -48,6 +51,11 @@ class AssetHoldingServiceTest {
     @Mock private com.porest.desk.subscription.service.SubscriptionEntitlementService entitlementService;
     @Mock private com.porest.desk.toss.credential.service.TossCredentialService tossCredentialService;
     @Mock private com.porest.desk.toss.service.TossQueryService tossQueryService;
+    // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
+    // 서비스 기준(Asia/Seoul)으로 폴백한다.
+    @Spy private UserClock userClock = new UserClock(
+            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
+            new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private AssetServiceImpl sut;
 

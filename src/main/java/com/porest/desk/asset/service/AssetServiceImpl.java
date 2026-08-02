@@ -22,6 +22,7 @@ import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,7 @@ public class AssetServiceImpl implements AssetService {
     private final UserRepository userRepository;
     private final CardCatalogRepository cardCatalogRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
+    private final UserClock userClock;
     private final SubscriptionEntitlementService entitlementService;
     private final TossCredentialService tossCredentialService;
     private final TossQueryService tossQueryService;
@@ -92,7 +94,7 @@ public class AssetServiceImpl implements AssetService {
         assetRepository.save(asset);
         List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, command.holdings());
         // 잔액 이력: 초기 잔액 절대 앵커
-        balanceHistoryService.recordInit(asset, LocalDateTime.now());
+        balanceHistoryService.recordInit(asset, userClock.now(command.userRowId()));
         log.info("자산 등록 완료: assetId={}, userRowId={}", asset.getRowId(), command.userRowId());
 
         return AssetServiceDto.AssetInfo.from(asset, holdings);
@@ -159,7 +161,7 @@ public class AssetServiceImpl implements AssetService {
 
         // 잔액을 직접 수정(점프)한 경우에만 MANUAL 절대 앵커 적재 — 가계부 통계엔 영향 없음.
         if (!Objects.equals(oldBalance, newBalance)) {
-            balanceHistoryService.recordManual(asset, newBalance, LocalDateTime.now());
+            balanceHistoryService.recordManual(asset, newBalance, userClock.now(userRowId));
         }
 
         // 보유 교체 — null=무변경, 리스트=전체 교체(기존 활성 soft delete 후 신규 insert).
@@ -223,7 +225,7 @@ public class AssetServiceImpl implements AssetService {
         // 연결 즉시 평가액 1회 스냅샷 — 추이 그래프에 바로 반영(환율 미확보 외화면 생략).
         Long valuation = computeTossValuationKrw(userRowId, symbol, quantity);
         if (valuation != null) {
-            balanceHistoryService.recordValuation(asset, valuation, LocalDateTime.now());
+            balanceHistoryService.recordValuation(asset, valuation, userClock.now(userRowId));
         }
         log.info("자산 토스 연결 완료: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
         return AssetServiceDto.AssetInfo.from(asset);
@@ -243,7 +245,7 @@ public class AssetServiceImpl implements AssetService {
         if (asset.isTossLinked() && asset.getTossQuantity() != null) {
             Long valuation = computeTossValuationKrw(userRowId, asset.getTossSymbol(), asset.getTossQuantity());
             if (valuation != null) {
-                balanceHistoryService.recordManual(asset, valuation, LocalDateTime.now());
+                balanceHistoryService.recordManual(asset, valuation, userClock.now(userRowId));
             }
         }
 
@@ -367,7 +369,7 @@ public class AssetServiceImpl implements AssetService {
                         log.warn("토스 환율 조회 실패 - userRowId={}: {}", userRowId, ex.getMessage());
                     }
                 }
-                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime now = userClock.now(userRowId);
                 for (Asset a : userAssets) {
                     // 보유(linked) 합산 평가 — 한 종목이라도 시세/환율 미확보면 자산 전체 생략(부분합 왜곡 방지).
                     double sum = 0;
@@ -483,7 +485,7 @@ public class AssetServiceImpl implements AssetService {
         List<Asset> included = includedAssets(userRowId);
         BalanceResolver resolver = balanceHistoryService.resolverFor(included);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         boolean isPastPeriod = year != null && month != null
             && !(year == today.getYear() && month == today.getMonthValue());
 
@@ -491,7 +493,7 @@ public class AssetServiceImpl implements AssetService {
         LocalDateTime prevAsOf;
         if (!isPastPeriod) {
             // 현재 월(또는 year/month 미지정): 지금 시각 기준
-            asOf = LocalDateTime.now();
+            asOf = userClock.now(userRowId);
             prevAsOf = today.withDayOfMonth(1).minusDays(1).atTime(LocalTime.MAX);
         } else {
             // 과거 월: 선택 월 말 / 전월 말 시점
@@ -549,8 +551,8 @@ public class AssetServiceImpl implements AssetService {
         List<Asset> included = includedAssets(userRowId);
         BalanceResolver resolver = balanceHistoryService.resolverFor(included);
 
-        LocalDate today = LocalDate.now();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = userClock.today(userRowId);
+        LocalDateTime now = userClock.now(userRowId);
         List<AssetServiceDto.NetWorthTrendPoint> points = new ArrayList<>(n);
         for (int i = n - 1; i >= 0; i--) {
             LocalDate m = today.minusMonths(i);
@@ -578,10 +580,10 @@ public class AssetServiceImpl implements AssetService {
         BalanceResolver resolver = balanceHistoryService.resolverFor(List.of(asset));
 
         // window: 이번 주 월요일 기준 n-1주 전 ~ 이번 주
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         LocalDate currentMonday = today.with(DayOfWeek.MONDAY);
         LocalDate firstMonday = currentMonday.minusWeeks(n - 1);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = userClock.now(userRowId);
 
         List<AssetServiceDto.AssetBalancePoint> points = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {

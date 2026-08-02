@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -28,6 +29,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 
 /**
  * 예산 정책 회귀 방지 단위 테스트 — 예산은 최상위(부모) 카테고리에만 설정 가능.
@@ -39,6 +42,11 @@ class ExpenseBudgetServiceImplTest {
     @Mock private ExpenseCategoryRepository expenseCategoryRepository;
     @Mock private ExpenseRepository expenseRepository;
     @Mock private UserRepository userRepository;
+    // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
+    // 서비스 기준(Asia/Seoul)으로 폴백한다.
+    @Spy private UserClock userClock = new UserClock(
+            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
+            new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private ExpenseBudgetServiceImpl sut;
 

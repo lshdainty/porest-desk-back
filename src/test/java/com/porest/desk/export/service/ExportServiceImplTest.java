@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
@@ -36,6 +37,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 
 /**
  * 데이터 내보내기 오케스트레이션 단위 테스트.
@@ -52,6 +55,10 @@ class ExportServiceImplTest {
 
     @Mock private PeriodResolver periodResolver;
     @Mock private ExportDataService dataService;
+    // 날짜 판정은 실제 동작이 필요 — mock 이면 null 이 흘러 파일명 기간이 비어버린다
+    @Spy private UserClock userClock = new UserClock(
+            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
+            new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private ExportServiceImpl sut;
 
@@ -63,7 +70,7 @@ class ExportServiceImplTest {
 
     /** 기간 해석은 별도 검증 대상(PeriodResolver 책임) → 고정 범위로 스텁. */
     private void givenResolvedRange() {
-        given(periodResolver.resolve(any(), any(), any())).willReturn(RANGE);
+        given(periodResolver.resolve(any(), any(), any(), any())).willReturn(RANGE);
     }
 
     private ExportApiDto.ExportRequest exportReq(ExportFormat format, boolean mask, ExportType... types) {
@@ -91,7 +98,7 @@ class ExportServiceImplTest {
         @DisplayName("단일 CSV — porest-<slug>-<기간>.csv + text/csv")
         void singleCsv() {
             givenResolvedRange();
-            var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE));
+            var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE), USER_ID);
             assertThat(d.filename()).isEqualTo("porest-expense-" + RANGE_PART + ".csv");
             assertThat(d.contentType()).isEqualTo("text/csv; charset=UTF-8");
         }
@@ -100,7 +107,7 @@ class ExportServiceImplTest {
         @DisplayName("단일 EXCEL — .xlsx + 스프레드시트 Content-Type")
         void singleExcel() {
             givenResolvedRange();
-            var d = sut.describe(exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE));
+            var d = sut.describe(exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE), USER_ID);
             assertThat(d.filename()).isEqualTo("porest-expense-" + RANGE_PART + ".xlsx");
             assertThat(d.contentType())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -110,7 +117,7 @@ class ExportServiceImplTest {
         @DisplayName("다종 CSV — 종류별 파일을 ZIP 으로: porest-export-<기간>.zip + application/zip")
         void multiCsvZips() {
             givenResolvedRange();
-            var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE, ExportType.TODO));
+            var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE, ExportType.TODO), USER_ID);
             assertThat(d.filename()).isEqualTo("porest-export-" + RANGE_PART + ".zip");
             assertThat(d.contentType()).isEqualTo("application/zip");
         }
@@ -119,7 +126,7 @@ class ExportServiceImplTest {
         @DisplayName("다종 JSON — ZIP")
         void multiJsonZips() {
             givenResolvedRange();
-            var d = sut.describe(exportReq(ExportFormat.JSON, false, ExportType.EXPENSE, ExportType.MEMO));
+            var d = sut.describe(exportReq(ExportFormat.JSON, false, ExportType.EXPENSE, ExportType.MEMO), USER_ID);
             assertThat(d.filename()).isEqualTo("porest-export-" + RANGE_PART + ".zip");
             assertThat(d.contentType()).isEqualTo("application/zip");
         }
@@ -128,7 +135,7 @@ class ExportServiceImplTest {
         @DisplayName("다종 EXCEL — ZIP 안 씀(한 워크북 시트 분리): porest-export-<기간>.xlsx")
         void multiExcelNeverZips() {
             givenResolvedRange();
-            var d = sut.describe(exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE, ExportType.TODO));
+            var d = sut.describe(exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE, ExportType.TODO), USER_ID);
             assertThat(d.filename()).isEqualTo("porest-export-" + RANGE_PART + ".xlsx");
             assertThat(d.contentType())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -138,7 +145,7 @@ class ExportServiceImplTest {
         @DisplayName("같은 종류 중복 선택은 1종으로 축약 → 단일 파일명(ZIP 아님)")
         void dedupCollapsesToSingle() {
             givenResolvedRange();
-            var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE, ExportType.EXPENSE));
+            var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE, ExportType.EXPENSE), USER_ID);
             assertThat(d.filename()).isEqualTo("porest-expense-" + RANGE_PART + ".csv");
             assertThat(d.contentType()).isEqualTo("text/csv; charset=UTF-8");
         }
@@ -147,7 +154,7 @@ class ExportServiceImplTest {
         @DisplayName("헤더 계산은 데이터를 조회하지 않는다(dataService 미접근)")
         void doesNotQueryData() {
             givenResolvedRange();
-            sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE));
+            sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE), USER_ID);
             verifyNoInteractions(dataService);
         }
     }
@@ -390,7 +397,7 @@ class ExportServiceImplTest {
         void rejectsNullTypes() {
             var req = new ExportApiDto.ExportRequest(
                 ExportFormat.CSV, ExportPeriod.THIS_MONTH, null, null, null, false);
-            assertThatThrownBy(() -> sut.describe(req))
+            assertThatThrownBy(() -> sut.describe(req, USER_ID))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("1개 이상");
             verifyNoInteractions(periodResolver, dataService);
