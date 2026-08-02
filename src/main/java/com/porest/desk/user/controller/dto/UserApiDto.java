@@ -51,7 +51,9 @@ public class UserApiDto {
         String notificationSound,
         Boolean vibrationEnabled,
         Boolean emailEnabled,
-        String emailFrequency
+        String emailFrequency,
+        /** 표시 기준 지역(IANA 타임존 ID) */
+        String timezone
     ) {
         private static Boolean bool(YNType v) {
             return v == null ? null : v.toBoolean();
@@ -74,7 +76,8 @@ public class UserApiDto {
                 u.getNotificationSound(),
                 bool(u.getVibrationEnabled()),
                 bool(u.getEmailEnabled()),
-                u.getEmailFrequency()
+                u.getEmailFrequency(),
+                u.getTimezone()
             );
         }
     }
@@ -115,5 +118,9 @@ public class UserApiDto {
 
         @Pattern(regexp = "DAILY|WEEKLY|MONTHLY", message = "발송 주기는 DAILY·WEEKLY·MONTHLY 중 하나여야 합니다")
         private String emailFrequency;
+
+        // 표시 기준 지역(IANA 타임존 ID). null = 무변경(부분 수정).
+        // 값 형식은 ZoneId 로만 판단 가능해 서비스에서 검증한다.
+        private String timezone;
     }
 }

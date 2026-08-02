@@ -58,7 +58,7 @@ class UserApiControllerTest {
     private PreferencesResponse samplePreferences() {
         return new PreferencesResponse(
                 true, false, false, false, false, false, false, false,
-                80, false, null, null, "DEFAULT", true, false, "WEEKLY");
+                80, false, null, null, "DEFAULT", true, false, "WEEKLY", "Asia/Seoul");
     }
 
     @Test
