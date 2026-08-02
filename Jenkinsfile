@@ -24,6 +24,10 @@ pipeline {
         // 반드시 호스트 디렉터리를 마운트한다. dev/prod 는 저장소를 분리한다.
         FILE_DIR_DEV = "${env.POREST_BASE_DIR}/backend/dev/desk/files"
         FILE_DIR_PROD = "${env.POREST_BASE_DIR}/backend/prod/desk/files"
+        // 컨테이너 실행 유저(porest). 마운트 디렉터리 소유권과 이미지 내 UID 가 같아야
+        // 비-root 프로세스가 볼륨에 쓸 수 있다 — Dockerfile build-arg 와 chown 에 같은 값을 쓴다.
+        APP_UID = "1000"
+        APP_GID = "1000"
         CONTAINER_NAME = "desk-backend"
     }
     stages {
@@ -71,7 +75,7 @@ pipeline {
             steps {
                 dir("${SRC_DIR}") {
                     withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
-                        sh 'docker build --build-arg GITHUB_ACTOR=$GH_USER --build-arg GITHUB_TOKEN=$GH_TOKEN -t ' + IMAGE_NAME + ':latest -t ' + IMAGE_NAME + ':' + env.APP_VERSION + ' .'
+                        sh 'docker build --build-arg GITHUB_ACTOR=$GH_USER --build-arg GITHUB_TOKEN=$GH_TOKEN --build-arg APP_UID=' + APP_UID + ' --build-arg APP_GID=' + APP_GID + ' -t ' + IMAGE_NAME + ':latest -t ' + IMAGE_NAME + ':' + env.APP_VERSION + ' .'
                     }
                 }
             }
@@ -82,6 +86,7 @@ pipeline {
                 echo "Deploying Desk Backend to Development..."
                 sh """
                     mkdir -p ${FILE_DIR_DEV}
+                    chown -R ${APP_UID}:${APP_GID} ${FILE_DIR_DEV}
                     docker stop ${CONTAINER_NAME}-dev || true
                     docker rm ${CONTAINER_NAME}-dev || true
                     docker run -d --name ${CONTAINER_NAME}-dev \
@@ -116,6 +121,7 @@ pipeline {
                 echo "Deploying Desk Backend to Production..."
                 sh """
                     mkdir -p ${FILE_DIR_PROD}
+                    chown -R ${APP_UID}:${APP_GID} ${FILE_DIR_PROD}
                     docker stop ${CONTAINER_NAME}-prod || true
                     docker rm ${CONTAINER_NAME}-prod || true
                     docker run -d --name ${CONTAINER_NAME}-prod \
