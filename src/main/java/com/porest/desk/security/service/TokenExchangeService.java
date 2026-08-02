@@ -60,10 +60,13 @@ public class TokenExchangeService {
         String userName = ssoClaims.get("name", String.class);
         String userEmail = ssoClaims.get("email", String.class);
         Long ssoUserNo = ssoClaims.get("userNo", Long.class);
+        // 가입 지역 — SSO 가 회원가입 때 받아 claim 으로 내려준다.
+        // 구버전 토큰에는 없으므로 null 이면 User 기본값(Asia/Seoul)이 쓰인다.
+        String timezone = ssoClaims.get("timezone", String.class);
 
         User user = userRepository.findByUserId(userId).orElse(null);
         if (user == null) {
-            user = userRepository.save(User.createUser(ssoUserNo, userId, userName, userEmail));
+            user = userRepository.save(User.createUser(ssoUserNo, userId, userName, userEmail, timezone));
             // 신규 사용자: 기본 캘린더를 가입(최초 프로비저닝) 시점에 즉시 생성한다.
             // 지연 생성(getOrCreateDefault on first event)에 의존하면 신규 사용자에게
             // 동시 요청이 겹칠 때 기본 캘린더가 중복 생성될 수 있어, 단일 트랜잭션인
