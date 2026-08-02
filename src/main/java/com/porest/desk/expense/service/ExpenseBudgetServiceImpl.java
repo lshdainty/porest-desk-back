@@ -14,6 +14,7 @@ import com.porest.desk.expense.service.dto.ExpenseBudgetServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
     private final ExpenseBudgetRepository expenseBudgetRepository;
+    private final UserClock userClock;
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
@@ -84,7 +86,7 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         int n = (months == null || months < 1) ? 6 : Math.min(months, 24);
         log.debug("예산 이행률 조회: userRowId={}, months={}", userRowId, n);
 
-        LocalDate now = LocalDate.now();
+        LocalDate now = userClock.today(userRowId);
         List<ExpenseBudgetServiceDto.ComplianceMonth> result = new ArrayList<>(n);
 
         for (int i = n - 1; i >= 0; i--) {

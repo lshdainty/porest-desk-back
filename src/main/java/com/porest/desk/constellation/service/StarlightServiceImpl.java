@@ -20,6 +20,7 @@ import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class StarlightServiceImpl implements StarlightService {
     static final int MEMO_DAILY_LIMIT = 2;
 
     private final ConstellationRepository constellationRepository;
+    private final UserClock userClock;
     private final ConstellationProfileRepository profileRepository;
     private final TodoStarlightRepository starlightRepository;
     private final ConstellationDailyRepository dailyRepository;
@@ -71,7 +73,7 @@ public class StarlightServiceImpl implements StarlightService {
     @Override
     @Transactional
     public void onMemoCreated(Memo memo) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(memo.getUser());
         long earnedToday = starlightRepository.countActiveMemoEarns(memo.getUser().getRowId(), today);
         if (earnedToday >= MEMO_DAILY_LIMIT) {
             log.debug("메모 별빛 일 한도 초과: userRowId={}, earnedToday={}", memo.getUser().getRowId(), earnedToday);
@@ -95,7 +97,7 @@ public class StarlightServiceImpl implements StarlightService {
             log.debug("별빛 재적립 차단(평생 1회): sourceType={}, sourceRowId={}", sourceType, sourceRowId);
             return;
         }
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(user);
         starlightRepository.save(TodoStarlight.earn(user, sourceType, sourceRowId, points, today));
 
         ConstellationDaily daily = dailyRepository.findByUserAndDate(user.getRowId(), today)
@@ -119,7 +121,7 @@ public class StarlightServiceImpl implements StarlightService {
     /** 회수 — 당일 적립분만. soft delete 로 unique 행이 남아 재적립은 계속 차단된다. GROWN/도감은 불변. */
     private void revoke(StarlightSourceType sourceType, Long sourceRowId) {
         starlightRepository.findActiveBySource(sourceType, sourceRowId).ifPresent(ledger -> {
-            LocalDate today = LocalDate.now();
+            LocalDate today = userClock.today(ledger.getUser());
             if (!ledger.getEarnDate().equals(today)) {
                 log.debug("별빛 회수 생략(타일 적립분): sourceType={}, sourceRowId={}, earnDate={}",
                     sourceType, sourceRowId, ledger.getEarnDate());
@@ -135,7 +137,7 @@ public class StarlightServiceImpl implements StarlightService {
     @Override
     @Transactional
     public void reconcileGuards(Long userRowId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         LocalDate latestGrown = dailyRepository.findLatestGrownDate(userRowId).orElse(null);
         if (latestGrown == null || !latestGrown.isBefore(today.minusDays(1))) {
             return; // 수집 이력 없음 or 어제/오늘 수집 → 공백 없음

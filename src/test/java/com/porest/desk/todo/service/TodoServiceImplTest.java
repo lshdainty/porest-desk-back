@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -30,6 +31,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 
 /**
  * 할일 서비스 소유권 가드 회귀 방지 단위 테스트 — 남의 할일/프로젝트는 접근·수정·삭제할 수 없다.
@@ -42,6 +45,11 @@ class TodoServiceImplTest {
     @Mock private TodoTagMappingRepository todoTagMappingRepository;
     @Mock private UserRepository userRepository;
     @Mock private com.porest.desk.constellation.service.StarlightService starlightService;
+    // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
+    // 서비스 기준(Asia/Seoul)으로 폴백한다.
+    @Spy private UserClock userClock = new UserClock(
+            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
+            new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private TodoServiceImpl sut;
 

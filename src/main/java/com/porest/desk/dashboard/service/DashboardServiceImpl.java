@@ -14,6 +14,7 @@ import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ import java.util.TreeMap;
 @Transactional(readOnly = true)
 public class DashboardServiceImpl implements DashboardService {
     private final TodoRepository todoRepository;
+    private final UserClock userClock;
     private final CalendarEventRepository calendarEventRepository;
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
@@ -42,7 +44,7 @@ public class DashboardServiceImpl implements DashboardService {
     public DashboardServiceDto.DashboardSummary getDashboardSummary(Long userRowId) {
         log.debug("대시보드 요약 조회: userRowId={}", userRowId);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
 
         // Todo & Memo summary — 단일 집계 쿼리로 모든 카운트 조회 (전체 엔티티 로드 X)
         long[] stats = todoRepository.countStatsByUser(userRowId, today);

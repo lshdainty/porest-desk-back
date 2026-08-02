@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -26,6 +27,8 @@ import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 
 /**
  * 자산 순자산 집계 로직 회귀 방지 테스트 — 자산/부채(CREDIT_CARD·LOAN) 분류 합산과 netWorth 계산.
@@ -38,6 +41,11 @@ class AssetServiceSummaryTest {
     @Mock private UserRepository userRepository;
     @Mock private CardCatalogRepository cardCatalogRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
+    // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
+    // 서비스 기준(Asia/Seoul)으로 폴백한다.
+    @Spy private UserClock userClock = new UserClock(
+            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
+            new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private AssetServiceImpl sut;
 

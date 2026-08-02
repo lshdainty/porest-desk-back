@@ -70,7 +70,7 @@ class ExportApiControllerTest {
     @Test
     @DisplayName("POST /export — describe 헤더 반영 + 스트리밍 바디를 로그인 사용자로 기록")
     void export_streamsFileWithHeaders() throws Exception {
-        given(exportService.describe(any()))
+        given(exportService.describe(any(), any()))
                 .willReturn(new ExportService.ExportDescriptor("export.csv", "text/csv; charset=UTF-8"));
         willAnswer(inv -> {
             OutputStream out = inv.getArgument(0);

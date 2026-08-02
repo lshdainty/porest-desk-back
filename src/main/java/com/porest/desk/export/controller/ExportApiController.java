@@ -34,7 +34,7 @@ public class ExportApiController {
     public ResponseEntity<StreamingResponseBody> export(
             @LoginUser UserPrincipal loginUser,
             @RequestBody ExportApiDto.ExportRequest request) {
-        ExportService.ExportDescriptor desc = exportService.describe(request);
+        ExportService.ExportDescriptor desc = exportService.describe(request, loginUser.getRowId());
         String safeFilename = FileUploadValidator.sanitizeForContentDisposition(desc.filename());
 
         StreamingResponseBody body = out -> exportService.writeExport(out, request, loginUser.getRowId());

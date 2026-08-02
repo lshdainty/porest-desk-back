@@ -3,6 +3,7 @@ package com.porest.desk.export.service;
 import com.porest.desk.export.controller.dto.ExportApiDto;
 import com.porest.desk.export.type.ExportFormat;
 import com.porest.desk.export.type.ExportType;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,12 +23,13 @@ public class ExportServiceImpl implements ExportService {
     private static final int PREVIEW_LIMIT = 10;
 
     private final PeriodResolver periodResolver;
+    private final UserClock userClock;
     private final ExportDataService dataService;
 
     @Override
-    public ExportDescriptor describe(ExportApiDto.ExportRequest req) {
+    public ExportDescriptor describe(ExportApiDto.ExportRequest req, Long userRowId) {
         List<ExportType> types = orderedTypes(req.types());
-        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate());
+        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate(), userClock.today(userRowId));
         String rangePart = range.start() + "_" + range.end();
         ExportFormat format = req.format();
 
@@ -49,7 +51,7 @@ public class ExportServiceImpl implements ExportService {
     @Transactional(readOnly = true)
     public void writeExport(OutputStream out, ExportApiDto.ExportRequest req, Long userRowId) throws IOException {
         List<ExportType> types = orderedTypes(req.types());
-        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate());
+        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate(), userClock.today(userRowId));
 
         List<ExportTable> tables = new ArrayList<>();
         for (ExportType type : types) {
@@ -93,7 +95,7 @@ public class ExportServiceImpl implements ExportService {
     @Transactional(readOnly = true)
     public ExportApiDto.CountResponse counts(ExportApiDto.CountRequest req, Long userRowId) {
         List<ExportType> types = orderedTypes(req.types());
-        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate());
+        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate(), userClock.today(userRowId));
         List<ExportApiDto.TypeCount> counts = new ArrayList<>();
         for (ExportType type : types) {
             long c = dataService.count(type, userRowId, range.start(), range.end());
@@ -106,7 +108,7 @@ public class ExportServiceImpl implements ExportService {
     @Transactional(readOnly = true)
     public ExportApiDto.PreviewResponse preview(ExportApiDto.PreviewRequest req, Long userRowId) {
         List<ExportType> types = orderedTypes(req.types());
-        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate());
+        PeriodResolver.DateRange range = periodResolver.resolve(req.period(), req.startDate(), req.endDate(), userClock.today(userRowId));
         List<ExportApiDto.PreviewTable> tables = new ArrayList<>();
         for (ExportType type : types) {
             ExportTable table = dataService.buildTable(type, userRowId, range.start(), range.end(), false);

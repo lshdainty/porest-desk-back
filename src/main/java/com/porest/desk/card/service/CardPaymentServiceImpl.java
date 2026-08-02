@@ -16,6 +16,7 @@ import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.type.ExpenseType;
 import jakarta.persistence.EntityManager;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import java.util.List;
 public class CardPaymentServiceImpl implements CardPaymentService {
 
     private final CardBillingRepository cardBillingRepository;
+    private final UserClock userClock;
     private final AssetRepository assetRepository;
     private final AssetService assetService;
     private final EntityManager entityManager;
@@ -44,7 +46,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         validateOwnership(card, userRowId);
         validateCreditCard(card);
 
-        LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), LocalDate.now());
+        LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), userClock.today(userRowId));
         BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
 
         List<CardPaymentServiceDto.BillingInfo> history = cardBillingRepository
@@ -80,7 +82,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
         // 수동 결제 = 다가오는 결제 회차의 선결제 — 금액·기간 귀속 모두 그 회차 기준.
         // (종전엔 잔액 전액 + 실행일의 전월 라벨이라 회차·기간·금액이 어긋났음)
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), today);
         BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
         long amount = cycle.amount();

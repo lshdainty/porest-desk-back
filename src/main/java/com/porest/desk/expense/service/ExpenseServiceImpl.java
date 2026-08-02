@@ -29,6 +29,7 @@ import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.user.service.UserService;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,6 +50,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private static final double BUDGET_OVER_THRESHOLD = 1.0;
 
     private final ExpenseRepository expenseRepository;
+    private final UserClock userClock;
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
@@ -426,7 +428,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         int n = (months == null || months < 1) ? 6 : Math.min(months, 24);
         log.debug("지출 월별 트렌드 조회: userRowId={}, months={}", userRowId, n);
 
-        LocalDate now = LocalDate.now();
+        LocalDate now = userClock.today(userRowId);
         List<ExpenseServiceDto.MonthlyTrend> trends = new java.util.ArrayList<>(n);
 
         for (int i = n - 1; i >= 0; i--) {

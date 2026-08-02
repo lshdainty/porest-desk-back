@@ -18,6 +18,7 @@ import com.porest.desk.expense.type.RecurringFrequency;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.common.time.ServiceClock;
+import com.porest.desk.common.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class RecurringTransactionServiceImpl implements RecurringTransactionService {
     private final RecurringTransactionRepository recurringTransactionRepository;
+    private final UserClock userClock;
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final AssetRepository assetRepository;
     private final ExpenseRepository expenseRepository;
@@ -113,7 +115,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = userClock.today(userRowId);
         java.util.stream.Stream<RecurringTransaction> stream = recurringTransactionRepository.findByUser(userRowId).stream();
         if (upcomingOnly) {
             stream = stream.filter(r -> r.getIsActive() == com.porest.core.type.YNType.Y)
@@ -254,7 +256,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     private LocalDate calculateNextExecutionDate(LocalDate startDate, RecurringFrequency frequency,
                                                   Integer intervalValue, Integer dayOfWeek, Integer dayOfMonth) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = serviceClock.today();
         LocalDate nextDate = startDate;
 
         if (nextDate.isBefore(today)) {
