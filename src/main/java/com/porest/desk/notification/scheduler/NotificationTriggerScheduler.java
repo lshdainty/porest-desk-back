@@ -16,6 +16,7 @@ import com.porest.desk.notification.type.ReferenceType;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.service.UserService;
+import com.porest.desk.common.time.ServiceClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,6 +39,7 @@ public class NotificationTriggerScheduler {
     private final ExpenseBudgetRepository expenseBudgetRepository;
     private final ExpenseRepository expenseRepository;
     private final ExpenseService expenseService;
+    private final ServiceClock serviceClock;
     private final TodoRepository todoRepository;
     private final UserService userService;
 
@@ -66,10 +68,11 @@ public class NotificationTriggerScheduler {
         }
     }
 
-    @Scheduled(cron = "0 0 9 * * *")
+    @Scheduled(cron = "0 0 9 * * *", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void checkBudgetAlerts() {
         log.info("예산 알림 스케줄러 실행 시작");
-        LocalDate now = LocalDate.now();
+        // 배치 — 서비스 운영 기준 날짜
+        LocalDate now = serviceClock.today();
         int year = now.getYear();
         int month = now.getMonthValue();
 
@@ -140,10 +143,11 @@ public class NotificationTriggerScheduler {
         log.info("예산 알림 스케줄러 실행 완료");
     }
 
-    @Scheduled(cron = "0 0 9 * * *")
+    @Scheduled(cron = "0 0 9 * * *", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void checkTodoReminders() {
         log.info("할일 리마인더 스케줄러 실행 시작");
-        LocalDate today = LocalDate.now();
+        // 배치 — 서비스 운영 기준 날짜
+        LocalDate today = serviceClock.today();
         LocalDate tomorrow = today.plusDays(1);
 
         List<Todo> todos = todoRepository.findDueTodosForReminder(today, tomorrow);

@@ -7,6 +7,7 @@ import com.porest.desk.calendar.service.HolidaySyncServiceImpl;
 import com.porest.desk.calendar.service.HolidayYearSynchronizer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import com.porest.desk.common.time.ServiceClock;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -31,6 +32,7 @@ class HolidayClientWiringTest {
         .withBean(KasiHolidayClient.class)
         .withBean(HolidaysKrClient.class)
         .withBean(HolidayYearSynchronizer.class)
+        .withBean(ServiceClock.class, () -> new ServiceClock("Asia/Seoul"))
         .withBean(HolidaySyncServiceImpl.class);
 
     @Test

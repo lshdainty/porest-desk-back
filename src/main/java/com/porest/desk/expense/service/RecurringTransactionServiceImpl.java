@@ -17,6 +17,7 @@ import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
 import com.porest.desk.expense.type.RecurringFrequency;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.common.time.ServiceClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,6 +38,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
+    private final ServiceClock serviceClock;
 
     @Override
     @Transactional
@@ -202,7 +204,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     @Override
     @Transactional
     public void executeDueTransactions() {
-        LocalDate today = LocalDate.now();
+        // 배치 — 서비스 운영 기준 날짜(JVM 기본 UTC 를 쓰면 하루 어긋난다)
+        LocalDate today = serviceClock.today();
         // 반복 거래 실행 시각은 오전 9시로 고정 (히트맵 시간 집계를 위한 기본값)
         LocalDateTime executionDateTime = today.atTime(9, 0);
         log.debug("반복 거래 실행 시작: date={}", today);

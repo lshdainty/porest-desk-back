@@ -3,6 +3,7 @@ package com.porest.desk.calendar.runner;
 import com.porest.desk.calendar.config.HolidayProperties;
 import com.porest.desk.calendar.service.HolidaySyncService;
 import com.porest.desk.calendar.service.dto.HolidaySyncResult;
+import com.porest.desk.common.time.ServiceClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -27,12 +28,13 @@ import java.util.List;
 public class HolidayBackfillRunner implements ApplicationRunner {
 
     private final HolidaySyncService holidaySyncService;
+    private final ServiceClock serviceClock;
     private final HolidayProperties properties;
 
     @Override
     public void run(ApplicationArguments args) {
         int startYear = properties.getBackfill().getStartYear();
-        int endYear = LocalDate.now().getYear() + Math.max(0, properties.getSync().getLookaheadYears());
+        int endYear = serviceClock.today().getYear() + Math.max(0, properties.getSync().getLookaheadYears());
 
         log.info("공휴일 백필 시작: {}~{}년", startYear, endYear);
         List<HolidaySyncResult> results = holidaySyncService.syncRange(startYear, endYear);

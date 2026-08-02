@@ -25,7 +25,7 @@ public class HolidaySyncScheduler {
 
     private final HolidaySyncService holidaySyncService;
 
-    @Scheduled(cron = "${app.holiday.sync.cron:0 0 12 * * *}")
+    @Scheduled(cron = "${app.holiday.sync.cron:0 0 12 * * *}", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void sync() {
         log.debug("공휴일 동기화 시작");
         List<HolidaySyncResult> results = holidaySyncService.syncUpcoming();

@@ -24,7 +24,7 @@ public class StockMasterSyncScheduler {
 
     private final StockMasterSyncService stockMasterSyncService;
 
-    @Scheduled(cron = "${app.kis.master.sync.cron:0 0 7 * * *}")
+    @Scheduled(cron = "${app.kis.master.sync.cron:0 0 7 * * *}", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void sync() {
         log.debug("종목 마스터 동기화 시작");
         List<StockMasterSyncResult> results = stockMasterSyncService.syncAll();
