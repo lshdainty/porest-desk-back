@@ -16,5 +16,8 @@ public enum ImportField {
     CATEGORY,     // 카테고리(대분류)
     SUBCATEGORY,  // 소분류(설명에 병합)
     ASSET,        // 자산·결제수단
-    MEMO,         // 설명·메모·거래처
+    MEMO,         // 설명·메모
+    TIME,         // 시각(날짜와 열이 분리된 소스 — 뱅크샐러드). 날짜와 합쳐 일시로 만든다
+    MERCHANT,     // 거래처·가맹점
+    PAYMENT_METHOD, // 결제수단(현금/카드 등) — 자산과 별개
 }

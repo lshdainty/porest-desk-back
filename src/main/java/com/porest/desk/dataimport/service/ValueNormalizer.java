@@ -4,6 +4,7 @@ import com.porest.desk.expense.type.ExpenseType;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
@@ -25,6 +26,12 @@ public final class ValueNormalizer {
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss]"),
         DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm[:ss]"),
         DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm[:ss]")
+    );
+
+    private static final List<DateTimeFormatter> TIME_FORMATS = List.of(
+        DateTimeFormatter.ofPattern("HH:mm:ss"),
+        DateTimeFormatter.ofPattern("HH:mm"),
+        DateTimeFormatter.ofPattern("H:mm")
     );
 
     private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
@@ -57,6 +64,17 @@ public final class ValueNormalizer {
                 return EXCEL_EPOCH.plusDays(days).atStartOfDay().plusSeconds(secondsOfDay);
             }
         } catch (NumberFormatException ignore) { /* not a number */ }
+        return null;
+    }
+
+    /** 시각 파싱 — "HH:mm[:ss]". 날짜와 열이 분리된 소스(뱅크샐러드)용. 실패 시 null. */
+    public static LocalTime parseTime(String raw) {
+        if (raw == null) return null;
+        String s = raw.trim();
+        if (s.isEmpty()) return null;
+        for (DateTimeFormatter f : TIME_FORMATS) {
+            try { return LocalTime.parse(s, f); } catch (Exception ignore) { /* try next */ }
+        }
         return null;
     }
 

@@ -99,4 +99,65 @@ class ImportColumnMapperTest {
         StandardRow noAmount = ImportColumnMapper.mapRow(m, List.of("2026-05-28", "체크카드", "식비", "점심", "편의점", "", "지출"), 2);
         assertThat(noAmount.error()).isEqualTo("amount");
     }
+
+    // ── 플랫폼별 전용 사양 ────────────────────────────────────
+
+    @Test
+    @DisplayName("POREST — 우리 내보내기 헤더를 그대로 매핑(거래처·결제수단 포함)")
+    void porestSpec() {
+        var m = ImportColumnMapper.suggest(ImportSource.POREST,
+            List.of("날짜", "유형", "카테고리", "자산", "금액", "설명", "거래처", "결제수단"));
+
+        assertThat(m).containsEntry(ImportField.DATE, 0)
+            .containsEntry(ImportField.TYPE, 1)
+            .containsEntry(ImportField.CATEGORY, 2)
+            .containsEntry(ImportField.ASSET, 3)
+            .containsEntry(ImportField.AMOUNT, 4)
+            .containsEntry(ImportField.MEMO, 5)
+            .containsEntry(ImportField.MERCHANT, 6)
+            .containsEntry(ImportField.PAYMENT_METHOD, 7);
+    }
+
+    @Test
+    @DisplayName("BANKSALAD — 날짜/시간 분리와 대분류·소분류를 각각 잡는다")
+    void banksaladSpec() {
+        var m = ImportColumnMapper.suggest(ImportSource.BANKSALAD,
+            List.of("날짜", "시간", "타입", "대분류", "소분류", "내용", "금액", "화폐", "결제수단", "메모"));
+
+        assertThat(m).containsEntry(ImportField.DATE, 0)
+            .containsEntry(ImportField.TIME, 1)
+            .containsEntry(ImportField.TYPE, 2)
+            .containsEntry(ImportField.CATEGORY, 3)
+            .containsEntry(ImportField.SUBCATEGORY, 4)
+            .containsEntry(ImportField.MERCHANT, 5)
+            .containsEntry(ImportField.AMOUNT, 6)
+            .containsEntry(ImportField.ASSET, 8)
+            .containsEntry(ImportField.MEMO, 9);
+    }
+
+    @Test
+    @DisplayName("TOSS — 출금액/입금액 분리를 우선 잡고 단일 금액으로 오인하지 않는다")
+    void tossSpec() {
+        var m = ImportColumnMapper.suggest(ImportSource.TOSS,
+            List.of("거래일시", "적요", "출금액", "입금액", "거래후잔액", "거래점"));
+
+        assertThat(m).containsEntry(ImportField.DATE, 0)
+            .containsEntry(ImportField.AMOUNT_OUT, 2)
+            .containsEntry(ImportField.AMOUNT_IN, 3);
+        assertThat(m).doesNotContainKey(ImportField.AMOUNT);
+    }
+
+    @Test
+    @DisplayName("소스 사양에 없는 열은 동의어 사전으로 보완한다")
+    void fallsBackToSynonyms() {
+        // 뱅크샐러드인데 '메모' 대신 '비고' 로 나간 변형 — 사양이 못 잡으면 동의어가 받는다.
+        var m = ImportColumnMapper.suggest(ImportSource.BANKSALAD,
+            List.of("날짜", "타입", "대분류", "금액", "비고"));
+
+        assertThat(m).containsEntry(ImportField.DATE, 0)
+            .containsEntry(ImportField.TYPE, 1)
+            .containsEntry(ImportField.CATEGORY, 2)
+            .containsEntry(ImportField.AMOUNT, 3)
+            .containsEntry(ImportField.MEMO, 4);
+    }
 }

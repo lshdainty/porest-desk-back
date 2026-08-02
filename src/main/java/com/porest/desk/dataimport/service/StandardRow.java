@@ -18,6 +18,8 @@ public record StandardRow(
     String subcategory,
     String asset,
     String memo,
+    String merchant,
+    String paymentMethod,
     boolean duplicate,
     String error
 ) {
@@ -26,6 +28,7 @@ public record StandardRow(
     }
 
     public StandardRow withDuplicate(boolean dup) {
-        return new StandardRow(lineNo, date, type, amount, category, subcategory, asset, memo, dup, error);
+        return new StandardRow(lineNo, date, type, amount, category, subcategory, asset, memo,
+            merchant, paymentMethod, dup, error);
     }
 }
