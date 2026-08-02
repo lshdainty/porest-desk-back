@@ -66,6 +66,12 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Override
     @Transactional
     public ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command) {
+        return createExpense(command, false);
+    }
+
+    @Override
+    @Transactional
+    public ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command, boolean bulk) {
         log.debug("지출 등록 시작: userRowId={}, amount={}", command.userRowId(), command.amount());
 
         User user = userRepository.findById(command.userRowId())
@@ -117,10 +123,13 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 자산 잔액 이력: 거래 flow 적재 → recompute 가 asset.balance 반영 (단일 writer)
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
-            command.expenseType(), command.amount(), command.expenseDate());
+            command.expenseType(), command.amount(), command.expenseDate(), !bulk);
 
         // 예산 임계 도달 시 알림 (생성이므로 이전 기여분 없음). 생성 시점엔 분할이 아직 없어 거래 카테고리로 귀속.
-        notifyBudgetThresholdIfCrossed(expense, 0L, Map.of());
+        // 대량 적재에선 건너뛴다 — 행 수만큼 알림이 쏟아지고 매번 집계 쿼리가 돈다.
+        if (!bulk) {
+            notifyBudgetThresholdIfCrossed(expense, 0L, Map.of());
+        }
 
         log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
 
