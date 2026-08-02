@@ -57,7 +57,7 @@ class ImportApiControllerTest {
     @DisplayName("POST /import/analyze — 파일+소스로 자동매핑·미리보기 위임")
     void analyze() throws Exception {
         StandardRow row = new StandardRow(1, java.time.LocalDateTime.of(2026, 5, 28, 0, 0),
-            ExpenseType.EXPENSE, 5700L, "식비", null, "체크카드", "편의점", false, null);
+            ExpenseType.EXPENSE, 5700L, "식비", null, "체크카드", "편의점", null, null, false, null);
         given(importService.analyze(any(), eq(ImportSource.EASYBUDGET), eq(1L)))
             .willReturn(new ImportService.AnalyzeResult(
                 "t.csv", 2, 2, 0,

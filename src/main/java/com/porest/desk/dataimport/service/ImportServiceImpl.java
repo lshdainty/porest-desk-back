@@ -99,9 +99,11 @@ public class ImportServiceImpl implements ImportService {
                 Long assetRowId = assets.resolve(r.asset());
                 // 소분류는 이제 카테고리(자식)로 쓰이므로 설명에 중복해 넣지 않는다.
                 String description = r.memo();
+                // 결제수단 열이 있으면 그 값을, 없으면 자산 텍스트를 남긴다(기존 동작 유지).
+                String paymentMethod = r.paymentMethod() != null ? r.paymentMethod() : r.asset();
                 expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
                     userRowId, categoryRowId, assetRowId, r.type(), r.amount(),
-                    description, r.date(), null, r.asset(), null, null));
+                    description, r.date(), r.merchant(), paymentMethod, null, null));
                 imported++;
             } catch (Exception e) {
                 failed++;
