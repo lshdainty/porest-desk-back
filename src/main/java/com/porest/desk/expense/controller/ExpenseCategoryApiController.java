@@ -101,4 +101,21 @@ public class ExpenseCategoryApiController {
         return ApiResponse.success(new ExpenseCategoryApiDto.MoveResponse(
             moved.expenses(), moved.recurring(), moved.splits()));
     }
+
+    /**
+     * 하위 카테고리를 만들면서 이 카테고리의 거래를 그리로 옮긴다.
+     *
+     * <p>거래가 달린 카테고리는 하위를 만들 수 없고, 옮길 하위가 없으면 거래도 못 옮기는
+     * 교착을 푸는 경로. 생성과 이동이 한 트랜잭션이라 커밋 시점엔 규칙이 지켜진다.
+     */
+    @PostMapping("/expense/category/{id}/split-into-child")
+    public ApiResponse<ExpenseCategoryApiDto.MoveResponse> splitIntoChild(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable("id") Long id,
+            @RequestBody ExpenseCategoryApiDto.SplitIntoChildRequest request) {
+        var moved = expenseCategoryService.moveTransactionsToNewChild(
+            id, request.childName(), request.icon(), request.color(), loginUser.getRowId());
+        return ApiResponse.success(new ExpenseCategoryApiDto.MoveResponse(
+            moved.expenses(), moved.recurring(), moved.splits()));
+    }
 }
