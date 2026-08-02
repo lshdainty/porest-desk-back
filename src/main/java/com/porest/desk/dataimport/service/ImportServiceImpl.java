@@ -95,9 +95,10 @@ public class ImportServiceImpl implements ImportService {
                 continue;
             }
             try {
-                Long categoryRowId = categories.resolve(r.category(), r.type(), autoCat);
+                Long categoryRowId = categories.resolve(r.category(), r.subcategory(), r.type(), autoCat);
                 Long assetRowId = assets.resolve(r.asset());
-                String description = mergeDesc(r.subcategory(), r.memo());
+                // 소분류는 이제 카테고리(자식)로 쓰이므로 설명에 중복해 넣지 않는다.
+                String description = r.memo();
                 expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
                     userRowId, categoryRowId, assetRowId, r.type(), r.amount(),
                     description, r.date(), null, r.asset(), null, null));
@@ -148,7 +149,7 @@ public class ImportServiceImpl implements ImportService {
 
         for (int i = 0; i < rows.size(); i++) {
             StandardRow r = rows.get(i);
-            if (r.valid() && existing.contains(dupKey(r.date().toLocalDate(), r.amount(), mergeDesc(r.subcategory(), r.memo())))) {
+            if (r.valid() && existing.contains(dupKey(r.date().toLocalDate(), r.amount(), r.memo()))) {
                 rows.set(i, r.withDuplicate(true));
             }
         }
@@ -158,11 +159,6 @@ public class ImportServiceImpl implements ImportService {
         return date + "|" + amount + "|" + (desc == null ? "" : desc.trim());
     }
 
-    private static String mergeDesc(String sub, String memo) {
-        if (sub != null && memo != null) return sub + " " + memo;
-        if (sub != null) return sub;
-        return memo;
-    }
 
     private static void addFailure(List<Failure> failures, int lineNo, String reason) {
         if (failures.size() < MAX_FAILURES) failures.add(new Failure(lineNo, reason));
@@ -175,9 +171,28 @@ public class ImportServiceImpl implements ImportService {
 
     // ── 카테고리 해석(캐시 + 자동생성) ───────────────────────
 
+    /**
+     * 카테고리 해석 — 원본의 대분류/소분류를 우리 부모/자식 계층에 그대로 대응시킨다.
+     *
+     * <p>편한가계부·뱅크샐러드 같은 소스는 대분류/소분류로 나뉘어 있고, 우리 카테고리도
+     * 부모/자식 2단계라 구조가 맞는다. 예전엔 leaf 이름 하나만 봐서 이 정보를 버렸는데,
+     * 그러면 "문화생활 > 기타" 와 "여행 > 기타" 처럼 <b>이름이 같은 자식을 구분하지 못했다</b>
+     * (먼저 스캔된 쪽으로 전부 몰림).
+     *
+     * <p>매칭 규칙
+     * <ul>
+     *   <li>소분류 있음 → 대분류 이름의 부모 아래, 소분류 이름의 자식</li>
+     *   <li>소분류 없음 → 대분류 이름의 최상위 leaf (자식 없는 카테고리)</li>
+     *   <li>못 찾고 autoCat 이면 부모부터 만들고 그 아래 자식을 만든다</li>
+     * </ul>
+     * 거래는 leaf 에만 귀속시킨다 — 자식이 있는 부모에 직접 달면 합계가 이중 집계된다.
+     */
     private final class CategoryResolver {
         private final Long userRowId;
-        private final Map<String, Long> leafByKey = new HashMap<>();
+        /** "타입|부모명|자식명" → rowId. 최상위 leaf 는 부모명을 빈 문자열로 둔다. */
+        private final Map<String, Long> byPath = new HashMap<>();
+        /** "타입|이름" → rowId (부모 카테고리). 자식을 매달 부모를 찾을 때 쓴다. */
+        private final Map<String, Long> parentByName = new HashMap<>();
 
         CategoryResolver(Long userRowId) {
             this.userRowId = userRowId;
@@ -187,32 +202,83 @@ public class ImportServiceImpl implements ImportService {
                 if (c.getParent() != null) parentIds.add(c.getParent().getRowId());
             });
             cats.forEach(c -> {
-                if (!parentIds.contains(c.getRowId())) { // leaf 만 매칭 대상 (거래 귀속은 leaf 강제)
-                    leafByKey.putIfAbsent(key(c.getExpenseType(), c.getCategoryName()), c.getRowId());
+                boolean isParent = parentIds.contains(c.getRowId());
+                if (isParent) {
+                    parentByName.putIfAbsent(key(c.getExpenseType(), c.getCategoryName()), c.getRowId());
+                } else {
+                    String parentName = c.getParent() != null ? c.getParent().getCategoryName() : "";
+                    byPath.putIfAbsent(pathKey(c.getExpenseType(), parentName, c.getCategoryName()), c.getRowId());
+                }
+            });
+            // 자식이 없는 최상위도 "부모 후보" 로 둔다 — 소분류가 들어오면 그 아래로 매달아야 한다.
+            cats.forEach(c -> {
+                if (c.getParent() == null) {
+                    parentByName.putIfAbsent(key(c.getExpenseType(), c.getCategoryName()), c.getRowId());
                 }
             });
         }
 
-        Long resolve(String name, ExpenseType type, boolean autoCat) {
-            if (name != null && !name.isBlank()) {
-                Long hit = leafByKey.get(key(type, name));
-                if (hit != null) return hit;
-                if (autoCat) return create(name, type);
+        Long resolve(String category, String subcategory, ExpenseType type, boolean autoCat) {
+            String parentName = blank(category) ? null : category.trim();
+            String leafName = blank(subcategory) ? null : subcategory.trim();
+
+            if (parentName == null && leafName == null) {
+                return topLevel(UNCATEGORIZED, type);
             }
-            return create(UNCATEGORIZED, type); // 카테고리 필수 → 미분류 확보
+            // 대분류만 있으면 그 이름의 최상위 leaf 로.
+            if (leafName == null) {
+                Long hit = byPath.get(pathKey(type, "", parentName));
+                if (hit != null) return hit;
+                return autoCat ? topLevel(parentName, type) : topLevel(UNCATEGORIZED, type);
+            }
+            // 소분류만 있으면(대분류 빈칸) 최상위 leaf 로 취급.
+            if (parentName == null) {
+                Long hit = byPath.get(pathKey(type, "", leafName));
+                if (hit != null) return hit;
+                return autoCat ? topLevel(leafName, type) : topLevel(UNCATEGORIZED, type);
+            }
+
+            Long hit = byPath.get(pathKey(type, parentName, leafName));
+            if (hit != null) return hit;
+            if (!autoCat) return topLevel(UNCATEGORIZED, type);
+
+            Long parentRowId = parentByName.get(key(type, parentName));
+            if (parentRowId == null) {
+                parentRowId = create(parentName, type, null);
+                parentByName.put(key(type, parentName), parentRowId);
+                // 방금 만든 최상위가 leaf 로도 캐시돼 있으면 지운다 — 이제 부모가 됐다.
+                byPath.remove(pathKey(type, "", parentName));
+            }
+            Long childRowId = create(leafName, type, parentRowId);
+            byPath.put(pathKey(type, parentName, leafName), childRowId);
+            return childRowId;
         }
 
-        private Long create(String name, ExpenseType type) {
-            Long cached = leafByKey.get(key(type, name));
+        /** 최상위(부모 없음) leaf 확보 — 있으면 재사용, 없으면 생성. */
+        private Long topLevel(String name, ExpenseType type) {
+            Long cached = byPath.get(pathKey(type, "", name));
             if (cached != null) return cached;
+            Long rowId = create(name, type, null);
+            byPath.put(pathKey(type, "", name), rowId);
+            return rowId;
+        }
+
+        private Long create(String name, ExpenseType type, Long parentRowId) {
             var info = expenseCategoryService.createCategory(new ExpenseCategoryServiceDto.CreateCommand(
-                userRowId, name, DEFAULT_ICON, DEFAULT_COLOR, type, null));
-            leafByKey.put(key(type, name), info.rowId());
+                userRowId, name, DEFAULT_ICON, DEFAULT_COLOR, type, parentRowId));
             return info.rowId();
         }
 
         private String key(ExpenseType type, String name) {
             return type.name() + "|" + name.trim().toLowerCase();
+        }
+
+        private String pathKey(ExpenseType type, String parentName, String name) {
+            return type.name() + "|" + parentName.trim().toLowerCase() + "|" + name.trim().toLowerCase();
+        }
+
+        private boolean blank(String s) {
+            return s == null || s.isBlank();
         }
     }
 
