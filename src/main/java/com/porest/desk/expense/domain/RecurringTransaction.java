@@ -154,6 +154,11 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         return recurring;
     }
 
+    /** 카테고리만 교체 — 카테고리 재편 시 일괄 이동용. */
+    public void changeCategory(ExpenseCategory category) {
+        this.category = category;
+    }
+
     public void updateRecurring(ExpenseCategory category, Asset asset, ExpenseType expenseType,
                                  Long amount, String description, String merchant, String paymentMethod,
                                  RecurringFrequency frequency, Integer intervalValue,

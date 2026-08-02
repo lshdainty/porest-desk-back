@@ -65,6 +65,13 @@ public class ExpenseSplitQueryDslRepository implements ExpenseSplitRepository {
     }
 
     @Override
+    public List<ExpenseSplit> findActiveByCategory(Long categoryRowId) {
+        return queryFactory.selectFrom(split)
+            .where(split.category.rowId.eq(categoryRowId), split.isDeleted.eq(YNType.N))
+            .fetch();
+    }
+
+    @Override
     public boolean existsActiveByCategory(Long categoryRowId) {
         return queryFactory.selectOne()
             .from(split)

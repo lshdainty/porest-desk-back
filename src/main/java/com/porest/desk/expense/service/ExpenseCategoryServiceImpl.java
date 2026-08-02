@@ -23,6 +23,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseSplit;
+import com.porest.desk.expense.domain.RecurringTransaction;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -172,6 +176,40 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     }
 
     /** 거래·반복 거래·분할(split) 항목이 있는 카테고리는 부모(상위)가 될 수 없다(부모는 직접 거래 불가). */
+    @Override
+    @Transactional
+    public ExpenseCategoryServiceDto.MoveResult moveTransactions(Long sourceCategoryId, Long targetCategoryId,
+                                                                 Long userRowId) {
+        if (Objects.equals(sourceCategoryId, targetCategoryId)) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
+        ExpenseCategory source = findCategoryOrThrow(sourceCategoryId);
+        validateCategoryOwnership(source, userRowId);
+        ExpenseCategory target = findCategoryOrThrow(targetCategoryId);
+        validateCategoryOwnership(target, userRowId);
+
+        // 거래 유형 == 카테고리 유형 강제 — 지출 거래를 수입 카테고리로 옮기면 집계가 오염된다.
+        if (source.getExpenseType() != target.getExpenseType()) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
+        }
+        // 거래는 말단에만 달 수 있다 — 자식을 가진 부모로는 옮길 수 없다.
+        if (expenseCategoryRepository.hasChildren(targetCategoryId)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+        }
+
+        // 부모 자격을 막는 세 가지를 모두 옮긴다 — 하나라도 남으면 여전히 하위를 만들 수 없다.
+        List<Expense> expenses = expenseRepository.findActiveByCategory(sourceCategoryId);
+        expenses.forEach(e -> e.changeCategory(target));
+        List<RecurringTransaction> recurrings = recurringTransactionRepository.findActiveByCategory(sourceCategoryId);
+        recurrings.forEach(r -> r.changeCategory(target));
+        List<ExpenseSplit> splits = expenseSplitRepository.findActiveByCategory(sourceCategoryId);
+        splits.forEach(sp -> sp.changeCategory(target));
+
+        log.info("카테고리 일괄 이동: {} → {}, 거래 {}건 / 반복 {}건 / 분할 {}건",
+            sourceCategoryId, targetCategoryId, expenses.size(), recurrings.size(), splits.size());
+        return new ExpenseCategoryServiceDto.MoveResult(expenses.size(), recurrings.size(), splits.size());
+    }
+
     private void validateCanBecomeParent(Long categoryId) {
         if (expenseRepository.existsByCategory(categoryId)
             || recurringTransactionRepository.existsByCategory(categoryId)

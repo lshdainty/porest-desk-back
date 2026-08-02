@@ -85,4 +85,20 @@ public class ExpenseCategoryApiController {
         );
         return ApiResponse.success();
     }
+
+    /**
+     * 카테고리에 달린 거래를 다른 카테고리로 일괄 이동.
+     *
+     * <p>거래가 직접 달린 카테고리는 부모가 될 수 없어 하위 분류를 만들 수 없다.
+     * 그 상태를 푸는 유일한 방법인데, 지금까지는 거래를 하나씩 편집하는 수밖에 없었다.
+     */
+    @PostMapping("/expense/category/{id}/move-transactions")
+    public ApiResponse<ExpenseCategoryApiDto.MoveResponse> moveTransactions(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable("id") Long id,
+            @RequestBody ExpenseCategoryApiDto.MoveRequest request) {
+        var moved = expenseCategoryService.moveTransactions(id, request.targetCategoryRowId(), loginUser.getRowId());
+        return ApiResponse.success(new ExpenseCategoryApiDto.MoveResponse(
+            moved.expenses(), moved.recurring(), moved.splits()));
+    }
 }

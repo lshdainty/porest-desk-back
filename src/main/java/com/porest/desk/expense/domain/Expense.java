@@ -99,6 +99,11 @@ public class Expense extends AuditingFieldsWithIp {
         return expense;
     }
 
+    /** 카테고리만 교체 — 카테고리 재편 시 일괄 이동용(다른 값은 건드리지 않는다). */
+    public void changeCategory(ExpenseCategory category) {
+        this.category = category;
+    }
+
     public void updateExpense(ExpenseCategory category, Asset asset, ExpenseType expenseType,
                               Long amount, String description, LocalDateTime expenseDate,
                               String merchant, String paymentMethod) {

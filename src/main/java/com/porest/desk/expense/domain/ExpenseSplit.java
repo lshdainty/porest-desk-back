@@ -60,6 +60,11 @@ public class ExpenseSplit extends AuditingFieldsWithIp {
         return split;
     }
 
+    /** 카테고리만 교체 — 카테고리 재편 시 일괄 이동용. */
+    public void changeCategory(ExpenseCategory category) {
+        this.category = category;
+    }
+
     public void update(ExpenseCategory category, Long amount, String label, Integer sortOrder) {
         this.category = category;
         this.amount = amount;
