@@ -31,6 +31,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import java.time.LocalDateTime;
 import com.porest.desk.expense.domain.Expense;
 
@@ -371,6 +373,58 @@ class ExpenseCategoryServiceImplTest {
         @DisplayName("같은 카테고리로는 옮길 수 없다")
         void rejectsSameCategory() {
             assertThatThrownBy(() -> sut.moveTransactions(10L, 10L, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("moveTransactionsToNewChild — 하위를 만들면서 거래를 그리로 옮긴다")
+    class MoveToNewChild {
+
+        @Test
+        @DisplayName("거래가 있어 하위를 못 만들던 교착을 푼다 — 생성과 이동이 한 트랜잭션")
+        void createsChildAndMovesTransactions() {
+            User u = user(USER_ID);
+            ExpenseCategory src = category(10L, u, null, ExpenseType.EXPENSE);
+            Expense e = Expense.createExpense(u, src, null, ExpenseType.EXPENSE, 1000L,
+                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(src));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                eq(USER_ID), eq(10L), any(), eq("강의"), isNull())).willReturn(false);
+            given(expenseRepository.findActiveByCategory(10L)).willReturn(List.of(e));
+            given(recurringTransactionRepository.findActiveByCategory(10L)).willReturn(List.of());
+            given(expenseSplitRepository.findActiveByCategory(10L)).willReturn(List.of());
+
+            var moved = sut.moveTransactionsToNewChild(10L, "강의", "book", "#111", USER_ID);
+
+            assertThat(moved.expenses()).isEqualTo(1);
+            // 거래가 새 자식으로 옮겨져야 원래 카테고리가 부모 자격을 얻는다.
+            assertThat(e.getCategory().getCategoryName()).isEqualTo("강의");
+            assertThat(e.getCategory().getParent()).isSameAs(src);
+            verify(expenseCategoryRepository).save(any(ExpenseCategory.class));
+        }
+
+        @Test
+        @DisplayName("이미 자식이 있는 카테고리에는 이 경로를 쓰지 않는다 — 일반 이동을 쓰면 된다")
+        void rejectsWhenAlreadyHasChildren() {
+            User u = user(USER_ID);
+            given(expenseCategoryRepository.findById(10L))
+                .willReturn(Optional.of(category(10L, u, null, ExpenseType.EXPENSE)));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(true);
+
+            assertThatThrownBy(() -> sut.moveTransactionsToNewChild(10L, "강의", "book", "#111", USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("하위 카테고리에는 또 하위를 만들 수 없다(최대 2단계)")
+        void rejectsWhenSourceIsChild() {
+            User u = user(USER_ID);
+            ExpenseCategory parent = category(9L, u, null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L))
+                .willReturn(Optional.of(category(10L, u, parent, ExpenseType.EXPENSE)));
+
+            assertThatThrownBy(() -> sut.moveTransactionsToNewChild(10L, "강의", "book", "#111", USER_ID))
                 .isInstanceOf(InvalidValueException.class);
         }
     }

@@ -79,6 +79,9 @@ public class ExpenseCategoryApiDto {
     /** 일괄 이동 요청 — 옮길 대상 카테고리. */
     public record MoveRequest(Long targetCategoryRowId) {}
 
+    /** 하위 생성 + 거래 이동 요청. */
+    public record SplitIntoChildRequest(String childName, String icon, String color) {}
+
     /** 일괄 이동 결과 — 무엇이 몇 건 옮겨졌는지. */
     public record MoveResponse(int expenses, int recurring, int splits) {}
 }

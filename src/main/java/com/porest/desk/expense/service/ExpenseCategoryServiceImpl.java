@@ -178,6 +178,50 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     /** 거래·반복 거래·분할(split) 항목이 있는 카테고리는 부모(상위)가 될 수 없다(부모는 직접 거래 불가). */
     @Override
     @Transactional
+    public ExpenseCategoryServiceDto.MoveResult moveTransactionsToNewChild(
+            Long categoryId, String childName, String icon, String color, Long userRowId) {
+        ExpenseCategory source = findCategoryOrThrow(categoryId);
+        validateCategoryOwnership(source, userRowId);
+
+        // 카테고리는 2단계까지 — 하위에는 또 하위를 만들 수 없다.
+        if (source.getParent() != null) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+        }
+        // 이미 자식이 있으면 직접 거래를 가질 수 없는 상태다 — 일반 이동(moveTransactions)을 쓰면 된다.
+        if (expenseCategoryRepository.hasChildren(categoryId)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+        }
+        if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                userRowId, categoryId, source.getExpenseType(), childName, null)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
+        }
+
+        // validateCanBecomeParent 를 거치지 않는다 — 지금은 위반이지만 바로 아래에서 거래를
+        // 전부 옮기므로 커밋 시점엔 부모에 직접 거래가 남지 않는다. createCategory 를 쓰면
+        // 그 검증에 걸려 이 교착을 영영 풀 수 없다.
+        ExpenseCategory child = ExpenseCategory.createCategory(
+            source.getUser(), childName, icon, color, source.getExpenseType(), source);
+        expenseCategoryRepository.save(child);
+
+        ExpenseCategoryServiceDto.MoveResult moved = moveAllReferences(categoryId, child);
+        log.info("카테고리 하위 생성 + 거래 이동: {} → 신규 자식 '{}', 거래 {}건 / 반복 {}건 / 분할 {}건",
+            categoryId, childName, moved.expenses(), moved.recurring(), moved.splits());
+        return moved;
+    }
+
+    /** 카테고리를 가리키는 세 가지(거래·반복거래·분할)를 모두 대상으로 옮긴다. */
+    private ExpenseCategoryServiceDto.MoveResult moveAllReferences(Long sourceCategoryId, ExpenseCategory target) {
+        List<Expense> expenses = expenseRepository.findActiveByCategory(sourceCategoryId);
+        expenses.forEach(e -> e.changeCategory(target));
+        List<RecurringTransaction> recurrings = recurringTransactionRepository.findActiveByCategory(sourceCategoryId);
+        recurrings.forEach(r -> r.changeCategory(target));
+        List<ExpenseSplit> splits = expenseSplitRepository.findActiveByCategory(sourceCategoryId);
+        splits.forEach(sp -> sp.changeCategory(target));
+        return new ExpenseCategoryServiceDto.MoveResult(expenses.size(), recurrings.size(), splits.size());
+    }
+
+    @Override
+    @Transactional
     public ExpenseCategoryServiceDto.MoveResult moveTransactions(Long sourceCategoryId, Long targetCategoryId,
                                                                  Long userRowId) {
         if (Objects.equals(sourceCategoryId, targetCategoryId)) {
@@ -198,16 +242,10 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         }
 
         // 부모 자격을 막는 세 가지를 모두 옮긴다 — 하나라도 남으면 여전히 하위를 만들 수 없다.
-        List<Expense> expenses = expenseRepository.findActiveByCategory(sourceCategoryId);
-        expenses.forEach(e -> e.changeCategory(target));
-        List<RecurringTransaction> recurrings = recurringTransactionRepository.findActiveByCategory(sourceCategoryId);
-        recurrings.forEach(r -> r.changeCategory(target));
-        List<ExpenseSplit> splits = expenseSplitRepository.findActiveByCategory(sourceCategoryId);
-        splits.forEach(sp -> sp.changeCategory(target));
-
+        ExpenseCategoryServiceDto.MoveResult moved = moveAllReferences(sourceCategoryId, target);
         log.info("카테고리 일괄 이동: {} → {}, 거래 {}건 / 반복 {}건 / 분할 {}건",
-            sourceCategoryId, targetCategoryId, expenses.size(), recurrings.size(), splits.size());
-        return new ExpenseCategoryServiceDto.MoveResult(expenses.size(), recurrings.size(), splits.size());
+            sourceCategoryId, targetCategoryId, moved.expenses(), moved.recurring(), moved.splits());
+        return moved;
     }
 
     private void validateCanBecomeParent(Long categoryId) {
