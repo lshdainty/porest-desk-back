@@ -103,7 +103,11 @@ dependencies {
 tasks.named('test') {
     enabled = true
     useJUnitPlatform()
-    jvmArgs '-Xmx2g', '-XX:+HeapDumpOnOutOfMemoryError'
+    // 테스트 JVM 타임존 고정 — 프로덕션은 UserClock 이 사용자 타임존(폴백 Asia/Seoul)으로
+    // "오늘"을 판단하는데, 테스트는 기대값을 LocalDate.now()(= JVM 기본 타임존)로 만든다.
+    // JVM 기본이 UTC 인 환경(CI)에서 KST 00~09 시에 돌면 두 기준의 날짜가 갈려
+    // 날짜 기반 테스트(대시보드 추이·별빛·별자리)가 하루씩 어긋나 실패한다.
+    jvmArgs '-Xmx2g', '-XX:+HeapDumpOnOutOfMemoryError', '-Duser.timezone=Asia/Seoul'
     finalizedBy jacocoTestReport
 }
 
