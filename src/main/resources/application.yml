@@ -135,6 +135,14 @@ app:
         # 기동 시 테이블이 비어 있으면 1회 적재. 이미 데이터가 있으면 아무것도 하지 않는다.
         enabled: ${KIS_MASTER_BACKFILL_ENABLED:true}
 
+# 파일 저장 — 첨부파일 업로드 루트.
+# 컨테이너 배포에서는 반드시 호스트 볼륨이 마운트된 경로여야 한다(Jenkinsfile 이 -v 로 마운트하고
+# FILE_ROOT_PATH=/app/files 를 주입). 미주입 시 기본값 ./uploads 는 컨테이너 쓰기 계층이라
+# 재배포(docker rm)마다 업로드 파일이 전부 사라진다 — 로컬 개발 전용 폴백.
+desk:
+  file:
+    upload-dir: ${FILE_ROOT_PATH:./uploads}
+
 # Swagger 설정
 springdoc:
   api-docs:

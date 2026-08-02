@@ -20,6 +20,10 @@ pipeline {
         SRC_DIR = "${env.POREST_BASE_DIR}/src/desk-back"
         ENV_FILE_DEV = "${env.POREST_BASE_DIR}/backend/dev/desk/dev.env"
         ENV_FILE_PROD = "${env.POREST_BASE_DIR}/backend/prod/desk/prod.env"
+        // 업로드 파일 영속 경로(호스트). 컨테이너는 쓰기 계층이 재배포마다 날아가므로
+        // 반드시 호스트 디렉터리를 마운트한다. dev/prod 는 저장소를 분리한다.
+        FILE_DIR_DEV = "${env.POREST_BASE_DIR}/backend/dev/desk/files"
+        FILE_DIR_PROD = "${env.POREST_BASE_DIR}/backend/prod/desk/files"
         CONTAINER_NAME = "desk-backend"
     }
     stages {
@@ -77,6 +81,7 @@ pipeline {
             steps {
                 echo "Deploying Desk Backend to Development..."
                 sh """
+                    mkdir -p ${FILE_DIR_DEV}
                     docker stop ${CONTAINER_NAME}-dev || true
                     docker rm ${CONTAINER_NAME}-dev || true
                     docker run -d --name ${CONTAINER_NAME}-dev \
@@ -84,6 +89,8 @@ pipeline {
                         --restart unless-stopped \
                         --network ${env.DEV_NETWORK} \
                         --env-file ${ENV_FILE_DEV} \
+                        -v ${FILE_DIR_DEV}:/app/files \
+                        -e FILE_ROOT_PATH=/app/files \
                         -e SPRING_PROFILES_ACTIVE=dev \
                         -e LOKI_URL=${env.LOKI_URL} \
                         -e APP_VERSION=${env.APP_VERSION} \
@@ -108,6 +115,7 @@ pipeline {
             steps {
                 echo "Deploying Desk Backend to Production..."
                 sh """
+                    mkdir -p ${FILE_DIR_PROD}
                     docker stop ${CONTAINER_NAME}-prod || true
                     docker rm ${CONTAINER_NAME}-prod || true
                     docker run -d --name ${CONTAINER_NAME}-prod \
@@ -115,6 +123,8 @@ pipeline {
                         --restart unless-stopped \
                         --network ${env.PROD_NETWORK} \
                         --env-file ${ENV_FILE_PROD} \
+                        -v ${FILE_DIR_PROD}:/app/files \
+                        -e FILE_ROOT_PATH=/app/files \
                         -e SPRING_PROFILES_ACTIVE=prod \
                         -e LOKI_URL=${env.LOKI_URL} \
                         -e APP_VERSION=${env.APP_VERSION} \
