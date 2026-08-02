@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 public class RecurringTransactionScheduler {
     private final RecurringTransactionService recurringTransactionService;
 
-    @Scheduled(cron = "0 0 0 * * *")
+    @Scheduled(cron = "0 0 0 * * *", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void executeRecurringTransactions() {
         log.info("반복 거래 스케줄러 실행 시작");
         try {

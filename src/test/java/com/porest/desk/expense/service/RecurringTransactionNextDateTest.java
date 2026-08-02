@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -28,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import com.porest.desk.common.time.ServiceClock;
 
 /**
  * 반복 거래 "다음 실행일" 계산 로직 회귀 방지 테스트.
@@ -42,6 +44,8 @@ class RecurringTransactionNextDateTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private UserRepository userRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
+    // 배치 날짜 판정용 — 실제 동작이 필요하므로 mock 대신 실물 주입
+    @Spy private ServiceClock serviceClock = new ServiceClock("Asia/Seoul");
 
     @InjectMocks private RecurringTransactionServiceImpl sut;
 

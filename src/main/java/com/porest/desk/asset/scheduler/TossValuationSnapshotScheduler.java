@@ -20,7 +20,7 @@ public class TossValuationSnapshotScheduler {
     private final AssetService assetService;
 
     /** 매일 16:00 — 국내 장 마감(15:30) 이후 종가 기준 1회. */
-    @Scheduled(cron = "0 0 16 * * *")
+    @Scheduled(cron = "0 0 16 * * *", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void snapshot() {
         log.info("토스 평가액 일일 스냅샷 시작");
         assetService.snapshotTossValuations();

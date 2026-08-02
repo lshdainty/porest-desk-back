@@ -17,7 +17,7 @@ public class SubscriptionExpiryScheduler {
 
     private final SubscriptionService subscriptionService;
 
-    @Scheduled(cron = "0 0 0 * * *")
+    @Scheduled(cron = "0 0 0 * * *", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void processExpiry() {
         try {
             subscriptionService.processExpiry();

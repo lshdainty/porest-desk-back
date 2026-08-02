@@ -2,6 +2,7 @@ package com.porest.desk.calendar.service;
 
 import com.porest.desk.calendar.config.HolidayProperties;
 import com.porest.desk.calendar.service.dto.HolidaySyncResult;
+import com.porest.desk.common.time.ServiceClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,10 +24,11 @@ public class HolidaySyncServiceImpl implements HolidaySyncService {
 
     private final HolidayYearSynchronizer yearSynchronizer;
     private final HolidayProperties properties;
+    private final ServiceClock serviceClock;
 
     @Override
     public List<HolidaySyncResult> syncUpcoming() {
-        int currentYear = LocalDate.now().getYear();
+        int currentYear = serviceClock.today().getYear();
         int lookahead = Math.max(0, properties.getSync().getLookaheadYears());
         return syncRange(currentYear, currentYear + lookahead);
     }

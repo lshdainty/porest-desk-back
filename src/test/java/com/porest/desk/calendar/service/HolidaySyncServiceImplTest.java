@@ -17,6 +17,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import com.porest.desk.common.time.ServiceClock;
+
 import static org.mockito.Mockito.verify;
 
 /** 연도 구간 동기화 오케스트레이션 테스트. */
@@ -26,7 +28,7 @@ class HolidaySyncServiceImplTest {
     @Mock private HolidayYearSynchronizer yearSynchronizer;
 
     private HolidaySyncServiceImpl sut(HolidayProperties properties) {
-        return new HolidaySyncServiceImpl(yearSynchronizer, properties);
+        return new HolidaySyncServiceImpl(yearSynchronizer, properties, new ServiceClock("Asia/Seoul"));
     }
 
     private HolidayProperties properties(int lookaheadYears) {
