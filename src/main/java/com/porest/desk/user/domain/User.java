@@ -132,12 +132,18 @@ public class User extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static User createUser(Long ssoUserRowId, String userId, String userName, String userEmail) {
+        return createUser(ssoUserRowId, userId, userName, userEmail, null);
+    }
+
+    /** @param timezone SSO 가입 지역(IANA ID). null·공백이면 Asia/Seoul. */
+    public static User createUser(Long ssoUserRowId, String userId, String userName, String userEmail,
+                                  String timezone) {
         User user = new User();
         user.ssoUserRowId = ssoUserRowId;
         user.userId = userId;
         user.userName = userName;
         user.userEmail = userEmail;
-        user.timezone = "Asia/Seoul";
+        user.timezone = (timezone == null || timezone.isBlank()) ? "Asia/Seoul" : timezone;
         user.monthStartDay = 1;
         user.budgetAlertThreshold = 85;
         user.pushEnabled = YNType.Y;
