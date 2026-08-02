@@ -70,7 +70,7 @@ public class ImportApiController {
             .toList();
         return new ImportApiDto.AnalyzeResponse(
             r.fileName(), r.totalRows(), r.validRows(), r.duplicateCount(),
-            columns, r.suggestedMapping(), preview);
+            columns, r.suggestedMapping(), preview, r.blockedParents());
     }
 
     private static ImportApiDto.PreviewRow toPreview(StandardRow s) {

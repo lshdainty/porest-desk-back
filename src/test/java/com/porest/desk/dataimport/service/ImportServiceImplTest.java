@@ -356,6 +356,28 @@ class ImportServiceImplTest {
     }
 
     @Test
+    @DisplayName("analyze — 거래가 달린 최상위를 부모로 써야 하는 행은 미리 표시한다")
+    void flagsRowsWhoseParentAlreadyHasTransactions() {
+        // 이전 가져오기가 '관리비' 를 최상위로 만들고 거래를 직접 달아뒀다면,
+        // 그 아래 '통신비' 를 만들 수 없다(부모는 거래를 가질 수 없다는 규칙).
+        // 실행하고 나서 행마다 실패하면 이유를 알 수 없으니 분석 단계에서 짚어준다.
+        ExpenseCategory mgmt = cat(1L, "관리비", null);
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of(mgmt));
+        given(expenseRepository.existsByCategory(1L)).willReturn(true);
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,관리비,통신비,통신비,55000,지출\n"
+            + "2026-05-29,체크카드,식비,아침,김밥,5000,지출\n";
+        var result = sut.analyze(csv(content), ImportSource.EASYBUDGET, 1L);
+
+        assertThat(result.totalRows()).isEqualTo(2);
+        assertThat(result.validRows()).isEqualTo(1);   // 관리비 행은 유효하지 않다
+        assertThat(result.preview()).extracting(StandardRow::error)
+            .containsExactly(StandardRow.ERROR_PARENT_HAS_TX, null);
+    }
+
+    @Test
     @DisplayName("execute — 날짜/금액 매핑 누락 시 예외")
     void execute_missingRequiredMapping_throws() {
         Map<ImportField, Integer> bad = Map.of(ImportField.AMOUNT, 4); // DATE 없음

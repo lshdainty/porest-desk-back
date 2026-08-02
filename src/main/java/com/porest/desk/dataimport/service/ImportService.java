@@ -29,7 +29,12 @@ public interface ImportService {
         int duplicateCount,
         List<String> columns,
         Map<ImportField, Integer> suggestedMapping,
-        List<StandardRow> preview
+        List<StandardRow> preview,
+        /**
+         * 거래가 직접 달려 있어 자식을 만들 수 없는 대분류 이름들.
+         * 비어 있지 않으면 그 대분류를 쓰는 행이 전부 실패하므로, 실행 전에 알려야 한다.
+         */
+        List<String> blockedParents
     ) {}
 
     record ExecuteResult(
