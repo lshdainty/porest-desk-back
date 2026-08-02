@@ -16,6 +16,12 @@ public interface ExpenseService {
      * 예산 알림도 행 수만큼 발생한다. 호출자가 끝나고 자산별로 한 번만 재산정한다.
      */
     ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command, boolean bulk);
+
+    /**
+     * 대량 적재 — 여러 건을 한 트랜잭션에 넣는다. 한 건이라도 실패하면 전체 롤백되므로,
+     * 호출자는 실패 시 건별 재시도로 문제 행을 가려내야 한다.
+     */
+    void createExpensesChunk(List<ExpenseServiceDto.CreateCommand> commands);
     List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command);
     void deleteExpense(Long expenseId, Long userRowId);
