@@ -33,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 
 /**
  * 사용자 서비스 단위 테스트 — 비밀번호 변경/검증 SSO 프록시(client_credentials 서비스 토큰 + body userId) 및
@@ -209,5 +210,48 @@ class UserServiceImplTest {
 
         assertThatThrownBy(() -> sut.getBudgetAlertThreshold(USER_ID))
                 .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    // ==================== updatePreferences — 지역(타임존) ====================
+
+    @Test
+    @DisplayName("updatePreferences — 타임존을 바꾸면 저장되고 응답에 실린다")
+    void updatesTimezone() {
+        User u = userWithThreshold(85);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        UpdatePreferencesReq req = new UpdatePreferencesReq();
+        ReflectionTestUtils.setField(req, "timezone", "America/New_York");
+
+        var resp = sut.updatePreferences(USER_ID, req);
+
+        assertThat(u.getTimezone()).isEqualTo("America/New_York");
+        assertThat(resp.timezone()).isEqualTo("America/New_York");
+    }
+
+    @Test
+    @DisplayName("updatePreferences — 타임존 미전송이면 기존 값을 유지한다(부분 수정)")
+    void keepsTimezoneWhenAbsent() {
+        User u = userWithThreshold(85);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        var resp = sut.updatePreferences(USER_ID, new UpdatePreferencesReq());
+
+        assertThat(u.getTimezone()).isEqualTo("Asia/Seoul");
+        assertThat(resp.timezone()).isEqualTo("Asia/Seoul");
+    }
+
+    @Test
+    @DisplayName("updatePreferences — 알 수 없는 타임존이면 거부한다(저장 전 검증)")
+    void rejectsUnknownTimezone() {
+        User u = userWithThreshold(85);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        UpdatePreferencesReq req = new UpdatePreferencesReq();
+        ReflectionTestUtils.setField(req, "timezone", "Mars/Olympus");
+
+        assertThatThrownBy(() -> sut.updatePreferences(USER_ID, req))
+                .isInstanceOf(InvalidValueException.class);
+        assertThat(u.getTimezone()).isEqualTo("Asia/Seoul");
     }
 }

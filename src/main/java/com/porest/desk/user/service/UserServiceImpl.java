@@ -26,6 +26,8 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
+import java.time.DateTimeException;
+import java.time.ZoneId;
 
 @Slf4j
 @Service
@@ -158,6 +160,15 @@ public class UserServiceImpl implements UserService {
             req.getEmailEnabled(),
             req.getEmailFrequency()
         );
+        // 지역은 저장 전에 검증한다 — 알 수 없는 값이 들어가면 이후 모든 날짜 판정이 폴백으로 흐른다.
+        if (req.getTimezone() != null && !req.getTimezone().isBlank()) {
+            try {
+                ZoneId.of(req.getTimezone());
+            } catch (DateTimeException e) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
+            user.updateTimezone(req.getTimezone());
+        }
         log.info("알림 환경설정 변경: userRowId={}", userRowId);
         return PreferencesResponse.from(user);
     }
