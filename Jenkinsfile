@@ -24,6 +24,10 @@ pipeline {
         // 반드시 호스트 디렉터리를 마운트한다. dev/prod 는 저장소를 분리한다.
         FILE_DIR_DEV = "${env.POREST_BASE_DIR}/backend/dev/desk/files"
         FILE_DIR_PROD = "${env.POREST_BASE_DIR}/backend/prod/desk/files"
+        // 애플리케이션 로그(logback RollingFileAppender) 영속 경로.
+        // 컨테이너 내부에 쌓으면 재배포마다 사라지고, 비-root 유저는 /home 에 만들 수도 없다.
+        LOG_DIR_DEV = "${env.POREST_BASE_DIR}/backend/dev/desk/logs"
+        LOG_DIR_PROD = "${env.POREST_BASE_DIR}/backend/prod/desk/logs"
         // 컨테이너 실행 유저(porest). 마운트 디렉터리 소유권과 이미지 내 UID 가 같아야
         // 비-root 프로세스가 볼륨에 쓸 수 있다 — Dockerfile build-arg 와 chown 에 같은 값을 쓴다.
         APP_UID = "1000"
@@ -85,8 +89,8 @@ pipeline {
             steps {
                 echo "Deploying Desk Backend to Development..."
                 sh """
-                    mkdir -p ${FILE_DIR_DEV}
-                    chown -R ${APP_UID}:${APP_GID} ${FILE_DIR_DEV}
+                    mkdir -p ${FILE_DIR_DEV} ${LOG_DIR_DEV}
+                    chown -R ${APP_UID}:${APP_GID} ${FILE_DIR_DEV} ${LOG_DIR_DEV}
                     docker stop ${CONTAINER_NAME}-dev || true
                     docker rm ${CONTAINER_NAME}-dev || true
                     docker run -d --name ${CONTAINER_NAME}-dev \
@@ -95,7 +99,10 @@ pipeline {
                         --network ${env.DEV_NETWORK} \
                         --env-file ${ENV_FILE_DEV} \
                         -v ${FILE_DIR_DEV}:/app/files \
+                        -v ${LOG_DIR_DEV}:/app/logs \
                         -e FILE_ROOT_PATH=/app/files \
+                        -e LOG_PATH=/app/logs \
+                        --log-opt max-size=10m --log-opt max-file=3 \
                         -e SPRING_PROFILES_ACTIVE=dev \
                         -e LOKI_URL=${env.LOKI_URL} \
                         -e APP_VERSION=${env.APP_VERSION} \
@@ -120,8 +127,8 @@ pipeline {
             steps {
                 echo "Deploying Desk Backend to Production..."
                 sh """
-                    mkdir -p ${FILE_DIR_PROD}
-                    chown -R ${APP_UID}:${APP_GID} ${FILE_DIR_PROD}
+                    mkdir -p ${FILE_DIR_PROD} ${LOG_DIR_PROD}
+                    chown -R ${APP_UID}:${APP_GID} ${FILE_DIR_PROD} ${LOG_DIR_PROD}
                     docker stop ${CONTAINER_NAME}-prod || true
                     docker rm ${CONTAINER_NAME}-prod || true
                     docker run -d --name ${CONTAINER_NAME}-prod \
@@ -130,7 +137,10 @@ pipeline {
                         --network ${env.PROD_NETWORK} \
                         --env-file ${ENV_FILE_PROD} \
                         -v ${FILE_DIR_PROD}:/app/files \
+                        -v ${LOG_DIR_PROD}:/app/logs \
                         -e FILE_ROOT_PATH=/app/files \
+                        -e LOG_PATH=/app/logs \
+                        --log-opt max-size=10m --log-opt max-file=3 \
                         -e SPRING_PROFILES_ACTIVE=prod \
                         -e LOKI_URL=${env.LOKI_URL} \
                         -e APP_VERSION=${env.APP_VERSION} \
