@@ -19,6 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.porest.desk.asset.repository.AssetRepository;
+import java.util.Optional;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 자산 잔액 이력(asset_balance_history) 적재 + 기준시각 잔액 조회 (단일 진실 공급원).
@@ -35,6 +38,7 @@ public class AssetBalanceHistoryService {
 
     private final AssetBalanceHistoryRepository repository;
     private final UserClock userClock;
+    private final AssetRepository assetRepository;
 
     // === 쓰기 ===
 
@@ -62,13 +66,51 @@ public class AssetBalanceHistoryService {
 
     /** 수입/지출 거래 — flow(INCOME=+, EXPENSE=-). asset 미연결/널이면 no-op. */
     public void recordExpense(Asset asset, Long expenseId, ExpenseType type, Long amount, LocalDateTime effectiveAt) {
+        recordExpense(asset, expenseId, type, amount, effectiveAt, true);
+    }
+
+    /**
+     * @param recompute false 면 이력만 남기고 잔액 재산정을 미룬다(대량 적재용).
+     *                  재산정은 그 자산의 <b>전체 이력을 다시 읽어</b> 계산하므로 행마다 하면
+     *                  N 행에 대해 O(N²) 이 된다(1만 행이면 수천만 건 읽기). 호출자가 끝나고
+     *                  {@link #recomputeAssets(Collection)} 로 자산당 한 번만 수행해야 한다.
+     */
+    public void recordExpense(Asset asset, Long expenseId, ExpenseType type, Long amount,
+                              LocalDateTime effectiveAt, boolean recompute) {
         if (asset == null || type == null || amount == null) {
             return;
         }
         long signed = (type == ExpenseType.INCOME) ? amount : -amount;
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.EXPENSE, expenseId, signed, effectiveAt));
-        recompute(asset);
+        if (recompute) {
+            recompute(asset);
+        }
+    }
+
+    /**
+     * 미뤄둔 잔액 재산정 — 자산 목록을 한 번의 이력 조회로 처리한다.
+     *
+     * <p>대량 적재(가져오기) 직후 호출한다. 넘어온 id 로 자산을 다시 읽는 이유는,
+     * 적재 루프가 건별 트랜잭션이라 그때의 엔티티가 이미 detached 라서다 —
+     * detached 엔티티에 잔액을 써도 반영되지 않는다.
+     */
+    @Transactional
+    public void recomputeAssets(Collection<Long> assetRowIds) {
+        if (assetRowIds == null || assetRowIds.isEmpty()) {
+            return;
+        }
+        List<Asset> assets = assetRowIds.stream()
+            .map(assetRepository::findById)
+            .flatMap(Optional::stream)
+            .toList();
+        if (assets.isEmpty()) {
+            return;
+        }
+        BalanceResolver resolver = resolverFor(assets);
+        for (Asset a : assets) {
+            a.updateBalance(resolver.balanceAt(a.getRowId(), userClock.now(a.getUser())));
+        }
     }
 
     /** 거래 변경/삭제 시 해당 expense 의 이력 row 들을 soft-delete 후 영향 자산 재산정. */

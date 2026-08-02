@@ -26,6 +26,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
+import java.util.LinkedHashSet;
 
 /**
  * 데이터 가져오기 오케스트레이션 — 파싱({@link FileParser}) → 매핑({@link ImportColumnMapper})
@@ -52,6 +54,7 @@ public class ImportServiceImpl implements ImportService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final AssetRepository assetRepository;
     private final ExpenseRepository expenseRepository;
+    private final AssetBalanceHistoryService balanceHistoryService;
 
     @Override
     public AnalyzeResult analyze(MultipartFile file, ImportSource source, Long userRowId) {
@@ -83,6 +86,8 @@ public class ImportServiceImpl implements ImportService {
 
         int imported = 0, skipped = 0, failed = 0;
         List<Failure> failures = new ArrayList<>();
+        // 잔액 재산정을 미뤄둔 자산들 — 루프가 끝나고 한 번씩만 계산한다.
+        Set<Long> touchedAssets = new LinkedHashSet<>();
 
         for (StandardRow r : rows) {
             if (!r.valid()) {
@@ -101,9 +106,13 @@ public class ImportServiceImpl implements ImportService {
                 String description = r.memo();
                 // 결제수단 열이 있으면 그 값을, 없으면 자산 텍스트를 남긴다(기존 동작 유지).
                 String paymentMethod = r.paymentMethod() != null ? r.paymentMethod() : r.asset();
+                // bulk=true — 행마다 잔액 재산정/예산 알림을 하지 않는다. 재산정은 아래에서 자산당 한 번.
                 expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
                     userRowId, categoryRowId, assetRowId, r.type(), r.amount(),
-                    description, r.date(), r.merchant(), paymentMethod, null, null));
+                    description, r.date(), r.merchant(), paymentMethod, null, null), true);
+                if (assetRowId != null) {
+                    touchedAssets.add(assetRowId);
+                }
                 imported++;
             } catch (Exception e) {
                 failed++;
@@ -111,6 +120,9 @@ public class ImportServiceImpl implements ImportService {
                 log.warn("가져오기 행 저장 실패 line={}: {}", r.lineNo(), e.getMessage());
             }
         }
+        // 미뤄둔 잔액 재산정 — 자산당 1회. 행마다 하면 자산 전체 이력을 매번 다시 읽어 O(N²) 이 된다.
+        balanceHistoryService.recomputeAssets(touchedAssets);
+
         log.info("가져오기 완료: userRowId={}, imported={}, skipped={}, failed={}", userRowId, imported, skipped, failed);
         return new ExecuteResult(imported, skipped, failed, failures);
     }

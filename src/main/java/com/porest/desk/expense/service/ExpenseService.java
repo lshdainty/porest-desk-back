@@ -9,6 +9,13 @@ import java.util.Map;
 
 public interface ExpenseService {
     ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command);
+
+    /**
+     * 대량 적재용 — 잔액 재산정과 예산 알림을 건너뛴다.
+     * 재산정은 자산 전체 이력을 다시 읽으므로 행마다 하면 O(N²) 이고,
+     * 예산 알림도 행 수만큼 발생한다. 호출자가 끝나고 자산별로 한 번만 재산정한다.
+     */
+    ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command, boolean bulk);
     List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command);
     void deleteExpense(Long expenseId, Long userRowId);
