@@ -34,6 +34,11 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import com.porest.desk.expense.domain.ExpenseCategory;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
+import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -54,6 +59,14 @@ class ImportServiceImplTest {
 
     private MockMultipartFile csv(String content) {
         return new MockMultipartFile("file", "t.csv", "text/csv", content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 부모/자식 카테고리 픽스처 — rowId 는 리플렉션으로 심는다(엔티티에 setter 없음). */
+    private ExpenseCategory cat(long rowId, String name, ExpenseCategory parent) {
+        ExpenseCategory c = ExpenseCategory.createCategory(
+            null, name, "tag", "#9E9E9E", ExpenseType.EXPENSE, parent);
+        ReflectionTestUtils.setField(c, "rowId", rowId);
+        return c;
     }
 
     private ExpenseCategoryServiceDto.CategoryInfo categoryInfo(long rowId) {
@@ -131,6 +144,87 @@ class ImportServiceImplTest {
         assertThat(r.skipped()).isEqualTo(1);
         assertThat(r.imported()).isEqualTo(1);
         verify(expenseService, times(1)).createExpense(any());
+    }
+
+    // ── 편한가계부 대분류/소분류 → 부모/자식 계층 매칭 ──────────────
+
+    private static final String EASYBUDGET_CSV =
+        "날짜,자산,대분류,소분류,내용,금액,유형\n"
+        + "2026-05-28,체크카드,문화생활,기타,어플결제,5700,지출\n"
+        + "2026-05-27,체크카드,여행,기타,기념품,12000,지출\n";
+
+    @Test
+    @DisplayName("execute — 대분류/소분류로 부모 아래 자식에 귀속한다(이름이 같아도 부모로 구분)")
+    void resolvesCategoryByParentAndChild() {
+        ExpenseCategory culture = cat(1L, "문화생활", null);
+        ExpenseCategory cultureEtc = cat(2L, "기타", culture);
+        ExpenseCategory travel = cat(3L, "여행", null);
+        ExpenseCategory travelEtc = cat(4L, "기타", travel);
+        given(expenseCategoryRepository.findAllByUser(1L))
+            .willReturn(List.of(culture, cultureEtc, travel, travelEtc));
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(EASYBUDGET_CSV), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(2);
+        // 같은 "기타" 라도 대분류가 다르면 다른 카테고리로 들어가야 한다.
+        ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+            ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+        verify(expenseService, times(2)).createExpense(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ExpenseServiceDto.CreateCommand::categoryRowId)
+            .containsExactly(2L, 4L);
+        // 이미 있는 카테고리라 새로 만들지 않는다.
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("execute — 소분류가 비면 대분류 이름의 최상위 카테고리에 귀속한다")
+    void resolvesTopLevelWhenSubcategoryBlank() {
+        ExpenseCategory date = cat(9L, "데이트", null);
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of(date));
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,데이트,,영화,20000,지출\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+            ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+        verify(expenseService).createExpense(captor.capture());
+        assertThat(captor.getValue().categoryRowId()).isEqualTo(9L);
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("execute — autoCat 이면 없는 부모·자식을 계층 그대로 만든다")
+    void autoCreatesParentAndChild() {
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any()))
+            .willReturn(categoryInfo(100L), categoryInfo(101L));
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,관리비,전기비,5월분,30000,지출\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        ArgumentCaptor<ExpenseCategoryServiceDto.CreateCommand> captor =
+            ArgumentCaptor.forClass(ExpenseCategoryServiceDto.CreateCommand.class);
+        verify(expenseCategoryService, times(2)).createCategory(captor.capture());
+        // 부모(관리비) 먼저, 그 다음 자식(전기비)이 부모를 가리켜야 한다.
+        assertThat(captor.getAllValues().get(0).categoryName()).isEqualTo("관리비");
+        assertThat(captor.getAllValues().get(0).parentRowId()).isNull();
+        assertThat(captor.getAllValues().get(1).categoryName()).isEqualTo("전기비");
+        assertThat(captor.getAllValues().get(1).parentRowId()).isEqualTo(100L);
     }
 
     @Test

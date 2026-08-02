@@ -79,16 +79,17 @@ public class ImportApiController {
             s.date() == null ? null : s.date().toString(),
             s.type() == null ? null : s.type().name(),
             s.amount(),
-            s.category(),
+            categoryPath(s.category(), s.subcategory()),
             s.asset(),
-            mergeMemo(s.subcategory(), s.memo()),
+            s.memo(),
             s.duplicate(),
             s.error());
     }
 
-    private static String mergeMemo(String sub, String memo) {
-        if (sub != null && memo != null) return sub + " " + memo;
-        if (sub != null) return sub;
-        return memo;
+    /** 미리보기 카테고리 — 대분류/소분류가 부모/자식으로 들어가므로 경로로 보여준다. */
+    private static String categoryPath(String category, String subcategory) {
+        if (category != null && subcategory != null) return category + " > " + subcategory;
+        if (category != null) return category;
+        return subcategory;
     }
 }
