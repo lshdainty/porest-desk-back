@@ -27,8 +27,16 @@ public final class FileParser {
 
     private FileParser() {}
 
-    /** 방어적 행 상한 — 초대용량 파일로 인한 OOM 방지. */
-    private static final int MAX_ROWS = 50_000;
+    /**
+     * 방어적 행 상한 — 초대용량 파일로 인한 OOM 방지.
+     *
+     * <p>업로드 자체가 {@code spring.servlet.multipart.max-file-size}(기본 10MB)로 이미 제한되지만,
+     * 엑셀은 압축돼 있어 같은 용량에 훨씬 많은 행이 들어간다. 그래서 행 수로도 한 겹 막는다.
+     *
+     * <p>넘으면 <b>조용히 자르지 않고 거부한다.</b> 예전엔 상한까지만 읽고 멈춰서,
+     * 사용자는 전부 들어간 줄 알지만 나머지가 통째로 없어졌다.
+     */
+    private static final int MAX_ROWS = 200_000;
 
     public static ParsedFile parse(MultipartFile file) {
         if (file == null || file.isEmpty()) {
@@ -64,10 +72,11 @@ public final class FileParser {
         List<String> headers = trimTrailingEmpty(all.get(0));
         int width = headers.size();
         List<List<String>> rows = new ArrayList<>();
-        for (int r = 1; r < all.size() && rows.size() < MAX_ROWS; r++) {
+        for (int r = 1; r < all.size(); r++) {
             List<String> normalized = normalizeWidth(all.get(r), width);
             if (isBlankRow(normalized)) continue;
             rows.add(normalized);
+            ensureWithinLimit(rows.size());
         }
         return new ParsedFile(headers, rows);
     }
@@ -115,13 +124,14 @@ public final class FileParser {
 
             List<List<String>> rows = new ArrayList<>();
             int last = sheet.getLastRowNum();
-            for (int r = sheet.getFirstRowNum() + 1; r <= last && rows.size() < MAX_ROWS; r++) {
+            for (int r = sheet.getFirstRowNum() + 1; r <= last; r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
                 List<String> cells = new ArrayList<>();
                 for (int c = 0; c < w; c++) cells.add(cellToString(row.getCell(c)));
                 if (isBlankRow(cells)) continue;
                 rows.add(cells);
+                ensureWithinLimit(rows.size());
             }
             return new ParsedFile(headers, rows);
         }
@@ -152,6 +162,13 @@ public final class FileParser {
     }
 
     // ── 공통 ─────────────────────────────────────────────────
+
+    /** 상한 초과는 조용히 자르지 않고 거부한다 — 잘린 줄 모르고 넘어가는 게 더 위험하다. */
+    private static void ensureWithinLimit(int rowCount) {
+        if (rowCount > MAX_ROWS) {
+            throw new InvalidValueException(DeskErrorCode.IMPORT_TOO_MANY_ROWS);
+        }
+    }
 
     private static List<String> normalizeWidth(List<String> row, int width) {
         List<String> out = new ArrayList<>(width);

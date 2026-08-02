@@ -146,6 +146,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     IMPORT_PARSE_FAILED("IMPORT_002", "error.import.parse.failed", HttpStatus.BAD_REQUEST),
     IMPORT_UNSUPPORTED_FORMAT("IMPORT_003", "error.import.unsupported.format", HttpStatus.BAD_REQUEST),
     IMPORT_MAPPING_REQUIRED("IMPORT_004", "error.import.mapping.required", HttpStatus.BAD_REQUEST),
+    IMPORT_TOO_MANY_ROWS("IMPORT_005", "error.import.too.many.rows", HttpStatus.BAD_REQUEST),
 
     // Stock (종목 마스터·관심목록)
     STOCK_NOT_FOUND("STOCK_001", "error.notfound.stock", HttpStatus.NOT_FOUND),

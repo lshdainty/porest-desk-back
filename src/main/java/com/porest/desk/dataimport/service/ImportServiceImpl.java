@@ -90,6 +90,11 @@ public class ImportServiceImpl implements ImportService {
         Set<Long> touchedAssets = new LinkedHashSet<>();
 
         for (StandardRow r : rows) {
+            if (r.skippable()) {
+                // 이체 등 우리가 다루지 않는 유형 — 실패로 세면 진짜 오류가 묻힌다.
+                skipped++;
+                continue;
+            }
             if (!r.valid()) {
                 failed++;
                 addFailure(failures, r.lineNo(), r.error());

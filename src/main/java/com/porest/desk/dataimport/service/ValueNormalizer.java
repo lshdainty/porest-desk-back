@@ -82,7 +82,6 @@ public final class ValueNormalizer {
     public static Long parseAmount(String raw) {
         if (raw == null) return null;
         String s = raw.trim().replaceAll("[,\\s₩\\$€£¥원]", "");
-        boolean paren = s.startsWith("(") && s.endsWith(")"); // 회계식 음수
         s = s.replaceAll("[()]", "").replace("+", "");
         if (s.isEmpty() || s.equals("-") || s.equals(".")) return null;
         try {
@@ -106,7 +105,17 @@ public final class ValueNormalizer {
             || s.contains("소비") || s.equals("-")) {
             return ExpenseType.EXPENSE;
         }
-        // 이체(transfer/이체) 및 알 수 없는 값 → null
+        // 이체(transfer/이체) 및 알 수 없는 값 → null. 둘의 구분은 isTransfer 로 한다.
         return null;
+    }
+
+    /**
+     * 이체 유형인지 — 가계부 거래(수입/지출)가 아니므로 넣지 않지만, <b>오류가 아니라 건너뜀</b>이다.
+     * 알 수 없는 값(오타·깨진 데이터)과 구분해야 결과 화면에서 진짜 문제를 가려낼 수 있다.
+     */
+    public static boolean isTransfer(String raw) {
+        if (raw == null) return false;
+        String s = raw.trim().toLowerCase();
+        return s.contains("이체") || s.contains("transfer") || s.contains("대체");
     }
 }

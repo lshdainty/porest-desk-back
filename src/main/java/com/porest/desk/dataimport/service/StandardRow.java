@@ -23,6 +23,14 @@ public record StandardRow(
     boolean duplicate,
     String error
 ) {
+    /** 이체 행 — 가계부 거래가 아니라 넣지 않지만 오류는 아니다(건너뜀으로 집계). */
+    public static final String ERROR_TRANSFER = "transfer";
+
+    /** 넣지 않되 실패로 세지 않는 행인지. */
+    public boolean skippable() {
+        return ERROR_TRANSFER.equals(error);
+    }
+
     public boolean valid() {
         return error == null;
     }

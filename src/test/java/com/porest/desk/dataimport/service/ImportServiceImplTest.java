@@ -283,6 +283,48 @@ class ImportServiceImplTest {
     }
 
     @Test
+    @DisplayName("execute — 이체 행은 실패가 아니라 건너뜀으로 집계한다")
+    void countsTransferRowsAsSkipped() {
+        // 편한가계부 파일엔 이체 행이 섞여 있다. 우리는 가계부 거래로 다루지 않으므로 넣지 않되,
+        // 실패로 집계하면 진짜 오류(카테고리·금액 문제)와 구분이 안 된다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,식비,아침,김밥,5000,지출\n"
+            + "2026-05-29,체크카드,,,계좌이동,100000,이체\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(1);
+        assertThat(r.skipped()).isEqualTo(1);
+        assertThat(r.failed()).isZero();
+        assertThat(r.failures()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("execute — 알 수 없는 유형은 계속 실패로 집계한다(이체와 구분)")
+    void unknownTypeStillFails() {
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-29,체크카드,식비,아침,김밥,5000,알수없음\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        assertThat(r.failed()).isEqualTo(1);
+        assertThat(r.skipped()).isZero();
+    }
+
+    @Test
     @DisplayName("execute — 날짜/금액 매핑 누락 시 예외")
     void execute_missingRequiredMapping_throws() {
         Map<ImportField, Integer> bad = Map.of(ImportField.AMOUNT, 4); // DATE 없음

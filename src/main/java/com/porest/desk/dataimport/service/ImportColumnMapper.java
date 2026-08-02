@@ -195,7 +195,12 @@ public final class ImportColumnMapper {
         String error = null;
         if (date == null) error = "date";
         else if (amount == null) error = "amount";
-        else if (type == null) error = "type";
+        // 이체는 오류가 아니라 "우리가 다루지 않는 유형" — 건너뜀으로 집계되게 사유를 나눈다.
+        else if (type == null) {
+            error = ValueNormalizer.isTransfer(get(mapping, ImportField.TYPE, row))
+                ? StandardRow.ERROR_TRANSFER
+                : "type";
+        }
 
         return new StandardRow(lineNo, date, type, amount,
             blankToNull(category), blankToNull(subcategory), blankToNull(asset), blankToNull(memo),
