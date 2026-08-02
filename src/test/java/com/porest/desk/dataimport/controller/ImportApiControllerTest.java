@@ -63,7 +63,7 @@ class ImportApiControllerTest {
                 "t.csv", 2, 2, 0,
                 List.of("기간", "금액"),
                 Map.of(ImportField.DATE, 0, ImportField.AMOUNT, 1),
-                List.of(row)));
+                List.of(row), List.of()));
 
         MockMultipartFile file = new MockMultipartFile("file", "t.csv", "text/csv",
             "기간,금액\n2026-05-28,5700\n".getBytes(StandardCharsets.UTF_8));

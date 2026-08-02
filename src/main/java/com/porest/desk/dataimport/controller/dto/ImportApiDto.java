@@ -35,7 +35,9 @@ public class ImportApiDto {
         int duplicateCount,
         List<ColumnInfo> columns,
         Map<ImportField, Integer> suggestedMapping,
-        List<PreviewRow> preview
+        List<PreviewRow> preview,
+        /** 거래가 달려 있어 하위를 만들 수 없는 대분류 — 비어 있지 않으면 그 행들이 전부 실패한다. */
+        List<String> blockedParents
     ) {}
 
     /** execute 요청(JSON part). mapping: 필드→열인덱스. */

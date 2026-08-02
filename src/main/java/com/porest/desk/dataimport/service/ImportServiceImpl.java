@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import java.util.LinkedHashSet;
+import java.util.stream.Collectors;
 
 /**
  * 데이터 가져오기 오케스트레이션 — 파싱({@link FileParser}) → 매핑({@link ImportColumnMapper})
@@ -66,6 +67,7 @@ public class ImportServiceImpl implements ImportService {
         ParsedFile parsed = FileParser.parse(file);
         Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(source, parsed.headers());
         List<StandardRow> rows = mapRows(mapping, parsed.rows());
+        List<String> blockedParents = markUnusableParents(rows, userRowId);
         markDuplicates(rows, userRowId);
 
         int validRows = (int) rows.stream().filter(StandardRow::valid).count();
@@ -74,7 +76,7 @@ public class ImportServiceImpl implements ImportService {
 
         return new AnalyzeResult(
             safeName(file), parsed.rows().size(), validRows, dupCount,
-            parsed.headers(), mapping, preview);
+            parsed.headers(), mapping, preview, blockedParents);
     }
 
     @Override
@@ -84,6 +86,7 @@ public class ImportServiceImpl implements ImportService {
         validateMapping(mapping);
         ParsedFile parsed = FileParser.parse(file);
         List<StandardRow> rows = mapRows(mapping, parsed.rows());
+        markUnusableParents(rows, userRowId);
         markDuplicates(rows, userRowId);
 
         CategoryResolver categories = new CategoryResolver(userRowId);
@@ -199,6 +202,57 @@ public class ImportServiceImpl implements ImportService {
             out.add(ImportColumnMapper.mapRow(mapping, rows.get(i), i + 1));
         }
         return out;
+    }
+
+    /**
+     * 대분류로 쓰려는 이름이 <b>거래가 직접 달린 최상위 카테고리</b>면 그 행들을 미리 표시한다.
+     *
+     * <p>거래는 말단에만 달 수 있어서, 그런 카테고리 아래에는 자식을 만들 수 없다.
+     * 실행 중에 행마다 터지면 사용자는 결과 화면의 실패 숫자만 보고 이유를 알 수 없다.
+     * 분석 단계에서 짚어주면 파일을 고치거나 카테고리를 정리하고 다시 시도할 수 있다.
+     */
+    private List<String> markUnusableParents(List<StandardRow> rows, Long userRowId) {
+        // 소분류가 있는 행만 해당 — 소분류가 없으면 부모가 필요 없다.
+        Set<String> wantedParents = rows.stream()
+            .filter(r -> r.valid() && r.category() != null && r.subcategory() != null)
+            .map(r -> r.category().trim().toLowerCase())
+            .collect(Collectors.toSet());
+        if (wantedParents.isEmpty()) {
+            return List.of();
+        }
+
+        var cats = expenseCategoryRepository.findAllByUser(userRowId);
+        Set<Long> parentIds = new HashSet<>();
+        cats.forEach(c -> {
+            if (c.getParent() != null) parentIds.add(c.getParent().getRowId());
+        });
+        // 이미 자식이 있는 카테고리는 부모 자격이 검증된 상태다 — 거래를 가질 수 없다.
+        Set<String> blocked = new HashSet<>();
+        for (var c : cats) {
+            if (c.getParent() != null || parentIds.contains(c.getRowId())) continue;
+            String name = c.getCategoryName().trim().toLowerCase();
+            if (wantedParents.contains(name) && expenseRepository.existsByCategory(c.getRowId())) {
+                blocked.add(name);
+            }
+        }
+        if (blocked.isEmpty()) {
+            return List.of();
+        }
+        log.info("가져오기 사전 점검 — 거래가 달려 자식을 만들 수 없는 카테고리: {}", blocked);
+
+        for (int i = 0; i < rows.size(); i++) {
+            StandardRow r = rows.get(i);
+            if (r.valid() && r.category() != null && r.subcategory() != null
+                && blocked.contains(r.category().trim().toLowerCase())) {
+                rows.set(i, r.withError(StandardRow.ERROR_PARENT_HAS_TX));
+            }
+        }
+        // 화면에는 사용자가 아는 이름(원본 표기)으로 보여준다.
+        return rows.stream()
+            .filter(r -> StandardRow.ERROR_PARENT_HAS_TX.equals(r.error()))
+            .map(StandardRow::category)
+            .distinct()
+            .toList();
     }
 
     /** 유효행을 기존 거래(같은 날짜·금액·설명)와 대조해 중복 표시. */

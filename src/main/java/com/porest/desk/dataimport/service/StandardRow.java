@@ -26,6 +26,14 @@ public record StandardRow(
     /** 이체 행 — 가계부 거래가 아니라 넣지 않지만 오류는 아니다(건너뜀으로 집계). */
     public static final String ERROR_TRANSFER = "transfer";
 
+    /**
+     * 대분류로 쓰려는 카테고리에 <b>거래가 직접 달려 있어</b> 자식을 만들 수 없는 행.
+     *
+     * <p>거래는 말단에만 달 수 있다(부모에 직접 달리면 합계가 이중 집계된다).
+     * 실행 중에 행마다 터지면 이유를 알 수 없으므로 분석 단계에서 미리 표시한다.
+     */
+    public static final String ERROR_PARENT_HAS_TX = "parentHasTx";
+
     /** 넣지 않되 실패로 세지 않는 행인지. */
     public boolean skippable() {
         return ERROR_TRANSFER.equals(error);
@@ -33,6 +41,11 @@ public record StandardRow(
 
     public boolean valid() {
         return error == null;
+    }
+
+    public StandardRow withError(String newError) {
+        return new StandardRow(lineNo, date, type, amount, category, subcategory, asset, memo,
+            merchant, paymentMethod, duplicate, newError);
     }
 
     public StandardRow withDuplicate(boolean dup) {
