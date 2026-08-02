@@ -7,6 +7,9 @@ import java.time.LocalDateTime;
 
 public class ExpenseCategoryServiceDto {
 
+    /** 일괄 카테고리 이동 결과 — 무엇이 몇 건 옮겨졌는지. */
+    public record MoveResult(int expenses, int recurring, int splits) {}
+
     public record CreateCommand(
         Long userRowId,
         String categoryName,

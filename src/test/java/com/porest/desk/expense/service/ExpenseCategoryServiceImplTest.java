@@ -31,6 +31,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import java.time.LocalDateTime;
+import com.porest.desk.expense.domain.Expense;
 
 /**
  * 카테고리·예산 정책 로직 회귀 방지 단위 테스트.
@@ -310,6 +312,66 @@ class ExpenseCategoryServiceImplTest {
             assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
                     new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
                     .isInstanceOf(InvalidValueException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("moveTransactions — 카테고리에 달린 거래를 다른 카테고리로 일괄 이동")
+    class MoveTransactions {
+
+        @Test
+        @DisplayName("거래·반복거래·분할을 모두 옮긴다 — 셋 다 옮겨야 부모가 될 수 있다")
+        void movesAllReferences() {
+            User u = user(USER_ID);
+            ExpenseCategory src = category(10L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory dst = category(11L, u, null, ExpenseType.EXPENSE);
+            Expense e = Expense.createExpense(u, src, null, ExpenseType.EXPENSE, 1000L,
+                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(src));
+            given(expenseCategoryRepository.findById(11L)).willReturn(Optional.of(dst));
+            given(expenseCategoryRepository.hasChildren(11L)).willReturn(false);
+            given(expenseRepository.findActiveByCategory(10L)).willReturn(List.of(e));
+            given(recurringTransactionRepository.findActiveByCategory(10L)).willReturn(List.of());
+            given(expenseSplitRepository.findActiveByCategory(10L)).willReturn(List.of());
+
+            var moved = sut.moveTransactions(10L, 11L, USER_ID);
+
+            assertThat(moved.expenses()).isEqualTo(1);
+            assertThat(e.getCategory()).isSameAs(dst);
+        }
+
+        @Test
+        @DisplayName("대상이 자식을 가진 부모면 거부 — 거래는 말단에만 달 수 있다")
+        void rejectsWhenTargetIsParent() {
+            User u = user(USER_ID);
+            given(expenseCategoryRepository.findById(10L))
+                .willReturn(Optional.of(category(10L, u, null, ExpenseType.EXPENSE)));
+            given(expenseCategoryRepository.findById(11L))
+                .willReturn(Optional.of(category(11L, u, null, ExpenseType.EXPENSE)));
+            given(expenseCategoryRepository.hasChildren(11L)).willReturn(true);
+
+            assertThatThrownBy(() -> sut.moveTransactions(10L, 11L, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("유형이 다르면 거부 — 지출 거래를 수입 카테고리로 옮길 수 없다")
+        void rejectsTypeMismatch() {
+            User u = user(USER_ID);
+            given(expenseCategoryRepository.findById(10L))
+                .willReturn(Optional.of(category(10L, u, null, ExpenseType.EXPENSE)));
+            given(expenseCategoryRepository.findById(11L))
+                .willReturn(Optional.of(category(11L, u, null, ExpenseType.INCOME)));
+
+            assertThatThrownBy(() -> sut.moveTransactions(10L, 11L, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("같은 카테고리로는 옮길 수 없다")
+        void rejectsSameCategory() {
+            assertThatThrownBy(() -> sut.moveTransactions(10L, 10L, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
         }
     }
 }

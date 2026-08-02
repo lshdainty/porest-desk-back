@@ -18,6 +18,9 @@ public interface ExpenseRepository {
                          LocalDate startDate, LocalDate endDate);
     /** 해당 카테고리를 참조하는 (삭제되지 않은) 거래 존재 여부 — 상위 승격 가드용. */
     boolean existsByCategory(Long categoryRowId);
+
+    /** 해당 카테고리에 직접 달린 활성 거래 — 일괄 카테고리 이동용. */
+    List<Expense> findActiveByCategory(Long categoryRowId);
     /** 카테고리 + 그 하위 카테고리들의 기간 내 지출 합계 (예산 알림 roll-up용). */
     long sumAmountByCategoryRollup(Long userRowId, Long categoryRowId, ExpenseType expenseType,
                                    LocalDate startDate, LocalDate endDate);

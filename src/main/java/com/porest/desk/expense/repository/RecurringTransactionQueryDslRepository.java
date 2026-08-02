@@ -42,6 +42,13 @@ public class RecurringTransactionQueryDslRepository implements RecurringTransact
     }
 
     @Override
+    public List<RecurringTransaction> findActiveByCategory(Long categoryRowId) {
+        return queryFactory.selectFrom(recurring)
+            .where(recurring.category.rowId.eq(categoryRowId), recurring.isDeleted.eq(YNType.N))
+            .fetch();
+    }
+
+    @Override
     public boolean existsByCategory(Long categoryRowId) {
         return queryFactory.selectOne()
             .from(recurring)

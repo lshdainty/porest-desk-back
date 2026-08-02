@@ -50,6 +50,13 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
+    public List<Expense> findActiveByCategory(Long categoryRowId) {
+        return queryFactory.selectFrom(expense)
+            .where(expense.category.rowId.eq(categoryRowId), expense.isDeleted.eq(YNType.N))
+            .fetch();
+    }
+
+    @Override
     public boolean existsByCategory(Long categoryRowId) {
         return queryFactory.selectOne()
             .from(expense)

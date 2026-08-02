@@ -16,6 +16,9 @@ public interface ExpenseSplitRepository {
     /** 해당 카테고리를 참조하는 활성(미삭제) 분할이 하나라도 있는지. 카테고리의 1급 사용 여부 판정용. */
     boolean existsActiveByCategory(Long categoryRowId);
 
+    /** 해당 카테고리를 쓰는 활성 분할 — 일괄 카테고리 이동용. */
+    List<ExpenseSplit> findActiveByCategory(Long categoryRowId);
+
     /**
      * 사용자의 월별 분할 합계를 카테고리별로 한 번에 조회.
      * 반환 Object[] = { Long categoryRowId, ExpenseType expenseType, Long totalAmount }
