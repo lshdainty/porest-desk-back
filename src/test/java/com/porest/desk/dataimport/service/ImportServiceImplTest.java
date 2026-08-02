@@ -228,6 +228,37 @@ class ImportServiceImplTest {
     }
 
     @Test
+    @DisplayName("execute — 같은 대분류에 소분류 있는 행과 빈 행이 섞여도 중복 생성하지 않는다")
+    void doesNotDuplicateParentWhenSubcategoryBlank() {
+        // 편한가계부는 소분류 빈칸이 잦다. 부모를 만든 뒤 같은 대분류의 빈칸 행이 오면
+        // 예전엔 같은 이름의 최상위를 또 만들려다 EXP_019(이름 중복)로 행이 통째로 실패했다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any()))
+            .willReturn(categoryInfo(100L), categoryInfo(101L), categoryInfo(102L));
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,식비,아침,김밥,5000,지출\n"
+            + "2026-05-29,체크카드,식비,,점심,8000,지출\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(2);
+        assertThat(r.failed()).isZero();
+
+        // 만들어진 카테고리: 식비(부모) → 아침(자식) → 미분류(자식). 식비를 두 번 만들지 않는다.
+        ArgumentCaptor<ExpenseCategoryServiceDto.CreateCommand> captor =
+            ArgumentCaptor.forClass(ExpenseCategoryServiceDto.CreateCommand.class);
+        verify(expenseCategoryService, times(3)).createCategory(captor.capture());
+        assertThat(captor.getAllValues()).extracting(ExpenseCategoryServiceDto.CreateCommand::categoryName)
+            .containsExactly("식비", "아침", "미분류");
+        assertThat(captor.getAllValues().get(2).parentRowId()).isEqualTo(100L);
+    }
+
+    @Test
     @DisplayName("execute — 날짜/금액 매핑 누락 시 예외")
     void execute_missingRequiredMapping_throws() {
         Map<ImportField, Integer> bad = Map.of(ImportField.AMOUNT, 4); // DATE 없음

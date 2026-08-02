@@ -244,24 +244,56 @@ public class ImportServiceImpl implements ImportService {
             if (hit != null) return hit;
             if (!autoCat) return topLevel(UNCATEGORIZED, type);
 
-            Long parentRowId = parentByName.get(key(type, parentName));
-            if (parentRowId == null) {
-                parentRowId = create(parentName, type, null);
-                parentByName.put(key(type, parentName), parentRowId);
-                // 방금 만든 최상위가 leaf 로도 캐시돼 있으면 지운다 — 이제 부모가 됐다.
-                byPath.remove(pathKey(type, "", parentName));
-            }
-            Long childRowId = create(leafName, type, parentRowId);
-            byPath.put(pathKey(type, parentName, leafName), childRowId);
-            return childRowId;
+            Long parentRowId = parentOf(parentName, type);
+            return childOf(parentName, parentRowId, leafName, type);
         }
 
-        /** 최상위(부모 없음) leaf 확보 — 있으면 재사용, 없으면 생성. */
+        /**
+         * 대분류 자리(부모) 확보 — 이미 있으면 재사용.
+         *
+         * <p>자식 없는 최상위도 부모 후보다. 여기서 재사용하지 않고 새로 만들면
+         * "같은 부모·같은 타입 내 이름 중복 금지" 규칙에 걸려 행이 통째로 실패한다.
+         */
+        private Long parentOf(String parentName, ExpenseType type) {
+            Long cached = parentByName.get(key(type, parentName));
+            if (cached != null) return cached;
+            Long rowId = create(parentName, type, null);
+            parentByName.put(key(type, parentName), rowId);
+            // 최상위 leaf 로는 등록하지 않는다 — 이건 자식을 가질 부모다.
+            // 여기 등록하면 소분류 빈 행이 부모에 직접 붙어 leaf 강제 규칙이 깨진다.
+            return rowId;
+        }
+
+        /** 부모 아래 자식 확보 — 이미 있으면 재사용. */
+        private Long childOf(String parentName, Long parentRowId, String childName, ExpenseType type) {
+            String k = pathKey(type, parentName, childName);
+            Long cached = byPath.get(k);
+            if (cached != null) return cached;
+            Long rowId = create(childName, type, parentRowId);
+            byPath.put(k, rowId);
+            return rowId;
+        }
+
+        /**
+         * 소분류가 없을 때의 귀속 자리.
+         *
+         * <p>그 이름의 최상위가 이미 있으면 재사용한다. 다만 그것이 <b>자식을 가진 부모</b>면
+         * 거래를 직접 달 수 없으므로(leaf 강제) 그 아래 "미분류" 자식으로 보낸다.
+         * 예전엔 이 경우를 보지 않고 같은 이름의 최상위를 또 만들려다 이름 중복으로 실패했다.
+         */
         private Long topLevel(String name, ExpenseType type) {
             Long cached = byPath.get(pathKey(type, "", name));
             if (cached != null) return cached;
+
+            Long parentRowId = parentByName.get(key(type, name));
+            if (parentRowId != null) {
+                return childOf(name, parentRowId, UNCATEGORIZED, type);
+            }
+
             Long rowId = create(name, type, null);
             byPath.put(pathKey(type, "", name), rowId);
+            // 나중에 같은 대분류에 소분류가 딸린 행이 오면 이 아래로 매단다.
+            parentByName.putIfAbsent(key(type, name), rowId);
             return rowId;
         }
 
