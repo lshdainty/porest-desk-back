@@ -36,6 +36,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.BDDMockito.willReturn;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.mockito.ArgumentCaptor;
@@ -70,6 +73,14 @@ class ImportServiceImplTest {
             null, name, "tag", "#9E9E9E", ExpenseType.EXPENSE, parent);
         ReflectionTestUtils.setField(c, "rowId", rowId);
         return c;
+    }
+
+    /** 청크로 넘어간 CreateCommand 들을 순서대로 펼쳐 준다. */
+    @SuppressWarnings("unchecked")
+    private List<ExpenseServiceDto.CreateCommand> capturedCommands() {
+        ArgumentCaptor<List<ExpenseServiceDto.CreateCommand>> captor = ArgumentCaptor.forClass(List.class);
+        verify(expenseService, atLeastOnce()).createExpensesChunk(captor.capture());
+        return captor.getAllValues().stream().flatMap(List::stream).toList();
     }
 
     private ExpenseCategoryServiceDto.CategoryInfo categoryInfo(long rowId) {
@@ -123,7 +134,7 @@ class ImportServiceImplTest {
 
         assertThat(r.imported()).isEqualTo(2);
         assertThat(r.failed()).isZero();
-        verify(expenseService, times(2)).createExpense(any(), anyBoolean());
+        assertThat(capturedCommands()).hasSize(2);
         verify(expenseCategoryService, times(2)).createCategory(any()); // 식비(지출)·급여(수입)
     }
 
@@ -146,7 +157,7 @@ class ImportServiceImplTest {
 
         assertThat(r.skipped()).isEqualTo(1);
         assertThat(r.imported()).isEqualTo(1);
-        verify(expenseService, times(1)).createExpense(any(), anyBoolean());
+        assertThat(capturedCommands()).hasSize(1);
     }
 
     // ── 편한가계부 대분류/소분류 → 부모/자식 계층 매칭 ──────────────
@@ -175,10 +186,7 @@ class ImportServiceImplTest {
 
         assertThat(r.imported()).isEqualTo(2);
         // 같은 "기타" 라도 대분류가 다르면 다른 카테고리로 들어가야 한다.
-        ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
-            ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
-        verify(expenseService, times(2)).createExpense(captor.capture(), eq(true));
-        assertThat(captor.getAllValues()).extracting(ExpenseServiceDto.CreateCommand::categoryRowId)
+        assertThat(capturedCommands()).extracting(ExpenseServiceDto.CreateCommand::categoryRowId)
             .containsExactly(2L, 4L);
         // 이미 있는 카테고리라 새로 만들지 않는다.
         verify(expenseCategoryService, never()).createCategory(any());
@@ -198,10 +206,8 @@ class ImportServiceImplTest {
 
         sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
 
-        ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
-            ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
-        verify(expenseService).createExpense(captor.capture(), eq(true));
-        assertThat(captor.getValue().categoryRowId()).isEqualTo(9L);
+        assertThat(capturedCommands()).singleElement()
+            .extracting(ExpenseServiceDto.CreateCommand::categoryRowId).isEqualTo(9L);
         verify(expenseCategoryService, never()).createCategory(any());
     }
 
@@ -278,8 +284,9 @@ class ImportServiceImplTest {
 
         // 자산 이름이 매칭되지 않아 assetRowId 가 없으므로 재산정 대상도 비어 있어야 한다.
         verify(balanceHistoryService, times(1)).recomputeAssets(any());
-        // 건별 재산정은 createExpense(.., bulk=true) 안에서 억제된다.
-        verify(expenseService, times(2)).createExpense(any(), eq(true));
+        // 건별 커밋 대신 청크로 한 번에 — 커밋(디스크 동기화) 횟수를 줄이는 게 목적.
+        verify(expenseService, times(1)).createExpensesChunk(any());
+        verify(expenseService, never()).createExpense(any(), anyBoolean());
     }
 
     @Test
@@ -322,6 +329,30 @@ class ImportServiceImplTest {
 
         assertThat(r.failed()).isEqualTo(1);
         assertThat(r.skipped()).isZero();
+    }
+
+    @Test
+    @DisplayName("execute — 청크가 실패하면 건별 재시도로 문제 행만 가려낸다")
+    void retriesRowByRowWhenChunkFails() {
+        // 청크째 실패로 끝내면 멀쩡한 행까지 버려져 부분 성공 보장이 깨진다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        willThrow(new RuntimeException("청크 실패")).given(expenseService).createExpensesChunk(any());
+        // 재시도에서 두 번째 행만 실패
+        willReturn(null).willThrow(new RuntimeException("행 실패"))
+            .given(expenseService).createExpense(any(), eq(true));
+
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r = sut.execute(csv(POREST_CSV), ImportSource.POREST, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(1);
+        assertThat(r.failed()).isEqualTo(1);
+        assertThat(r.failures()).singleElement()
+            .extracting(ImportService.Failure::reason).isEqualTo("save");
+        verify(expenseService, times(2)).createExpense(any(), eq(true));
     }
 
     @Test

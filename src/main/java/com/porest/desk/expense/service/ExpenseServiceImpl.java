@@ -69,6 +69,24 @@ public class ExpenseServiceImpl implements ExpenseService {
         return createExpense(command, false);
     }
 
+    /**
+     * 대량 적재 — 여러 건을 <b>한 트랜잭션</b>에 넣는다.
+     *
+     * <p>건별 트랜잭션이면 행마다 커밋(디스크 동기화)이 일어나 1만 건에 커밋만 1만 번이다.
+     * 묶어서 커밋하면 그 비용이 청크 수만큼으로 줄고, 같은 사용자·카테고리·자산 조회도
+     * 영속성 컨텍스트에 캐시돼 청크당 한 번만 SQL 을 탄다.
+     *
+     * <p>한 건이라도 실패하면 트랜잭션이 통째로 롤백된다. 호출자는 그때 <b>건별로 재시도</b>해
+     * 문제 행만 가려내야 한다(부분 성공 보장).
+     */
+    @Override
+    @Transactional
+    public void createExpensesChunk(List<ExpenseServiceDto.CreateCommand> commands) {
+        for (ExpenseServiceDto.CreateCommand c : commands) {
+            createExpense(c, true);
+        }
+    }
+
     @Override
     @Transactional
     public ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command, boolean bulk) {
@@ -86,7 +104,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
         }
 
-        if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+        // leaf 확인은 매번 쿼리라 영속성 컨텍스트 캐시가 듣지 않는다.
+        // 대량 적재는 가져오기 리졸버가 leaf 만 반환하므로 행마다 다시 확인하지 않는다.
+        if (!bulk && expenseCategoryRepository.hasChildren(category.getRowId())) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
         }
 

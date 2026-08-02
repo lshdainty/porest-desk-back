@@ -45,6 +45,11 @@ public class ImportServiceImpl implements ImportService {
 
     private static final int PREVIEW_LIMIT = 8;
     private static final int MAX_FAILURES = 50;
+    /**
+     * 한 트랜잭션에 묶어 넣을 행 수.
+     * 크게 잡을수록 커밋이 줄지만, 청크가 실패하면 그만큼을 건별로 재시도해야 한다.
+     */
+    private static final int CHUNK_SIZE = 500;
     private static final String UNCATEGORIZED = "미분류";
     private static final String DEFAULT_ICON = "tag";
     private static final String DEFAULT_COLOR = "#9E9E9E";
@@ -88,6 +93,8 @@ public class ImportServiceImpl implements ImportService {
         List<Failure> failures = new ArrayList<>();
         // 잔액 재산정을 미뤄둔 자산들 — 루프가 끝나고 한 번씩만 계산한다.
         Set<Long> touchedAssets = new LinkedHashSet<>();
+        // 청크로 모았다가 한 트랜잭션에 넣는다 — 건별 커밋(디스크 동기화)을 줄이는 게 목적.
+        List<PendingRow> pending = new ArrayList<>();
 
         for (StandardRow r : rows) {
             if (r.skippable()) {
@@ -111,25 +118,69 @@ public class ImportServiceImpl implements ImportService {
                 String description = r.memo();
                 // 결제수단 열이 있으면 그 값을, 없으면 자산 텍스트를 남긴다(기존 동작 유지).
                 String paymentMethod = r.paymentMethod() != null ? r.paymentMethod() : r.asset();
-                // bulk=true — 행마다 잔액 재산정/예산 알림을 하지 않는다. 재산정은 아래에서 자산당 한 번.
-                expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
-                    userRowId, categoryRowId, assetRowId, r.type(), r.amount(),
-                    description, r.date(), r.merchant(), paymentMethod, null, null), true);
                 if (assetRowId != null) {
                     touchedAssets.add(assetRowId);
                 }
-                imported++;
+                pending.add(new PendingRow(r.lineNo(), new ExpenseServiceDto.CreateCommand(
+                    userRowId, categoryRowId, assetRowId, r.type(), r.amount(),
+                    description, r.date(), r.merchant(), paymentMethod, null, null)));
             } catch (Exception e) {
+                // 카테고리·자산 해석 단계 실패 — 저장까지 가지도 못한 행.
                 failed++;
-                addFailure(failures, r.lineNo(), "save");
-                log.warn("가져오기 행 저장 실패 line={}: {}", r.lineNo(), e.getMessage());
+                addFailure(failures, r.lineNo(), "resolve");
+                log.warn("가져오기 행 해석 실패 line={}: {}", r.lineNo(), e.getMessage());
+                continue;
             }
+
+            if (pending.size() >= CHUNK_SIZE) {
+                ChunkResult cr = flush(pending, failures);
+                imported += cr.imported();
+                failed += cr.failed();
+                pending.clear();
+            }
+        }
+        if (!pending.isEmpty()) {
+            ChunkResult cr = flush(pending, failures);
+            imported += cr.imported();
+            failed += cr.failed();
+            pending.clear();
         }
         // 미뤄둔 잔액 재산정 — 자산당 1회. 행마다 하면 자산 전체 이력을 매번 다시 읽어 O(N²) 이 된다.
         balanceHistoryService.recomputeAssets(touchedAssets);
 
         log.info("가져오기 완료: userRowId={}, imported={}, skipped={}, failed={}", userRowId, imported, skipped, failed);
         return new ExecuteResult(imported, skipped, failed, failures);
+    }
+
+    private record PendingRow(int lineNo, ExpenseServiceDto.CreateCommand command) {}
+
+    private record ChunkResult(int imported, int failed) {}
+
+    /**
+     * 청크를 한 트랜잭션에 넣는다. 실패하면 <b>건별로 재시도</b>해 문제 행만 가려낸다.
+     *
+     * <p>정상 구간은 묶음 커밋으로 빠르게, 문제가 섞인 구간만 느리게 간다.
+     * 청크째 실패로 끝내면 멀쩡한 행까지 버려져 부분 성공 보장이 깨진다.
+     */
+    private ChunkResult flush(List<PendingRow> chunk, List<Failure> failures) {
+        try {
+            expenseService.createExpensesChunk(chunk.stream().map(PendingRow::command).toList());
+            return new ChunkResult(chunk.size(), 0);
+        } catch (Exception e) {
+            log.warn("가져오기 청크 저장 실패({}건) — 건별 재시도로 전환: {}", chunk.size(), e.getMessage());
+        }
+        int ok = 0, bad = 0;
+        for (PendingRow row : chunk) {
+            try {
+                expenseService.createExpense(row.command(), true);
+                ok++;
+            } catch (Exception e) {
+                bad++;
+                addFailure(failures, row.lineNo(), "save");
+                log.warn("가져오기 행 저장 실패 line={}: {}", row.lineNo(), e.getMessage());
+            }
+        }
+        return new ChunkResult(ok, bad);
     }
 
     // ── 공통 ─────────────────────────────────────────────────
