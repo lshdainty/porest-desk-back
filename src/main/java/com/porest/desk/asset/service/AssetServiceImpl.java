@@ -14,6 +14,8 @@ import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.domain.CardCatalog;
+import com.porest.desk.card.domain.CardBilling;
+import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
@@ -55,6 +57,8 @@ public class AssetServiceImpl implements AssetService {
     private final AssetTransferRepository assetTransferRepository;
     private final UserRepository userRepository;
     private final CardCatalogRepository cardCatalogRepository;
+    // 청구 회차 정합용 — 카드 서비스가 아니라 리포지토리만 참조한다(서비스끼리는 순환).
+    private final CardBillingRepository cardBillingRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
     private final UserClock userClock;
     private final SubscriptionEntitlementService entitlementService;
@@ -711,6 +715,10 @@ public class AssetServiceImpl implements AssetService {
         transfer.deleteTransfer();
         // 자산 잔액 이력: 양쪽 flow soft-delete → recompute 가 양쪽 잔액 반영 (단일 writer)
         balanceHistoryService.removeTransfer(transferId);
+        // 카드 결제로 만들어진 이체였다면 그 청구 회차도 함께 무른다. COMPLETED 로 남겨두면
+        // '이미 낸 회차' 로 집계돼(선결제 차감) 다음 청구액이 0 이 되고, 잔액만 되돌아온 채
+        // 카드 부채가 영원히 안 갚아진다.
+        cardBillingRepository.findActiveByTransfer(transferId).ifPresent(CardBilling::cancel);
         log.info("자산 이체 삭제 완료: transferId={}", transferId);
     }
 

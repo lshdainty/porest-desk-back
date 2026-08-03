@@ -105,6 +105,16 @@ public class CardBilling extends AuditingFieldsWithIp {
     }
 
     /** 결제 실패(FAILED) — 사유 기록. */
+    /**
+     * 청구 취소 — 정산 이체가 지워졌을 때 함께 무른다.
+     *
+     * <p>COMPLETED 로 남겨두면 "이미 낸 회차" 로 집계돼(선결제 차감) 다음 청구액이 0 이 되고,
+     * 이체는 지웠는데 카드 부채는 영원히 안 갚아지는 상태가 된다.
+     */
+    public void cancel() {
+        this.isDeleted = YNType.Y;
+    }
+
     public static CardBilling failed(Asset cardAsset, Asset paymentAsset, Long billingAmount,
                                      LocalDate periodStart, LocalDate periodEnd, LocalDate paymentDate,
                                      String failureReason) {

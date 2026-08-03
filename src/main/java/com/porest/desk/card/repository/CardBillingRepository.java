@@ -5,6 +5,7 @@ import com.porest.desk.card.type.BillingStatus;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface CardBillingRepository {
     CardBilling save(CardBilling billing);
@@ -20,4 +21,7 @@ public interface CardBillingRepository {
 
     /** 상태별 조회. */
     List<CardBilling> findByStatus(BillingStatus status);
+
+    /** 정산 이체로 청구 회차 찾기 — 이체가 지워질 때 함께 무르기 위해. */
+    Optional<CardBilling> findActiveByTransfer(Long transferRowId);
 }
