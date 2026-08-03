@@ -11,7 +11,7 @@ import com.porest.desk.constellation.repository.TodoStarlightRepository;
 import com.porest.desk.constellation.service.dto.ConstellationServiceDto;
 import com.porest.desk.constellation.type.DailyStatus;
 import com.porest.desk.constellation.type.StarlightSourceType;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

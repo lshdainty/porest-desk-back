@@ -3,7 +3,7 @@ package com.porest.desk.export.service;
 import com.porest.desk.export.controller.dto.ExportApiDto;
 import com.porest.desk.export.type.ExportFormat;
 import com.porest.desk.export.type.ExportType;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

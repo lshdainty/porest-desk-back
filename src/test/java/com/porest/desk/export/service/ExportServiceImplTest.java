@@ -37,8 +37,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import com.porest.desk.common.time.ServiceClock;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.ServiceClock;
+import com.porest.core.time.UserClock;
 
 /**
  * 데이터 내보내기 오케스트레이션 단위 테스트.
@@ -56,9 +56,7 @@ class ExportServiceImplTest {
     @Mock private PeriodResolver periodResolver;
     @Mock private ExportDataService dataService;
     // 날짜 판정은 실제 동작이 필요 — mock 이면 null 이 흘러 파일명 기간이 비어버린다
-    @Spy private UserClock userClock = new UserClock(
-            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
-            new ServiceClock("Asia/Seoul"));
+    @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private ExportServiceImpl sut;
 

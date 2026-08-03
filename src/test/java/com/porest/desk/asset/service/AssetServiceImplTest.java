@@ -36,8 +36,8 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import com.porest.desk.common.time.ServiceClock;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.ServiceClock;
+import com.porest.core.time.UserClock;
 
 /**
  * 자산 서비스 소유권 가드 회귀 방지 단위 테스트 — 남의 자산/이체는 조회·수정·삭제·이체할 수 없다.
@@ -56,9 +56,7 @@ class AssetServiceImplTest {
     @Mock private com.porest.desk.toss.service.TossQueryService tossQueryService;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
-    @Spy private UserClock userClock = new UserClock(
-            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
-            new ServiceClock("Asia/Seoul"));
+    @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private AssetServiceImpl sut;
 

@@ -3,7 +3,7 @@ package com.porest.desk.calendar.runner;
 import com.porest.desk.calendar.config.HolidayProperties;
 import com.porest.desk.calendar.service.HolidaySyncService;
 import com.porest.desk.calendar.service.dto.HolidaySyncResult;
-import com.porest.desk.common.time.ServiceClock;
+import com.porest.core.time.ServiceClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;

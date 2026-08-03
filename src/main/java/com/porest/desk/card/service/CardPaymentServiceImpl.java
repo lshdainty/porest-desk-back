@@ -16,7 +16,7 @@ import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.type.ExpenseType;
 import jakarta.persistence.EntityManager;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

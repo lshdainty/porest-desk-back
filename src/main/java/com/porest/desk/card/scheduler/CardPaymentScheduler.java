@@ -1,7 +1,7 @@
 package com.porest.desk.card.scheduler;
 
 import com.porest.desk.card.service.CardPaymentService;
-import com.porest.desk.common.time.ServiceClock;
+import com.porest.core.time.ServiceClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;

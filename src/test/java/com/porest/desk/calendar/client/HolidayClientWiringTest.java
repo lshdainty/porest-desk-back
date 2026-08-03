@@ -7,7 +7,7 @@ import com.porest.desk.calendar.service.HolidaySyncServiceImpl;
 import com.porest.desk.calendar.service.HolidayYearSynchronizer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import com.porest.desk.common.time.ServiceClock;
+import com.porest.core.time.ServiceClock;
 import org.mockito.Mockito;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 

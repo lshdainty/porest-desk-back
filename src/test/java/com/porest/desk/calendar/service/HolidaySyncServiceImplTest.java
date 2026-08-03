@@ -17,7 +17,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
-import com.porest.desk.common.time.ServiceClock;
+import com.porest.core.time.ServiceClock;
 
 import static org.mockito.Mockito.verify;
 

@@ -22,7 +22,7 @@ import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
