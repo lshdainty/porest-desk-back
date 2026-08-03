@@ -8,6 +8,7 @@ import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.domain.CardBilling;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
@@ -50,6 +51,7 @@ class AssetServiceImplTest {
     @Mock private AssetTransferRepository assetTransferRepository;
     @Mock private UserRepository userRepository;
     @Mock private CardCatalogRepository cardCatalogRepository;
+    @Mock private com.porest.desk.card.repository.CardBillingRepository cardBillingRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private TossCredentialService tossCredentialService;
@@ -223,6 +225,36 @@ class AssetServiceImplTest {
 
         assertThatThrownBy(() -> sut.reorderAssets(USER_ID, items))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("deleteTransfer — 카드 결제 이체를 지우면 그 청구 회차도 함께 취소된다")
+    void deleteTransferCancelsLinkedCardBilling() {
+        AssetTransfer payment = mock(AssetTransfer.class);
+        given(payment.getUser()).willReturn(user(USER_ID));
+        given(assetTransferRepository.findById(900L)).willReturn(Optional.of(payment));
+        CardBilling billing = mock(CardBilling.class);
+        given(cardBillingRepository.findActiveByTransfer(900L)).willReturn(Optional.of(billing));
+
+        sut.deleteTransfer(900L, USER_ID);
+
+        // 청구가 COMPLETED 로 남으면 '이미 냈다'로 집계돼 다음 청구액이 0 이 되고,
+        // 카드 부채가 영원히 안 갚아진다.
+        verify(billing).cancel();
+        verify(balanceHistoryService).removeTransfer(900L);
+    }
+
+    @Test
+    @DisplayName("deleteTransfer — 일반 이체는 청구와 무관하므로 그냥 지운다")
+    void deleteOrdinaryTransferTouchesNoBilling() {
+        AssetTransfer plain = mock(AssetTransfer.class);
+        given(plain.getUser()).willReturn(user(USER_ID));
+        given(assetTransferRepository.findById(901L)).willReturn(Optional.of(plain));
+        given(cardBillingRepository.findActiveByTransfer(901L)).willReturn(Optional.empty());
+
+        sut.deleteTransfer(901L, USER_ID);
+
+        verify(balanceHistoryService).removeTransfer(901L);
     }
 
     @Test

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 @Primary
@@ -63,6 +64,13 @@ public class CardBillingQueryDslRepository implements CardBillingRepository {
             )
             .fetchFirst();
         return fetched != null;
+    }
+
+    @Override
+    public Optional<CardBilling> findActiveByTransfer(Long transferRowId) {
+        return Optional.ofNullable(queryFactory.selectFrom(billing)
+            .where(billing.transfer.rowId.eq(transferRowId), billing.isDeleted.eq(YNType.N))
+            .fetchFirst());
     }
 
     @Override
