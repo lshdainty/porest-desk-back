@@ -92,9 +92,11 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @Column(name = "day_of_month")
     private Integer dayOfMonth;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "end_date")
     private LocalDate endDate;
 
@@ -104,9 +106,11 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @Column(name = "executed_count", nullable = false)
     private Integer executedCount;
 
+    /** [serviceClock] 배치가 서비스 기준(Asia/Seoul)으로 산출 */
     @Column(name = "next_execution_date", nullable = false)
     private LocalDate nextExecutionDate;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "last_executed_at")
     private LocalDateTime lastExecutedAt;
 

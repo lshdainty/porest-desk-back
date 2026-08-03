@@ -43,6 +43,7 @@ public class EventReminder extends AuditingFieldsWithIp {
     @Column(name = "is_sent", nullable = false, length = 1)
     private YNType isSent;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "sent_at")
     private LocalDateTime sentAt;
 

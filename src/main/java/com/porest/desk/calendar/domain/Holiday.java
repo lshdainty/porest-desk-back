@@ -28,6 +28,7 @@ public class Holiday extends AuditingFieldsWithIp {
     @Column(name = "row_id")
     private Long rowId;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "holiday_date", nullable = false)
     private LocalDate holidayDate;
 

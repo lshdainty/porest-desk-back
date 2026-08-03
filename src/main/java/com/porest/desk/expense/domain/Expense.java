@@ -61,6 +61,7 @@ public class Expense extends AuditingFieldsWithIp {
     @Column(name = "description", length = 500)
     private String description;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "expense_date", nullable = false)
     private LocalDateTime expenseDate;
 

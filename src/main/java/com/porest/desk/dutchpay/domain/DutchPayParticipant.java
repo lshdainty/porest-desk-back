@@ -48,6 +48,7 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     @Column(name = "is_paid", nullable = false, length = 1)
     private YNType isPaid;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 

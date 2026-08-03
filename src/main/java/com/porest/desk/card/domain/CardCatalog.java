@@ -60,6 +60,7 @@ public class CardCatalog extends AuditingFieldsWithIp {
     @Column(name = "only_online", nullable = false, length = 1)
     private YNType onlyOnline;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "launch_date")
     private LocalDate launchDate;
 

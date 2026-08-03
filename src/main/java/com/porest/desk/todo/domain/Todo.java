@@ -72,9 +72,11 @@ public class Todo extends AuditingFieldsWithIp {
     @Column(name = "status", nullable = false, length = 20)
     private TodoStatus status;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "due_date")
     private LocalDate dueDate;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 

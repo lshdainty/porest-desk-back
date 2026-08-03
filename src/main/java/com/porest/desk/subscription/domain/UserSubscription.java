@@ -50,6 +50,7 @@ public class UserSubscription extends AuditingFieldsWithIp {
     @Column(name = "status", nullable = false, length = 20)
     private SubscriptionStatus status;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
 
@@ -61,6 +62,7 @@ public class UserSubscription extends AuditingFieldsWithIp {
     @Column(name = "auto_renew", nullable = false, length = 1)
     private YNType autoRenew;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
