@@ -7,7 +7,7 @@ import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetBalanceHistoryRepository;
 import com.porest.desk.asset.type.BalanceSourceType;
 import com.porest.desk.expense.type.ExpenseType;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -109,7 +109,7 @@ public class AssetBalanceHistoryService {
         }
         BalanceResolver resolver = resolverFor(assets);
         for (Asset a : assets) {
-            a.updateBalance(resolver.balanceAt(a.getRowId(), userClock.now(a.getUser())));
+            a.updateBalance(resolver.balanceAt(a.getRowId(), userClock.nowIn(a.getUser().getTimezone())));
         }
     }
 
@@ -157,7 +157,7 @@ public class AssetBalanceHistoryService {
         // effective_at 은 사용자 벽시계 기준 컬럼(클라이언트가 보내는 거래 일시와 같은 축)이므로
         // 기준 시각도 사용자 타임존으로 잡는다. UTC 로 비교하면 오늘 거래가 미래로 취급된다.
         long balance = resolverFor(List.of(asset))
-            .balanceAt(asset.getRowId(), userClock.now(asset.getUser()));
+            .balanceAt(asset.getRowId(), userClock.nowIn(asset.getUser().getTimezone()));
         asset.updateBalance(balance);
     }
 

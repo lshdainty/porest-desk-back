@@ -37,8 +37,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import com.porest.desk.common.time.ServiceClock;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.ServiceClock;
+import com.porest.core.time.UserClock;
 
 /**
  * 별빛 적립 엔진 — 우선순위 가중, 평생 1회, 당일 회수, 수집 확정(불변), 보호 정산 규칙 검증.
@@ -54,9 +54,7 @@ class StarlightServiceImplTest {
     @Mock private ConstellationCollectionRepository collectionRepository;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
-    @Spy private UserClock userClock = new UserClock(
-            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
-            new ServiceClock("Asia/Seoul"));
+    @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private StarlightServiceImpl sut;
 

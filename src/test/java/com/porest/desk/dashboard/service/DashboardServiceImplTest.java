@@ -38,8 +38,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
-import com.porest.desk.common.time.ServiceClock;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.ServiceClock;
+import com.porest.core.time.UserClock;
 
 /**
  * 대시보드 종합 집계 로직 회귀 방지 단위 테스트.
@@ -56,9 +56,7 @@ class DashboardServiceImplTest {
     @Mock private UserRepository userRepository;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
-    @Spy private UserClock userClock = new UserClock(
-            org.mockito.Mockito.mock(com.porest.desk.user.repository.UserRepository.class),
-            new ServiceClock("Asia/Seoul"));
+    @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private DashboardServiceImpl sut;
 

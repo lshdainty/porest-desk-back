@@ -20,7 +20,7 @@ import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
-import com.porest.desk.common.time.UserClock;
+import com.porest.core.time.UserClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -73,7 +73,7 @@ public class StarlightServiceImpl implements StarlightService {
     @Override
     @Transactional
     public void onMemoCreated(Memo memo) {
-        LocalDate today = userClock.today(memo.getUser());
+        LocalDate today = userClock.todayIn(memo.getUser().getTimezone());
         long earnedToday = starlightRepository.countActiveMemoEarns(memo.getUser().getRowId(), today);
         if (earnedToday >= MEMO_DAILY_LIMIT) {
             log.debug("메모 별빛 일 한도 초과: userRowId={}, earnedToday={}", memo.getUser().getRowId(), earnedToday);
@@ -97,7 +97,8 @@ public class StarlightServiceImpl implements StarlightService {
             log.debug("별빛 재적립 차단(평생 1회): sourceType={}, sourceRowId={}", sourceType, sourceRowId);
             return;
         }
-        LocalDate today = userClock.today(user);
+        // 사용자 엔티티를 이미 쥐고 있으므로 rowId 재조회 없이 타임존 문자열로 판단한다.
+        LocalDate today = userClock.todayIn(user.getTimezone());
         starlightRepository.save(TodoStarlight.earn(user, sourceType, sourceRowId, points, today));
 
         ConstellationDaily daily = dailyRepository.findByUserAndDate(user.getRowId(), today)
@@ -121,7 +122,7 @@ public class StarlightServiceImpl implements StarlightService {
     /** 회수 — 당일 적립분만. soft delete 로 unique 행이 남아 재적립은 계속 차단된다. GROWN/도감은 불변. */
     private void revoke(StarlightSourceType sourceType, Long sourceRowId) {
         starlightRepository.findActiveBySource(sourceType, sourceRowId).ifPresent(ledger -> {
-            LocalDate today = userClock.today(ledger.getUser());
+            LocalDate today = userClock.todayIn(ledger.getUser().getTimezone());
             if (!ledger.getEarnDate().equals(today)) {
                 log.debug("별빛 회수 생략(타일 적립분): sourceType={}, sourceRowId={}, earnDate={}",
                     sourceType, sourceRowId, ledger.getEarnDate());
