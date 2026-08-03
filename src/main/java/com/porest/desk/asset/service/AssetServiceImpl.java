@@ -666,6 +666,14 @@ public class AssetServiceImpl implements AssetService {
         Asset toAsset = findAssetOrThrow(command.toAssetRowId());
         validateAssetOwnership(toAsset, command.userRowId());
 
+        // 체크카드는 잔액을 들지 않는다 — 긁는 즉시 연결 계좌에서 빠지므로 이체할 잔액이 없다.
+        // 여기로 이체를 걸면 카드에 있을 수 없는 잔액이 생겨 연결 계좌와 어긋난다.
+        // 신용카드는 반대로 결제일 자동이체(CardPaymentService)의 대상이라 그대로 허용한다.
+        if (fromAsset.getAssetType() == AssetType.CHECK_CARD
+            || toAsset.getAssetType() == AssetType.CHECK_CARD) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_CHECK_CARD);
+        }
+
         AssetTransfer transfer = AssetTransfer.createTransfer(
             user, fromAsset, toAsset,
             command.amount(), command.fee(), command.description(), command.transferDate()

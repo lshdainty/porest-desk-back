@@ -137,6 +137,28 @@ class CheckCardBalanceLinkTest {
     }
 
     @Test
+    @DisplayName("체크카드 지출을 삭제하면 연결 계좌에서 빠졌던 금액이 되돌아온다")
+    void deletingExpenseRestoresLinkedAccount() {
+        Asset account = asset(10L, AssetType.BANK_ACCOUNT, null);
+        Asset card = asset(19L, AssetType.CHECK_CARD, account);
+        // 지출이 남긴 이력은 카드가 아니라 통장 앞에 걸려 있다.
+        AssetBalanceHistory flow = AssetBalanceHistory.of(
+            user, account, BalanceSourceType.EXPENSE, 100L, -12_000L, AT);
+        given(repository.findActiveBySource(BalanceSourceType.EXPENSE, 100L, YNType.N))
+            .willReturn(List.of(flow));
+        // 삭제 후 남는 이력 = 초기 앵커 1,000,000 뿐 → 통장이 원래대로 돌아와야 한다.
+        given(repository.findActiveByAssetIds(List.of(10L), YNType.N)).willReturn(List.of(
+            AssetBalanceHistory.of(user, account, BalanceSourceType.INIT, 10L, 1_000_000L,
+                AT.minusDays(1))));
+        account.updateBalance(988_000L);
+
+        sut.removeExpense(100L);
+
+        assertThat(flow.getIsDeleted()).isEqualTo(YNType.Y);
+        assertThat(account.getBalance()).isEqualTo(1_000_000L);
+    }
+
+    @Test
     @DisplayName("미뤄둔 재산정도 연결 계좌를 대상으로 한다 — 카드만 돌리면 통장이 갱신 안 됨")
     void recomputeFollowsTheLink() {
         Asset account = asset(10L, AssetType.BANK_ACCOUNT, null);

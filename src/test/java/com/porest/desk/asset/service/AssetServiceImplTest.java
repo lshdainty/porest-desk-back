@@ -179,6 +179,41 @@ class AssetServiceImplTest {
     }
 
     @Test
+    @DisplayName("createTransfer — 체크카드는 이체 대상이 될 수 없다(잔액을 들지 않는 자산)")
+    void transferRejectsCheckCard() {
+        Asset fromAsset = assetOwnedBy(USER_ID);
+        Asset checkCard = assetOwnedBy(USER_ID);
+        given(checkCard.getAssetType()).willReturn(AssetType.CHECK_CARD);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(assetRepository.findById(10L)).willReturn(Optional.of(fromAsset));
+        given(assetRepository.findById(11L)).willReturn(Optional.of(checkCard));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 11L, 30_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+
+        assertThatThrownBy(() -> sut.createTransfer(cmd))
+                .isInstanceOf(InvalidValueException.class);
+        verify(balanceHistoryService, never()).recordTransfer(any(AssetTransfer.class));
+    }
+
+    @Test
+    @DisplayName("createTransfer — 신용카드는 결제일 자동이체 대상이라 그대로 허용한다")
+    void transferAllowsCreditCard() {
+        Asset fromAsset = assetOwnedBy(USER_ID);
+        Asset creditCard = assetOwnedBy(USER_ID);
+        given(creditCard.getAssetType()).willReturn(AssetType.CREDIT_CARD);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(assetRepository.findById(10L)).willReturn(Optional.of(fromAsset));
+        given(assetRepository.findById(11L)).willReturn(Optional.of(creditCard));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 11L, 30_000L, 0L, "카드 결제", LocalDate.of(2026, 6, 1).atStartOfDay());
+        sut.createTransfer(cmd);
+
+        verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));
+    }
+
+    @Test
     @DisplayName("reorderAssets — 남의 자산 순서는 변경 불가(소유권 검증 누락 보강)")
     void reorderRejectsOthers() {
         Asset others = assetOwnedBy(999L);
