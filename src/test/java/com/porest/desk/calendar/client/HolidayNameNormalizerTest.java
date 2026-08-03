@@ -22,10 +22,10 @@ class HolidayNameNormalizerTest {
             "1월1일,신정",
             "3·1절,삼일절",
             "3ㆍ1절,삼일절",
-            "설날 전날,설날연휴",
-            "설날 다음 날,설날연휴",
-            "추석 전날,추석연휴",
-            "추석 다음 날,추석연휴",
+            "설날 전날,설날",
+            "설날 다음 날,설날",
+            "추석 전날,추석",
+            "추석 다음 날,추석",
             "부처님 오신 날,석가탄신일",
             "기독탄신일,크리스마스"
     })
@@ -37,7 +37,7 @@ class HolidayNameNormalizerTest {
     @ParameterizedTest
     @CsvSource({
             "부처님오신날,석가탄신일",
-            "설날전날,설날연휴"
+            "설날전날,설날"
     })
     @DisplayName("소스 간 띄어쓰기 차이를 흡수한다")
     void normalizeIgnoresSpacing(String raw, String expected) {
@@ -54,6 +54,22 @@ class HolidayNameNormalizerTest {
     @DisplayName("대체공휴일은 괄호 안쪽 이름만 치환한다")
     void normalizeSubstitute(String raw, String expected) {
         assertThat(HolidayNameNormalizer.normalize(raw)).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("KASI 와 폴백이 같은 연휴를 같은 이름으로 정규화한다 — 소스가 오갈 때 추가·삭제 반복 방지")
+    void bothSourcesAgreeOnHolidayNames() {
+        // 특일정보 API 는 연휴 3일을 모두 같은 dateName 으로 주고, 폴백은 앞뒤날을 구분해 준다.
+        // 정규화 결과가 갈리면 (날짜, 이름) 동기화 키가 달라져 소스 전환마다 앞뒤날이 뒤집힌다.
+        assertThat(HolidayNameNormalizer.normalize("설날"))          // KASI (연휴 3일 공통)
+            .isEqualTo(HolidayNameNormalizer.normalize("설날 전날"))  // 폴백 (전날)
+            .isEqualTo(HolidayNameNormalizer.normalize("설날 다음 날"))
+            .isEqualTo("설날");
+
+        assertThat(HolidayNameNormalizer.normalize("추석"))
+            .isEqualTo(HolidayNameNormalizer.normalize("추석 전날"))
+            .isEqualTo(HolidayNameNormalizer.normalize("추석 다음 날"))
+            .isEqualTo("추석");
     }
 
     @ParameterizedTest
