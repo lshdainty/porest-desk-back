@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 public abstract class CreatedAuditingFieldsWithIp {
 
     @CreatedDate
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "create_at", nullable = false, updatable = false)
     private LocalDateTime createAt;
 

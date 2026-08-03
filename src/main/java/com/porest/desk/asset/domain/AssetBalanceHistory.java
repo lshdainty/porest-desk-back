@@ -60,6 +60,7 @@ public class AssetBalanceHistory extends AuditingFieldsWithIp {
     @Column(name = "amount", nullable = false)
     private Long amount;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "effective_at", nullable = false)
     private LocalDateTime effectiveAt;
 

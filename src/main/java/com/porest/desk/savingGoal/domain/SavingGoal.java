@@ -56,6 +56,7 @@ public class SavingGoal extends AuditingFieldsWithIp {
     @Column(name = "currency", nullable = false, length = 10)
     private String currency;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "deadline_date")
     private LocalDate deadlineDate;
 
@@ -76,6 +77,7 @@ public class SavingGoal extends AuditingFieldsWithIp {
     @Column(name = "is_achieved", nullable = false, length = 1)
     private YNType isAchieved;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "achieved_at")
     private LocalDateTime achievedAt;
 

@@ -53,9 +53,11 @@ public class CalendarEvent extends AuditingFieldsWithIp {
     @Column(name = "color", length = 20)
     private String color;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "start_date", nullable = false)
     private LocalDateTime startDate;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "end_date", nullable = false)
     private LocalDateTime endDate;
 

@@ -47,6 +47,7 @@ public class UserCalendarMember extends AuditingFieldsWithIp {
     @Column(name = "permission", nullable = false, length = 20)
     private CalendarRole permission;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "joined_at", nullable = false)
     private LocalDateTime joinedAt;
 

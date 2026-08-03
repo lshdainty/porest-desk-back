@@ -78,6 +78,7 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
     @Column(name = "lock_amount", nullable = false, length = 1)
     private YNType lockAmount;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
 

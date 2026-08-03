@@ -48,9 +48,11 @@ public class UserTossCredential extends AuditingFieldsWithIp {
     @Column(name = "is_verified", nullable = false, length = 1)
     private YNType isVerified;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "verified_at")
     private LocalDateTime verifiedAt;
 
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
 

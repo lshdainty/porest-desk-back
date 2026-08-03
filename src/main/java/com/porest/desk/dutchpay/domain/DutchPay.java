@@ -65,6 +65,7 @@ public class DutchPay extends AuditingFieldsWithIp {
     @Column(name = "split_method", nullable = false, length = 20)
     private SplitMethod splitMethod;
 
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "dutch_pay_date", nullable = false)
     private LocalDate dutchPayDate;
 
