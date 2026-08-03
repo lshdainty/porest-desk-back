@@ -32,4 +32,23 @@ public interface AssetBalanceHistoryRepository extends JpaRepository<AssetBalanc
     List<AssetBalanceHistory> findActiveBySource(@Param("sourceType") BalanceSourceType sourceType,
                                                  @Param("sourceRowId") Long sourceRowId,
                                                  @Param("isDeleted") YNType isDeleted);
+
+    /**
+     * 특정 자산으로 <b>결제한</b> 지출의 활성 이력 row 들.
+     *
+     * <p>이력의 asset 이 아니라 <b>거래의 asset</b> 으로 찾는다 — 체크카드 지출은 이력이
+     * 연결 계좌 앞으로 가 있어서, 이력 기준으로 찾으면 이미 옮긴 건 다시 못 찾는다.
+     * 연결 계좌를 바꿀 때 A→B 로 다시 옮기려면 거래 기준이어야 한다.
+     */
+    @Query("""
+        select h from AssetBalanceHistory h
+        where h.sourceType = com.porest.desk.asset.type.BalanceSourceType.EXPENSE
+          and h.isDeleted = :isDeleted
+          and h.sourceRowId in (
+            select e.rowId from Expense e where e.asset.rowId = :paidWithAssetRowId
+          )
+        """)
+    List<AssetBalanceHistory> findActiveExpenseHistoryPaidWith(
+        @Param("paidWithAssetRowId") Long paidWithAssetRowId,
+        @Param("isDeleted") YNType isDeleted);
 }

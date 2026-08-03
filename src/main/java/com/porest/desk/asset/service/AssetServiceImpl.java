@@ -145,6 +145,8 @@ public class AssetServiceImpl implements AssetService {
         // 선택 필드(color/institution/memo) 는 null 을 clear 로 간주.
         Long oldBalance = asset.getBalance();
         Long newBalance = command.balance() != null ? command.balance() : asset.getBalance();
+        Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
+            ? asset.getPaymentAsset().getRowId() : null;
         asset.updateAsset(
             command.assetName() != null ? command.assetName() : asset.getAssetName(),
             command.assetType() != null ? command.assetType() : asset.getAssetType(),
@@ -162,6 +164,14 @@ public class AssetServiceImpl implements AssetService {
         // 잔액을 직접 수정(점프)한 경우에만 MANUAL 절대 앵커 적재 — 가계부 통계엔 영향 없음.
         if (!Objects.equals(oldBalance, newBalance)) {
             balanceHistoryService.recordManual(asset, newBalance, userClock.now(userRowId));
+        }
+
+        // 체크카드 연결 계좌가 바뀌면 그 카드로 쓴 기존 지출 이력도 새 계좌로 옮긴다 —
+        // 신규만 옮기면 과거는 카드에, 신규는 계좌에 쌓여 어느 쪽 잔액도 맞지 않는다.
+        if (asset.getAssetType() == AssetType.CHECK_CARD
+            && asset.getPaymentAsset() != null
+            && !Objects.equals(oldPaymentAssetRowId, asset.getPaymentAsset().getRowId())) {
+            balanceHistoryService.relinkCheckCardHistory(asset, asset.getPaymentAsset());
         }
 
         // 보유 교체 — null=무변경, 리스트=전체 교체(기존 활성 soft delete 후 신규 insert).

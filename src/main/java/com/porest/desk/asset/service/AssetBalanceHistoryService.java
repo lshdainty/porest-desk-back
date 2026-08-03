@@ -5,6 +5,7 @@ import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetBalanceHistory;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetBalanceHistoryRepository;
+import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.BalanceSourceType;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.core.time.UserClock;
@@ -80,12 +81,33 @@ public class AssetBalanceHistoryService {
         if (asset == null || type == null || amount == null) {
             return;
         }
+        Asset target = balanceTargetOf(asset);
         long signed = (type == ExpenseType.INCOME) ? amount : -amount;
         repository.save(AssetBalanceHistory.of(
-            asset.getUser(), asset, BalanceSourceType.EXPENSE, expenseId, signed, effectiveAt));
+            asset.getUser(), target, BalanceSourceType.EXPENSE, expenseId, signed, effectiveAt));
         if (recompute) {
-            recompute(asset);
+            recompute(target);
         }
+    }
+
+    /**
+     * 잔액이 실제로 움직이는 자산.
+     *
+     * <p>체크카드는 계좌에 1:1 로 물린 결제 수단이라 자체 잔액이 없다 — 긁는 즉시 연결 계좌에서
+     * 빠져나가므로 flow 를 카드가 아니라 그 계좌 앞으로 쌓는다. 카드 앞으로 쌓으면 통장 잔액이
+     * 실제보다 많게 남는다(순자산 총액만 우연히 맞고 계좌·카드 배분이 전부 틀린다).
+     *
+     * <p>신용카드는 다르다 — 결제일에 {@code CardPaymentService} 가 이체로 몰아서 정산하므로
+     * 그때까지 카드가 사용액을 들고 있어야 한다.
+     *
+     * <p>연결 계좌를 아직 안 고른 체크카드는 종전대로 카드 앞으로 — 지정 전 데이터를 잃지 않는다.
+     */
+    public Asset balanceTargetOf(Asset asset) {
+        if (asset != null && asset.getAssetType() == AssetType.CHECK_CARD
+            && asset.getPaymentAsset() != null) {
+            return asset.getPaymentAsset();
+        }
+        return asset;
     }
 
     /**
@@ -103,6 +125,10 @@ public class AssetBalanceHistoryService {
         List<Asset> assets = assetRowIds.stream()
             .map(assetRepository::findById)
             .flatMap(Optional::stream)
+            // 체크카드는 잔액이 연결 계좌에서 움직인다 — 재산정 대상도 그 계좌여야 한다.
+            // 카드만 돌리면 flow 를 받은 통장이 갱신되지 않고 남는다.
+            .map(this::balanceTargetOf)
+            .distinct()
             .toList();
         if (assets.isEmpty()) {
             return;
@@ -110,6 +136,31 @@ public class AssetBalanceHistoryService {
         BalanceResolver resolver = resolverFor(assets);
         for (Asset a : assets) {
             a.updateBalance(resolver.balanceAt(a.getRowId(), userClock.nowIn(a.getUser().getTimezone())));
+        }
+    }
+
+    /**
+     * 체크카드 연결 계좌를 지정·변경했을 때, 그 카드로 쓴 <b>기존</b> 지출 이력도 새 계좌로 옮긴다.
+     *
+     * <p>안 옮기면 과거 지출은 카드에, 신규 지출은 계좌에 쌓여 어느 쪽 잔액도 맞지 않는다.
+     * 옮긴 뒤 이전 소속 자산까지 전부 재산정해야 빠져나간 만큼이 되돌려진다.
+     */
+    @Transactional
+    public void relinkCheckCardHistory(Asset card, Asset newAccount) {
+        if (card == null || newAccount == null || card.getAssetType() != AssetType.CHECK_CARD) {
+            return;
+        }
+        List<AssetBalanceHistory> rows =
+            repository.findActiveExpenseHistoryPaidWith(card.getRowId(), YNType.N);
+        Set<Asset> affected = new LinkedHashSet<>();
+        affected.add(card);
+        affected.add(newAccount);
+        for (AssetBalanceHistory h : rows) {
+            affected.add(h.getAsset()); // 옮기기 전 소속 — 여기서도 빠져야 한다
+            h.moveTo(newAccount);
+        }
+        for (Asset a : affected) {
+            recompute(a);
         }
     }
 
