@@ -81,6 +81,14 @@ public class AssetBalanceHistory extends AuditingFieldsWithIp {
         return h;
     }
 
+    /**
+     * 이 flow 가 걸린 자산을 옮긴다 — 체크카드 연결 계좌를 지정·변경했을 때만 쓴다.
+     * 과거 지출을 새 계좌 앞으로 다시 걸어야 어느 쪽 잔액도 어긋나지 않는다.
+     */
+    public void moveTo(Asset asset) {
+        this.asset = asset;
+    }
+
     public void softDelete() {
         this.isDeleted = YNType.Y;
     }

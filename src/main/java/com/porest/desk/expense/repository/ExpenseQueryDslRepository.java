@@ -3,6 +3,7 @@ package com.porest.desk.expense.repository;
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.QExpense;
+import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.expense.type.ExpenseType;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -155,7 +156,12 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             builder.and(expense.category.rowId.eq(categoryRowId));
         }
         if (assetRowId != null) {
-            builder.and(expense.asset.rowId.eq(assetRowId));
+            // 통장을 조회하면 거기 물린 체크카드로 쓴 거래도 함께 보여준다 —
+            // 체크카드 지출은 잔액이 이 통장에서 빠지므로, 안 보이면 잔액만 줄고
+            // 거래는 없는 화면이 된다. 카드 자체를 조회할 땐 eq 로 그대로 걸린다.
+            builder.and(expense.asset.rowId.eq(assetRowId)
+                .or(expense.asset.assetType.eq(AssetType.CHECK_CARD)
+                    .and(expense.asset.paymentAsset.rowId.eq(assetRowId))));
         }
         if (expenseType != null) {
             builder.and(expense.expenseType.eq(expenseType));
