@@ -37,6 +37,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -239,7 +240,7 @@ public class AssetServiceImpl implements AssetService {
 
         asset.linkToss(symbol, quantity);
         // 연결 즉시 평가액 1회 스냅샷 — 추이 그래프에 바로 반영(환율 미확보 외화면 생략).
-        Long valuation = computeTossValuationKrw(userRowId, symbol, quantity);
+        Long valuation = computeTossValuationKrw(userRowId, symbol, BigDecimal.valueOf(quantity));
         if (valuation != null) {
             balanceHistoryService.recordValuation(asset, valuation, userClock.now(userRowId));
         }
@@ -259,7 +260,8 @@ public class AssetServiceImpl implements AssetService {
         // 해제 순간의 마지막 평가액(시세×수량)을 자산 금액으로 굳힌다 — 자동 연동만 끄고 마지막 본 금액 유지.
         // 토스 시세 미수신(미연결/조회실패) 시엔 굳히지 않고 기존 잔액을 유지한다.
         if (asset.isTossLinked() && asset.getTossQuantity() != null) {
-            Long valuation = computeTossValuationKrw(userRowId, asset.getTossSymbol(), asset.getTossQuantity());
+            Long valuation = computeTossValuationKrw(
+                userRowId, asset.getTossSymbol(), BigDecimal.valueOf(asset.getTossQuantity()));
             if (valuation != null) {
                 balanceHistoryService.recordManual(asset, valuation, userClock.now(userRowId));
             }
@@ -389,14 +391,11 @@ public class AssetServiceImpl implements AssetService {
                     }
                 }
                 // 해외 종목(외화)이 있으면 환율(USD→KRW) 1회 조회해 원화 환산.
-                double fx = 0;
+                BigDecimal fx = null;
                 if (hasForeign) {
                     try {
-                        Double r = parsePrice(
+                        fx = parsePrice(
                             tossQueryService.getExchangeRate(userRowId, "USD", "KRW", null).rate());
-                        if (r != null) {
-                            fx = r;
-                        }
                     } catch (Exception ex) {
                         log.warn("토스 환율 조회 실패 - userRowId={}: {}", userRowId, ex.getMessage());
                     }
@@ -404,7 +403,8 @@ public class AssetServiceImpl implements AssetService {
                 LocalDateTime now = userClock.now(userRowId);
                 for (Asset a : userAssets) {
                     // 보유(linked) 합산 평가 — 한 종목이라도 시세/환율 미확보면 자산 전체 생략(부분합 왜곡 방지).
-                    double sum = 0;
+                    // 소수 수량이 섞여도 어긋나지 않게 합산을 BigDecimal 로 한다(원 단위 반올림은 마지막에 1회).
+                    BigDecimal sum = BigDecimal.ZERO;
                     boolean complete = true;
                     List<SymbolQty> pairs = valuationPairs(a, linkedHoldingsByAsset);
                     if (pairs.isEmpty()) {
@@ -412,26 +412,26 @@ public class AssetServiceImpl implements AssetService {
                     }
                     for (SymbolQty pair : pairs) {
                         TossMarketDto.PriceResponse p = priceBySymbol.get(pair.symbol());
-                        Double price = p != null ? parsePrice(p.lastPrice()) : null;
+                        BigDecimal price = p != null ? parsePrice(p.lastPrice()) : null;
                         if (price == null) {
                             complete = false;
                             break;
                         }
-                        double krw;
+                        BigDecimal krw;
                         if (p.currency() == null || "KRW".equals(p.currency())) {
                             krw = price;
-                        } else if (fx > 0) {
-                            krw = price * fx;
+                        } else if (fx != null && fx.signum() > 0) {
+                            krw = price.multiply(fx);
                         } else {
                             complete = false; // 외화인데 환율 미확보
                             break;
                         }
-                        sum += krw * pair.qty().doubleValue();
+                        sum = sum.add(krw.multiply(pair.qty()));
                     }
                     if (!complete) {
                         continue;
                     }
-                    balanceHistoryService.recordValuation(a, Math.round(sum), now);
+                    balanceHistoryService.recordValuation(a, toWon(sum), now);
                 }
             } catch (Exception ex) {
                 // 사용자 단위 격리 — 한 명의 토스 조회 실패가 전체를 막지 않게.
@@ -469,8 +469,13 @@ public class AssetServiceImpl implements AssetService {
         }
     }
 
-    /** 토스 시세(외화면 환율 환산) × 수량 = 원화 평가액. 시세 미수신/조회 실패 시 null. */
-    private Long computeTossValuationKrw(Long userRowId, String symbol, double quantity) {
+    /**
+     * 토스 시세(외화면 환율 환산) × 수량 = 원화 평가액. 시세 미수신/조회 실패 시 null.
+     *
+     * <p>수량이 소수(코인·소수점 주식)일 수 있어 곱셈을 전부 BigDecimal 로 한다 —
+     * double 로 넘기면 0.1 같은 값이 이진수로 정확히 떨어지지 않아 평가액이 어긋난다.
+     */
+    private Long computeTossValuationKrw(Long userRowId, String symbol, BigDecimal quantity) {
         try {
             TossMarketDto.PriceResponse p = tossQueryService.getPrices(userRowId, symbol).stream()
                 .filter(x -> symbol.equalsIgnoreCase(x.symbol()))
@@ -478,36 +483,48 @@ public class AssetServiceImpl implements AssetService {
             if (p == null) {
                 return null;
             }
-            Double price = parsePrice(p.lastPrice());
+            BigDecimal price = parsePrice(p.lastPrice());
             if (price == null) {
                 return null;
             }
-            double krw;
+            BigDecimal krw;
             if (p.currency() == null || "KRW".equals(p.currency())) {
                 krw = price;
             } else {
-                Double r = parsePrice(tossQueryService.getExchangeRate(userRowId, "USD", "KRW", null).rate());
-                if (r == null || r <= 0) {
+                BigDecimal r = parsePrice(tossQueryService.getExchangeRate(userRowId, "USD", "KRW", null).rate());
+                if (r == null || r.signum() <= 0) {
                     return null;
                 }
-                krw = price * r;
+                krw = price.multiply(r);
             }
-            return Math.round(krw * quantity);
+            return toWon(krw.multiply(quantity));
         } catch (Exception ex) {
             log.warn("토스 평가액 계산 실패 - symbol={}: {}", symbol, ex.getMessage());
             return null;
         }
     }
 
-    private static Double parsePrice(String s) {
+    /**
+     * 토스가 내려주는 가격·환율 문자열을 오차 없이 파싱한다.
+     *
+     * <p>토스가 시세를 String 으로 주는 이유가 정밀도 보존이다. double 로 받으면 그 의도가 무너지므로
+     * {@code new BigDecimal(String)} 으로 문자열의 십진 값을 그대로 가져온다
+     * ({@code BigDecimal.valueOf(double)} 이 아니다 — 그건 이미 오차가 섞인 double 을 거친다).
+     */
+    private static BigDecimal parsePrice(String s) {
         if (s == null || s.isBlank()) {
             return null;
         }
         try {
-            return Double.parseDouble(s);
+            return new BigDecimal(s.trim());
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    /** 원화 평가액 반올림 — 화폐 단위(원)로 떨어뜨린다. */
+    private static long toWon(BigDecimal krw) {
+        return krw.setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 
     @Override
