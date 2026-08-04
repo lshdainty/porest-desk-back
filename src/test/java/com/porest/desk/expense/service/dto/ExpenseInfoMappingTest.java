@@ -22,7 +22,10 @@ class ExpenseInfoMappingTest {
         User u = User.createUser(null, "u", "테스터", "u@porest.com");
         ReflectionTestUtils.setField(u, "rowId", 1L);
         Expense e = Expense.createExpense(u, null, null, ExpenseType.EXPENSE, 10_000L,
-                "미분류 지출", LocalDateTime.of(2026, 6, 15, 12, 0), "가게", "CARD", null, null);
+                "미분류 지출", LocalDateTime.of(2026, 6, 15, 12, 0), "가게", "CARD", null, null,
+            null,
+            null,
+            null);
 
         ExpenseServiceDto.ExpenseInfo info = ExpenseServiceDto.ExpenseInfo.from(e);
 

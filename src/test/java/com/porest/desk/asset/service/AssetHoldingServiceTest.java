@@ -71,7 +71,8 @@ class AssetHoldingServiceTest {
 
     private Asset investment(long rowId, long ownerRowId) {
         Asset a = Asset.createAsset(user(ownerRowId), "토스증권", AssetType.INVESTMENT, 0L,
-            "KRW", null, null, null, 0, YNType.Y, null, null, null, null);
+            "KRW",
+            null, null, null, null, 0, YNType.Y, null, null, null, null);
         ReflectionTestUtils.setField(a, "rowId", rowId);
         return a;
     }
@@ -79,13 +80,15 @@ class AssetHoldingServiceTest {
     private AssetServiceDto.CreateAssetCommand createCommand(
             AssetType type, List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.CreateAssetCommand(
-            USER_ID, "토스증권", type, 0L, "KRW", null, null, null, 0,
+            USER_ID, "토스증권", type, 0L, "KRW",
+            null, null, null, null, 0,
             YNType.Y, null, null, null, null, holdings);
     }
 
     private AssetServiceDto.UpdateAssetCommand updateCommand(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
-            null, null, null, null, null, null, null, null, null, null, null, null, holdings);
+            null, null, null, null,
+            null, null, null, null, null, null, null, null, null, holdings);
     }
 
     private static AssetServiceDto.HoldingCommand linkedHolding(String symbol, Long qty) {

@@ -115,7 +115,8 @@ class LedgerRulesScenarioTest {
     // === 시나리오 헬퍼 =========================================================
 
     private Asset asset(long rowId, AssetType type, long initial, Asset paymentAsset) {
-        Asset a = Asset.createAsset(user, "자산" + rowId, type, initial, "KRW", null, null, null,
+        Asset a = Asset.createAsset(user, "자산" + rowId, type, initial, "KRW",
+            null, null, null, null,
             0, YNType.Y, null, null, null, paymentAsset);
         ReflectionTestUtils.setField(a, "rowId", rowId);
         sut.recordInit(a, LocalDateTime.of(2026, 8, 1, 0, 0));

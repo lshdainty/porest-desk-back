@@ -22,6 +22,8 @@ public class AssetServiceDto {
         AssetType assetType,
         Long balance,
         String currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
+        java.math.BigDecimal exchangeRate,
         String color,
         String institution,
         String memo,
@@ -40,6 +42,8 @@ public class AssetServiceDto {
         AssetType assetType,
         Long balance,
         String currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
+        java.math.BigDecimal exchangeRate,
         String color,
         String institution,
         String memo,
@@ -108,6 +112,8 @@ public class AssetServiceDto {
         AssetType assetType,
         Long balance,
         String currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
+        java.math.BigDecimal exchangeRate,
         String color,
         String institution,
         String memo,
@@ -136,6 +142,7 @@ public class AssetServiceDto {
                 asset.getAssetType(),
                 asset.getBalance(),
                 asset.getCurrency(),
+                asset.getExchangeRate(),
                 asset.getColor(),
                 asset.getInstitution(),
                 asset.getMemo(),

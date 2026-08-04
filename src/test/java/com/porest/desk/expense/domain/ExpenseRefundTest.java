@@ -25,21 +25,30 @@ class ExpenseRefundTest {
     private Expense spend(long amount) {
         return Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, amount, "구매",
-            BOUGHT_AT, "무신사", "CARD", null, null);
+            BOUGHT_AT, "무신사", "CARD", null, null,
+            null,
+            null,
+            null);
     }
 
     /** 환불 — INCOME 이면서 원거래를 가리킨다. */
     private Expense refund(long amount, long ofExpenseRowId) {
         return Expense.createExpense(
             null, null, null, ExpenseType.INCOME, amount, "환불",
-            BOUGHT_AT.plusDays(3), "무신사", "CARD", null, ofExpenseRowId);
+            BOUGHT_AT.plusDays(3), "무신사", "CARD", null, ofExpenseRowId,
+            null,
+            null,
+            null);
     }
 
     /** 순수 수입 — 원거래가 없다. */
     private Expense income(long amount) {
         return Expense.createExpense(
             null, null, null, ExpenseType.INCOME, amount, "급여",
-            BOUGHT_AT, "회사", "TRANSFER", null, null);
+            BOUGHT_AT, "회사", "TRANSFER", null, null,
+            null,
+            null,
+            null);
     }
 
     private long sumIncome(List<Expense> list) {
@@ -126,7 +135,10 @@ class ExpenseRefundTest {
         void expenseWithRefundLinkIsNotRefund() {
             Expense e = Expense.createExpense(
                 null, null, null, ExpenseType.EXPENSE, 10_000L, "이상한 데이터",
-                BOUGHT_AT, "가맹점", "CARD", null, 100L);
+                BOUGHT_AT, "가맹점", "CARD", null, 100L,
+            null,
+            null,
+            null);
 
             assertThat(e.isRefund()).isFalse();
             assertThat(sumExpense(List.of(e))).isEqualTo(10_000L);
@@ -171,7 +183,10 @@ class ExpenseRefundTest {
         assertThat(e.isRefund()).isTrue();
 
         e.updateExpense(null, null, ExpenseType.INCOME, 50_000L, "잘못 연결한 것 해제",
-            BOUGHT_AT, "무신사", "CARD", null, null);
+            BOUGHT_AT, "무신사", "CARD", null, null,
+            null,
+            null,
+            null);
 
         assertThat(e.isRefund()).isFalse();
         assertThat(e.incomeContribution()).isEqualTo(50_000L);

@@ -47,6 +47,7 @@ class CardBillingRepositoryTest {
 
     private Asset persistCard(User user, String name) {
         return em.persist(Asset.createAsset(user, name, AssetType.CREDIT_CARD, 0L, "KRW",
+            null,
                 null, null, null, 0, YNType.Y, null, null, null, null));
     }
 
