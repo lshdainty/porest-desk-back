@@ -181,8 +181,6 @@ public class AssetServiceImpl implements AssetService {
 
         // 필수 필드(NOT NULL)는 null 이면 기존 값 유지 — partial update 허용.
         // 선택 필드(color/institution/memo) 는 null 을 clear 로 간주.
-        Long oldBalance = asset.getBalance();
-        Long newBalance = command.balance() != null ? command.balance() : asset.getBalance();
         // 보유를 함께 보낸 투자 자산은 평가액을 서버가 산정한다(클라이언트 계산값 불신).
         // 연동 시세를 못 구하면 기존 평가금액을 유지한다 — 부분합으로 덮어쓰지 않기 위해서다.
         //
@@ -191,6 +189,8 @@ public class AssetServiceImpl implements AssetService {
         // 빈 리스트도 받는다 — 보유를 전부 지우면 평가금액이 0 이 돼야 한다.
         boolean investHoldings = command.holdings() != null
             && (command.assetType() != null ? command.assetType() : asset.getAssetType()) == AssetType.INVESTMENT;
+        // 보유가 남아 있는지 — 빈 리스트(전량 매도·전부 삭제)와 구분해야 한다.
+        boolean hasHoldings = investHoldings && !command.holdings().isEmpty();
         Long holdingValuation = null;
         if (investHoldings) {
             Long computed = computeInvestmentBalance(userRowId, command.holdings());
@@ -213,14 +213,20 @@ public class AssetServiceImpl implements AssetService {
             paymentAsset
         );
 
-        // 보유 평가액이 바뀌었으면 HOLDING 앵커, 그 밖에 잔액을 직접 수정(점프)했으면
-        // CASH MANUAL 앵커. 둘 다 가계부 통계엔 영향 없다.
-        if (investHoldings) {
-            if (!Objects.equals(asset.getHoldingBalance(), holdingValuation)) {
-                balanceHistoryService.recordValuation(asset, holdingValuation, userClock.now(userRowId));
-            }
-        } else if (!Objects.equals(oldBalance, newBalance)) {
-            balanceHistoryService.recordManual(asset, newBalance, userClock.now(userRowId));
+        // 평가금액(HOLDING)과 예수금(CASH)은 서로 다른 칸이라 각각 반영한다.
+        // 한쪽 가지가 다른 쪽을 막으면 전량 매도처럼 두 칸이 동시에 바뀌는 상황에서 입력이 버려진다.
+        if (investHoldings && !Objects.equals(asset.getHoldingBalance(), holdingValuation)) {
+            balanceHistoryService.recordValuation(asset, holdingValuation, userClock.now(userRowId));
+        }
+        // 예수금은 보유가 없을 때만 잔액칸으로 조정한다 — 보유가 있으면 그 값은 평가금액을 포함한
+        // 총액이라 예수금 앵커로 찍으면 이중 계상된다.
+        //
+        // 비교 대상이 총액이 아니라 예수금인 게 핵심이다. 전량 매도로 평가금액이 예수금으로
+        // 옮겨오면 총액은 그대로인 채 칸만 바뀌는데, 총액끼리 비교하면 '안 바뀌었다'로 보여
+        // 매도 대금이 통째로 사라진다.
+        if (!hasHoldings && command.balance() != null
+            && !Objects.equals(asset.getCashBalance(), command.balance())) {
+            balanceHistoryService.recordManual(asset, command.balance(), userClock.now(userRowId));
         }
 
         // 체크카드 연결 계좌가 바뀌면 그 카드로 쓴 기존 지출 이력도 새 계좌로 옮긴다 —
