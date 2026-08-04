@@ -87,13 +87,14 @@ public class DashboardServiceImpl implements DashboardService {
 
         // Expense summary
         List<Expense> todayExpenses = expenseRepository.findDailySummary(userRowId, today);
-        long todayIncome = todayExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
-        long todayExpenseAmount = todayExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
+        // 환불은 수입이 아니라 지출 상계 — Expense 가 부호를 결정한다.
+        long todayIncome = todayExpenses.stream().mapToLong(Expense::incomeContribution).sum();
+        long todayExpenseAmount = todayExpenses.stream().mapToLong(Expense::expenseContribution).sum();
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
         List<Expense> monthExpenses = expenseRepository.findByDateRange(userRowId, monthStart, monthEnd);
-        long monthlyIncome = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.INCOME).mapToLong(Expense::getAmount).sum();
-        long monthlyExpenseAmount = monthExpenses.stream().filter(e -> e.getExpenseType() == ExpenseType.EXPENSE).mapToLong(Expense::getAmount).sum();
+        long monthlyIncome = monthExpenses.stream().mapToLong(Expense::incomeContribution).sum();
+        long monthlyExpenseAmount = monthExpenses.stream().mapToLong(Expense::expenseContribution).sum();
 
         // Upcoming events (next 7 days, max 5)
         List<DashboardServiceDto.UpcomingEvent> upcomingEventList = upcomingEvents.stream()

@@ -99,13 +99,13 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.CreateCommand createCmd(long categoryRowId) {
         return new ExpenseServiceDto.CreateCommand(
                 USER_ID, categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null);
+                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null, null);
     }
 
     private ExpenseServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new ExpenseServiceDto.UpdateCommand(
                 categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null, null);
+                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null, null, null);
     }
 
     @Test
@@ -144,7 +144,7 @@ class ExpenseServiceImplTest {
         // INCOME 거래를 EXPENSE 카테고리에 등록 시도
         var cmd = new ExpenseServiceDto.CreateCommand(
                 USER_ID, 10L, null, ExpenseType.INCOME, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
 
         assertThatThrownBy(() -> sut.createExpense(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -192,7 +192,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, 20L, ExpenseType.EXPENSE, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null, null, null, null);
 
         assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -226,10 +226,10 @@ class ExpenseServiceImplTest {
         ReflectionTestUtils.setField(child, "rowId", 10L);
 
         Expense e1 = Expense.createExpense(u, child, null, ExpenseType.EXPENSE, 3_000L, "a",
-                LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(e1, "rowId", 1L);
         Expense e2 = Expense.createExpense(u, child, null, ExpenseType.EXPENSE, 2_000L, "b",
-                LocalDateTime.of(2026, 6, 2, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 2, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(e2, "rowId", 2L);
 
         LocalDate start = LocalDate.of(2026, 6, 1);
@@ -264,7 +264,7 @@ class ExpenseServiceImplTest {
         ExpenseCategory leaf = category(10L, u);
         // 수정 전 1,000원 거래(예산 10,000 중 10%)
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 1_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(expense, "rowId", 5L);
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
         given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
@@ -283,7 +283,7 @@ class ExpenseServiceImplTest {
         // 1,000 → 9,900 으로 상향 수정
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null, null);
 
         sut.updateExpense(5L, USER_ID, cmd);
 
@@ -297,7 +297,7 @@ class ExpenseServiceImplTest {
         User u = user(USER_ID);
         ExpenseCategory leaf = category(10L, u);
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 1_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(expense, "rowId", 5L);
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
         given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
@@ -327,7 +327,7 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.CreateCommand createCmdAmount(long categoryRowId, long amount) {
         return new ExpenseServiceDto.CreateCommand(
                 USER_ID, categoryRowId, null, ExpenseType.EXPENSE, amount,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
     }
 
     private void givenOverallBudget(long limit, int warnPct, User u, ExpenseCategory leaf, long monthlyTotal) {
@@ -337,7 +337,7 @@ class ExpenseServiceImplTest {
         given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(warnPct);
         given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(
                 Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, monthlyTotal,
-                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null)));
+                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null)));
     }
 
     @Test
@@ -410,7 +410,7 @@ class ExpenseServiceImplTest {
         User u = user(USER_ID);
         ExpenseCategory leaf = category(10L, u);
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(expense, "rowId", 5L);
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
         given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
@@ -422,7 +422,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, null, ExpenseType.EXPENSE, 9_999L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null, null);
         sut.updateExpense(5L, USER_ID, cmd);
 
         // before 0.99, after 0.9999: OVER(>=1.0) 거짓, WARN(이미 0.99>=0.85) 미돌파 → 알림 없음
@@ -435,7 +435,7 @@ class ExpenseServiceImplTest {
         User u = user(USER_ID);
         ExpenseCategory leaf = category(10L, u);
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(expense, "rowId", 5L);
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
         given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
@@ -447,7 +447,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 10L, null, ExpenseType.EXPENSE, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null, null);
         sut.updateExpense(5L, USER_ID, cmd);
 
         verify(notificationService, times(1)).createNotification(any()); // before 0.99<1.0, after 1.0>=1.0 → OVER
@@ -480,7 +480,7 @@ class ExpenseServiceImplTest {
     // ── 분할 합 일치화 (거래 금액 ↔ 분할 합 불변식) ─────────────────────────────
     private Expense expenseWithRowId(User u, ExpenseCategory leaf, long amount) {
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, amount,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(expense, "rowId", 5L);
         return expense;
     }
@@ -489,7 +489,7 @@ class ExpenseServiceImplTest {
             long categoryRowId, long amount, List<ExpenseSplitServiceDto.SplitCommand> splits) {
         return new ExpenseServiceDto.UpdateCommand(
                 categoryRowId, null, ExpenseType.EXPENSE, amount,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, splits);
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null, splits);
     }
 
     @Test
@@ -600,11 +600,11 @@ class ExpenseServiceImplTest {
 
         // A: 비분할 거래 5,000 (식비 l2)
         Expense a = Expense.createExpense(u, l2, null, ExpenseType.EXPENSE, 5_000L, "a",
-                LocalDateTime.of(2026, 6, 3, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 3, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(a, "rowId", 100L);
         // B: 쿠팡 10,000, 분할 [생활용품 6,000 + 식비 4,000] (선언 카테고리는 l8)
         Expense b = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(b, "rowId", 200L);
         ExpenseSplit b1 = ExpenseSplit.create(b, l8, 6_000L, "생활", 0);
         ExpenseSplit b2 = ExpenseSplit.create(b, l2, 4_000L, "식비", 1);
@@ -632,7 +632,7 @@ class ExpenseServiceImplTest {
 
         // 거래: 선언 카테고리 생활용품(8), 10,000원, 분할 없음 상태에서 시작.
         Expense expense = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(expense, "rowId", 5L);
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
         given(expenseCategoryRepository.findById(8L)).willReturn(Optional.of(l8));
@@ -652,7 +652,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 8L, null, ExpenseType.EXPENSE, 10_000L,
-                "쿠팡", LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null, null,
+                "쿠팡", LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null, null, null,
                 List.of(new ExpenseSplitServiceDto.SplitCommand(2L, 4_000L, "식비", 0),
                         new ExpenseSplitServiceDto.SplitCommand(8L, 6_000L, "생활", 1)));
 
@@ -674,7 +674,7 @@ class ExpenseServiceImplTest {
         ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
         ExpenseCategory l2 = leafUnder(2L, u, p1);
         Expense e = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(e, "rowId", 50L);
         given(expenseRepository.findByUser(eq(USER_ID), any(), any(), any(), any())).willReturn(List.of(e));
         ExpenseSplit s1 = ExpenseSplit.create(e, l8, 6_000L, "생활", 0);
@@ -697,7 +697,7 @@ class ExpenseServiceImplTest {
         ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
         ExpenseCategory l2 = leafUnder(2L, u, p1);
         Expense e = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null);
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null);
         ReflectionTestUtils.setField(e, "rowId", 60L);
         given(expenseRepository.search(eq(USER_ID), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .willReturn(List.of(e));

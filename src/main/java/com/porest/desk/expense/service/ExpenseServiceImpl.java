@@ -122,7 +122,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.expenseDate(),
             command.merchant(),
             command.paymentMethod(),
-            command.installmentMonths()
+            command.installmentMonths(),
+            command.refundOfExpenseRowId()
         );
 
         if (command.calendarEventRowId() != null) {
@@ -231,7 +232,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.expenseDate(),
             command.merchant(),
             command.paymentMethod(),
-            command.installmentMonths()
+            command.installmentMonths(),
+            command.refundOfExpenseRowId()
         );
 
         // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함) → recompute 가 잔액 반영
@@ -306,15 +308,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         List<Expense> expenses = expenseRepository.findDailySummary(userRowId, date);
 
-        Long totalIncome = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        Long totalExpense = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-            .mapToLong(Expense::getAmount)
-            .sum();
+        // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계로 잡는다 — Expense 가 부호를 결정한다.
+        Long totalIncome = expenses.stream().mapToLong(Expense::incomeContribution).sum();
+        Long totalExpense = expenses.stream().mapToLong(Expense::expenseContribution).sum();
 
         return new ExpenseServiceDto.DailySummary(date, totalIncome, totalExpense);
     }
@@ -326,15 +322,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         List<Expense> expenses = expenseRepository.findByDateRange(userRowId, startDate, endDate);
 
-        Long totalIncome = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        Long totalExpense = expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-            .mapToLong(Expense::getAmount)
-            .sum();
+        // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계로 잡는다 — Expense 가 부호를 결정한다.
+        Long totalIncome = expenses.stream().mapToLong(Expense::incomeContribution).sum();
+        Long totalExpense = expenses.stream().mapToLong(Expense::expenseContribution).sum();
 
         // 분할(split)을 1회만 조회해 전체·월별 카테고리 집계에 공유(중복 쿼리 회피).
         Map<Long, List<ExpenseSplit>> splitsByExpense = loadSplits(expenses);
@@ -351,12 +341,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             int y = cursor.getYear();
             int m = cursor.getMonthValue();
             List<Expense> bucket = grouped.getOrDefault(y + "-" + m, List.of());
-            long income = bucket.stream()
-                .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-                .mapToLong(Expense::getAmount).sum();
-            long expense = bucket.stream()
-                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-                .mapToLong(Expense::getAmount).sum();
+            long income = bucket.stream().mapToLong(Expense::incomeContribution).sum();
+            long expense = bucket.stream().mapToLong(Expense::expenseContribution).sum();
             monthlyBuckets.add(new ExpenseServiceDto.RangeMonthlyBucket(
                 y, m, income, expense, expenseCategoryAmounts(bucket, splitsByExpense)));
             cursor = cursor.plusMonths(1);
@@ -377,14 +363,18 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         Map<Long, ExpenseServiceDto.CategoryBreakdown> agg = new HashMap<>();
         for (Expense e : expenses) {
+            // 환불은 수입 항목으로 따로 서지 않고, 원래 지출 카테고리에서 음수로 빠진다
+            // (식비에서 환불받으면 그 달 식비가 줄어야지 수입이 생기는 게 아니다).
+            ExpenseType breakdownType = e.isRefund() ? ExpenseType.EXPENSE : e.getExpenseType();
+            long sign = e.isRefund() ? -1L : 1L;
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
-                    accumulateBreakdown(agg, s.getCategory(), e.getExpenseType(), s.getAmount());
+                    accumulateBreakdown(agg, s.getCategory(), breakdownType, sign * s.getAmount());
                 }
             } else {
                 if (e.getCategory() == null) continue;
-                accumulateBreakdown(agg, e.getCategory(), e.getExpenseType(), e.getAmount());
+                accumulateBreakdown(agg, e.getCategory(), breakdownType, sign * e.getAmount());
             }
         }
         return List.copyOf(agg.values());
@@ -432,15 +422,18 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<Expense> monthExpenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
         Map<Long, Long> agg = new HashMap<>();
         for (Expense e : monthExpenses) {
-            if (e.getExpenseType() != ExpenseType.EXPENSE) continue;
+            // 환불은 수입 타입이지만 여기선 원래 지출 카테고리에서 음수로 빼야 한다.
+            boolean refund = e.isRefund();
+            if (!refund && e.getExpenseType() != ExpenseType.EXPENSE) continue;
+            long sign = refund ? -1L : 1L;
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
                     if (s.getCategory() == null) continue;
-                    agg.merge(s.getCategory().getRowId(), s.getAmount(), Long::sum);
+                    agg.merge(s.getCategory().getRowId(), sign * s.getAmount(), Long::sum);
                 }
             } else if (e.getCategory() != null) {
-                agg.merge(e.getCategory().getRowId(), e.getAmount(), Long::sum);
+                agg.merge(e.getCategory().getRowId(), sign * e.getAmount(), Long::sum);
             }
         }
         return agg.entrySet().stream()

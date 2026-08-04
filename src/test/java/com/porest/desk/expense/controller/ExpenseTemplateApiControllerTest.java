@@ -70,7 +70,7 @@ class ExpenseTemplateApiControllerTest {
                 10L, 1L, 5L, "식비", "utensils", "#fff",
                 2L, "현금", ExpenseType.EXPENSE, 9000L, "회사 근처",
                 LocalDateTime.of(2026, 7, 3, 12, 0), "김밥천국", "CARD",
-                null, null, null,
+                null, null, null, null,
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of());
     }

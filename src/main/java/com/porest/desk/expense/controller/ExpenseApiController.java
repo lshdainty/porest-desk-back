@@ -45,6 +45,7 @@ public class ExpenseApiController {
             request.merchant(),
             request.paymentMethod(),
             request.installmentMonths(),
+            request.refundOfExpenseRowId(),
             request.calendarEventRowId(),
             request.todoRowId()
         ));
@@ -88,6 +89,7 @@ public class ExpenseApiController {
             request.merchant(),
             request.paymentMethod(),
             request.installmentMonths(),
+            request.refundOfExpenseRowId(),
             request.calendarEventRowId(),
             request.todoRowId(),
             splits
