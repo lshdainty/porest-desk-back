@@ -44,7 +44,7 @@ class HoldingDecimalSerializationTest {
         var res = new AssetTradeApiDto.TradeResponse(
             1L, 11L, TradeType.BUY, HoldingType.GOLD, "금 현물", false,
             new BigDecimal("3.75000000"), 3_000_000L, 0L, null,
-            LocalDateTime.of(2026, 8, 3, 10, 0), null);
+            LocalDateTime.of(2026, 8, 3, 10, 0), null, null);
 
         String json = mapper.writeValueAsString(res);
 

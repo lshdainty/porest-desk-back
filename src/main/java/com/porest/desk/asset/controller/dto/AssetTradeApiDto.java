@@ -28,7 +28,12 @@ public final class AssetTradeApiDto {
         Long amount,
         Long fee,
         LocalDateTime tradeDate,
-        String description
+        String description,
+        /**
+         * 결제 계좌 — 지정하면 증권계좌 예수금 대신 이 계좌에서 나가고 들어온다.
+         * 예수금을 따로 관리하지 않는 사용자를 위한 길이라, 통장이 마이너스가 되는 건 막지 않는다.
+         */
+        Long settlementAssetRowId
     ) {}
 
     public record TradeResponse(
@@ -46,12 +51,13 @@ public final class AssetTradeApiDto {
         /** 실현손익 (매도 전용). 이익 양수 / 손실 음수. */
         Long realizedPl,
         LocalDateTime tradeDate,
-        String description
+        String description,
+        Long settlementAssetRowId
     ) {
         public static TradeResponse from(AssetTradeServiceDto.TradeInfo t) {
             return new TradeResponse(t.rowId(), t.assetRowId(), t.tradeType(), t.holdingType(),
                 t.holdingKey(), t.linked(), t.quantity(), t.amount(), t.fee(),
-                t.realizedPl(), t.tradeDate(), t.description());
+                t.realizedPl(), t.tradeDate(), t.description(), t.settlementAssetRowId());
         }
 
         public static List<TradeResponse> from(List<AssetTradeServiceDto.TradeInfo> list) {

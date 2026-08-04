@@ -70,6 +70,7 @@ class StockTradeScenarioTest {
     private static final long USER_ID = 1L;
     private static final long ASSET_ID = 11L;
     private static final String SAMSUNG = "005930";
+    private static final long BANK_ID = 10L;
 
     private User user;
     private Asset account;
@@ -79,6 +80,9 @@ class StockTradeScenarioTest {
     private final List<Expense> expenses = new ArrayList<>();
     /** 예수금 — recordTrade 가 flow 를 남기면 여기에 누적한다. */
     private long cash;
+    /** 결제 계좌(통장)로 나간 flow 누적 — 예수금과 따로 본다. */
+    private long bankFlow;
+    private Asset bank;
 
     @BeforeEach
     void setUp() {
@@ -91,6 +95,11 @@ class StockTradeScenarioTest {
             null, null, null, null, 0, YNType.Y, null, null, null, null);
         ReflectionTestUtils.setField(account, "rowId", ASSET_ID);
         given(assetRepository.findById(ASSET_ID)).willReturn(Optional.of(account));
+
+        bank = Asset.createAsset(user, "급여통장", AssetType.BANK_ACCOUNT, 0L, "KRW",
+            null, null, null, null, 0, YNType.Y, null, null, null, null);
+        ReflectionTestUtils.setField(bank, "rowId", BANK_ID);
+        given(assetRepository.findById(BANK_ID)).willReturn(Optional.of(bank));
 
         given(holdingRepository.findActiveByAsset(ASSET_ID)).willAnswer(inv -> List.copyOf(holdings));
         willAnswer(inv -> {
@@ -126,9 +135,15 @@ class StockTradeScenarioTest {
         // 예수금 flow 를 실제로 누적해 잔액을 따라간다 — 자산의 캐시도 함께 맞춰야
         // 다음 매수의 예수금 검사가 현실처럼 동작한다.
         willAnswer(inv -> {
-            cash += (long) inv.getArgument(2);
-            account.updateBalances(cash, account.getHoldingBalance() != null
-                ? account.getHoldingBalance() : 0L);
+            Asset target = inv.getArgument(0);
+            long delta = inv.getArgument(2);
+            if (BANK_ID == target.getRowId()) {
+                bankFlow += delta;
+            } else {
+                cash += delta;
+                account.updateBalances(cash, account.getHoldingBalance() != null
+                    ? account.getHoldingBalance() : 0L);
+            }
             return null;
         }).given(balanceHistoryService).recordTrade(any(), any(), any(Long.class), any());
         // 취소는 그 거래가 남긴 flow 를 되돌린다.
@@ -136,9 +151,13 @@ class StockTradeScenarioTest {
             Long id = inv.getArgument(0);
             trades.stream().filter(t -> id.equals(t.getRowId())).findFirst()
                 .ifPresent(t -> {
-                    cash -= t.cashDelta();
-                    account.updateBalances(cash, account.getHoldingBalance() != null
-                        ? account.getHoldingBalance() : 0L);
+                    if (t.getSettlementAsset() != null) {
+                        bankFlow -= t.cashDelta();
+                    } else {
+                        cash -= t.cashDelta();
+                        account.updateBalances(cash, account.getHoldingBalance() != null
+                            ? account.getHoldingBalance() : 0L);
+                    }
                 });
             return null;
         }).given(balanceHistoryService).removeTrade(any());
@@ -157,7 +176,7 @@ class StockTradeScenarioTest {
 
     private CreateTradeCommand trade(TradeType type, String qty, long amount, long fee, int day) {
         return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK, SAMSUNG, true,
-            new BigDecimal(qty), amount, fee, LocalDateTime.of(2026, 8, day, 10, 0), null);
+            new BigDecimal(qty), amount, fee, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
     }
 
     private AssetHolding samsung() {
@@ -404,7 +423,7 @@ class StockTradeScenarioTest {
 
             var cmd = new CreateTradeCommand(USER_ID, 99L, TradeType.BUY, HoldingType.STOCK,
                 SAMSUNG, true, BigDecimal.TEN, 100_000L, 0L,
-                LocalDateTime.of(2026, 8, 3, 10, 0), null);
+                LocalDateTime.of(2026, 8, 3, 10, 0), null, null);
 
             assertThatThrownBy(() -> sut.createTrade(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -416,8 +435,64 @@ class StockTradeScenarioTest {
             assertThatThrownBy(() -> sut.createTrade(
                 new CreateTradeCommand(999L, ASSET_ID, TradeType.BUY, HoldingType.STOCK,
                     SAMSUNG, true, BigDecimal.TEN, 100_000L, 0L,
-                    LocalDateTime.of(2026, 8, 3, 10, 0), null)))
+                    LocalDateTime.of(2026, 8, 3, 10, 0), null, null)))
                 .isInstanceOf(RuntimeException.class);
+        }
+    }
+
+    // === 결제 계좌 =============================================================
+
+    @Nested
+    @DisplayName("증권계좌에 예수금을 안 넣고 통장에서 바로 결제")
+    class SettlementAccount {
+
+        private CreateTradeCommand viaBank(TradeType type, String qty, long amount, int day) {
+            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK, SAMSUNG, true,
+                new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null,
+                BANK_ID);
+        }
+
+        @Test
+        @DisplayName("매수 — 예수금이 아니라 통장에서 빠진다")
+        void buySettlesFromBank() {
+            sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
+
+            assertThat(bankFlow).isEqualTo(-7_000_000L);
+            assertThat(cash).isZero(); // 증권계좌 예수금은 그대로
+            assertThat(samsung().getTotalCost()).isEqualTo(7_000_000L);
+        }
+
+        @Test
+        @DisplayName("매수 — 통장이 마이너스가 돼도 막지 않는다")
+        void bankMayGoNegative() {
+            // 초기 잔액을 안 채우고 쓰는 가계부에선 통장이 마이너스로 누적된다 —
+            // 예수금과 달리 여기서 막으면 그 사용법이 통째로 막힌다.
+            sut.createTrade(viaBank(TradeType.BUY, "100", 99_000_000L, 3));
+
+            assertThat(bankFlow).isEqualTo(-99_000_000L);
+        }
+
+        @Test
+        @DisplayName("매도 — 대금이 통장으로 들어오고 손익은 그대로 잡힌다")
+        void sellSettlesToBank() {
+            sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
+
+            sut.createTrade(viaBank(TradeType.SELL, "100", 8_000_000L, 20));
+
+            assertThat(bankFlow).isEqualTo(1_000_000L); // -700만 +800만
+            assertThat(cash).isZero();
+            assertThat(savedRealizedExpense().getAmount()).isEqualTo(1_000_000L);
+        }
+
+        @Test
+        @DisplayName("취소 — 통장에서 나간 돈이 되돌아온다")
+        void cancelRestoresBank() {
+            var bought = sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
+
+            sut.deleteTrade(bought.rowId(), USER_ID);
+
+            assertThat(bankFlow).isZero();
+            assertThat(samsung()).isNull();
         }
     }
 
@@ -429,7 +504,7 @@ class StockTradeScenarioTest {
 
         private CreateTradeCommand goldTrade(TradeType type, String qty, long amount, int day) {
             return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.GOLD, "금 현물", false,
-                new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null);
+                new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
         }
 
         @Test
