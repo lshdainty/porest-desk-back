@@ -47,6 +47,16 @@ public class AssetQueryDslRepository implements AssetRepository {
     }
 
     @Override
+    public List<Long> findUserRowIdsWithAssets() {
+        return queryFactory.select(asset.user.rowId)
+            .from(asset)
+            .where(asset.isDeleted.eq(YNType.N))
+            .distinct()
+            .orderBy(asset.user.rowId.asc())
+            .fetch();
+    }
+
+    @Override
     public Asset save(Asset entity) {
         entityManager.persist(entity);
         return entity;
