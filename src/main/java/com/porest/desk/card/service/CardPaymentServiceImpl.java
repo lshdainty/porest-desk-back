@@ -6,6 +6,7 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
@@ -39,6 +40,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     private final UserClock userClock;
     private final AssetRepository assetRepository;
     private final AssetService assetService;
+    /** 결제계좌 없이 카드만 정리할 때 쓴다 — 이체를 못 만드니 카드에 직접 상계 flow 를 쌓는다. */
+    private final AssetBalanceHistoryService balanceHistoryService;
     private final EntityManager entityManager;
 
     @Override
@@ -71,45 +74,48 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
     @Override
     @Transactional
-    public CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId) {
-        log.debug("카드 수동 결제 시작: cardRowId={}, userRowId={}", cardRowId, userRowId);
+    public CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount) {
+        log.debug("카드 수동 결제 시작: cardRowId={}, userRowId={}, amount={}", cardRowId, userRowId, amount);
 
         Asset card = findAssetOrThrow(cardRowId);
         validateOwnership(card, userRowId);
         validateCreditCard(card);
 
+        // 결제계좌는 필수가 아니다 — 이건 기록용 앱이라 통장을 안 적고 가계부+카드만 쓰는
+        // 사용자가 있다. 계좌가 없으면 이체 없이 카드 사용액만 정리한다(규칙6 과 같은 논리:
+        // 등록 안 한 자산은 애초에 순자산에 안 잡혀 있으므로 카드 쪽만 맞추면 된다).
         Asset paymentAsset = card.getPaymentAsset();
-        if (paymentAsset == null) {
-            throw new InvalidValueException(DeskErrorCode.CARD_BILLING_PAYMENT_ASSET_REQUIRED);
-        }
 
         // 수동 결제 = 다가오는 결제 회차의 선결제 — 금액·기간 귀속 모두 그 회차 기준.
         // (종전엔 잔액 전액 + 실행일의 전월 라벨이라 회차·기간·금액이 어긋났음)
         LocalDate today = userClock.today(userRowId);
         LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), today);
         BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
-        long amount = cycle.amount();
+        long remaining = cycle.amount();
         LocalDate periodStart = cycle.periodStart();
         LocalDate periodEnd = cycle.periodEnd();
 
-        if (amount == 0L) {
+        // 부분 선결제 — 남은 청구액 안에서만. 청구액은 이미 '사용액 − 이미 결제한 금액' 이라
+        // 나머지는 다음 결제일에 정상적으로 빠진다.
+        long payAmount = amount != null ? amount : remaining;
+        if (amount != null && (amount <= 0L || amount > remaining)) {
+            throw new InvalidValueException(DeskErrorCode.CARD_BILLING_INVALID_AMOUNT);
+        }
+
+        if (payAmount == 0L) {
             CardBilling billing = cardBillingRepository.save(
                 CardBilling.skipped(card, paymentAsset, periodStart, periodEnd, today));
             log.info("카드 수동 결제 건너뜀(청구액 0): cardRowId={}", cardRowId);
             return CardPaymentServiceDto.BillingInfo.from(billing);
         }
 
-        if (paymentAsset.getBalance() == null || paymentAsset.getBalance() < amount) {
-            throw new InvalidValueException(DeskErrorCode.CARD_BILLING_INSUFFICIENT_BALANCE);
-        }
+        // 잔액 부족을 막지 않는다 — 기록용 앱이라 통장 잔액을 안 맞춰 둔 사용자가 많고,
+        // 실제로는 결제됐는데 앱에서만 결제가 안 되는 상태를 만들 이유가 없다(마이너스 통장도 있다).
+        CardBilling billing = cardBillingRepository.save(payoff(
+            card, paymentAsset, payAmount, periodStart, periodEnd, today, userRowId));
 
-        AssetServiceDto.TransferInfo transfer = createPaymentTransfer(card, paymentAsset, amount, userRowId, today);
-        CardBilling billing = cardBillingRepository.save(
-            CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today,
-                transferRef(transfer.rowId())));
-
-        log.info("카드 수동 결제 완료: cardRowId={}, transferId={}, amount={}",
-            cardRowId, transfer.rowId(), amount);
+        log.info("카드 수동 결제 완료: cardRowId={}, amount={}, 남은청구액={}",
+            cardRowId, payAmount, remaining - payAmount);
         return CardPaymentServiceDto.BillingInfo.from(billing);
     }
 
@@ -147,28 +153,15 @@ public class CardPaymentServiceImpl implements CardPaymentService {
                     skipped++;
                     continue;
                 }
-                if (paymentAsset == null) {
-                    cardBillingRepository.save(
-                        CardBilling.failed(card, null, amount, periodStart, periodEnd, today, "결제계좌 미지정"));
-                    failed++;
-                    continue;
-                }
-                if (paymentAsset.getBalance() == null || paymentAsset.getBalance() < amount) {
-                    cardBillingRepository.save(
-                        CardBilling.failed(card, paymentAsset, amount, periodStart, periodEnd, today, "잔액 부족"));
-                    failed++;
-                    continue;
-                }
-
-                AssetServiceDto.TransferInfo transfer =
-                    createPaymentTransfer(card, paymentAsset, amount, userRowId, today);
-                cardBillingRepository.save(
-                    CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today,
-                        transferRef(transfer.rowId())));
+                // 결제계좌 미지정·잔액 부족으로 실패시키지 않는다 — 기록용 앱이라 통장을 안 적거나
+                // 잔액을 안 맞춰 둔 사용자가 있고, 막으면 카드 부채가 영원히 안 지워진다.
+                cardBillingRepository.save(payoff(
+                    card, paymentAsset, amount, periodStart, periodEnd, today, userRowId));
                 success++;
 
-                log.info("자동 카드 결제 완료: cardRowId={}, transferId={}, amount={}",
-                    card.getRowId(), transfer.rowId(), amount);
+                log.info("자동 카드 결제 완료: cardRowId={}, amount={}, 결제계좌={}",
+                    card.getRowId(), amount,
+                    paymentAsset != null ? paymentAsset.getRowId() : "미지정");
             } catch (Exception e) {
                 failed++;
                 log.error("자동 카드 결제 실패: cardRowId={}", card.getRowId(), e);
@@ -183,6 +176,27 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 결제 이체 생성. 회계 정합 필수: 결제는 AssetTransfer 로만 처리(Expense 생성 금지 — 지출 중복계상 방지).
      * from = 결제계좌(차감), to = 카드(잔액 0 복귀). 카드 balance 는 음수(부채)이므로 +amount 로 0 이 된다.
      */
+    /**
+     * 카드 사용액 정산 — 결제계좌가 있으면 이체로, 없으면 카드에만 상계 flow 로 처리한다.
+     *
+     * <p>결제계좌를 안 적는 사용자가 있다(가계부+카드만 쓰는 경우). 그때 이체를 못 만든다고
+     * 결제를 막으면 카드 사용액이 영원히 안 지워지고 부채로 계속 쌓인다. 등록 안 한 통장은
+     * 애초에 순자산에 안 잡혀 있으므로 카드 쪽만 0 으로 맞추면 일관된다(규칙6 과 같은 논리).
+     */
+    private CardBilling payoff(Asset card, Asset paymentAsset, long amount, LocalDate periodStart,
+                               LocalDate periodEnd, LocalDate today, Long userRowId) {
+        if (paymentAsset != null) {
+            AssetServiceDto.TransferInfo transfer =
+                createPaymentTransfer(card, paymentAsset, amount, userRowId, today);
+            return CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today,
+                transferRef(transfer.rowId()));
+        }
+        // 이체 없이 카드 잔액만 되돌린다 — 사용액이 음수로 쌓여 있으므로 +금액 flow.
+        balanceHistoryService.recordExpense(
+            card, null, ExpenseType.INCOME, amount, today.atStartOfDay());
+        return CardBilling.completed(card, null, amount, periodStart, periodEnd, today, null);
+    }
+
     private AssetServiceDto.TransferInfo createPaymentTransfer(Asset card, Asset paymentAsset, long amount,
                                                               Long userRowId, LocalDate date) {
         return assetService.createTransfer(new AssetServiceDto.CreateTransferCommand(

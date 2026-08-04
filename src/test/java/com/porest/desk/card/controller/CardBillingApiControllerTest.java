@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -85,7 +86,7 @@ class CardBillingApiControllerTest {
     @Test
     @DisplayName("POST /asset/{id}/pay — id·로그인 사용자로 수동 결제 위임")
     void payCard() throws Exception {
-        given(cardPaymentService.payCard(50L, 1L)).willReturn(sampleBilling());
+        given(cardPaymentService.payCard(50L, 1L, null)).willReturn(sampleBilling());
 
         mockMvc.perform(post("/api/v1/asset/{id}/pay", 50L))
                 .andExpect(status().isOk())
@@ -94,7 +95,7 @@ class CardBillingApiControllerTest {
                 .andExpect(jsonPath("$.data.billingAmount").value(12000))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
-        verify(cardPaymentService).payCard(eq(50L), eq(1L));
+        verify(cardPaymentService).payCard(eq(50L), eq(1L), isNull());
     }
 
     @Test

@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,13 +30,19 @@ public class CardBillingApiController {
         return ApiResponse.success(CardBillingApiDto.CardBillingResponse.from(info));
     }
 
-    /** 카드 수동 결제 — 결제계좌에서 카드로 이체하여 잔액을 0으로 복귀. */
+    /**
+     * 카드 수동 결제 — 결제계좌에서 카드로 이체하여 사용액을 정리한다.
+     * 결제계좌가 없으면 이체 없이 카드 쪽만 정리한다(기록용 앱이라 통장을 안 적는 사용자가 있다).
+     *
+     * @param amount 결제 금액. 미전달이면 남은 청구액 전액, 값이 있으면 그만큼만(부분 선결제)
+     */
     @PostMapping("/asset/{id}/pay")
     public ApiResponse<CardBillingApiDto.BillingItemResponse> payCard(
             @LoginUser UserPrincipal loginUser,
-            @PathVariable Long id) {
+            @PathVariable Long id,
+            @RequestParam(required = false) Long amount) {
         CardPaymentServiceDto.BillingInfo info =
-            cardPaymentService.payCard(id, loginUser.getRowId());
+            cardPaymentService.payCard(id, loginUser.getRowId(), amount);
         return ApiResponse.success(CardBillingApiDto.BillingItemResponse.from(info));
     }
 }
