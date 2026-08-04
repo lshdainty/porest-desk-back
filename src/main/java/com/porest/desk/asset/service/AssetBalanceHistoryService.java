@@ -201,6 +201,27 @@ public class AssetBalanceHistoryService {
         }
     }
 
+    /**
+     * 매수·매도 — 예수금(CASH) flow. 평가금액은 건드리지 않는다.
+     *
+     * <p>매수는 대금과 수수료가 함께 빠지고, 매도는 수수료를 뗀 나머지가 들어온다.
+     * 보유 평가금액은 시세×수량으로 따로 산정되므로 여기서 손대면 이중 계상이 된다.
+     */
+    public void recordTrade(Asset asset, Long tradeId, Long cashDelta, LocalDateTime effectiveAt) {
+        if (asset == null || cashDelta == null || cashDelta == 0L) {
+            return;
+        }
+        repository.save(AssetBalanceHistory.of(
+            asset.getUser(), asset, BalanceSourceType.TRADE, BalanceChannel.CASH,
+            tradeId, cashDelta, effectiveAt));
+        recompute(asset);
+    }
+
+    /** 거래 취소 시 그 거래의 이력 row 를 soft-delete 후 자산 재산정. */
+    public void removeTrade(Long tradeId) {
+        softDeleteAndRecompute(repository.findActiveBySource(BalanceSourceType.TRADE, tradeId, YNType.N));
+    }
+
     /** 거래 변경/삭제 시 해당 expense 의 이력 row 들을 soft-delete 후 영향 자산 재산정. */
     public void removeExpense(Long expenseId) {
         softDeleteAndRecompute(repository.findActiveBySource(BalanceSourceType.EXPENSE, expenseId, YNType.N));

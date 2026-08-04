@@ -95,18 +95,18 @@ class AssetHoldingServiceTest {
 
     private static AssetServiceDto.HoldingCommand linkedHolding(String symbol, Long qty) {
         return new AssetServiceDto.HoldingCommand(
-            HoldingType.STOCK, true, symbol, qty == null ? null : BigDecimal.valueOf(qty), null, null);
+            HoldingType.STOCK, true, symbol, qty == null ? null : BigDecimal.valueOf(qty), null, null, null);
     }
 
     private static AssetServiceDto.HoldingCommand manualHolding(String name, Long value) {
-        return new AssetServiceDto.HoldingCommand(HoldingType.STOCK, false, null, null, name, value);
+        return new AssetServiceDto.HoldingCommand(HoldingType.STOCK, false, null, null, name, value, null);
     }
 
     /** 미연동 보유 + 수량(선택) — 금·코인처럼 시세가 없어도 몇 g·몇 개인지 기록한다. */
     private static AssetServiceDto.HoldingCommand manualHolding(
             HoldingType type, String name, String qty, Long value) {
         return new AssetServiceDto.HoldingCommand(
-            type, false, null, qty == null ? null : new BigDecimal(qty), name, value);
+            type, false, null, qty == null ? null : new BigDecimal(qty), name, value, null);
     }
 
     @Test
@@ -139,10 +139,10 @@ class AssetHoldingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
-                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, true, null, BigDecimal.valueOf(30), null, null)))))
+                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, true, null, BigDecimal.valueOf(30), null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
-                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, true, "005930", null, null, null)))))
+                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, true, "005930", null, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -153,10 +153,10 @@ class AssetHoldingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
-                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, false, null, null, null, 1_000L)))))
+                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, false, null, null, null, 1_000L, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
-                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, false, null, null, "ETF", null)))))
+                List.of(new AssetServiceDto.HoldingCommand(HoldingType.STOCK, false, null, null, "ETF", null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -189,7 +189,7 @@ class AssetHoldingServiceTest {
     void updateReplacesHoldings() {
         Asset asset = investment(5L, USER_ID);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.Y, "005930", BigDecimal.TEN, null, null, 0);
+        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.Y, "005930", BigDecimal.TEN, null, null, 0L, 0);
         given(assetHoldingRepository.findActiveByAsset(5L)).willReturn(List.of(old));
 
         AssetServiceDto.AssetInfo info = sut.updateAsset(5L, USER_ID, updateCommand(List.of(
@@ -211,7 +211,7 @@ class AssetHoldingServiceTest {
     void updateEmptyClearsHoldings() {
         Asset asset = investment(5L, USER_ID);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0);
+        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0L, 0);
         given(assetHoldingRepository.findActiveByAsset(5L)).willReturn(List.of(old));
 
         AssetServiceDto.AssetInfo info = sut.updateAsset(5L, USER_ID, updateCommand(List.of()));
@@ -228,9 +228,9 @@ class AssetHoldingServiceTest {
         Asset a2 = investment(6L, USER_ID);
         given(assetRepository.findByUser(USER_ID)).willReturn(List.of(a1, a2));
         AssetHolding h1 = AssetHolding.create(
-            a1, HoldingType.STOCK, YNType.Y, "005930", BigDecimal.valueOf(30), null, null, 0);
+            a1, HoldingType.STOCK, YNType.Y, "005930", BigDecimal.valueOf(30), null, null, 0L, 0);
         AssetHolding h2 = AssetHolding.create(
-            a2, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0);
+            a2, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0L, 0);
         given(assetHoldingRepository.findActiveByAssets(anyList())).willReturn(List.of(h1, h2));
         // 목록 잔액은 이력에서 산정한다 — 이력 조회도 자산 전체 1회다(N+1 금지).
         given(balanceHistoryService.resolverFor(anyCollection()))
@@ -288,11 +288,11 @@ class AssetHoldingServiceTest {
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
                 new AssetServiceDto.HoldingCommand(
-                    HoldingType.GOLD, true, "04020000", BigDecimal.ONE, null, null)))))
+                    HoldingType.GOLD, true, "04020000", BigDecimal.ONE, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
                 new AssetServiceDto.HoldingCommand(
-                    HoldingType.CRYPTO, true, "BTC", BigDecimal.ONE, null, null)))))
+                    HoldingType.CRYPTO, true, "BTC", BigDecimal.ONE, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -339,7 +339,7 @@ class AssetHoldingServiceTest {
 
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             new AssetServiceDto.HoldingCommand(
-                HoldingType.STOCK, true, "AAPL", new BigDecimal("0.1"), null, null)
+                HoldingType.STOCK, true, "AAPL", new BigDecimal("0.1"), null, null, null)
         )));
 
         // 185.7 × 1383.5 × 0.1 = 25,691.595 → 25,692 (HALF_UP). double 이면 끝자리가 흔들린다.
@@ -366,7 +366,7 @@ class AssetHoldingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
-            new AssetServiceDto.HoldingCommand(null, false, null, null, "예전 항목", 1_000L)
+            new AssetServiceDto.HoldingCommand(null, false, null, null, "예전 항목", 1_000L, null)
         )));
 
         ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);

@@ -62,11 +62,13 @@ public class AssetApiDto {
         String tossSymbol,
         BigDecimal quantity,
         String holdingName,
-        Long holdingValue
+        Long holdingValue,
+        /** 총 매수원가 (원화). 실현손익의 기준 — 미지정이면 0 으로 시작한다. */
+        Long totalCost
     ) {
         public AssetServiceDto.HoldingCommand toCommand() {
             return new AssetServiceDto.HoldingCommand(
-                holdingType, linked, tossSymbol, quantity, holdingName, holdingValue);
+                holdingType, linked, tossSymbol, quantity, holdingName, holdingValue, totalCost);
         }
 
         public static List<AssetServiceDto.HoldingCommand> toCommands(List<HoldingRequest> requests) {
@@ -82,12 +84,16 @@ public class AssetApiDto {
         BigDecimal quantity,
         String holdingName,
         Long holdingValue,
+        /** 총 매수원가 (원화, 수수료 포함). 평가액과의 차이가 평가손익이다. */
+        Long totalCost,
+        /** 평단가 — 총원가 / 수량. */
+        BigDecimal avgPrice,
         Integer sortOrder
     ) {
         public static HoldingResponse from(AssetServiceDto.HoldingInfo h) {
             return new HoldingResponse(
                 h.rowId(), h.holdingType(), h.linked(), h.tossSymbol(), h.quantity(),
-                h.holdingName(), h.holdingValue(), h.sortOrder());
+                h.holdingName(), h.holdingValue(), h.totalCost(), h.avgPrice(), h.sortOrder());
         }
     }
 

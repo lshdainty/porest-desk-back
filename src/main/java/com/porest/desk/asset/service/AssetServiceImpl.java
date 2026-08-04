@@ -454,6 +454,7 @@ public class AssetServiceImpl implements AssetService {
                 hc.quantity(),
                 linked ? null : hc.holdingName(),
                 linked ? null : hc.holdingValue(),
+                hc.totalCost(),
                 i
             );
             assetHoldingRepository.save(holding);

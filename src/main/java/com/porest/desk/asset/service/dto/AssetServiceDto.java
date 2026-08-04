@@ -67,7 +67,9 @@ public class AssetServiceDto {
         String tossSymbol,
         BigDecimal quantity,
         String holdingName,
-        Long holdingValue
+        Long holdingValue,
+        /** 총 매수원가 (원화). null 이면 기존 값 유지 — 실현손익 계산의 기준이다. */
+        Long totalCost
     ) {}
 
     public record HoldingInfo(
@@ -78,12 +80,17 @@ public class AssetServiceDto {
         BigDecimal quantity,
         String holdingName,
         Long holdingValue,
+        /** 총 매수원가 (원화, 수수료 포함). 평가액과의 차이가 평가손익이다. */
+        Long totalCost,
+        /** 평단가 — 총원가 / 수량. 수량이 없으면 null. */
+        BigDecimal avgPrice,
         Integer sortOrder
     ) {
         public static HoldingInfo from(AssetHolding h) {
             return new HoldingInfo(
                 h.getRowId(), h.getHoldingType(), h.isLinked(), h.getTossSymbol(), h.getQuantity(),
-                h.getHoldingName(), h.getHoldingValue(), h.getSortOrder());
+                h.getHoldingName(), h.getHoldingValue(), h.getTotalCost(), h.avgPrice(),
+                h.getSortOrder());
         }
     }
 

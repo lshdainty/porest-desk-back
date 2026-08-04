@@ -94,6 +94,13 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_TRANSFER_INVALID_AMOUNT("ASSET_005", "error.asset.transfer.invalid.amount", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_INVALID_INTEREST("ASSET_014", "error.asset.transfer.invalid.interest", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CHECK_CARD("ASSET_006", "error.asset.transfer.check.card", HttpStatus.BAD_REQUEST),
+    ASSET_TRADE_NOT_FOUND("ASSET_007", "error.notfound.asset.trade", HttpStatus.NOT_FOUND),
+    ASSET_TRADE_NOT_INVESTMENT("ASSET_008", "error.asset.trade.not.investment", HttpStatus.BAD_REQUEST),
+    ASSET_TRADE_INVALID_QUANTITY("ASSET_009", "error.asset.trade.invalid.quantity", HttpStatus.BAD_REQUEST),
+    ASSET_TRADE_INVALID_AMOUNT("ASSET_010", "error.asset.trade.invalid.amount", HttpStatus.BAD_REQUEST),
+    ASSET_TRADE_INSUFFICIENT_CASH("ASSET_011", "error.asset.trade.insufficient.cash", HttpStatus.BAD_REQUEST),
+    ASSET_TRADE_INSUFFICIENT_QUANTITY("ASSET_012", "error.asset.trade.insufficient.quantity", HttpStatus.BAD_REQUEST),
+    ASSET_TRADE_HOLDING_NOT_FOUND("ASSET_013", "error.asset.trade.holding.not.found", HttpStatus.BAD_REQUEST),
 
     // Saving Goal
     SAVING_GOAL_NOT_FOUND("SAVING_001", "error.notfound.saving.goal", HttpStatus.NOT_FOUND),
