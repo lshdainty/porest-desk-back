@@ -11,6 +11,8 @@ import com.porest.desk.card.domain.CardBilling;
 import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.service.dto.CardPaymentServiceDto;
 import com.porest.desk.card.type.BillingStatus;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
@@ -35,6 +37,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import com.porest.core.time.ServiceClock;
@@ -76,13 +79,33 @@ class CardPaymentServiceImplTest {
         return card;
     }
 
-    /** cycleNetSpend JPQL mock — 회차 순사용액 반환. */
+    /**
+     * cycleNetSpend JPQL mock — 일시불 순사용액(Long 쿼리) + 할부 회차 조회(Expense 쿼리).
+     * 할부는 기본 없음으로 두고, 필요한 테스트만 {@link #givenInstallments} 로 덮어쓴다.
+     */
     private void givenCycleSpend(long spend) {
         @SuppressWarnings("unchecked")
         TypedQuery<Long> query = mock(TypedQuery.class);
         lenient().when(entityManager.createQuery(anyString(), eq(Long.class))).thenReturn(query);
         lenient().when(query.setParameter(anyString(), any())).thenReturn(query);
         lenient().when(query.getSingleResult()).thenReturn(spend);
+        givenInstallments();
+    }
+
+    /** 할부 거래 목록 mock — 인자 없으면 할부 없음. */
+    private void givenInstallments(Expense... installments) {
+        @SuppressWarnings("unchecked")
+        TypedQuery<Expense> query = mock(TypedQuery.class);
+        lenient().when(entityManager.createQuery(anyString(), eq(Expense.class))).thenReturn(query);
+        lenient().when(query.setParameter(anyString(), any())).thenReturn(query);
+        lenient().when(query.getResultList()).thenReturn(List.of(installments));
+    }
+
+    /** 카드 할부 거래 — 결제일(구매일)과 금액·개월로 만든다. */
+    private Expense installment(LocalDate purchasedOn, long amount, int months) {
+        return Expense.createExpense(
+            null, null, null, ExpenseType.EXPENSE, amount, "할부 결제",
+            purchasedOn.atTime(14, 0), "테스트가맹점", "CARD", months);
     }
 
     // === 회차(청구 기간) 계산 ===
@@ -104,6 +127,97 @@ class CardPaymentServiceImplTest {
         assertThat(next).isEqualTo(LocalDate.of(2026, 7, 12));
         assertThat(CardPaymentServiceImpl.periodStartFor(next)).isEqualTo(LocalDate.of(2026, 6, 1));
         assertThat(CardPaymentServiceImpl.periodEndFor(next)).isEqualTo(LocalDate.of(2026, 6, 30));
+    }
+
+    // === 할부 — 실제 카드 사용 시나리오 ===
+
+    /**
+     * 7/10 에 아이폰 150만원을 6개월 할부로 샀다. 카드 결제일은 12일.
+     *
+     * <p>일시불이면 8/12 에 150만원이 통째로 빠지지만, 할부라 25만원씩 6번에 나뉜다.
+     * 8월 청구(7/1~7/31 사용분)는 1회차 25만원 + 그 달 일시불 사용분이어야 한다.
+     */
+    @Test
+    @DisplayName("할부 — 7월에 산 150만원 6개월 할부는 8월 청구에 25만원만 잡힌다(일시불 3만원과 합산)")
+    void installmentFirstCycle() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 오늘 7/24 → 다음 결제일 8/12 → 청구 기간 7/1~7/31
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(30_000L); // 7월 일시불 사용분(커피·편의점 등)
+        givenInstallments(installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6));
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
+
+        assertThat(info.upcomingAmount()).isEqualTo(280_000L); // 30,000 + 250,000
+    }
+
+    @Test
+    @DisplayName("할부 — 같은 거래가 다음 달 청구에도 25만원으로 이어진다(2회차)")
+    void installmentSecondCycle() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 오늘 8/24 → 다음 결제일 9/12 → 청구 기간 8/1~8/31 (구매월 7월 기준 2회차)
+        doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(0L); // 8월엔 일시불 사용 없음
+        givenInstallments(installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6));
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(250_000L);
+    }
+
+    @Test
+    @DisplayName("할부 — 6개월이 끝난 뒤(7회차)에는 더 이상 청구되지 않는다")
+    void installmentAfterLastCycle() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 오늘 2027-01-24 → 다음 결제일 2027-02-12 → 청구 기간 2027-01 (구매월 2026-07 기준 7회차)
+        doReturn(LocalDate.of(2027, 1, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(0L);
+        givenInstallments(installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6));
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isZero();
+    }
+
+    @Test
+    @DisplayName("할부 — 노트북 100만원 3개월(나머지 1원)은 첫 청구가 333,334원")
+    void installmentUnevenFirstCycle() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(0L);
+        givenInstallments(installment(LocalDate.of(2026, 7, 5), 1_000_000L, 3));
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(333_334L);
+    }
+
+    @Test
+    @DisplayName("할부 — 여러 건이 겹치면 회차 금액이 합산된다(아이폰 2회차 + 냉장고 1회차)")
+    void multipleInstallmentsOverlap() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 청구 기간 8/1~8/31 — 7월 구매분은 2회차, 8월 구매분은 1회차
+        doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(15_000L);
+        givenInstallments(
+            installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6),   // 2회차 250,000
+            installment(LocalDate.of(2026, 8, 3), 2_400_000L, 12));  // 1회차 200,000
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(465_000L);
     }
 
     // === getCardBilling — 회차 금액 ===

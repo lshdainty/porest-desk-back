@@ -121,7 +121,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.description(),
             command.expenseDate(),
             command.merchant(),
-            command.paymentMethod()
+            command.paymentMethod(),
+            command.installmentMonths()
         );
 
         if (command.calendarEventRowId() != null) {
@@ -229,7 +230,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.description(),
             command.expenseDate(),
             command.merchant(),
-            command.paymentMethod()
+            command.paymentMethod(),
+            command.installmentMonths()
         );
 
         // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함) → recompute 가 잔액 반영

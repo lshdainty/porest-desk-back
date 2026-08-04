@@ -20,6 +20,8 @@ public class ExpenseServiceDto {
         LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
+        /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
+        Integer installmentMonths,
         Long calendarEventRowId,
         Long todoRowId
     ) {}
@@ -33,6 +35,8 @@ public class ExpenseServiceDto {
         LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
+        /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
+        Integer installmentMonths,
         Long calendarEventRowId,
         Long todoRowId,
         // 분할 내역 동시 수정. null = 분할 미변경(기존 유지), 비어있지 않은 리스트 = 새 분할로 교체.
@@ -55,6 +59,8 @@ public class ExpenseServiceDto {
         LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
+        /** 할부 개월 (null = 일시불). */
+        Integer installmentMonths,
         Long calendarEventRowId,
         Long todoRowId,
         LocalDateTime createAt,
@@ -83,6 +89,7 @@ public class ExpenseServiceDto {
                 expense.getExpenseDate(),
                 expense.getMerchant(),
                 expense.getPaymentMethod(),
+                expense.getInstallmentMonths(),
                 expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
                 expense.getTodo() != null ? expense.getTodo().getRowId() : null,
                 expense.getCreateAt(),
