@@ -38,6 +38,8 @@ public final class AssetTradeApiDto {
         HoldingType holdingType,
         String holdingKey,
         boolean linked,
+        /** 소수 정밀도 보존 — 금 3.75g·코인 0.05 개가 숫자로 나가면 자릿수가 흔들린다. */
+        @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
         BigDecimal quantity,
         Long amount,
         Long fee,
