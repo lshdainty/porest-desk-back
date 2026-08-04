@@ -19,6 +19,8 @@ public class ExpenseApiDto {
         String expenseDate,
         String merchant,
         String paymentMethod,
+        /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
+        Integer installmentMonths,
         Long calendarEventRowId,
         Long todoRowId
     ) {}
@@ -33,6 +35,8 @@ public class ExpenseApiDto {
         String expenseDate,
         String merchant,
         String paymentMethod,
+        /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
+        Integer installmentMonths,
         Long calendarEventRowId,
         Long todoRowId,
         // 분할 내역 동시 수정(선택). null = 분할 미변경, 리스트 = 새 분할로 교체(금액과 합 일치 필요).
@@ -54,6 +58,8 @@ public class ExpenseApiDto {
         LocalDateTime expenseDate,
         String merchant,
         String paymentMethod,
+        /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
+        Integer installmentMonths,
         Long calendarEventRowId,
         Long todoRowId,
         LocalDateTime createAt,
@@ -77,6 +83,7 @@ public class ExpenseApiDto {
                 info.expenseDate(),
                 info.merchant(),
                 info.paymentMethod(),
+                info.installmentMonths(),
                 info.calendarEventRowId(),
                 info.todoRowId(),
                 info.createAt(),

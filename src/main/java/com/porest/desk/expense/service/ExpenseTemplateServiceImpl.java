@@ -174,7 +174,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             // 템플릿은 LocalDate 만 받으므로 00:00 으로 보정하여 엔티티(LocalDateTime) 에 전달
             expenseDate.atStartOfDay(),
             template.getMerchant(),
-            template.getPaymentMethod()
+            template.getPaymentMethod(),
+            null // 프리셋은 할부 개념이 없다
         );
 
         expenseRepository.save(expense);
