@@ -66,6 +66,10 @@ public class AssetHolding extends AuditingFieldsWithIp {
     @Column(name = "holding_value")
     private Long holdingValue;
 
+    /** 총 매수원가 (원화, 수수료 포함). 평단가는 {@link #avgPrice()} 로 파생한다. */
+    @Column(name = "total_cost", nullable = false)
+    private Long totalCost;
+
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder;
 
@@ -74,7 +78,8 @@ public class AssetHolding extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static AssetHolding create(Asset asset, HoldingType holdingType, YNType linked, String tossSymbol,
-                                       BigDecimal quantity, String holdingName, Long holdingValue, Integer sortOrder) {
+                                       BigDecimal quantity, String holdingName, Long holdingValue,
+                                       Long totalCost, Integer sortOrder) {
         AssetHolding holding = new AssetHolding();
         holding.asset = asset;
         holding.holdingType = holdingType != null ? holdingType : HoldingType.STOCK;
@@ -83,6 +88,7 @@ public class AssetHolding extends AuditingFieldsWithIp {
         holding.quantity = quantity;
         holding.holdingName = holdingName;
         holding.holdingValue = holdingValue;
+        holding.totalCost = totalCost != null ? totalCost : 0L;
         holding.sortOrder = sortOrder != null ? sortOrder : 0;
         holding.isDeleted = YNType.N;
         return holding;
@@ -90,6 +96,39 @@ public class AssetHolding extends AuditingFieldsWithIp {
 
     public boolean isLinked() {
         return linked == YNType.Y;
+    }
+
+    /**
+     * 종목 식별자 — 거래({@link AssetTrade})와 보유를 묶는 키.
+     * 보유 목록은 편집할 때마다 통째로 재생성돼서 row_id 로는 묶을 수 없다.
+     */
+    public String holdingKey() {
+        return isLinked() ? tossSymbol : holdingName;
+    }
+
+    /** 평단가 — 총원가 / 수량. 수량이 없으면 없다. 평단가를 직접 들면 부분 매도마다 오차가 쌓인다. */
+    public BigDecimal avgPrice() {
+        if (quantity == null || quantity.signum() == 0 || totalCost == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(totalCost).divide(quantity, 8, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 거래 한 건을 반영한다 — 수량과 원가가 함께 움직인다.
+     * 취소는 부호를 뒤집어 같은 메서드로 되돌린다.
+     */
+    public void applyTrade(BigDecimal quantityDelta, long costDelta) {
+        BigDecimal base = quantity != null ? quantity : BigDecimal.ZERO;
+        this.quantity = base.add(quantityDelta);
+        this.totalCost = Math.max(0L, (totalCost != null ? totalCost : 0L) + costDelta);
+    }
+
+    /** 사용자가 보유를 직접 고칠 때 — 매수/매도를 거치지 않는 보정 경로. */
+    public void adjust(BigDecimal quantity, Long holdingValue, Long totalCost) {
+        this.quantity = quantity;
+        this.holdingValue = holdingValue;
+        this.totalCost = totalCost != null ? totalCost : this.totalCost;
     }
 
     public void deleteHolding() {

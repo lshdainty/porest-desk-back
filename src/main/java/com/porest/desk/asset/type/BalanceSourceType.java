@@ -12,6 +12,7 @@ package com.porest.desk.asset.type;
  *   <li>{@link #VALUATION} (absolute) — 투자 평가액 갱신(현재는 수동, 추후 증권사 API 연동 지점)</li>
  *   <li>{@link #EXPENSE} (flow) — 수입/지출 거래. INCOME=+amount, EXPENSE=-amount</li>
  *   <li>{@link #TRANSFER} (flow) — 자산 이체. 출금자산=-(amount+fee), 입금자산=+amount</li>
+ *   <li>{@link #TRADE} (flow) — 매수·매도. 매수=-(대금+수수료), 매도=+(대금-수수료). 예수금만 움직인다</li>
  * </ul>
  */
 public enum BalanceSourceType {
@@ -19,7 +20,8 @@ public enum BalanceSourceType {
     MANUAL(true),
     VALUATION(true),
     EXPENSE(false),
-    TRANSFER(false);
+    TRANSFER(false),
+    TRADE(false);
 
     private final boolean absolute;
 

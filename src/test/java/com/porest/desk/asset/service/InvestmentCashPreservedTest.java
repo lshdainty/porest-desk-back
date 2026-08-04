@@ -123,7 +123,7 @@ class InvestmentCashPreservedTest {
     void keepsCashUntouchedWhileHoldingsRemain() {
         Asset invest = brokerageWithHoldings();
         var holding = new AssetServiceDto.HoldingCommand(
-            null, false, null, null, "삼성전자", 48_000_000L);
+            null, false, null, null, "삼성전자", 48_000_000L, null);
 
         sut.updateAsset(ASSET_ID, USER_ID, command(48_000_000L, List.of(holding)));
 
