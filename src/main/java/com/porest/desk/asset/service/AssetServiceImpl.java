@@ -81,11 +81,20 @@ public class AssetServiceImpl implements AssetService {
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
         Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), command.userRowId());
 
+        // 보유가 있는 투자 자산은 평가액을 서버가 산정한다 — 클라이언트가 보낸 balance 를 쓰지 않는다.
+        // 연동 시세를 못 구하면 미연동 합만 잡고, 나머지는 일 1회 스냅샷 배치가 채운다.
+        Long balance = command.balance();
+        if (command.assetType() == AssetType.INVESTMENT
+            && command.holdings() != null && !command.holdings().isEmpty()) {
+            Long computed = computeInvestmentBalance(command.userRowId(), command.holdings());
+            balance = computed != null ? computed : manualHoldingsSum(command.holdings());
+        }
+
         Asset asset = Asset.createAsset(
             user,
             command.assetName(),
             command.assetType(),
-            command.balance(),
+            balance,
             command.currency() != null ? command.currency() : "KRW",
             command.color(),
             command.institution(),
@@ -152,6 +161,13 @@ public class AssetServiceImpl implements AssetService {
         // 선택 필드(color/institution/memo) 는 null 을 clear 로 간주.
         Long oldBalance = asset.getBalance();
         Long newBalance = command.balance() != null ? command.balance() : asset.getBalance();
+        // 보유를 함께 보낸 투자 자산은 평가액을 서버가 산정한다(클라이언트 계산값 불신).
+        // 연동 시세를 못 구하면 기존 잔액을 유지한다 — 부분합으로 덮어쓰지 않기 위해서다.
+        if (command.holdings() != null && !command.holdings().isEmpty()
+            && (command.assetType() != null ? command.assetType() : asset.getAssetType()) == AssetType.INVESTMENT) {
+            Long computed = computeInvestmentBalance(userRowId, command.holdings());
+            newBalance = computed != null ? computed : asset.getBalance();
+        }
         Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
             ? asset.getPaymentAsset().getRowId() : null;
         asset.updateAsset(
@@ -305,6 +321,76 @@ public class AssetServiceImpl implements AssetService {
                     throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
                 }
             }
+        }
+    }
+
+    /** 미연동 보유의 입력 금액 합 — 정수라 오차가 없다. */
+    private static long manualHoldingsSum(List<AssetServiceDto.HoldingCommand> holdings) {
+        long sum = 0;
+        for (AssetServiceDto.HoldingCommand hc : holdings) {
+            if (!Boolean.TRUE.equals(hc.linked()) && hc.holdingValue() != null) {
+                sum += hc.holdingValue();
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * 투자 자산의 평가액을 <b>서버가</b> 산정한다.
+     *
+     * <p>이전에는 클라이언트가 시세×수량을 계산해 balance 로 보냈다. JS·Dart 는 십진 소수를 정확히
+     * 담지 못해 저장값이 어긋날 수 있고, 무엇보다 DB 에 남는 금액을 클라이언트가 정하는 구조였다.
+     *
+     * <p>미연동 보유는 입력 금액 그대로(정수), 연동 보유는 토스 시세×수량을 BigDecimal 로 계산한다.
+     * 시세 조회는 종목 다건 1콜 + 외화가 있을 때만 환율 1콜로 끝낸다.
+     *
+     * @return 연동 시세를 하나라도 못 구하면 null — 부분합으로 자산 금액을 왜곡하지 않기 위해서다.
+     *         호출부가 생성이면 미연동 합, 수정이면 기존 잔액을 쓴다.
+     */
+    private Long computeInvestmentBalance(Long userRowId, List<AssetServiceDto.HoldingCommand> holdings) {
+        long manual = manualHoldingsSum(holdings);
+        List<AssetServiceDto.HoldingCommand> linked = holdings.stream()
+            .filter(hc -> Boolean.TRUE.equals(hc.linked()) && hc.tossSymbol() != null && hc.quantity() != null)
+            .toList();
+        if (linked.isEmpty()) {
+            return manual;
+        }
+        try {
+            String symbols = linked.stream()
+                .map(AssetServiceDto.HoldingCommand::tossSymbol)
+                .distinct()
+                .collect(Collectors.joining(","));
+            Map<String, TossMarketDto.PriceResponse> priceBySymbol = new HashMap<>();
+            for (TossMarketDto.PriceResponse p : tossQueryService.getPrices(userRowId, symbols)) {
+                priceBySymbol.put(p.symbol(), p);
+            }
+
+            BigDecimal fx = null;
+            BigDecimal sum = BigDecimal.ZERO;
+            for (AssetServiceDto.HoldingCommand hc : linked) {
+                TossMarketDto.PriceResponse p = priceBySymbol.get(hc.tossSymbol());
+                BigDecimal price = p != null ? parsePrice(p.lastPrice()) : null;
+                if (price == null) {
+                    return null;
+                }
+                BigDecimal krw;
+                if (p.currency() == null || "KRW".equals(p.currency())) {
+                    krw = price;
+                } else {
+                    if (fx == null) {
+                        fx = parsePrice(tossQueryService.getExchangeRate(userRowId, "USD", "KRW", null).rate());
+                    }
+                    if (fx == null || fx.signum() <= 0) {
+                        return null; // 외화인데 환율 미확보
+                    }
+                    krw = price.multiply(fx);
+                }
+                sum = sum.add(krw.multiply(hc.quantity()));
+            }
+            return toWon(sum) + manual;
+        } catch (Exception ex) {
+            log.warn("투자 평가액 산정 실패 - userRowId={}: {}", userRowId, ex.getMessage());
+            return null;
         }
     }
 
