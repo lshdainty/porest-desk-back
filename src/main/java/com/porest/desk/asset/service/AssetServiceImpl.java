@@ -441,6 +441,12 @@ public class AssetServiceImpl implements AssetService {
         if (holdings == null || holdings.isEmpty()) {
             return List.of();
         }
+        // 편집은 보유 목록을 통째로 갈아끼운다. 원가는 매수·매도가 쌓은 값이고 편집 폼은
+        // 그걸 입력받지 않으므로, 안 보내오면 종목 식별자로 이어 붙인다 — 안 그러면 편집을
+        // 저장하는 순간 원가가 0 이 되고 다음 매도에서 대금 전액이 이익으로 잡힌다.
+        Map<String, Long> costByKey = assetHoldingRepository.findActiveByAsset(asset.getRowId()).stream()
+            .filter(h -> h.holdingKey() != null && h.getTotalCost() != null)
+            .collect(Collectors.toMap(AssetHolding::holdingKey, AssetHolding::getTotalCost, (a, b) -> a));
         List<AssetServiceDto.HoldingInfo> result = new ArrayList<>(holdings.size());
         for (int i = 0; i < holdings.size(); i++) {
             AssetServiceDto.HoldingCommand hc = holdings.get(i);
@@ -454,13 +460,22 @@ public class AssetServiceImpl implements AssetService {
                 hc.quantity(),
                 linked ? null : hc.holdingName(),
                 linked ? null : hc.holdingValue(),
-                hc.totalCost(),
+                resolveCost(hc, costByKey),
                 i
             );
             assetHoldingRepository.save(holding);
             result.add(AssetServiceDto.HoldingInfo.from(holding));
         }
         return result;
+    }
+
+    /** 원가 — 보내왔으면 그 값, 아니면 같은 종목의 기존 원가를 잇는다. */
+    private Long resolveCost(AssetServiceDto.HoldingCommand hc, Map<String, Long> costByKey) {
+        if (hc.totalCost() != null) {
+            return hc.totalCost();
+        }
+        String key = Boolean.TRUE.equals(hc.linked()) ? hc.tossSymbol() : hc.holdingName();
+        return key != null ? costByKey.get(key) : null;
     }
 
     private List<AssetServiceDto.HoldingInfo> activeHoldingInfos(Long assetId) {

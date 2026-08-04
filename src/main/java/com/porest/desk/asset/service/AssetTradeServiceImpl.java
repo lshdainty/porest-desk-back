@@ -103,15 +103,19 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             case SELL -> amount - fee;
             case OPENING -> 0L;
         };
-        // 현실에서 불가능한 매수를 막는다 — 예수금이 없으면 살 수 없다.
-        if (type == TradeType.BUY) {
+        // 결제 계좌를 고르면 증권계좌 예수금 대신 거기서 오간다 — 증권계좌로 돈을 옮기는
+        // 이체를 먼저 적지 않아도 매수 한 번으로 끝난다.
+        Asset settlement = resolveSettlementAsset(command.settlementAssetRowId(), command.userRowId());
+        // 예수금으로 살 때만 잔액을 본다. 결제 계좌는 마이너스를 막지 않는다 —
+        // 초기 잔액을 안 채우고 쓰는 가계부에선 통장이 마이너스로 누적되는 게 정상이다.
+        if (type == TradeType.BUY && settlement == null) {
             long cash = asset.getCashBalance() != null ? asset.getCashBalance() : 0L;
             if (cash + cashDelta < 0) {
                 throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_INSUFFICIENT_CASH);
             }
         }
 
-        AssetTrade trade = AssetTrade.create(user, asset, type,
+        AssetTrade trade = AssetTrade.create(user, asset, settlement, type,
             command.holdingType() != null ? command.holdingType() : HoldingType.STOCK,
             command.holdingKey(),
             Boolean.TRUE.equals(command.linked()) ? YNType.Y : YNType.N,
@@ -124,7 +128,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         // 예수금 flow — 평가금액은 시세×수량으로 따로 산정되므로 건드리지 않는다.
         // 기초 보유는 돈이 오간 적이 없어 이력을 남기지 않는다.
         if (cashDelta != 0L) {
-            balanceHistoryService.recordTrade(asset, trade.getRowId(), cashDelta, trade.getTradeDate());
+            balanceHistoryService.recordTrade(
+                trade.cashAsset(), trade.getRowId(), cashDelta, trade.getTradeDate());
         }
 
         if (realized != null && realized != 0L) {
@@ -197,6 +202,19 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_NOT_INVESTMENT);
         }
         return asset;
+    }
+
+    /** 결제 계좌 — 본인 자산이어야 한다. 유형은 가리지 않는다(통장·현금 어디서든 낼 수 있다). */
+    private Asset resolveSettlementAsset(Long settlementAssetRowId, Long userRowId) {
+        if (settlementAssetRowId == null) {
+            return null;
+        }
+        Asset settlement = assetRepository.findById(settlementAssetRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+        if (!Objects.equals(settlement.getUser().getRowId(), userRowId)) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_ACCESS_DENIED);
+        }
+        return settlement;
     }
 
     private AssetHolding findHolding(Long assetRowId, String holdingKey) {

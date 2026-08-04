@@ -67,6 +67,14 @@ public class AssetTrade extends AuditingFieldsWithIp {
     @JoinColumn(name = "asset_row_id", nullable = false)
     private Asset asset;
 
+    /**
+     * 결제 계좌 — 지정하면 증권계좌 예수금 대신 이 계좌에서 돈이 오간다.
+     * 예수금을 따로 관리하지 않는 사용자를 위한 길이다.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "settlement_asset_row_id")
+    private Asset settlementAsset;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "trade_type", nullable = false, length = 10)
     private TradeType tradeType;
@@ -119,6 +127,7 @@ public class AssetTrade extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static AssetTrade create(com.porest.desk.user.domain.User user, Asset asset,
+                                    Asset settlementAsset,
                                     TradeType tradeType, HoldingType holdingType, String holdingKey,
                                     YNType linked, BigDecimal quantity, Long amount, Long fee,
                                     BigDecimal quantityDelta, Long costDelta,
@@ -126,6 +135,7 @@ public class AssetTrade extends AuditingFieldsWithIp {
         AssetTrade t = new AssetTrade();
         t.user = user;
         t.asset = asset;
+        t.settlementAsset = settlementAsset;
         t.tradeType = tradeType;
         t.holdingType = holdingType != null ? holdingType : HoldingType.STOCK;
         t.holdingKey = holdingKey;
@@ -154,6 +164,11 @@ public class AssetTrade extends AuditingFieldsWithIp {
      * 예수금 변동액 — 매수는 대금과 수수료가 함께 빠지고, 매도는 수수료를 뗀 나머지가 들어온다.
      * 기초 보유(OPENING)는 앱을 쓰기 전 일이라 돈이 오가지 않는다.
      */
+    /** 돈이 실제로 오가는 자산 — 결제 계좌를 골랐으면 거기, 아니면 증권계좌 예수금. */
+    public Asset cashAsset() {
+        return settlementAsset != null ? settlementAsset : asset;
+    }
+
     public long cashDelta() {
         return switch (tradeType) {
             case BUY -> -(amount + fee);

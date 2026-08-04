@@ -34,7 +34,7 @@ public class AssetTradeApiController {
                 loginUser.getRowId(), request.assetRowId(), request.tradeType(),
                 request.holdingType(), request.holdingKey(), request.linked(),
                 request.quantity(), request.amount(), request.fee(),
-                request.tradeDate(), request.description()));
+                request.tradeDate(), request.description(), request.settlementAssetRowId()));
         return ApiResponse.success(AssetTradeApiDto.TradeResponse.from(info));
     }
 

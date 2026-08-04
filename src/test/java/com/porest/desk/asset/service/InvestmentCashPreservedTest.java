@@ -3,12 +3,14 @@ package com.porest.desk.asset.service;
 import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
+import com.porest.desk.asset.domain.AssetHolding;
 import com.porest.desk.asset.repository.AssetBalanceHistoryRepository;
 import com.porest.desk.asset.repository.AssetHoldingRepository;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.asset.type.HoldingType;
 import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -21,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.assertj.core.api.Assertions;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -32,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -129,6 +134,27 @@ class InvestmentCashPreservedTest {
 
         // 보유가 있는 동안 총액을 예수금 앵커로 찍으면 평가금액과 이중 계상된다.
         verify(balanceHistoryService, never()).recordManual(any(), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("편집으로 보유를 저장해도 매수로 쌓은 원가는 남는다")
+    void editKeepsCostBasis() {
+        Asset invest = brokerageWithHoldings();
+        // 매수로 원가 700만이 쌓여 있는 보유. 편집 폼은 원가를 입력받지 않아 안 보낸다.
+        var existing = AssetHolding.create(invest, HoldingType.STOCK, YNType.N, null,
+            new java.math.BigDecimal("100"), "삼성전자", 8_000_000L, 7_000_000L, 0);
+        given(assetHoldingRepository.findActiveByAsset(ASSET_ID)).willReturn(List.of(existing));
+
+        var sent = new AssetServiceDto.HoldingCommand(
+            HoldingType.STOCK, false, null, new java.math.BigDecimal("100"),
+            "삼성전자", 8_500_000L, null); // totalCost 미전송
+
+        sut.updateAsset(ASSET_ID, USER_ID, command(null, List.of(sent)));
+
+        // 원가가 0 으로 날아가면 다음 매도에서 대금 전액이 이익으로 잡힌다.
+        ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
+        verify(assetHoldingRepository).save(captor.capture());
+        assertThat(captor.getValue().getTotalCost()).isEqualTo(7_000_000L);
     }
 
     @Test
