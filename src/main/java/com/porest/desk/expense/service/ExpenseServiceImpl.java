@@ -375,15 +375,27 @@ public class ExpenseServiceImpl implements ExpenseService {
                     accumulateBreakdown(agg, s.getCategory(), breakdownType, sign * s.getAmount());
                 }
             } else {
-                if (e.getCategory() == null) continue;
                 accumulateBreakdown(agg, e.getCategory(), breakdownType, sign * e.getAmount());
             }
         }
         return List.copyOf(agg.values());
     }
 
+    /**
+     * 카테고리별 누적. 카테고리가 없는 거래(실현손익·대출이자처럼 자동 생성되는 것들)는
+     * <b>미분류</b> 버킷으로 모은다 — 버리면 총액은 맞는데 카테고리를 다 더해도 총액에
+     * 못 미쳐, 사용자가 사라진 돈을 찾게 된다.
+     */
     private void accumulateBreakdown(Map<Long, ExpenseServiceDto.CategoryBreakdown> agg,
                                       ExpenseCategory category, ExpenseType type, Long amount) {
+        if (category == null) {
+            // 유형(수입/지출)까지 섞으면 부호가 뒤엉킨다 — 유형별로 따로 모은다.
+            agg.merge(uncategorizedKey(type),
+                new ExpenseServiceDto.CategoryBreakdown(null, null, null, null, type, amount),
+                (a, b) -> new ExpenseServiceDto.CategoryBreakdown(
+                    null, null, null, null, type, a.totalAmount() + b.totalAmount()));
+            return;
+        }
         Long key = category.getRowId();
         ExpenseServiceDto.CategoryBreakdown existing = agg.get(key);
         if (existing == null) {
@@ -431,15 +443,17 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
-                    if (s.getCategory() == null) continue;
-                    agg.merge(s.getCategory().getRowId(), sign * s.getAmount(), Long::sum);
+                    // 카테고리 없는 분할도 미분류(null 키)로 남긴다 — 합이 그 달 지출과 맞아야 한다.
+                    agg.merge(categoryKey(s.getCategory()), sign * s.getAmount(), Long::sum);
                 }
-            } else if (e.getCategory() != null) {
-                agg.merge(e.getCategory().getRowId(), sign * e.getAmount(), Long::sum);
+            } else {
+                agg.merge(categoryKey(e.getCategory()), sign * e.getAmount(), Long::sum);
             }
         }
         return agg.entrySet().stream()
-            .map(en -> new ExpenseServiceDto.CategoryAmount(en.getKey(), en.getValue()))
+            // 미분류는 categoryRowId 가 null 로 나간다 — 클라이언트가 '미분류' 로 표시한다.
+            .map(en -> new ExpenseServiceDto.CategoryAmount(
+                en.getKey() == UNCATEGORIZED ? null : en.getKey(), en.getValue()))
             .toList();
     }
 
@@ -655,6 +669,18 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     /** 금액을 카테고리 leaf 키와 (있으면) 부모 키 양쪽에 누적. */
+    /** 미분류 자리표시 키 — 실제 카테고리 rowId 와 겹치지 않게 음수를 쓴다. */
+    private static final long UNCATEGORIZED = -1L;
+
+    private static Long categoryKey(ExpenseCategory category) {
+        return category != null ? category.getRowId() : UNCATEGORIZED;
+    }
+
+    /** 수입 미분류와 지출 미분류를 갈라 담는 키 — 한 버킷에 섞으면 부호가 뒤엉킨다. */
+    private static Long uncategorizedKey(ExpenseType type) {
+        return type == ExpenseType.INCOME ? UNCATEGORIZED - 1 : UNCATEGORIZED;
+    }
+
     private void addSpendRollup(Map<Long, Long> spent, ExpenseCategory category, Long amount) {
         if (category == null || amount == null) return;
         spent.merge(category.getRowId(), amount, Long::sum);

@@ -187,6 +187,60 @@ class ExpenseServiceSummaryTest {
     }
 
     @Test
+    @DisplayName("getRangeSummary — 카테고리 없는 거래도 '미분류'로 잡혀 합이 총액과 맞는다")
+    void rangeSummaryKeepsUncategorized() {
+        // 실현손익·대출이자는 카테고리 없이 만들어진다. 버리면 총액은 맞는데
+        // 카테고리를 다 더해도 총액에 못 미쳐 사용자가 사라진 돈을 찾게 된다.
+        ExpenseCategory food = category(20L, "식비", null);
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(
+                        expenseIn(food, ExpenseType.EXPENSE, 10_000L),
+                        expenseIn(null, ExpenseType.EXPENSE, 150_000L),   // 대출 이자
+                        expenseIn(null, ExpenseType.INCOME, 1_000_000L)   // 주식 실현이익
+                ));
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        assertThat(summary.totalExpense()).isEqualTo(160_000L);
+        assertThat(summary.totalIncome()).isEqualTo(1_000_000L);
+
+        // 카테고리 분해 합 == 총액. 미분류는 categoryRowId 가 null 이다.
+        long expenseSum = summary.categoryBreakdown().stream()
+                .filter(b -> b.expenseType() == ExpenseType.EXPENSE)
+                .mapToLong(ExpenseServiceDto.CategoryBreakdown::totalAmount).sum();
+        assertThat(expenseSum).isEqualTo(160_000L);
+
+        var uncategorized = summary.categoryBreakdown().stream()
+                .filter(b -> b.categoryRowId() == null && b.expenseType() == ExpenseType.EXPENSE)
+                .findFirst().orElseThrow();
+        assertThat(uncategorized.totalAmount()).isEqualTo(150_000L);
+        assertThat(uncategorized.parentCategoryRowId()).isNull();
+    }
+
+    @Test
+    @DisplayName("getRangeSummary — 월별 버킷의 카테고리 합도 미분류를 포함해 그 달 지출과 맞는다")
+    void monthlyBucketKeepsUncategorized() {
+        ExpenseCategory food = category(20L, "식비", null);
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(
+                        expenseIn(food, ExpenseType.EXPENSE, 10_000L),
+                        expenseIn(null, ExpenseType.EXPENSE, 150_000L)
+                ));
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        var june = summary.monthlyBuckets().stream()
+                .filter(m -> m.month() == 6).findFirst().orElseThrow();
+        long sum = june.categoryExpenses().stream()
+                .mapToLong(ExpenseServiceDto.CategoryAmount::amount).sum();
+        assertThat(sum).isEqualTo(june.totalExpense());
+    }
+
+    @Test
     @DisplayName("getRangeSummary — split 거래는 분할 카테고리별 집계, totalExpense는 부모 raw amount 기준(합 일치)")
     void rangeSummarySplitBreakdown() {
         ExpenseCategory food = category(20L, "식비", null);
