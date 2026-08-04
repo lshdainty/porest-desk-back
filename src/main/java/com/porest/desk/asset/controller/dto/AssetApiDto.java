@@ -1,5 +1,7 @@
 package com.porest.desk.asset.controller.dto;
 
+import java.math.BigDecimal;
+import com.porest.desk.asset.type.HoldingType;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
@@ -46,16 +48,21 @@ public class AssetApiDto {
         List<HoldingRequest> holdings
     ) {}
 
-    /** 투자 보유 입력 — linked=true: tossSymbol+quantity / false: holdingName+holdingValue. */
+    /**
+     * 투자 보유 입력 — linked=true: tossSymbol+quantity / false: holdingName+holdingValue(quantity 선택).
+     * holdingType 미지정은 STOCK 으로 본다(구버전 클라이언트 하위호환).
+     */
     public record HoldingRequest(
+        HoldingType holdingType,
         Boolean linked,
         String tossSymbol,
-        Long quantity,
+        BigDecimal quantity,
         String holdingName,
         Long holdingValue
     ) {
         public AssetServiceDto.HoldingCommand toCommand() {
-            return new AssetServiceDto.HoldingCommand(linked, tossSymbol, quantity, holdingName, holdingValue);
+            return new AssetServiceDto.HoldingCommand(
+                holdingType, linked, tossSymbol, quantity, holdingName, holdingValue);
         }
 
         public static List<AssetServiceDto.HoldingCommand> toCommands(List<HoldingRequest> requests) {
@@ -65,16 +72,17 @@ public class AssetApiDto {
 
     public record HoldingResponse(
         Long rowId,
+        HoldingType holdingType,
         boolean linked,
         String tossSymbol,
-        Long quantity,
+        BigDecimal quantity,
         String holdingName,
         Long holdingValue,
         Integer sortOrder
     ) {
         public static HoldingResponse from(AssetServiceDto.HoldingInfo h) {
             return new HoldingResponse(
-                h.rowId(), h.linked(), h.tossSymbol(), h.quantity(),
+                h.rowId(), h.holdingType(), h.linked(), h.tossSymbol(), h.quantity(),
                 h.holdingName(), h.holdingValue(), h.sortOrder());
         }
     }

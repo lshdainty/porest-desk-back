@@ -13,6 +13,7 @@ import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.asset.type.HoldingType;
 import com.porest.desk.card.domain.CardCatalog;
 import com.porest.desk.card.domain.CardBilling;
 import com.porest.desk.card.repository.CardBillingRepository;
@@ -35,6 +36,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -268,7 +270,10 @@ public class AssetServiceImpl implements AssetService {
         return AssetServiceDto.AssetInfo.from(asset);
     }
 
-    /** 보유 입력 검증 — INVESTMENT 전용, linked=Y 는 종목코드+수량 / linked=N 은 이름+평가액 필수. */
+    /**
+     * 보유 입력 검증 — INVESTMENT 전용.
+     * linked=Y 는 주식만 가능하며 종목코드+수량 필수, linked=N 은 이름+평가액 필수(수량은 선택).
+     */
     private void validateHoldings(AssetType assetType, List<AssetServiceDto.HoldingCommand> holdings) {
         if (holdings == null || holdings.isEmpty()) {
             return;
@@ -278,7 +283,18 @@ public class AssetServiceImpl implements AssetService {
         }
         for (AssetServiceDto.HoldingCommand hc : holdings) {
             boolean linked = Boolean.TRUE.equals(hc.linked());
+            HoldingType type = hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK;
+
+            // 수량은 유형·연동 여부와 무관하게 음수를 허용하지 않는다.
+            if (hc.quantity() != null && hc.quantity().signum() < 0) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
+
             if (linked) {
+                // 토스는 국내·미국 주식 시세만 제공한다 — 금·코인은 연동 대상이 아니다.
+                if (type != HoldingType.STOCK) {
+                    throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+                }
                 if (hc.tossSymbol() == null || hc.tossSymbol().isBlank() || hc.quantity() == null) {
                     throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
                 }
@@ -301,9 +317,11 @@ public class AssetServiceImpl implements AssetService {
             boolean linked = Boolean.TRUE.equals(hc.linked());
             AssetHolding holding = AssetHolding.create(
                 asset,
+                hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
                 linked ? hc.tossSymbol() : null,
-                linked ? hc.quantity() : null,
+                // 미연동도 수량을 남긴다 — 몇 주·몇 g·몇 개인지는 평가액과 별개로 기록 가치가 있다(선택 입력).
+                hc.quantity(),
                 linked ? null : hc.holdingName(),
                 linked ? null : hc.holdingValue(),
                 i
@@ -408,7 +426,7 @@ public class AssetServiceImpl implements AssetService {
                             complete = false; // 외화인데 환율 미확보
                             break;
                         }
-                        sum += krw * pair.qty();
+                        sum += krw * pair.qty().doubleValue();
                     }
                     if (!complete) {
                         continue;
@@ -432,12 +450,12 @@ public class AssetServiceImpl implements AssetService {
                 .toList();
         }
         if (asset.isTossLinked() && asset.getTossQuantity() != null) {
-            return List.of(new SymbolQty(asset.getTossSymbol(), asset.getTossQuantity()));
+            return List.of(new SymbolQty(asset.getTossSymbol(), BigDecimal.valueOf(asset.getTossQuantity())));
         }
         return List.of();
     }
 
-    private record SymbolQty(String symbol, Long qty) {}
+    private record SymbolQty(String symbol, BigDecimal qty) {}
 
     /** 토스가 해당 종목코드의 시세를 제공하는지 — 유효 종목 검증(미인식/조회실패 시 false). */
     private boolean isTossPriceAvailable(Long userRowId, String symbol) {
@@ -452,7 +470,7 @@ public class AssetServiceImpl implements AssetService {
     }
 
     /** 토스 시세(외화면 환율 환산) × 수량 = 원화 평가액. 시세 미수신/조회 실패 시 null. */
-    private Long computeTossValuationKrw(Long userRowId, String symbol, long quantity) {
+    private Long computeTossValuationKrw(Long userRowId, String symbol, double quantity) {
         try {
             TossMarketDto.PriceResponse p = tossQueryService.getPrices(userRowId, symbol).stream()
                 .filter(x -> symbol.equalsIgnoreCase(x.symbol()))
