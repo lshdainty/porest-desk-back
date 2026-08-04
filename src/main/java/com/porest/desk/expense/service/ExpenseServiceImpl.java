@@ -46,9 +46,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class ExpenseServiceImpl implements ExpenseService {
-    /** 예산 사용량 알림 임계값 (사용률). warn 는 사용자 설정, over 는 100% 고정. */
-    private static final double BUDGET_OVER_THRESHOLD = 1.0;
-
     private final ExpenseRepository expenseRepository;
     private final UserClock userClock;
     private final ExpenseCategoryRepository expenseCategoryRepository;
@@ -697,9 +694,10 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<ExpenseBudget> budgets = expenseBudgetRepository.findByUser(userRowId, year, month);
             if (budgets.isEmpty()) return;
 
-            // 사용자 설정 warn 임계(%)
-            Integer warnPercent = userService.getBudgetAlertThreshold(userRowId);
-            double warnThreshold = (warnPercent != null ? warnPercent : 85) / 100.0;
+            // 사용자 설정 warn 임계(%). 비율(85/100.0)로 만들면 이진 오차 때문에 경계에서 알림이
+            // 한 발 빨리·늦게 터지므로, 아래 판정은 양변에 100 을 곱한 정수 비교로 한다.
+            int warnPercent = userService.getBudgetAlertThreshold(userRowId) != null
+                ? userService.getBudgetAlertThreshold(userRowId) : 85;
 
             // 해당 월의 split-aware 카테고리 지출(leaf+부모 롤업) + 전체 합계 (방금 저장된 이 expense 포함)
             LocalDate ms = LocalDate.of(year, month, 1);
@@ -730,32 +728,36 @@ public class ExpenseServiceImpl implements ExpenseService {
                     ? (currentTotal - previousTotal)
                     : (currentByCat.getOrDefault(bCatId, 0L) - previousByCat.getOrDefault(bCatId, 0L));
                 long beforeSpent = afterSpent - delta;
-                double limit = budget.getBudgetAmount();
-                double beforePct = beforeSpent / limit;
-                double afterPct = afterSpent / limit;
+                long limit = budget.getBudgetAmount();
+                // 임계 돌파 판정 — 전부 정수 교차곱. (지출/한도 >= pct/100) 을 (지출*100 >= 한도*pct) 로 본다.
+                long beforeScaled = beforeSpent * 100L;
+                long afterScaled = afterSpent * 100L;
+                long overScaled = limit * 100L;          // 100% = 초과
+                long warnScaled = limit * warnPercent;
 
                 String categoryName = bCatId == null ? "전체" : budget.getCategory().getCategoryName();
 
-                if (beforePct < BUDGET_OVER_THRESHOLD && afterPct >= BUDGET_OVER_THRESHOLD) {
+                if (beforeScaled < overScaled && afterScaled >= overScaled) {
                     notificationService.createNotification(new NotificationServiceDto.CreateCommand(
                         userRowId,
                         NotificationType.BUDGET_ALERT,
                         String.format("%s 예산 초과", categoryName),
                         String.format("%s 예산 %s원을 초과했어요 (현재 %s원).",
-                            categoryName, formatKRW((long) limit), formatKRW(afterSpent)),
+                            categoryName, formatKRW(limit), formatKRW(afterSpent)),
                         ReferenceType.EXPENSE_BUDGET,
                         budget.getRowId()
                     ));
-                } else if (beforePct < warnThreshold && afterPct >= warnThreshold) {
-                    // WARN 분기는 정의상 afterPct < 1.0(초과 아님). 반올림이 100 이 되어
-                    // '100% 사용' 으로 오표기되지 않도록 99 로 cap (초과는 위 OVER 분기가 담당).
-                    int pct = Math.min(99, (int) Math.round(afterPct * 100));
+                } else if (beforeScaled < warnScaled && afterScaled >= warnScaled) {
+                    // WARN 분기는 정의상 초과가 아니다. 반올림이 100 이 되어 '100% 사용' 으로
+                    // 오표기되지 않도록 99 로 cap (초과는 위 OVER 분기가 담당).
+                    // 정수 반올림: (a*100 + limit/2) / limit == round(a/limit*100)
+                    int pct = (int) Math.min(99L, (afterScaled + limit / 2) / limit);
                     notificationService.createNotification(new NotificationServiceDto.CreateCommand(
                         userRowId,
                         NotificationType.BUDGET_ALERT,
                         String.format("%s 예산 %d%% 사용", categoryName, pct),
                         String.format("%s 예산의 %d%%를 사용했어요 (%s / %s원).",
-                            categoryName, pct, formatKRW(afterSpent), formatKRW((long) limit)),
+                            categoryName, pct, formatKRW(afterSpent), formatKRW(limit)),
                         ReferenceType.EXPENSE_BUDGET,
                         budget.getRowId()
                     ));
