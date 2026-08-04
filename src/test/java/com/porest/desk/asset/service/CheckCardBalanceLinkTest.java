@@ -61,7 +61,8 @@ class CheckCardBalanceLinkTest {
     }
 
     private Asset asset(long rowId, AssetType type, Asset paymentAsset) {
-        Asset a = Asset.createAsset(user, "자산" + rowId, type, 0L, "KRW", null, null, null,
+        Asset a = Asset.createAsset(user, "자산" + rowId, type, 0L, "KRW",
+            null, null, null, null,
             0, YNType.Y, null, null, null, paymentAsset);
         ReflectionTestUtils.setField(a, "rowId", rowId);
         return a;

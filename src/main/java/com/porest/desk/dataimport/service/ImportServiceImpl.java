@@ -127,7 +127,7 @@ public class ImportServiceImpl implements ImportService {
                 pending.add(new PendingRow(r.lineNo(), new ExpenseServiceDto.CreateCommand(
                     userRowId, categoryRowId, assetRowId, r.type(), r.amount(),
                     // 가져오기 원본에 할부 정보가 없다 — 일시불로 들인다.
-                    description, r.date(), r.merchant(), paymentMethod, null, null, null, null)));
+                    description, r.date(), r.merchant(), paymentMethod, null, null, null, null, null, null, null)));
             } catch (Exception e) {
                 // 카테고리·자산 해석 단계 실패 — 저장까지 가지도 못한 행.
                 failed++;

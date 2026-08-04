@@ -123,7 +123,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.merchant(),
             command.paymentMethod(),
             command.installmentMonths(),
-            command.refundOfExpenseRowId()
+            command.refundOfExpenseRowId(),
+            command.originalAmount(), command.originalCurrency(), command.exchangeRate()
         );
 
         if (command.calendarEventRowId() != null) {
@@ -233,7 +234,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.merchant(),
             command.paymentMethod(),
             command.installmentMonths(),
-            command.refundOfExpenseRowId()
+            command.refundOfExpenseRowId(),
+            command.originalAmount(), command.originalCurrency(), command.exchangeRate()
         );
 
         // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함) → recompute 가 잔액 반영

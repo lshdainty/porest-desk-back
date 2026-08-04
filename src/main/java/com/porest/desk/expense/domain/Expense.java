@@ -23,6 +23,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -94,6 +95,23 @@ public class Expense extends AuditingFieldsWithIp {
     @Column(name = "refund_of_expense_row_id")
     private Long refundOfExpenseRowId;
 
+    /**
+     * 원 통화 금액 (해외 결제 시). null 이면 원화 결제 — {@code amount} 가 곧 결제액이다.
+     *
+     * <p>{@code amount}(원화)만 남기면 "얼마짜리를 어떤 환율로 샀는지" 가 사라져
+     * 카드사 청구 환율과 대사할 수 없다. 잔액·통계는 종전대로 {@code amount} 를 쓴다.
+     */
+    @Column(name = "original_amount", precision = 18, scale = 4)
+    private BigDecimal originalAmount;
+
+    /** 원 통화 (ISO 4217, 예: USD). null 이면 원화 결제. */
+    @Column(name = "original_currency", length = 10)
+    private String originalCurrency;
+
+    /** 적용 환율 (원 통화 1단위당 원화). {@code amount ≈ originalAmount × exchangeRate}. */
+    @Column(name = "exchange_rate", precision = 18, scale = 6)
+    private BigDecimal exchangeRate;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "calendar_event_row_id")
     private CalendarEvent calendarEvent;
@@ -109,7 +127,9 @@ public class Expense extends AuditingFieldsWithIp {
     public static Expense createExpense(User user, ExpenseCategory category, Asset asset,
                                         ExpenseType expenseType, Long amount, String description,
                                         LocalDateTime expenseDate, String merchant, String paymentMethod,
-                                        Integer installmentMonths, Long refundOfExpenseRowId) {
+                                        Integer installmentMonths, Long refundOfExpenseRowId,
+                                        BigDecimal originalAmount, String originalCurrency,
+                                        BigDecimal exchangeRate) {
         Expense expense = new Expense();
         expense.user = user;
         expense.category = category;
@@ -122,6 +142,7 @@ public class Expense extends AuditingFieldsWithIp {
         expense.paymentMethod = paymentMethod;
         expense.installmentMonths = normalizeInstallment(installmentMonths);
         expense.refundOfExpenseRowId = refundOfExpenseRowId;
+        expense.applyForeignCurrency(originalAmount, originalCurrency, exchangeRate);
         expense.isDeleted = YNType.N;
         return expense;
     }
@@ -162,6 +183,27 @@ public class Expense extends AuditingFieldsWithIp {
         return expenseType == ExpenseType.EXPENSE ? amount : 0L;
     }
 
+    /**
+     * 외화 결제 정보 — 셋이 함께 있어야 의미가 있다. 통화가 없거나 원화면 전부 비운다
+     * (반쪽만 남으면 "$? 를 환율 1,400 에" 같은 해석 불가한 기록이 생긴다).
+     */
+    private void applyForeignCurrency(BigDecimal originalAmount, String originalCurrency,
+                                      BigDecimal exchangeRate) {
+        boolean foreign = originalCurrency != null
+            && !originalCurrency.isBlank()
+            && !"KRW".equalsIgnoreCase(originalCurrency)
+            && originalAmount != null
+            && originalAmount.signum() > 0;
+        this.originalAmount = foreign ? originalAmount : null;
+        this.originalCurrency = foreign ? originalCurrency.toUpperCase() : null;
+        this.exchangeRate = foreign ? exchangeRate : null;
+    }
+
+    /** 해외 결제인가. */
+    public boolean isForeignCurrency() {
+        return originalCurrency != null;
+    }
+
     /** 일시불이 아닌가. */
     public boolean isInstallment() {
         return installmentMonths != null && installmentMonths > 1;
@@ -195,9 +237,11 @@ public class Expense extends AuditingFieldsWithIp {
     public void updateExpense(ExpenseCategory category, Asset asset, ExpenseType expenseType,
                               Long amount, String description, LocalDateTime expenseDate,
                               String merchant, String paymentMethod, Integer installmentMonths,
-                              Long refundOfExpenseRowId) {
+                              Long refundOfExpenseRowId, BigDecimal originalAmount,
+                              String originalCurrency, BigDecimal exchangeRate) {
         this.installmentMonths = normalizeInstallment(installmentMonths);
         this.refundOfExpenseRowId = refundOfExpenseRowId;
+        applyForeignCurrency(originalAmount, originalCurrency, exchangeRate);
         this.category = category;
         this.asset = asset;
         this.expenseType = expenseType;

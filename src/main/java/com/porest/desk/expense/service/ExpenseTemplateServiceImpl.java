@@ -176,7 +176,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             template.getMerchant(),
             template.getPaymentMethod(),
             null, // 프리셋은 할부 개념이 없다
-            null // 환불이 아니다
+            null, // 환불이 아니다
+                    null, null, null // 원화 결제
         );
 
         expenseRepository.save(expense);

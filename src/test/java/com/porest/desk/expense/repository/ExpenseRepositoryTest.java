@@ -48,13 +48,19 @@ class ExpenseRepositoryTest {
 
     private Expense persistExpense(User user, ExpenseCategory cat, long amount) {
         return em.persist(Expense.createExpense(user, cat, null, ExpenseType.EXPENSE, amount,
-                "거래", LocalDateTime.of(2026, 6, 15, 12, 0), "가게", "CARD", null, null));
+                "거래", LocalDateTime.of(2026, 6, 15, 12, 0), "가게", "CARD", null, null,
+            null,
+            null,
+            null));
     }
 
     private Expense persistExpenseFull(User user, ExpenseCategory cat, long amount,
                                        String description, LocalDateTime when) {
         return em.persist(Expense.createExpense(user, cat, null, ExpenseType.EXPENSE, amount,
-                description, when, "가게", "CARD", null, null));
+                description, when, "가게", "CARD", null, null,
+            null,
+            null,
+            null));
     }
 
     @Test

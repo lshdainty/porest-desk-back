@@ -37,7 +37,7 @@ public class AssetApiController {
         AssetServiceDto.AssetInfo info = assetService.createAsset(new AssetServiceDto.CreateAssetCommand(
             loginUser.getRowId(),
             request.assetName(), request.assetType(), request.balance(),
-            request.currency(), request.color(),
+            request.currency(), request.exchangeRate(), request.color(),
             request.institution(), request.memo(), request.sortOrder(),
             request.isIncludedInTotal(),
             request.cardCatalogRowId(),
@@ -68,7 +68,7 @@ public class AssetApiController {
             @RequestBody AssetApiDto.UpdateAssetRequest request) {
         AssetServiceDto.AssetInfo info = assetService.updateAsset(id, loginUser.getRowId(), new AssetServiceDto.UpdateAssetCommand(
             request.assetName(), request.assetType(), request.balance(),
-            request.currency(), request.color(),
+            request.currency(), request.exchangeRate(), request.color(),
             request.institution(), request.memo(), request.isIncludedInTotal(),
             request.cardCatalogRowId(),
             request.creditLimit(), request.paymentDay(), request.paymentAssetRowId(),

@@ -24,6 +24,12 @@ public class ExpenseServiceDto {
         Integer installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). INCOME 이면서 이 값이 있으면 지출 상계로 집계. */
         Long refundOfExpenseRowId,
+        /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
+        java.math.BigDecimal originalAmount,
+        /** 원 통화 (ISO 4217, 예: USD). */
+        String originalCurrency,
+        /** 적용 환율 (원 통화 1단위당 원화). */
+        java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
         Long todoRowId
     ) {}
@@ -41,6 +47,12 @@ public class ExpenseServiceDto {
         Integer installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). INCOME 이면서 이 값이 있으면 지출 상계로 집계. */
         Long refundOfExpenseRowId,
+        /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
+        java.math.BigDecimal originalAmount,
+        /** 원 통화 (ISO 4217, 예: USD). */
+        String originalCurrency,
+        /** 적용 환율 (원 통화 1단위당 원화). */
+        java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
         Long todoRowId,
         // 분할 내역 동시 수정. null = 분할 미변경(기존 유지), 비어있지 않은 리스트 = 새 분할로 교체.
@@ -67,6 +79,12 @@ public class ExpenseServiceDto {
         Integer installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). */
         Long refundOfExpenseRowId,
+        /** 원 통화 금액 (해외 결제 시). */
+        java.math.BigDecimal originalAmount,
+        /** 원 통화 (ISO 4217). */
+        String originalCurrency,
+        /** 적용 환율. */
+        java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
         Long todoRowId,
         LocalDateTime createAt,
@@ -97,6 +115,9 @@ public class ExpenseServiceDto {
                 expense.getPaymentMethod(),
                 expense.getInstallmentMonths(),
                 expense.getRefundOfExpenseRowId(),
+                expense.getOriginalAmount(),
+                expense.getOriginalCurrency(),
+                expense.getExchangeRate(),
                 expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
                 expense.getTodo() != null ? expense.getTodo().getRowId() : null,
                 expense.getCreateAt(),

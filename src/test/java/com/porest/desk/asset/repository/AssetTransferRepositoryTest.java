@@ -41,6 +41,7 @@ class AssetTransferRepositoryTest {
 
     private Asset persistAsset(User user, String name) {
         return em.persist(Asset.createAsset(user, name, AssetType.BANK_ACCOUNT, 100_000L, "KRW",
+            null,
                 null, null, null, 0, YNType.Y, null, null, null, null));
     }
 

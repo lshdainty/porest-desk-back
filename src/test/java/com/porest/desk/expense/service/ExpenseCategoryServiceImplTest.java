@@ -328,7 +328,10 @@ class ExpenseCategoryServiceImplTest {
             ExpenseCategory src = category(10L, u, null, ExpenseType.EXPENSE);
             ExpenseCategory dst = category(11L, u, null, ExpenseType.EXPENSE);
             Expense e = Expense.createExpense(u, src, null, ExpenseType.EXPENSE, 1000L,
-                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null, null);
+                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null, null,
+            null,
+            null,
+            null);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(src));
             given(expenseCategoryRepository.findById(11L)).willReturn(Optional.of(dst));
             given(expenseCategoryRepository.hasChildren(11L)).willReturn(false);
@@ -387,7 +390,10 @@ class ExpenseCategoryServiceImplTest {
             User u = user(USER_ID);
             ExpenseCategory src = category(10L, u, null, ExpenseType.EXPENSE);
             Expense e = Expense.createExpense(u, src, null, ExpenseType.EXPENSE, 1000L,
-                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null, null);
+                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null, null,
+            null,
+            null,
+            null);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(src));
             given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
                 eq(USER_ID), eq(10L), any(), eq("강의"), isNull())).willReturn(false);

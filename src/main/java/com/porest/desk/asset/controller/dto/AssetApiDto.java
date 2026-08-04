@@ -18,6 +18,8 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
+        java.math.BigDecimal exchangeRate,
         String color,
         String institution,
         String memo,
@@ -36,6 +38,8 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
+        java.math.BigDecimal exchangeRate,
         String color,
         String institution,
         String memo,
@@ -107,6 +111,8 @@ public class AssetApiDto {
         AssetType assetType,
         Long balance,
         String currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
+        java.math.BigDecimal exchangeRate,
         String color,
         String institution,
         String memo,
@@ -126,7 +132,7 @@ public class AssetApiDto {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
                 info.rowId(), info.userRowId(), info.assetName(), info.assetType(),
-                info.balance(), info.currency(), info.color(),
+                info.balance(), info.currency(), info.exchangeRate(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),

@@ -105,7 +105,10 @@ class CardPaymentServiceImplTest {
     private Expense installment(LocalDate purchasedOn, long amount, int months) {
         return Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, amount, "할부 결제",
-            purchasedOn.atTime(14, 0), "테스트가맹점", "CARD", months, null);
+            purchasedOn.atTime(14, 0), "테스트가맹점", "CARD", months, null,
+            null,
+            null,
+            null);
     }
 
     // === 회차(청구 기간) 계산 ===

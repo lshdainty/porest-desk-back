@@ -40,6 +40,7 @@ class AssetRepositoryTest {
 
     private Asset persistAsset(User user, String name, int sortOrder) {
         Asset a = Asset.createAsset(user, name, AssetType.BANK_ACCOUNT, 100_000L, "KRW",
+            null,
                 null, null, null, sortOrder, YNType.Y, null, null, null, null);
         return em.persist(a);
     }
@@ -49,6 +50,7 @@ class AssetRepositoryTest {
     void saveAndFindById() {
         User user = persistUser("u1");
         Asset asset = Asset.createAsset(user, "주거래통장", AssetType.BANK_ACCOUNT, 500_000L, "KRW",
+            null,
                 null, null, null, 0, YNType.Y, null, null, null, null);
         repository.save(asset);
         em.flush();

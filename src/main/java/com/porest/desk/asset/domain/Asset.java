@@ -5,6 +5,7 @@ import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.domain.CardCatalog;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.user.domain.User;
+import java.math.BigDecimal;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -59,6 +60,18 @@ public class Asset extends AuditingFieldsWithIp {
     @Column(name = "currency", nullable = false, length = 10)
     private String currency;
 
+    /**
+     * 원화 환산율 (통화 1단위당 원화). KRW 는 1.
+     *
+     * <p>{@code currency} 만 있고 환산율이 없으면 USD 1,000 잔고가 순자산에 1,000원으로 더해진다.
+     * 합계·순자산은 {@code balance × exchangeRate} 로 환산한다.
+     *
+     * <p>수동 입력이다 — 토스 환율 API 는 구독(SECURITIES) 게이트 대상이라
+     * 미구독자가 외화통장을 못 쓰게 된다. 구독자에게 자동으로 채워 주는 건 이 필드 위에 얹으면 된다.
+     */
+    @Column(name = "exchange_rate", nullable = false, precision = 18, scale = 6)
+    private BigDecimal exchangeRate;
+
     @Column(name = "color", length = 20)
     private String color;
 
@@ -99,7 +112,7 @@ public class Asset extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static Asset createAsset(User user, String assetName, AssetType assetType, Long balance,
-                                     String currency, String color, String institution,
+                                     String currency, BigDecimal exchangeRate, String color, String institution,
                                      String memo, Integer sortOrder, YNType isIncludedInTotal,
                                      CardCatalog cardCatalog, Long creditLimit, Integer paymentDay,
                                      Asset paymentAsset) {
@@ -111,6 +124,7 @@ public class Asset extends AuditingFieldsWithIp {
         asset.balance = balance;
         asset.initialBalance = balance;
         asset.currency = currency;
+        asset.exchangeRate = normalizeRate(exchangeRate, currency);
         asset.color = color;
         asset.institution = institution;
         asset.memo = memo;
@@ -126,12 +140,13 @@ public class Asset extends AuditingFieldsWithIp {
     // balance 는 여기서 받지 않는다 — 잔액은 asset_balance_history(recompute)에서 단독 관리.
     // 잔액 직접 수정은 AssetBalanceHistoryService.recordManual → recompute 경로로만 반영.
     public void updateAsset(String assetName, AssetType assetType, String currency,
-                            String color, String institution, String memo,
+                            BigDecimal exchangeRate, String color, String institution, String memo,
                             YNType isIncludedInTotal, CardCatalog cardCatalog,
                             Long creditLimit, Integer paymentDay, Asset paymentAsset) {
         this.assetName = assetName;
         this.assetType = assetType;
         this.currency = currency;
+        this.exchangeRate = normalizeRate(exchangeRate, currency);
         this.color = color;
         this.institution = institution;
         this.memo = memo;
@@ -140,6 +155,35 @@ public class Asset extends AuditingFieldsWithIp {
         this.creditLimit = creditLimit != null ? creditLimit : this.creditLimit;
         this.paymentDay = paymentDay != null ? paymentDay : this.paymentDay;
         this.paymentAsset = paymentAsset != null ? paymentAsset : this.paymentAsset;
+    }
+
+    /**
+     * 환산율 정규화 — 원화이거나 값이 없으면 1. 0 이하는 순자산을 0·음수로 만들어 버리므로 1 로 막는다.
+     */
+    private static BigDecimal normalizeRate(BigDecimal rate, String currency) {
+        if (currency == null || "KRW".equalsIgnoreCase(currency)) {
+            return BigDecimal.ONE;
+        }
+        return (rate == null || rate.signum() <= 0) ? BigDecimal.ONE : rate;
+    }
+
+    /** 외화 자산인가 — 통화가 원화가 아니다. */
+    public boolean isForeignCurrency() {
+        return currency != null && !"KRW".equalsIgnoreCase(currency);
+    }
+
+    /**
+     * 원화 환산 잔액 — 합계·순자산은 이 값을 쓴다.
+     *
+     * <p>USD 1,000 (환산율 1,400) → 1,400,000원. 원화 자산은 환산율이 1이라 그대로다.
+     */
+    public long balanceInKrw(long rawBalance) {
+        if (exchangeRate == null || BigDecimal.ONE.compareTo(exchangeRate) == 0) {
+            return rawBalance;
+        }
+        return exchangeRate.multiply(BigDecimal.valueOf(rawBalance))
+            .setScale(0, java.math.RoundingMode.HALF_UP)
+            .longValueExact();
     }
 
     public void updateBalance(Long balance) {

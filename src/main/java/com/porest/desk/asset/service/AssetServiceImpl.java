@@ -100,6 +100,7 @@ public class AssetServiceImpl implements AssetService {
             command.assetType(),
             balance,
             command.currency() != null ? command.currency() : "KRW",
+            command.exchangeRate(),
             command.color(),
             command.institution(),
             command.memo(),
@@ -178,6 +179,7 @@ public class AssetServiceImpl implements AssetService {
             command.assetName() != null ? command.assetName() : asset.getAssetName(),
             command.assetType() != null ? command.assetType() : asset.getAssetType(),
             command.currency()  != null ? command.currency()  : asset.getCurrency(),
+            command.exchangeRate() != null ? command.exchangeRate() : asset.getExchangeRate(),
             command.color(),
             command.institution(),
             command.memo(),
@@ -650,7 +652,9 @@ public class AssetServiceImpl implements AssetService {
         long totalBalance = 0, totalAssets = 0, totalDebt = 0;
         Map<AssetType, long[]> byTypeAcc = new EnumMap<>(AssetType.class); // long[2] = { sumBalance, count }
         for (Asset a : included) {
-            long bal = resolver.balanceAt(a.getRowId(), asOf);
+            // 외화 자산은 원화로 환산해 더한다 — 환산하지 않으면 USD 1,000 잔고가
+            // 순자산에 1,000원으로 들어가 합계가 무너진다(원화 자산은 환산율 1이라 그대로).
+            long bal = a.balanceInKrw(resolver.balanceAt(a.getRowId(), asOf));
             totalBalance += bal;
             if (DEBT_TYPES.contains(a.getAssetType())) {
                 totalDebt += Math.abs(bal);
@@ -738,11 +742,14 @@ public class AssetServiceImpl implements AssetService {
         return points;
     }
 
-    /** 기준시각의 순자산 = Σ(비채무 잔액) − Σ|채무 잔액|. summary/trend 가 공유. */
+    /**
+     * 기준시각의 순자산 = Σ(비채무 잔액) − Σ|채무 잔액|. summary/trend 가 공유.
+     * 외화 자산은 원화로 환산해 더한다(환산하지 않으면 통화 단위가 섞여 합계가 무의미해진다).
+     */
     private long netWorthAt(List<Asset> included, BalanceResolver resolver, LocalDateTime at) {
         long assets = 0, debt = 0;
         for (Asset a : included) {
-            long bal = resolver.balanceAt(a.getRowId(), at);
+            long bal = a.balanceInKrw(resolver.balanceAt(a.getRowId(), at));
             if (DEBT_TYPES.contains(a.getAssetType())) {
                 debt += Math.abs(bal);
             } else {
@@ -823,7 +830,8 @@ public class AssetServiceImpl implements AssetService {
             Expense interestExpense = Expense.createExpense(
                 user, null, fromAsset, ExpenseType.EXPENSE, interest,
                 command.description(), command.transferDate(),
-                null, "TRANSFER", null, null);
+                null, "TRANSFER", null, null,
+                null, null, null); // 이자는 원화 — 외화 대출은 이체 자체가 환산된 뒤 들어온다
             expenseRepository.save(interestExpense);
             transfer.linkInterestExpense(interestExpense.getRowId());
             log.debug("대출 이자 지출 생성: transferId={}, expenseId={}, interest={}",

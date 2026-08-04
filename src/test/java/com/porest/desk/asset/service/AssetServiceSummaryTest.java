@@ -51,7 +51,16 @@ class AssetServiceSummaryTest {
 
     private Asset asset(long rowId, AssetType type) {
         Asset a = Asset.createAsset(null, "자산" + rowId, type, 0L, "KRW",
+            null,
                 null, null, null, 0, YNType.Y, null, null, null, null);
+        ReflectionTestUtils.setField(a, "rowId", rowId);
+        return a;
+    }
+
+    private Asset foreignAsset(long rowId, AssetType type, String currency, String rate) {
+        Asset a = Asset.createAsset(null, currency + "통장", type, 0L, currency,
+            new java.math.BigDecimal(rate),
+            null, null, null, 0, YNType.Y, null, null, null, null);
         ReflectionTestUtils.setField(a, "rowId", rowId);
         return a;
     }
@@ -76,5 +85,56 @@ class AssetServiceSummaryTest {
         assertThat(summary.totalDebt()).isEqualTo(800_000L);         // |카드| + |대출|
         assertThat(summary.netWorth()).isEqualTo(200_000L);          // 1,000,000 - 800,000
         assertThat(summary.totalBalance()).isEqualTo(200_000L);      // 모든 잔액 합(부채 음수 포함)
+    }
+
+    @Test
+    @DisplayName("외화통장 — 원화 350만 + 달러 $1,000(환율 1,400) 이면 총자산 490만원")
+    void foreignAccountConvertedIntoTotal() {
+        Asset krw = asset(1L, AssetType.BANK_ACCOUNT);
+        Asset usd = foreignAsset(2L, AssetType.BANK_ACCOUNT, "USD", "1400");
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(krw, usd));
+
+        BalanceResolver resolver = mock(BalanceResolver.class);
+        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
+        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(3_500_000L);
+        given(resolver.balanceAt(eq(2L), any(LocalDateTime.class))).willReturn(1_000L);  // $1,000
+
+        AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
+
+        // 환산이 없으면 3,501,000원이 나온다 — 달러가 원화처럼 더해진 값
+        assertThat(summary.totalAssets()).isEqualTo(4_900_000L);
+        assertThat(summary.netWorth()).isEqualTo(4_900_000L);
+    }
+
+    @Test
+    @DisplayName("외화 대출 — $10,000 부채(환율 1,400)는 1,400만원 부채로 잡힌다")
+    void foreignDebtConverted() {
+        Asset krw = asset(1L, AssetType.BANK_ACCOUNT);
+        Asset usdLoan = foreignAsset(2L, AssetType.LOAN, "USD", "1400");
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(krw, usdLoan));
+
+        BalanceResolver resolver = mock(BalanceResolver.class);
+        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
+        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(20_000_000L);
+        given(resolver.balanceAt(eq(2L), any(LocalDateTime.class))).willReturn(-10_000L); // -$10,000
+
+        AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
+
+        assertThat(summary.totalAssets()).isEqualTo(20_000_000L);
+        assertThat(summary.totalDebt()).isEqualTo(14_000_000L);
+        assertThat(summary.netWorth()).isEqualTo(6_000_000L);
+    }
+
+    @Test
+    @DisplayName("원화 자산만 있으면 환산 전과 값이 같다 — 기존 데이터 무해")
+    void krwOnlyUnchanged() {
+        Asset bank = asset(1L, AssetType.BANK_ACCOUNT);
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(bank));
+
+        BalanceResolver resolver = mock(BalanceResolver.class);
+        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
+        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(1_234_567L);
+
+        assertThat(sut.getAssetSummary(USER_ID, null, null).totalAssets()).isEqualTo(1_234_567L);
     }
 }
