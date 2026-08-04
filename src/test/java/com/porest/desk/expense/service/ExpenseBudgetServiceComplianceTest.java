@@ -61,7 +61,7 @@ class ExpenseBudgetServiceComplianceTest {
 
     private Expense expense(ExpenseType type, long amount) {
         return Expense.createExpense(null, null, null, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null);
     }
 
     private void givenBudgets(List<ExpenseBudget> budgets) {

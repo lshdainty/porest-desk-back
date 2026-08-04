@@ -44,6 +44,7 @@ public class ExpenseApiController {
             parseExpenseDate(request.expenseDate()),
             request.merchant(),
             request.paymentMethod(),
+            request.installmentMonths(),
             request.calendarEventRowId(),
             request.todoRowId()
         ));
@@ -86,6 +87,7 @@ public class ExpenseApiController {
             parseExpenseDate(request.expenseDate()),
             request.merchant(),
             request.paymentMethod(),
+            request.installmentMonths(),
             request.calendarEventRowId(),
             request.todoRowId(),
             splits

@@ -71,6 +71,16 @@ public class Expense extends AuditingFieldsWithIp {
     @Column(name = "payment_method", length = 30)
     private String paymentMethod;
 
+    /**
+     * 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미가 있다.
+     *
+     * <p>카드 청구는 결제일 기준 전월 사용분을 한 번에 잡는데, 할부는 그 금액이 N개월에 나뉘어
+     * 청구된다. 이 값이 있으면 청구 회차 계산이 거래 금액을 N등분해 회차별로 잡는다.
+     * 통계·예산은 거래 시점에 전액을 인식한다(가계부 관점의 지출 시점은 결제한 날이다).
+     */
+    @Column(name = "installment_months")
+    private Integer installmentMonths;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "calendar_event_row_id")
     private CalendarEvent calendarEvent;
@@ -85,7 +95,8 @@ public class Expense extends AuditingFieldsWithIp {
 
     public static Expense createExpense(User user, ExpenseCategory category, Asset asset,
                                         ExpenseType expenseType, Long amount, String description,
-                                        LocalDateTime expenseDate, String merchant, String paymentMethod) {
+                                        LocalDateTime expenseDate, String merchant, String paymentMethod,
+                                        Integer installmentMonths) {
         Expense expense = new Expense();
         expense.user = user;
         expense.category = category;
@@ -96,8 +107,42 @@ public class Expense extends AuditingFieldsWithIp {
         expense.expenseDate = expenseDate;
         expense.merchant = merchant;
         expense.paymentMethod = paymentMethod;
+        expense.installmentMonths = normalizeInstallment(installmentMonths);
         expense.isDeleted = YNType.N;
         return expense;
+    }
+
+    /**
+     * 할부 개월 정규화 — 1 이하·null 은 일시불(null)로 통일한다.
+     * "1개월 할부"는 일시불과 같아서 두 표기가 섞이면 청구 계산이 갈린다.
+     */
+    private static Integer normalizeInstallment(Integer months) {
+        return (months == null || months <= 1) ? null : months;
+    }
+
+    /** 일시불이 아닌가. */
+    public boolean isInstallment() {
+        return installmentMonths != null && installmentMonths > 1;
+    }
+
+    /**
+     * 할부 n회차(1-base)에 청구될 금액.
+     *
+     * <p>나누어떨어지지 않는 금액은 <b>첫 회차에 나머지를 몰아</b> 합이 원금과 정확히 맞게 한다
+     * (국내 카드사 관행). 예: 1,000,000원 3개월 → 333,334 / 333,333 / 333,333.
+     *
+     * @param seq 1..installmentMonths. 범위를 벗어나면 0.
+     */
+    public long installmentAmountAt(int seq) {
+        if (!isInstallment()) {
+            return seq == 1 ? amount : 0L;
+        }
+        if (seq < 1 || seq > installmentMonths) {
+            return 0L;
+        }
+        long base = amount / installmentMonths;
+        long remainder = amount % installmentMonths;
+        return seq == 1 ? base + remainder : base;
     }
 
     /** 카테고리만 교체 — 카테고리 재편 시 일괄 이동용(다른 값은 건드리지 않는다). */
@@ -107,7 +152,8 @@ public class Expense extends AuditingFieldsWithIp {
 
     public void updateExpense(ExpenseCategory category, Asset asset, ExpenseType expenseType,
                               Long amount, String description, LocalDateTime expenseDate,
-                              String merchant, String paymentMethod) {
+                              String merchant, String paymentMethod, Integer installmentMonths) {
+        this.installmentMonths = normalizeInstallment(installmentMonths);
         this.category = category;
         this.asset = asset;
         this.expenseType = expenseType;

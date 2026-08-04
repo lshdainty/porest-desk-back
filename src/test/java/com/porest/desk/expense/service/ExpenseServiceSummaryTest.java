@@ -71,7 +71,7 @@ class ExpenseServiceSummaryTest {
 
     private Expense expense(ExpenseType type, long amount, String merchant) {
         return Expense.createExpense(null, null, null, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), merchant, "CARD");
+                LocalDateTime.of(2026, 6, 15, 12, 0), merchant, "CARD", null);
     }
 
     private ExpenseCategory category(long rowId, String name, ExpenseCategory parent) {
@@ -82,11 +82,11 @@ class ExpenseServiceSummaryTest {
 
     private Expense expenseIn(ExpenseCategory cat, ExpenseType type, long amount) {
         return Expense.createExpense(null, cat, null, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null);
     }
 
     private Expense expenseOn(ExpenseCategory cat, ExpenseType type, long amount, LocalDateTime at) {
-        return Expense.createExpense(null, cat, null, type, amount, null, at, null, null);
+        return Expense.createExpense(null, cat, null, type, amount, null, at, null, null, null);
     }
 
     private Asset asset(long rowId, String name) {
@@ -98,7 +98,7 @@ class ExpenseServiceSummaryTest {
 
     private Expense expenseWithAsset(Asset asset, ExpenseType type, long amount) {
         return Expense.createExpense(null, null, asset, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), null, null);
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null);
     }
 
     @Test
