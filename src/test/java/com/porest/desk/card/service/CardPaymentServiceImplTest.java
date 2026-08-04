@@ -4,6 +4,7 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
@@ -38,6 +39,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import com.porest.core.time.ServiceClock;
@@ -53,6 +57,7 @@ class CardPaymentServiceImplTest {
     @Mock private CardBillingRepository cardBillingRepository;
     @Mock private AssetRepository assetRepository;
     @Mock private AssetService assetService;
+    @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private EntityManager entityManager;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
@@ -294,7 +299,7 @@ class CardPaymentServiceImplTest {
         given(cardBillingRepository.save(any(CardBilling.class)))
             .willAnswer(inv -> inv.getArgument(0));
 
-        sut.payCard(CARD_ID, USER_ID);
+        sut.payCard(CARD_ID, USER_ID, null);
 
         ArgumentCaptor<CardBilling> captor = ArgumentCaptor.forClass(CardBilling.class);
         verify(cardBillingRepository).save(captor.capture());
@@ -321,10 +326,130 @@ class CardPaymentServiceImplTest {
         given(cardBillingRepository.save(any(CardBilling.class)))
             .willAnswer(inv -> inv.getArgument(0));
 
-        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID);
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
 
         assertThat(result.status()).isEqualTo(BillingStatus.SKIPPED);
         assertThat(result.billingAmount()).isZero();
+    }
+
+    // === 부분 선결제 · 기록용 앱 특례 ===
+
+    @Test
+    @DisplayName("부분 선결제 — 청구액 448,600 중 200,000만 결제하면 그 금액만 기록된다")
+    void partialPrepayment() {
+        Asset paymentAsset = mock(Asset.class);
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
+        given(transfer.rowId()).willReturn(77L);
+        given(assetService.createTransfer(any())).willReturn(transfer);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, 200_000L);
+
+        assertThat(result.billingAmount()).isEqualTo(200_000L);
+        assertThat(result.status()).isEqualTo(BillingStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("부분 선결제 후 남은 청구액 — 448,600 중 200,000 냈으면 다음엔 248,600")
+    void remainingAfterPartial() {
+        Asset paymentAsset = mock(Asset.class);
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        // 청구액은 '사용액 − 이미 결제한 금액' 이라 선결제분이 자동으로 빠진다.
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(200_000L);
+        AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
+        given(transfer.rowId()).willReturn(78L);
+        given(assetService.createTransfer(any())).willReturn(transfer);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        assertThat(result.billingAmount()).isEqualTo(248_600L);
+    }
+
+    @Test
+    @DisplayName("남은 청구액보다 많이 결제하려 하면 막는다")
+    void rejectsOverpayment() {
+        Asset paymentAsset = mock(Asset.class);
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID, 500_000L))
+            .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("0원 이하 결제는 막는다")
+    void rejectsNonPositiveAmount() {
+        Asset paymentAsset = mock(Asset.class);
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID, 0L))
+            .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("결제계좌를 안 만들었어도 결제된다 — 이체 없이 카드 사용액만 정리")
+    void paysWithoutPaymentAsset() {
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(null);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        // 이체는 만들지 않고 카드에 상계 flow 만 쌓는다 — 등록 안 한 통장은 순자산에 없다.
+        assertThat(result.status()).isEqualTo(BillingStatus.COMPLETED);
+        assertThat(result.billingAmount()).isEqualTo(448_600L);
+        then(assetService).should(never()).createTransfer(any());
+        then(balanceHistoryService).should()
+            .recordExpense(eq(card), isNull(), eq(ExpenseType.INCOME), eq(448_600L), any());
+    }
+
+    @Test
+    @DisplayName("출금계좌 잔액이 모자라도 결제된다 — 기록용 앱이라 막지 않는다")
+    void paysDespiteInsufficientBalance() {
+        Asset paymentAsset = mock(Asset.class);
+        lenient().when(paymentAsset.getBalance()).thenReturn(0L); // 통장 잔액을 안 맞춰 둔 상태
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
+        given(transfer.rowId()).willReturn(79L);
+        given(assetService.createTransfer(any())).willReturn(transfer);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        assertThat(result.status()).isEqualTo(BillingStatus.COMPLETED);
     }
 
     // === 검증 회귀 ===
@@ -348,20 +473,8 @@ class CardPaymentServiceImplTest {
         given(card.getAssetType()).willReturn(AssetType.BANK_ACCOUNT);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
 
-        assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID))
+        assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID, null))
                 .isInstanceOf(InvalidValueException.class);
     }
 
-    @Test
-    @DisplayName("payCard — 결제 자산이 없으면 결제 불가")
-    void payRejectsWhenNoPaymentAsset() {
-        Asset card = mock(Asset.class);
-        given(card.getUser()).willReturn(user(USER_ID));
-        given(card.getAssetType()).willReturn(AssetType.CREDIT_CARD);
-        given(card.getPaymentAsset()).willReturn(null);
-        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
-
-        assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID))
-                .isInstanceOf(InvalidValueException.class);
-    }
 }
