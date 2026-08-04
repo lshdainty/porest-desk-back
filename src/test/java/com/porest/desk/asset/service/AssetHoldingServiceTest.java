@@ -374,6 +374,53 @@ class AssetHoldingServiceTest {
         assertThat(captor.getValue().getHoldingType()).isEqualTo(HoldingType.STOCK);
     }
 
+
+    @Test
+    @DisplayName("금 계좌도 주식과 같다 — 평가액은 HOLDING 앵커, 예수금은 0 에서 시작")
+    void goldAccountUsesSameChannelSplit() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        // 한국금거래소 계좌에 금 3.75g(한 돈) 70만원어치. 시세 연동 대상이 아니라 전부 수동.
+        AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            manualHolding(HoldingType.GOLD, "KRX 금현물", "3.75", 700_000L)
+        )));
+
+        // 채널 분기는 holdingType 이 아니라 '투자 자산 + 보유 있음' 이라 금도 같은 경로를 탄다.
+        assertThat(info.cashBalance()).isZero();
+        assertThat(capturedValuation()).isEqualTo(700_000L);
+    }
+
+    @Test
+    @DisplayName("코인 계좌도 주식과 같다 — 평가액은 HOLDING 앵커, 예수금은 0 에서 시작")
+    void cryptoAccountUsesSameChannelSplit() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        // 업비트 계좌에 BTC 0.05개 5,000,000원 + ETH 1.2개 6,000,000원.
+        AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            manualHolding(HoldingType.CRYPTO, "BTC", "0.05", 5_000_000L),
+            manualHolding(HoldingType.CRYPTO, "ETH", "1.2", 6_000_000L)
+        )));
+
+        assertThat(info.cashBalance()).isZero();
+        assertThat(capturedValuation()).isEqualTo(11_000_000L);
+    }
+
+    @Test
+    @DisplayName("한 계좌에 주식·금·코인이 섞여도 평가액은 하나의 HOLDING 앵커로 합산된다")
+    void mixedHoldingTypesShareOneAnchor() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of(
+            new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "72000", "KRW")));
+
+        sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            linkedHolding("005930", 10L),                                  // 720,000
+            manualHolding(HoldingType.GOLD, "KRX 금현물", "3.75", 700_000L), // 700,000
+            manualHolding(HoldingType.CRYPTO, "BTC", "0.05", 5_000_000L)    // 5,000,000
+        )));
+
+        assertThat(capturedValuation()).isEqualTo(6_420_000L);
+    }
+
     /** 평가액은 예수금이 아니라 HOLDING 채널 앵커로 적재된다 — 그 앵커에 실린 금액을 꺼낸다. */
     private long capturedValuation() {
         org.mockito.ArgumentCaptor<Long> c = org.mockito.ArgumentCaptor.forClass(Long.class);
