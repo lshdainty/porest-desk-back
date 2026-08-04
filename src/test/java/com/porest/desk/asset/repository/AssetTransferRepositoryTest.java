@@ -45,7 +45,7 @@ class AssetTransferRepositoryTest {
     }
 
     private AssetTransfer persistTransfer(User user, Asset from, Asset to, long amount, LocalDate date) {
-        return em.persist(AssetTransfer.createTransfer(user, from, to, amount, 0L, "이체", date.atStartOfDay()));
+        return em.persist(AssetTransfer.createTransfer(user, from, to, amount, 0L, 0L, "이체", date.atStartOfDay()));
     }
 
     @Test

@@ -23,6 +23,9 @@ import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.toss.credential.service.TossCredentialService;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.service.TossQueryService;
+import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.repository.ExpenseRepository;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.core.time.UserClock;
@@ -62,6 +65,7 @@ public class AssetServiceImpl implements AssetService {
     private final CardCatalogRepository cardCatalogRepository;
     // 청구 회차 정합용 — 카드 서비스가 아니라 리포지토리만 참조한다(서비스끼리는 순환).
     private final CardBillingRepository cardBillingRepository;
+    private final ExpenseRepository expenseRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
     private final UserClock userClock;
     private final SubscriptionEntitlementService entitlementService;
@@ -799,13 +803,35 @@ public class AssetServiceImpl implements AssetService {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_CHECK_CARD);
         }
 
+        // 이자는 상환액(amount) 안에 포함된 몫이라 그보다 클 수 없다.
+        // 같으면 원금이 0 이라 부채가 전혀 안 줄어드는데, 이자만 내는 거치 상환에서 실제로 있는 일이다.
+        long interest = command.interestAmount() != null ? command.interestAmount() : 0L;
+        if (interest < 0 || interest > command.amount()) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
+        }
+
         AssetTransfer transfer = AssetTransfer.createTransfer(
             user, fromAsset, toAsset,
-            command.amount(), command.fee(), command.description(), command.transferDate()
+            command.amount(), command.fee(), interest, command.description(), command.transferDate()
         );
 
         assetTransferRepository.save(transfer);
+
+        // 이자는 부채를 줄이지 않고 은행으로 나가는 비용 — 지출 거래로 따로 잡아
+        // 카테고리·예산·통계에 들어가게 한다. 이체를 지우면 이 거래도 함께 지운다.
+        if (transfer.hasInterest()) {
+            Expense interestExpense = Expense.createExpense(
+                user, null, fromAsset, ExpenseType.EXPENSE, interest,
+                command.description(), command.transferDate(),
+                null, "TRANSFER", null, null);
+            expenseRepository.save(interestExpense);
+            transfer.linkInterestExpense(interestExpense.getRowId());
+            log.debug("대출 이자 지출 생성: transferId={}, expenseId={}, interest={}",
+                transfer.getRowId(), interestExpense.getRowId(), interest);
+        }
+
         // 자산 잔액 이력: 출금/입금 flow 2건 적재 → recompute 가 양쪽 잔액 반영 (단일 writer)
+        // 이자 지출은 잔액에 또 반영하지 않는다 — 출금액(amount)에 이미 포함돼 있어 이중 차감이 된다.
         balanceHistoryService.recordTransfer(transfer);
         log.info("자산 이체 완료: transferId={}", transfer.getRowId());
 
@@ -834,6 +860,12 @@ public class AssetServiceImpl implements AssetService {
         validateTransferOwnership(transfer, userRowId);
 
         transfer.deleteTransfer();
+        // 이자로 만들어 둔 지출 거래도 함께 무른다 — 남겨두면 이체는 사라졌는데
+        // 그 달 지출에 이자만 유령처럼 남는다.
+        if (transfer.getInterestExpenseRowId() != null) {
+            expenseRepository.findById(transfer.getInterestExpenseRowId())
+                .ifPresent(Expense::deleteExpense);
+        }
         // 자산 잔액 이력: 양쪽 flow soft-delete → recompute 가 양쪽 잔액 반영 (단일 writer)
         balanceHistoryService.removeTransfer(transferId);
         // 카드 결제로 만들어진 이체였다면 그 청구 회차도 함께 무른다. COMPLETED 로 남겨두면

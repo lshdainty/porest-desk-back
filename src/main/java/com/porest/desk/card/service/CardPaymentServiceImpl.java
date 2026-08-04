@@ -191,6 +191,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             card.getRowId(),
             amount,
             0L,
+            0L, // 카드 결제는 이자 개념이 없다 — 할부 이자는 청구액에 이미 포함돼 들어온다
             "신용카드 자동결제",
             // 이체가 일시(DATETIME)로 바뀜 — 자동결제는 사용자가 시각을 고른 게 아니라
             // 결제일 자체가 기준이므로 그날 시작으로 둔다.

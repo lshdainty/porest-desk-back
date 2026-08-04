@@ -152,7 +152,8 @@ public class AssetApiController {
         AssetServiceDto.TransferInfo info = assetService.createTransfer(new AssetServiceDto.CreateTransferCommand(
             loginUser.getRowId(),
             request.fromAssetRowId(), request.toAssetRowId(),
-            request.amount(), request.fee(), request.description(), request.transferDate()
+            request.amount(), request.fee(), request.interestAmount(),
+            request.description(), request.transferDate()
         ));
         return ApiResponse.success(AssetApiDto.TransferResponse.from(info));
     }

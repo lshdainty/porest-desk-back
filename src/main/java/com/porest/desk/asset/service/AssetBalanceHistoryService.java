@@ -177,9 +177,11 @@ public class AssetBalanceHistoryService {
         repository.save(AssetBalanceHistory.of(
             transfer.getUser(), transfer.getFromAsset(), BalanceSourceType.TRANSFER, transfer.getRowId(),
             -(transfer.getAmount() + fee), effectiveAt));
+        // 입금 자산에는 원금만 — 이자는 부채를 줄이지 않고 은행으로 나가는 비용이라
+        // 별도 지출 거래로 잡힌다(대출 상환에서만 0 보다 크다).
         repository.save(AssetBalanceHistory.of(
             transfer.getUser(), transfer.getToAsset(), BalanceSourceType.TRANSFER, transfer.getRowId(),
-            transfer.getAmount(), effectiveAt));
+            transfer.principalAmount(), effectiveAt));
         recompute(transfer.getFromAsset());
         recompute(transfer.getToAsset());
     }

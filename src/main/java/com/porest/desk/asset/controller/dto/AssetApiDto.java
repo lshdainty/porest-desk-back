@@ -213,6 +213,8 @@ public class AssetApiDto {
         Long toAssetRowId,
         Long amount,
         Long fee,
+        /** 이자 (대출 상환 시). amount 중 이 금액은 부채를 줄이지 않고 지출로 잡힌다. */
+        Long interestAmount,
         String description,
         LocalDateTime transferDate
     ) {}
@@ -226,6 +228,10 @@ public class AssetApiDto {
         String toAssetName,
         Long amount,
         Long fee,
+        /** 이자 (대출 상환 시). */
+        Long interestAmount,
+        /** 원금 = amount − interestAmount. */
+        Long principalAmount,
         String description,
         LocalDateTime transferDate,
         LocalDateTime createAt
@@ -235,7 +241,7 @@ public class AssetApiDto {
                 info.rowId(), info.userRowId(),
                 info.fromAssetRowId(), info.fromAssetName(),
                 info.toAssetRowId(), info.toAssetName(),
-                info.amount(), info.fee(), info.description(),
+                info.amount(), info.fee(), info.interestAmount(), info.principalAmount(), info.description(),
                 info.transferDate(), info.createAt()
             );
         }

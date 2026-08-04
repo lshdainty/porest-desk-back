@@ -52,6 +52,8 @@ class AssetServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private CardCatalogRepository cardCatalogRepository;
     @Mock private com.porest.desk.card.repository.CardBillingRepository cardBillingRepository;
+    // 이체 삭제 시 이자로 만든 지출 거래를 함께 무르므로 필요 — mock 이 없으면 NPE.
+    @Mock private com.porest.desk.expense.repository.ExpenseRepository expenseRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private TossCredentialService tossCredentialService;
@@ -118,7 +120,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(10L)).willReturn(Optional.of(fromAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -134,7 +136,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -146,7 +148,7 @@ class AssetServiceImplTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 10L, 50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 10L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -158,7 +160,7 @@ class AssetServiceImplTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, -50_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, -50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -174,7 +176,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 1_000L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 30_000L, 1_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
         sut.createTransfer(cmd);
 
         verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));
@@ -191,7 +193,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(checkCard));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 30_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -209,7 +211,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(creditCard));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 0L, "카드 결제", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 30_000L, 0L, 0L, "카드 결제", LocalDate.of(2026, 6, 1).atStartOfDay());
         sut.createTransfer(cmd);
 
         verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));

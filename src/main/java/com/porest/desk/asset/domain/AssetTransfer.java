@@ -48,6 +48,23 @@ public class AssetTransfer extends AuditingFieldsWithIp {
     @Column(name = "fee", nullable = false)
     private Long fee;
 
+    /**
+     * 이자 (대출 상환 시). {@code amount} 중 이 금액은 <b>부채를 줄이지 않고</b> 은행으로 나가는 비용이다.
+     *
+     * <p>원금은 부채가 줄어드는 자산 이동이지만 이자는 순수 지출이라 성격이 다르다.
+     * 그래서 입금 자산(대출)에는 {@code amount − interestAmount} 만 반영하고,
+     * 이자만큼은 별도 지출 거래로 잡아 카테고리·예산에 들어가게 한다.
+     *
+     * <p>{@code fee}(송금 수수료)와 컬럼을 나눈 이유 — 섞으면 나중에 이 돈이 수수료였는지
+     * 이자였는지 구분할 수 없어 통계를 되돌릴 수 없다.
+     */
+    @Column(name = "interest_amount", nullable = false)
+    private Long interestAmount;
+
+    /** 이자로 자동 생성한 지출 거래 행 아이디 (이체 수정·삭제 시 함께 따라간다). */
+    @Column(name = "interest_expense_row_id")
+    private Long interestExpenseRowId;
+
     @Column(name = "description", length = 500)
     private String description;
 
@@ -60,18 +77,38 @@ public class AssetTransfer extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static AssetTransfer createTransfer(User user, Asset fromAsset, Asset toAsset,
-                                                Long amount, Long fee, String description,
-                                                LocalDateTime transferDate) {
+                                                Long amount, Long fee, Long interestAmount,
+                                                String description, LocalDateTime transferDate) {
         AssetTransfer transfer = new AssetTransfer();
         transfer.user = user;
         transfer.fromAsset = fromAsset;
         transfer.toAsset = toAsset;
         transfer.amount = amount;
         transfer.fee = fee != null ? fee : 0L;
+        transfer.interestAmount = interestAmount != null ? interestAmount : 0L;
         transfer.description = description;
         transfer.transferDate = transferDate;
         transfer.isDeleted = YNType.N;
         return transfer;
+    }
+
+    /** 이자가 있는가 — 대출 상환에서만 0 보다 크다. */
+    public boolean hasInterest() {
+        return interestAmount != null && interestAmount > 0L;
+    }
+
+    /**
+     * 입금 자산에 반영할 금액 — 이자는 부채를 줄이지 않으므로 뺀다.
+     *
+     * <p>50만원 상환(이자 15만)이면 대출 잔액은 35만원만 줄어든다.
+     */
+    public long principalAmount() {
+        return amount - (interestAmount != null ? interestAmount : 0L);
+    }
+
+    /** 자동 생성한 이자 지출 거래를 연결한다. */
+    public void linkInterestExpense(Long expenseRowId) {
+        this.interestExpenseRowId = expenseRowId;
     }
 
     public void deleteTransfer() {
