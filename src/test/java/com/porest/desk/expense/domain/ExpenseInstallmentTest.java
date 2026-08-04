@@ -24,7 +24,7 @@ class ExpenseInstallmentTest {
             null, null, null,
             ExpenseType.EXPENSE, amount, "테스트",
             LocalDateTime.of(2026, 7, 10, 14, 30),
-            "테스트가맹점", "CARD", installmentMonths);
+            "테스트가맹점", "CARD", installmentMonths, null);
     }
 
     /** 1..n 회차 합 — 원금과 일치해야 한다. */
@@ -158,7 +158,7 @@ class ExpenseInstallmentTest {
         assertThat(e.installmentAmountAt(1)).isEqualTo(400_000L);
 
         e.updateExpense(null, null, ExpenseType.EXPENSE, 1_200_000L, "수정",
-            LocalDateTime.of(2026, 7, 10, 14, 30), "테스트가맹점", "CARD", 6);
+            LocalDateTime.of(2026, 7, 10, 14, 30), "테스트가맹점", "CARD", 6, null);
 
         assertThat(e.installmentAmountAt(1)).isEqualTo(200_000L);
         assertThat(totalOf(e, 6)).isEqualTo(1_200_000L);

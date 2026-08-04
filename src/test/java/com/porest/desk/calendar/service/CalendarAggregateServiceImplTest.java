@@ -89,7 +89,7 @@ class CalendarAggregateServiceImplTest {
 
     private Expense expense(long rowId, long amount) {
         Expense x = Expense.createExpense(owner, null, null, ExpenseType.EXPENSE, amount, null,
-                LocalDateTime.of(2026, 6, 10, 12, 0), null, "CARD", null);
+                LocalDateTime.of(2026, 6, 10, 12, 0), null, "CARD", null, null);
         ReflectionTestUtils.setField(x, "rowId", rowId);
         return x;
     }

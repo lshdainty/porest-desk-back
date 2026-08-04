@@ -81,6 +81,19 @@ public class Expense extends AuditingFieldsWithIp {
     @Column(name = "installment_months")
     private Integer installmentMonths;
 
+    /**
+     * 환불 원거래 행 아이디 (null = 환불 아님).
+     *
+     * <p>환불·취소는 INCOME 으로 기록하는데, 그대로 두면 수입 통계가 부풀려진다
+     * (5만원 옷을 사고 환불하면 지출 5만 + 수입 5만). 이 값이 있으면 수입이 아니라
+     * <b>지출 상계</b>로 집계한다 — 위 예에서 그 달 지출은 0, 수입도 0 이 된다.
+     *
+     * <p>FK 를 걸지 않는다: 원거래가 soft delete 되어도 환불 기록은 남아야 하고,
+     * 가져오기로 들어온 행처럼 원거래가 없을 수도 있다.
+     */
+    @Column(name = "refund_of_expense_row_id")
+    private Long refundOfExpenseRowId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "calendar_event_row_id")
     private CalendarEvent calendarEvent;
@@ -96,7 +109,7 @@ public class Expense extends AuditingFieldsWithIp {
     public static Expense createExpense(User user, ExpenseCategory category, Asset asset,
                                         ExpenseType expenseType, Long amount, String description,
                                         LocalDateTime expenseDate, String merchant, String paymentMethod,
-                                        Integer installmentMonths) {
+                                        Integer installmentMonths, Long refundOfExpenseRowId) {
         Expense expense = new Expense();
         expense.user = user;
         expense.category = category;
@@ -108,6 +121,7 @@ public class Expense extends AuditingFieldsWithIp {
         expense.merchant = merchant;
         expense.paymentMethod = paymentMethod;
         expense.installmentMonths = normalizeInstallment(installmentMonths);
+        expense.refundOfExpenseRowId = refundOfExpenseRowId;
         expense.isDeleted = YNType.N;
         return expense;
     }
@@ -118,6 +132,34 @@ public class Expense extends AuditingFieldsWithIp {
      */
     private static Integer normalizeInstallment(Integer months) {
         return (months == null || months <= 1) ? null : months;
+    }
+
+    /**
+     * 환불인가 — INCOME 이면서 원거래가 지정된 건.
+     *
+     * <p>원거래 없이 INCOME 이면 그냥 수입이다(급여·이자 등).
+     */
+    public boolean isRefund() {
+        return refundOfExpenseRowId != null && expenseType == ExpenseType.INCOME;
+    }
+
+    /**
+     * 수입 집계에 더할 금액 — 환불은 수입이 아니므로 0.
+     */
+    public long incomeContribution() {
+        return (expenseType == ExpenseType.INCOME && !isRefund()) ? amount : 0L;
+    }
+
+    /**
+     * 지출 집계에 더할 금액 — 환불은 <b>음수</b>로 상계한다.
+     *
+     * <p>지출 50,000 + 환불 50,000 → 합 0. 부분 환불(20,000)이면 30,000 이 남는다.
+     */
+    public long expenseContribution() {
+        if (isRefund()) {
+            return -amount;
+        }
+        return expenseType == ExpenseType.EXPENSE ? amount : 0L;
     }
 
     /** 일시불이 아닌가. */
@@ -152,8 +194,10 @@ public class Expense extends AuditingFieldsWithIp {
 
     public void updateExpense(ExpenseCategory category, Asset asset, ExpenseType expenseType,
                               Long amount, String description, LocalDateTime expenseDate,
-                              String merchant, String paymentMethod, Integer installmentMonths) {
+                              String merchant, String paymentMethod, Integer installmentMonths,
+                              Long refundOfExpenseRowId) {
         this.installmentMonths = normalizeInstallment(installmentMonths);
+        this.refundOfExpenseRowId = refundOfExpenseRowId;
         this.category = category;
         this.asset = asset;
         this.expenseType = expenseType;

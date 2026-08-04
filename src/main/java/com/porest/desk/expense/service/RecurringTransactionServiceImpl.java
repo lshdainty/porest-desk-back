@@ -226,7 +226,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                     executionDateTime,
                     recurring.getMerchant(),
                     recurring.getPaymentMethod(),
-                    null // 반복 거래는 할부 개념이 없다
+                    null, // 반복 거래는 할부 개념이 없다
+                    null // 환불이 아니다
                 );
 
                 expenseRepository.save(expense);

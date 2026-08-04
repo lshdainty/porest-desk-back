@@ -86,7 +86,7 @@ class DashboardServiceImplTest {
     }
 
     private Expense expense(ExpenseType type, long amount, LocalDateTime at) {
-        return Expense.createExpense(null, null, null, type, amount, null, at, null, null, null);
+        return Expense.createExpense(null, null, null, type, amount, null, at, null, null, null, null);
     }
 
     private User userWithDashboard(String dashboard) {
