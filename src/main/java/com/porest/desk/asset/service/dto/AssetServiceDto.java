@@ -195,6 +195,8 @@ public class AssetServiceDto {
         Long toAssetRowId,
         Long amount,
         Long fee,
+        /** 이자 (대출 상환 시). amount 중 이 금액은 부채를 줄이지 않고 지출로 잡힌다. */
+        Long interestAmount,
         String description,
         LocalDateTime transferDate
     ) {}
@@ -208,6 +210,10 @@ public class AssetServiceDto {
         String toAssetName,
         Long amount,
         Long fee,
+        /** 이자 (대출 상환 시). */
+        Long interestAmount,
+        /** 원금 = amount − interestAmount. 입금 자산(대출)에 실제로 반영된 금액. */
+        Long principalAmount,
         String description,
         LocalDateTime transferDate,
         LocalDateTime createAt
@@ -222,6 +228,8 @@ public class AssetServiceDto {
                 transfer.getToAsset().getAssetName(),
                 transfer.getAmount(),
                 transfer.getFee(),
+                transfer.getInterestAmount(),
+                transfer.principalAmount(),
                 transfer.getDescription(),
                 transfer.getTransferDate(),
                 transfer.getCreateAt()

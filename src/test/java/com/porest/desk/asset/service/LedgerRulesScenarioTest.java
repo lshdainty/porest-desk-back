@@ -131,7 +131,7 @@ class LedgerRulesScenarioTest {
     }
 
     private AssetTransfer transfer(Asset from, Asset to, long rowId, long amount, long fee, int day) {
-        AssetTransfer t = AssetTransfer.createTransfer(user, from, to, amount, fee, "이체",
+        AssetTransfer t = AssetTransfer.createTransfer(user, from, to, amount, fee, 0L, "이체",
             LocalDateTime.of(2026, 8, day, 12, 0));
         ReflectionTestUtils.setField(t, "rowId", rowId);
         sut.recordTransfer(t);

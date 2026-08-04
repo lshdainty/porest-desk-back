@@ -92,6 +92,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_TRANSFER_SAME_ASSET("ASSET_003", "error.asset.transfer.same", HttpStatus.BAD_REQUEST),
     ASSET_ACCESS_DENIED("ASSET_004", "error.asset.access.denied", HttpStatus.FORBIDDEN),
     ASSET_TRANSFER_INVALID_AMOUNT("ASSET_005", "error.asset.transfer.invalid.amount", HttpStatus.BAD_REQUEST),
+    ASSET_TRANSFER_INVALID_INTEREST("ASSET_014", "error.asset.transfer.invalid.interest", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CHECK_CARD("ASSET_006", "error.asset.transfer.check.card", HttpStatus.BAD_REQUEST),
 
     // Saving Goal
