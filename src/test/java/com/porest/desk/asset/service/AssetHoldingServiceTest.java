@@ -30,6 +30,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -296,6 +298,55 @@ class AssetHoldingServiceTest {
                 manualHolding(HoldingType.CRYPTO, "비트코인", "-0.05", 1_000L)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("투자 평가액을 서버가 산정한다 — 클라이언트가 보낸 balance 를 쓰지 않는다")
+    void serverComputesInvestmentBalance() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        // 시세 72,000 × 30주 = 2,160,000 + 미연동 1,870,000 = 4,030,000 (클라 balance 0 은 무시)
+        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of(
+            new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "72000", "KRW")));
+
+        AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            linkedHolding("005930", 30L),
+            manualHolding("해외 ETF 포트폴리오", 1_870_000L)
+        )));
+
+        assertThat(info.balance()).isEqualTo(4_030_000L);
+    }
+
+    @Test
+    @DisplayName("소수 수량·외화도 BigDecimal 로 정확히 — 0.1주 × $185.7 × 1383.5원")
+    void serverComputesFractionalForeignBalance() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of(
+            new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("AAPL", null, "185.7", "USD")));
+        given(tossQueryService.getExchangeRate(eq(USER_ID), anyString(), anyString(), any()))
+            .willReturn(new com.porest.desk.toss.dto.TossMarketInfoDto.ExchangeRateResponse(
+                "USD", "KRW", "1383.5", null, null, null, null, null));
+
+        AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            new AssetServiceDto.HoldingCommand(
+                HoldingType.STOCK, true, "AAPL", new BigDecimal("0.1"), null, null)
+        )));
+
+        // 185.7 × 1383.5 × 0.1 = 25,691.595 → 25,692 (HALF_UP). double 이면 끝자리가 흔들린다.
+        assertThat(info.balance()).isEqualTo(25_692L);
+    }
+
+    @Test
+    @DisplayName("연동 시세를 못 구하면 생성 시 미연동 합만 잡는다 — 부분합으로 왜곡하지 않는다")
+    void fallsBackToManualSumWhenPriceUnavailable() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of());
+
+        AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            linkedHolding("005930", 30L),
+            manualHolding("해외 ETF 포트폴리오", 1_870_000L)
+        )));
+
+        assertThat(info.balance()).isEqualTo(1_870_000L);
     }
 
     @Test

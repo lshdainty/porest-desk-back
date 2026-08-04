@@ -2,6 +2,8 @@ package com.porest.desk.dataimport.service;
 
 import com.porest.desk.expense.type.ExpenseType;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -78,17 +80,22 @@ public final class ValueNormalizer {
         return null;
     }
 
-    /** 금액 파싱 — 콤마·통화기호·공백 제거 후 절대값 정수. 실패/0 이하 시 null. */
+    /**
+     * 금액 파싱 — 콤마·통화기호·공백 제거 후 절대값 정수. 실패/0 이하 시 null.
+     *
+     * <p>파일에서 읽은 문자열을 double 로 거치면 소수 금액에 이진 오차가 섞여 원 단위가 어긋난다.
+     * 여기서 만든 값이 그대로 거래 금액으로 저장되므로 {@code new BigDecimal(String)} 으로
+     * 십진 값을 그대로 받아 반올림한다.
+     */
     public static Long parseAmount(String raw) {
         if (raw == null) return null;
         String s = raw.trim().replaceAll("[,\\s₩\\$€£¥원]", "");
         s = s.replaceAll("[()]", "").replace("+", "");
         if (s.isEmpty() || s.equals("-") || s.equals(".")) return null;
         try {
-            double d = Math.abs(Double.parseDouble(s));
-            long v = Math.round(d);
+            long v = new BigDecimal(s).abs().setScale(0, RoundingMode.HALF_UP).longValueExact();
             return v <= 0 ? null : v;
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException | ArithmeticException e) {
             return null;
         }
     }

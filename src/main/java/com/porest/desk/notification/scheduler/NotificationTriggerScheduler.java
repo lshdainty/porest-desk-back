@@ -113,7 +113,9 @@ public class NotificationTriggerScheduler {
 
                 // 임계값은 사용자 설정(user.budget_alert_threshold, %) 사용 — 미설정 시 85%.
                 int thresholdPct = userService.getBudgetAlertThreshold(userRowId);
-                if (totalSpending >= budget.getBudgetAmount() * (thresholdPct / 100.0)) {
+                // 85% 같은 임계를 double 로 만들면(85/100.0) 이진 오차 때문에 경계에서 한 발 빨리·늦게 터진다.
+                // 양변에 100 을 곱해 정수만으로 비교한다 — 금액도 임계도 정수라 이걸로 충분하다.
+                if (totalSpending * 100L >= (long) budget.getBudgetAmount() * thresholdPct) {
                     boolean alreadyNotified = notificationRepository.existsByUserAndReferenceAndCreatedAfter(
                         userRowId, ReferenceType.EXPENSE_BUDGET, budget.getRowId(),
                         startDate.atStartOfDay());
