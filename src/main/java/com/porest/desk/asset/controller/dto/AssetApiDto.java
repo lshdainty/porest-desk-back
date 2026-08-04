@@ -264,4 +264,7 @@ public class AssetApiDto {
             return new TransferListResponse(infos.stream().map(TransferResponse::from).toList());
         }
     }
+
+    /** 잔액 재산정 결과 — 다시 계산한 자산 수. */
+    public record RecomputeResponse(int recomputed) {}
 }

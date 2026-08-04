@@ -139,9 +139,40 @@ public class AssetBalanceHistoryService {
         if (assets.isEmpty()) {
             return;
         }
+        applySplits(assets);
+    }
+
+    /**
+     * 그 사용자의 모든 자산을 이력에서 다시 계산해 캐시(balance·예수금·평가금액)에 반영한다.
+     *
+     * <p>스키마가 바뀌어 캐시 컬럼이 비어 있거나(신규 컬럼은 DEFAULT 0 으로 생긴다),
+     * 이력을 직접 손봐 캐시와 어긋났을 때 되맞추는 수단이다. 이력이 진실이고 캐시는 파생이라
+     * 몇 번 돌려도 결과가 같다.
+     *
+     * @return 다시 계산한 자산 수
+     */
+    @Transactional
+    public int recomputeAllForUser(Long userRowId) {
+        List<Asset> assets = assetRepository.findByUser(userRowId);
+        applySplits(assets);
+        return assets.size();
+    }
+
+    /**
+     * 이력 한 번 읽어 자산들의 채널별 잔액을 채운다.
+     *
+     * <p>{@link Asset#updateBalance(Long)} 처럼 총액만 넣으면 전액이 예수금으로 몰리고
+     * 평가금액이 0 이 된다 — 총액은 맞아도 화면이 틀린다(웹 자산 목록은
+     * {@code balance = cashBalance + 라이브 평가액} 으로 다시 조립한다).
+     */
+    private void applySplits(List<Asset> assets) {
+        if (assets.isEmpty()) {
+            return;
+        }
         BalanceResolver resolver = resolverFor(assets);
         for (Asset a : assets) {
-            a.updateBalance(resolver.balanceAt(a.getRowId(), userClock.nowIn(a.getUser().getTimezone())));
+            Split split = resolver.splitAt(a.getRowId(), userClock.nowIn(a.getUser().getTimezone()));
+            a.updateBalances(split.cash(), split.holding());
         }
     }
 
@@ -215,9 +246,7 @@ public class AssetBalanceHistoryService {
         }
         // effective_at 은 사용자 벽시계 기준 컬럼(클라이언트가 보내는 거래 일시와 같은 축)이므로
         // 기준 시각도 사용자 타임존으로 잡는다. UTC 로 비교하면 오늘 거래가 미래로 취급된다.
-        Split split = resolverFor(List.of(asset))
-            .splitAt(asset.getRowId(), userClock.nowIn(asset.getUser().getTimezone()));
-        asset.updateBalances(split.cash(), split.holding());
+        applySplits(List.of(asset));
     }
 
     // === 읽기 ===

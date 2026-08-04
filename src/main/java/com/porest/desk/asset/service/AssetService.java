@@ -28,4 +28,15 @@ public interface AssetService {
     AssetServiceDto.TransferInfo createTransfer(AssetServiceDto.CreateTransferCommand command);
     List<AssetServiceDto.TransferInfo> getTransfers(Long userRowId, LocalDate startDate, LocalDate endDate);
     void deleteTransfer(Long transferId, Long userRowId);
+
+    /**
+     * 그 사용자의 모든 자산 잔액을 이력에서 다시 계산한다 (관리 수단).
+     *
+     * <p>잔액은 asset_balance_history 가 진실이고 asset 의 컬럼은 파생 캐시다. 스키마가 바뀌어
+     * 캐시가 비었거나(신규 컬럼은 DEFAULT 0) 이력을 직접 손봐 어긋났을 때 되맞춘다.
+     * 몇 번 돌려도 결과가 같다.
+     *
+     * @return 다시 계산한 자산 수
+     */
+    int recomputeBalances(Long userRowId);
 }
