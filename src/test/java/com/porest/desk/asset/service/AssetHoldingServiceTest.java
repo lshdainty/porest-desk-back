@@ -30,9 +30,11 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -230,6 +232,9 @@ class AssetHoldingServiceTest {
         AssetHolding h2 = AssetHolding.create(
             a2, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0);
         given(assetHoldingRepository.findActiveByAssets(anyList())).willReturn(List.of(h1, h2));
+        // 목록 잔액은 이력에서 산정한다 — 이력 조회도 자산 전체 1회다(N+1 금지).
+        given(balanceHistoryService.resolverFor(anyCollection()))
+            .willReturn(new AssetBalanceHistoryService.BalanceResolver(java.util.Map.of()));
 
         List<AssetServiceDto.AssetInfo> infos = sut.getAssets(USER_ID);
 
@@ -316,7 +321,10 @@ class AssetHoldingServiceTest {
             manualHolding("해외 ETF 포트폴리오", 1_870_000L)
         )));
 
-        assertThat(info.balance()).isEqualTo(4_030_000L);
+        // 평가액은 예수금이 아니라 HOLDING 채널 앵커로 간다 — 예수금은 0 에서 시작한다.
+        // (recompute 는 mock 이라 여기서는 앵커에 실린 금액으로 검증한다)
+        assertThat(info.cashBalance()).isZero();
+        assertThat(capturedValuation()).isEqualTo(4_030_000L);
     }
 
     @Test
@@ -335,7 +343,7 @@ class AssetHoldingServiceTest {
         )));
 
         // 185.7 × 1383.5 × 0.1 = 25,691.595 → 25,692 (HALF_UP). double 이면 끝자리가 흔들린다.
-        assertThat(info.balance()).isEqualTo(25_692L);
+        assertThat(capturedValuation()).isEqualTo(25_692L);
     }
 
     @Test
@@ -349,7 +357,7 @@ class AssetHoldingServiceTest {
             manualHolding("해외 ETF 포트폴리오", 1_870_000L)
         )));
 
-        assertThat(info.balance()).isEqualTo(1_870_000L);
+        assertThat(capturedValuation()).isEqualTo(1_870_000L);
     }
 
     @Test
@@ -364,5 +372,12 @@ class AssetHoldingServiceTest {
         ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
         verify(assetHoldingRepository).save(captor.capture());
         assertThat(captor.getValue().getHoldingType()).isEqualTo(HoldingType.STOCK);
+    }
+
+    /** 평가액은 예수금이 아니라 HOLDING 채널 앵커로 적재된다 — 그 앵커에 실린 금액을 꺼낸다. */
+    private long capturedValuation() {
+        org.mockito.ArgumentCaptor<Long> c = org.mockito.ArgumentCaptor.forClass(Long.class);
+        then(balanceHistoryService).should().recordValuation(any(), c.capture(), any());
+        return c.getValue();
     }
 }

@@ -412,7 +412,9 @@ class AssetServiceImplTest {
 
         sut.unlinkTossSymbol(5L, USER_ID);
 
-        verify(balanceHistoryService).recordManual(eq(asset), eq(700_000L), any());
+        // 굳히는 값도 '보유 평가금액' 이라 HOLDING 채널로 간다 — CASH 로 찍으면
+        // 예수금이 평가액만큼 부풀고 기존 HOLDING 앵커와 이중으로 더해진다.
+        verify(balanceHistoryService).recordValuation(eq(asset), eq(700_000L), any());
         verify(asset).unlinkToss();
     }
 

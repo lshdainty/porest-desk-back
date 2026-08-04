@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import com.porest.desk.asset.type.HoldingType;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.domain.AssetHolding;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.type.AssetType;
@@ -111,6 +112,11 @@ public class AssetServiceDto {
         String assetName,
         AssetType assetType,
         Long balance,
+        /** 예수금·현금 잔액. 투자 자산의 매수 대기 자금이 여기 잡힌다. balance = cashBalance + holdingBalance */
+        Long cashBalance,
+        /** 보유 종목 평가금액. 보유가 없으면 0. */
+        Long holdingBalance,
+        
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
         java.math.BigDecimal exchangeRate,
@@ -135,12 +141,29 @@ public class AssetServiceDto {
         }
 
         public static AssetInfo from(Asset asset, List<HoldingInfo> holdings) {
+            return from(asset, holdings, null);
+        }
+
+        /**
+         * @param split 이력에서 산정한 채널별 잔액. null 이면 자산의 캐시 컬럼을 쓴다
+         *              (단건 조회처럼 방금 recompute 한 직후라 캐시가 정확한 경로).
+         */
+        public static AssetInfo from(Asset asset, List<HoldingInfo> holdings,
+                                     AssetBalanceHistoryService.Split split) {
+            long balance = split != null ? split.total()
+                : (asset.getBalance() != null ? asset.getBalance() : 0L);
+            long cash = split != null ? split.cash()
+                : (asset.getCashBalance() != null ? asset.getCashBalance() : 0L);
+            long holdingValue = split != null ? split.holding()
+                : (asset.getHoldingBalance() != null ? asset.getHoldingBalance() : 0L);
             return new AssetInfo(
                 asset.getRowId(),
                 asset.getUser().getRowId(),
                 asset.getAssetName(),
                 asset.getAssetType(),
-                asset.getBalance(),
+                balance,
+                cash,
+                holdingValue,
                 asset.getCurrency(),
                 asset.getExchangeRate(),
                 asset.getColor(),
