@@ -81,12 +81,15 @@ public class AssetApiDto {
         HoldingType holdingType,
         boolean linked,
         String tossSymbol,
+        /** 소수 정밀도 보존 — JS number 로 내려가면 코인 0.00012345 같은 값이 흔들린다. */
+        @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
         BigDecimal quantity,
         String holdingName,
         Long holdingValue,
         /** 총 매수원가 (원화, 수수료 포함). 평가액과의 차이가 평가손익이다. */
         Long totalCost,
         /** 평단가 — 총원가 / 수량. */
+        @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
         BigDecimal avgPrice,
         Integer sortOrder
     ) {
