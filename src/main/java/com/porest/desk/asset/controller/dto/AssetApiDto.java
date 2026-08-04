@@ -110,6 +110,11 @@ public class AssetApiDto {
         String assetName,
         AssetType assetType,
         Long balance,
+        /** 예수금·현금 잔액 (투자 자산의 매수 대기 자금). balance = cashBalance + holdingBalance */
+        Long cashBalance,
+        /** 보유 종목 평가금액. 보유가 없으면 0. */
+        Long holdingBalance,
+        
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
         java.math.BigDecimal exchangeRate,
@@ -132,7 +137,8 @@ public class AssetApiDto {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
                 info.rowId(), info.userRowId(), info.assetName(), info.assetType(),
-                info.balance(), info.currency(), info.exchangeRate(), info.color(),
+                info.balance(), info.cashBalance(), info.holdingBalance(),
+                info.currency(), info.exchangeRate(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),

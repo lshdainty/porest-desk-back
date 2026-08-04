@@ -87,11 +87,16 @@ public class AssetServiceImpl implements AssetService {
 
         // 보유가 있는 투자 자산은 평가액을 서버가 산정한다 — 클라이언트가 보낸 balance 를 쓰지 않는다.
         // 연동 시세를 못 구하면 미연동 합만 잡고, 나머지는 일 1회 스냅샷 배치가 채운다.
+        //
+        // 평가액은 예수금(balance)이 아니라 HOLDING 채널 앵커로 따로 찍는다. 한 칸에 담으면
+        // 다음 평가 갱신이 그 사이 들어온 이체를 덮어써 돈이 사라진다.
         Long balance = command.balance();
+        Long holdingValuation = null;
         if (command.assetType() == AssetType.INVESTMENT
             && command.holdings() != null && !command.holdings().isEmpty()) {
             Long computed = computeInvestmentBalance(command.userRowId(), command.holdings());
-            balance = computed != null ? computed : manualHoldingsSum(command.holdings());
+            holdingValuation = computed != null ? computed : manualHoldingsSum(command.holdings());
+            balance = 0L; // 예수금은 비어서 시작 — 증권계좌에 넣은 돈은 이체로 들어온다
         }
 
         Asset asset = Asset.createAsset(
@@ -114,8 +119,12 @@ public class AssetServiceImpl implements AssetService {
 
         assetRepository.save(asset);
         List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, command.holdings());
-        // 잔액 이력: 초기 잔액 절대 앵커
-        balanceHistoryService.recordInit(asset, userClock.now(command.userRowId()));
+        // 잔액 이력: 초기 예수금 절대 앵커 + (보유가 있으면) 평가금액 앵커
+        LocalDateTime createdAt = userClock.now(command.userRowId());
+        balanceHistoryService.recordInit(asset, createdAt);
+        if (holdingValuation != null) {
+            balanceHistoryService.recordValuation(asset, holdingValuation, createdAt);
+        }
         log.info("자산 등록 완료: assetId={}, userRowId={}", asset.getRowId(), command.userRowId());
 
         return AssetServiceDto.AssetInfo.from(asset, holdings);
@@ -136,8 +145,16 @@ public class AssetServiceImpl implements AssetService {
                 .collect(Collectors.groupingBy(h -> h.getAsset().getRowId(),
                     Collectors.mapping(AssetServiceDto.HoldingInfo::from, Collectors.toList())));
 
+        // 잔액은 캐시 컬럼이 아니라 이력에서 산정한다 — 요약·순자산·추이가 쓰는 것과 같은 계산이라
+        // 목록 금액과 총합이 어긋날 여지가 없다(캐시가 낡아 있어도 스스로 맞춰진다).
+        BalanceResolver resolver = balanceHistoryService.resolverFor(assets);
+        LocalDateTime now = userClock.now(userRowId);
+
         return assets.stream()
-            .map(a -> AssetServiceDto.AssetInfo.from(a, holdingsByAsset.getOrDefault(a.getRowId(), List.of())))
+            .map(a -> AssetServiceDto.AssetInfo.from(
+                a,
+                holdingsByAsset.getOrDefault(a.getRowId(), List.of()),
+                resolver.splitAt(a.getRowId(), now)))
             .toList();
     }
 
@@ -167,11 +184,17 @@ public class AssetServiceImpl implements AssetService {
         Long oldBalance = asset.getBalance();
         Long newBalance = command.balance() != null ? command.balance() : asset.getBalance();
         // 보유를 함께 보낸 투자 자산은 평가액을 서버가 산정한다(클라이언트 계산값 불신).
-        // 연동 시세를 못 구하면 기존 잔액을 유지한다 — 부분합으로 덮어쓰지 않기 위해서다.
-        if (command.holdings() != null && !command.holdings().isEmpty()
-            && (command.assetType() != null ? command.assetType() : asset.getAssetType()) == AssetType.INVESTMENT) {
+        // 연동 시세를 못 구하면 기존 평가금액을 유지한다 — 부분합으로 덮어쓰지 않기 위해서다.
+        //
+        // 갱신 대상은 HOLDING 채널이다. 예수금은 건드리지 않으므로, 이 자산으로 들어온
+        // 이체는 평가액을 몇 번 다시 계산하든 그대로 남는다.
+        // 빈 리스트도 받는다 — 보유를 전부 지우면 평가금액이 0 이 돼야 한다.
+        boolean investHoldings = command.holdings() != null
+            && (command.assetType() != null ? command.assetType() : asset.getAssetType()) == AssetType.INVESTMENT;
+        Long holdingValuation = null;
+        if (investHoldings) {
             Long computed = computeInvestmentBalance(userRowId, command.holdings());
-            newBalance = computed != null ? computed : asset.getBalance();
+            holdingValuation = computed != null ? computed : asset.getHoldingBalance();
         }
         Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
             ? asset.getPaymentAsset().getRowId() : null;
@@ -190,8 +213,13 @@ public class AssetServiceImpl implements AssetService {
             paymentAsset
         );
 
-        // 잔액을 직접 수정(점프)한 경우에만 MANUAL 절대 앵커 적재 — 가계부 통계엔 영향 없음.
-        if (!Objects.equals(oldBalance, newBalance)) {
+        // 보유 평가액이 바뀌었으면 HOLDING 앵커, 그 밖에 잔액을 직접 수정(점프)했으면
+        // CASH MANUAL 앵커. 둘 다 가계부 통계엔 영향 없다.
+        if (investHoldings) {
+            if (!Objects.equals(asset.getHoldingBalance(), holdingValuation)) {
+                balanceHistoryService.recordValuation(asset, holdingValuation, userClock.now(userRowId));
+            }
+        } else if (!Objects.equals(oldBalance, newBalance)) {
             balanceHistoryService.recordManual(asset, newBalance, userClock.now(userRowId));
         }
 
@@ -285,7 +313,9 @@ public class AssetServiceImpl implements AssetService {
             Long valuation = computeTossValuationKrw(
                 userRowId, asset.getTossSymbol(), BigDecimal.valueOf(asset.getTossQuantity()));
             if (valuation != null) {
-                balanceHistoryService.recordManual(asset, valuation, userClock.now(userRowId));
+                // 굳히는 값도 '보유 평가금액' 이다 — CASH 로 찍으면 예수금이 평가액만큼 부풀고
+                // 기존 HOLDING 앵커와 이중으로 더해진다.
+                balanceHistoryService.recordValuation(asset, valuation, userClock.now(userRowId));
             }
         }
 

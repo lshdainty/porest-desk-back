@@ -1,6 +1,7 @@
 package com.porest.desk.asset.domain;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.asset.type.BalanceChannel;
 import com.porest.desk.asset.type.BalanceSourceType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.user.domain.User;
@@ -52,6 +53,14 @@ public class AssetBalanceHistory extends AuditingFieldsWithIp {
     @Column(name = "source_type", nullable = false, length = 20)
     private BalanceSourceType sourceType;
 
+    /**
+     * 이 행이 속한 채널 — 예수금(CASH) / 보유 평가금액(HOLDING).
+     * 채널이 다르면 서로의 앵커에 잡아먹히지 않는다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "channel", nullable = false, length = 10)
+    private BalanceChannel channel;
+
     /** 출처 엔티티의 row_id (EXPENSE=expense.row_id, TRANSFER=asset_transfer.row_id, INIT/MANUAL/VALUATION=asset.row_id). */
     @Column(name = "source_row_id")
     private Long sourceRowId;
@@ -68,12 +77,20 @@ public class AssetBalanceHistory extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
+    /** 예수금 채널 — 이체·거래·수동 조정처럼 현금이 오간 기록. */
     public static AssetBalanceHistory of(User user, Asset asset, BalanceSourceType sourceType,
                                          Long sourceRowId, Long amount, LocalDateTime effectiveAt) {
+        return of(user, asset, sourceType, BalanceChannel.CASH, sourceRowId, amount, effectiveAt);
+    }
+
+    public static AssetBalanceHistory of(User user, Asset asset, BalanceSourceType sourceType,
+                                         BalanceChannel channel, Long sourceRowId, Long amount,
+                                         LocalDateTime effectiveAt) {
         AssetBalanceHistory h = new AssetBalanceHistory();
         h.user = user;
         h.asset = asset;
         h.sourceType = sourceType;
+        h.channel = channel != null ? channel : BalanceChannel.CASH;
         h.sourceRowId = sourceRowId;
         h.amount = amount;
         h.effectiveAt = effectiveAt;
@@ -96,5 +113,10 @@ public class AssetBalanceHistory extends AuditingFieldsWithIp {
     /** 절대 앵커(INIT/MANUAL/VALUATION)면 true. */
     public boolean isAbsolute() {
         return sourceType.isAbsolute();
+    }
+
+    /** 보유 평가금액 채널인가. */
+    public boolean isHolding() {
+        return channel == BalanceChannel.HOLDING;
     }
 }

@@ -6,6 +6,7 @@ import com.porest.desk.asset.domain.AssetBalanceHistory;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetBalanceHistoryRepository;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.asset.type.BalanceChannel;
 import com.porest.desk.asset.type.BalanceSourceType;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.core.time.UserClock;
@@ -58,10 +59,15 @@ public class AssetBalanceHistoryService {
         recompute(asset);
     }
 
-    /** 투자 평가액 갱신 — 절대 앵커(점프). 토스 시세×수량 등 외부 평가액 반영 지점(추이용). */
+    /**
+     * 투자 평가액 갱신 — HOLDING 채널의 절대 앵커(점프). 토스 시세×수량 등 외부 평가액 반영 지점.
+     *
+     * <p>예수금 채널을 건드리지 않는다 — 증권계좌로 들어온 이체는 평가액과 무관하게 남아야 한다.
+     */
     public void recordValuation(Asset asset, long valuation, LocalDateTime effectiveAt) {
         repository.save(AssetBalanceHistory.of(
-            asset.getUser(), asset, BalanceSourceType.VALUATION, asset.getRowId(), valuation, effectiveAt));
+            asset.getUser(), asset, BalanceSourceType.VALUATION, BalanceChannel.HOLDING,
+            asset.getRowId(), valuation, effectiveAt));
         recompute(asset);
     }
 
@@ -209,9 +215,9 @@ public class AssetBalanceHistoryService {
         }
         // effective_at 은 사용자 벽시계 기준 컬럼(클라이언트가 보내는 거래 일시와 같은 축)이므로
         // 기준 시각도 사용자 타임존으로 잡는다. UTC 로 비교하면 오늘 거래가 미래로 취급된다.
-        long balance = resolverFor(List.of(asset))
-            .balanceAt(asset.getRowId(), userClock.nowIn(asset.getUser().getTimezone()));
-        asset.updateBalance(balance);
+        Split split = resolverFor(List.of(asset))
+            .splitAt(asset.getRowId(), userClock.nowIn(asset.getUser().getTimezone()));
+        asset.updateBalances(split.cash(), split.holding());
     }
 
     // === 읽기 ===
@@ -228,8 +234,16 @@ public class AssetBalanceHistoryService {
     }
 
     /**
-     * 기준시각 잔액 계산기. 자산별 이력(시각 오름차순)을 들고 있다가
-     * balanceAt(asset, T) = (T 이하 최신 절대 앵커).amount + 그 이후 flow 합 을 반환.
+     * 기준시각 잔액 계산기. 자산별 이력(시각 오름차순)을 들고 있다가 채널별로 따로 산정해 합친다.
+     *
+     * <pre>
+     *   balanceAt(asset, T) = cashAt(T) + holdingAt(T)
+     *   cashAt(T)    = (T 이하 최신 CASH 절대 앵커).amount + 그 이후 CASH flow 합
+     *   holdingAt(T) = (T 이하 최신 HOLDING 절대 앵커).amount
+     * </pre>
+     *
+     * <p>채널을 나누기 전에는 평가액 앵커가 그 앞의 이체 flow 를 통째로 삼켜서,
+     * 증권계좌로 넣은 돈이 다음 평가 스냅샷에 조용히 사라졌다.
      */
     public static class BalanceResolver {
         private final Map<Long, List<AssetBalanceHistory>> byAsset;
@@ -238,23 +252,44 @@ public class AssetBalanceHistoryService {
             this.byAsset = byAsset;
         }
 
+        /** 총잔액 = 예수금 + 평가금액. */
         public long balanceAt(Long assetRowId, LocalDateTime at) {
+            Split s = splitAt(assetRowId, at);
+            return s.cash() + s.holding();
+        }
+
+        /** 채널별 잔액. 투자 자산의 예수금을 따로 보여 줄 때 쓴다. */
+        public Split splitAt(Long assetRowId, LocalDateTime at) {
             List<AssetBalanceHistory> rows = byAsset.get(assetRowId);
             if (rows == null) {
-                return 0L;
+                return Split.ZERO;
             }
-            long running = 0L;
+            long cash = 0L;
+            long holding = 0L;
             for (AssetBalanceHistory h : rows) { // effective_at, row_id 오름차순
                 if (h.getEffectiveAt().isAfter(at)) {
                     break;
                 }
-                if (h.isAbsolute()) {
-                    running = h.getAmount();
+                if (h.isHolding()) {
+                    // 평가금액은 통째 갱신이라 절대 앵커만 있다. flow 가 섞여 들어와도
+                    // 예수금을 건드리지 않도록 같은 채널 안에서 처리한다.
+                    holding = h.isAbsolute() ? h.getAmount() : holding + h.getAmount();
+                } else if (h.isAbsolute()) {
+                    cash = h.getAmount();
                 } else {
-                    running += h.getAmount();
+                    cash += h.getAmount();
                 }
             }
-            return running;
+            return new Split(cash, holding);
+        }
+    }
+
+    /** 채널별 잔액 — 총잔액은 둘의 합. */
+    public record Split(long cash, long holding) {
+        public static final Split ZERO = new Split(0L, 0L);
+
+        public long total() {
+            return cash + holding;
         }
     }
 }
