@@ -956,4 +956,12 @@ public class AssetServiceImpl implements AssetService {
                 return new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND);
             });
     }
+
+    @Override
+    @Transactional
+    public int recomputeBalances(Long userRowId) {
+        int count = balanceHistoryService.recomputeAllForUser(userRowId);
+        log.info("자산 잔액 재산정 완료: userRowId={}, assets={}", userRowId, count);
+        return count;
+    }
 }
