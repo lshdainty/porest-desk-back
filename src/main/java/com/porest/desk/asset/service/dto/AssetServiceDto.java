@@ -1,5 +1,7 @@
 package com.porest.desk.asset.service.dto;
 
+import java.math.BigDecimal;
+import com.porest.desk.asset.type.HoldingType;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetHolding;
@@ -50,27 +52,32 @@ public class AssetServiceDto {
         List<HoldingCommand> holdings
     ) {}
 
-    /** 투자 보유 입력 — linked=true: tossSymbol+quantity 필수 / false: holdingName+holdingValue 필수. */
+    /**
+     * 투자 보유 입력 — linked=true: tossSymbol+quantity 필수 / false: holdingName+holdingValue 필수(quantity 선택).
+     * holdingType 미지정은 STOCK 으로 본다(구버전 클라이언트 하위호환).
+     */
     public record HoldingCommand(
+        HoldingType holdingType,
         Boolean linked,
         String tossSymbol,
-        Long quantity,
+        BigDecimal quantity,
         String holdingName,
         Long holdingValue
     ) {}
 
     public record HoldingInfo(
         Long rowId,
+        HoldingType holdingType,
         boolean linked,
         String tossSymbol,
-        Long quantity,
+        BigDecimal quantity,
         String holdingName,
         Long holdingValue,
         Integer sortOrder
     ) {
         public static HoldingInfo from(AssetHolding h) {
             return new HoldingInfo(
-                h.getRowId(), h.isLinked(), h.getTossSymbol(), h.getQuantity(),
+                h.getRowId(), h.getHoldingType(), h.isLinked(), h.getTossSymbol(), h.getQuantity(),
                 h.getHoldingName(), h.getHoldingValue(), h.getSortOrder());
         }
     }
