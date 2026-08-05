@@ -72,7 +72,7 @@ class ConstellationServiceImplTest {
 
     private ConstellationDaily daily(LocalDate date, Constellation c, int points, boolean grown, boolean guardUsed) {
         ConstellationDaily d = ConstellationDaily.open(user(), date, c);
-        d.addPoints(points);
+        d.syncPoints(points);
         if (grown) {
             d.grow();
         }
