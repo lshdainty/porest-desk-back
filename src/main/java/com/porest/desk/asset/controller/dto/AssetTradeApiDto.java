@@ -66,4 +66,18 @@ public final class AssetTradeApiDto {
             return list.stream().map(TradeResponse::from).toList();
         }
     }
+
+    /** 매매 미리보기 응답 — 저장하면 남을 숫자를 서버가 계산해 준다. */
+    public record TradePreviewResponse(
+        Long soldCost,
+        Long realizedPl,
+        Long cashDelta,
+        Long cashAfter,
+        Long fundingAmount
+    ) {
+        public static TradePreviewResponse from(AssetTradeServiceDto.TradePreview p) {
+            return new TradePreviewResponse(
+                p.soldCost(), p.realizedPl(), p.cashDelta(), p.cashAfter(), p.fundingAmount());
+        }
+    }
 }
