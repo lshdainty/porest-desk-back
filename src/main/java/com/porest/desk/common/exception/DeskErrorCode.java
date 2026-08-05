@@ -86,6 +86,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_CATEGORY_DUPLICATE_NAME("EXP_019", "error.duplicate.expense.category", HttpStatus.CONFLICT),
     EXPENSE_TYPE_CATEGORY_MISMATCH("EXP_020", "error.expense.type.category.mismatch", HttpStatus.BAD_REQUEST),
     EXPENSE_INVALID_AMOUNT("EXP_021", "error.expense.invalid.amount", HttpStatus.BAD_REQUEST),
+    EXPENSE_AUTO_GENERATED_READONLY("EXP_022", "error.expense.auto.generated.readonly", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),
