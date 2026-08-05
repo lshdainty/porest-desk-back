@@ -31,9 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 자산 잔액 이력(asset_balance_history) 적재 + 기준시각 잔액 조회 (단일 진실 공급원).
  *
- * <p>잔액이 바뀌는 모든 서비스 경로에서 이 컴포넌트로 이력을 남긴다. 적재/삭제 직후
- * 해당 자산의 {@code asset.balance} 를 {@code balanceAt(now)} 로 재산정하므로,
- * 개별 자산 잔액 · summary · trend · byType 이 전부 이력이라는 한 소스에서 나와 항상 일치한다.
+ * <p>잔액이 바뀌는 모든 서비스 경로에서 이 컴포넌트로 이력을 남긴다. 개별 자산 잔액 ·
+ * summary · trend · byType 이 전부 이력이라는 한 소스에서 나와 항상 일치한다.
  * 조회는 <b>SQL 집계</b>로 "기준시각 이하 최신 절대 앵커 + 그 이후 flow 합" 을 구한다 —
  * 이력을 앱으로 가져와 접지 않는다. 자산에 잔액 캐시 컬럼도 두지 않는다(금액을 낡은 값으로
  * 판단하는 사고가 반복돼서 없앴다).
