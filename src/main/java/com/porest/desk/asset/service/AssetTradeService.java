@@ -19,4 +19,7 @@ public interface AssetTradeService {
 
     /** 자산의 거래 내역 (최신순). */
     List<AssetTradeServiceDto.TradeInfo> getTrades(Long assetRowId, Long userRowId);
+
+    /** 저장하면 어떤 숫자가 남는지 미리 계산한다 — 클라이언트가 흉내 내지 않도록. */
+    AssetTradeServiceDto.TradePreview previewTrade(AssetTradeServiceDto.CreateTradeCommand command);
 }

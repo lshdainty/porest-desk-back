@@ -38,6 +38,25 @@ public class AssetTradeApiController {
         return ApiResponse.success(AssetTradeApiDto.TradeResponse.from(info));
     }
 
+    /**
+     * 매매 미리보기 — 저장하면 어떤 숫자가 남는지 서버가 계산한다.
+     *
+     * <p>클라이언트가 double 로 흉내 내면 어긋난다(전량 매도 분기가 화면에 없었다).
+     * 본 숫자와 남는 숫자가 달라지지 않도록 같은 코드로 계산해 돌려준다.
+     */
+    @PostMapping("/asset-trade/preview")
+    public ApiResponse<AssetTradeApiDto.TradePreviewResponse> previewTrade(
+            @LoginUser UserPrincipal loginUser,
+            @RequestBody AssetTradeApiDto.CreateTradeRequest request) {
+        AssetTradeServiceDto.TradePreview preview = assetTradeService.previewTrade(
+            new AssetTradeServiceDto.CreateTradeCommand(
+                loginUser.getRowId(), request.assetRowId(), request.tradeType(),
+                request.holdingType(), request.holdingRowId(), request.holdingKey(), request.linked(),
+                request.quantity(), request.amount(), request.fee(),
+                request.tradeDate(), request.description(), request.settlementAssetRowId()));
+        return ApiResponse.success(AssetTradeApiDto.TradePreviewResponse.from(preview));
+    }
+
     @GetMapping("/asset-trades")
     public ApiResponse<List<AssetTradeApiDto.TradeResponse>> getTrades(
             @LoginUser UserPrincipal loginUser,
