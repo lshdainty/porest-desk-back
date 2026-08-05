@@ -151,6 +151,18 @@ public class AssetTrade extends AuditingFieldsWithIp {
         return t;
     }
 
+    /**
+     * 재계산 결과로 변동분과 실현손익을 갈아끼운다.
+     *
+     * <p>이동평균은 순서에 의존해서, 앞선 거래가 지워지거나 과거 날짜 거래가 끼어들면
+     * 그 뒤 거래들의 원가·손익이 전부 달라진다. 그때 처음부터 다시 쌓아 이 메서드로 덮는다.
+     */
+    public void replaceDeltas(BigDecimal quantityDelta, long costDelta, Long realizedPl) {
+        this.quantityDelta = quantityDelta;
+        this.costDelta = costDelta;
+        this.realizedPl = realizedPl;
+    }
+
     public void recordRealized(long realizedPl, Long realizedExpenseRowId) {
         this.realizedPl = realizedPl;
         this.realizedExpenseRowId = realizedExpenseRowId;
