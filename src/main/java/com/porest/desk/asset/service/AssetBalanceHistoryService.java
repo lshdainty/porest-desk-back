@@ -302,6 +302,11 @@ public class AssetBalanceHistoryService {
             this.byAsset = byAsset;
         }
 
+        /** 이력 맵으로 직접 만든다 — 집계 쿼리와 값이 같은지 대조하는 테스트에서 쓴다. */
+        public static BalanceResolver of(Map<Long, List<AssetBalanceHistory>> byAsset) {
+            return new BalanceResolver(byAsset);
+        }
+
         /** 총잔액 = 예수금 + 평가금액. */
         public long balanceAt(Long assetRowId, LocalDateTime at) {
             Split s = splitAt(assetRowId, at);
