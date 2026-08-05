@@ -89,6 +89,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command, boolean bulk) {
         log.debug("지출 등록 시작: userRowId={}, amount={}", command.userRowId(), command.amount());
 
+        validateAmount(command.amount());
+
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
@@ -196,6 +198,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Transactional
     public ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command) {
         log.debug("지출 수정 시작: expenseId={}", expenseId);
+
+        validateAmount(command.amount());
 
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
@@ -793,5 +797,21 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     private static String formatKRW(long v) {
         return String.format("%,d", v);
+    }
+
+    /**
+     * 거래 금액은 0보다 커야 한다.
+     *
+     * <p>부호는 유형(EXPENSE/INCOME)이 정하고 금액은 크기만 담는다 — 잔액 flow 를
+     * {@code signed = (INCOME) ? amount : -amount} 로 만들기 때문이다. 음수가 들어오면
+     * 부호가 두 번 뒤집혀 <b>지출인데 잔액이 늘어난다</b>.
+     *
+     * <p>화면은 숫자만 입력받아 음수를 만들 수 없지만, 가져오기·반복거래·API 직접 호출은
+     * 그 필터를 안 거친다. 이체·매매가 같은 이유로 이미 막고 있어 지출만 빠져 있었다.
+     */
+    private void validateAmount(Long amount) {
+        if (amount == null || amount <= 0) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
+        }
     }
 }

@@ -25,6 +25,7 @@ import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.user.service.UserService;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -780,5 +781,46 @@ class ExpenseServiceImplTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).splitCategoryRowIds()).containsExactlyInAnyOrder(8L, 2L);
+    }
+
+    @Nested
+    @DisplayName("거래 금액 부호 — 유형이 부호를 정하고 금액은 크기만 담는다")
+    class AmountSign {
+
+        @Test
+        @DisplayName("음수 금액으로 지출을 만들 수 없다 — 잔액이 거꾸로 늘어난다")
+        void rejectsNegativeAmountOnCreate() {
+            assertThatThrownBy(() -> sut.createExpense(createCmdAmount(1L, -10_000L)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("0원 거래도 막는다 — 잔액도 통계도 안 움직이는 빈 기록")
+        void rejectsZeroAmount() {
+            assertThatThrownBy(() -> sut.createExpense(createCmdAmount(1L, 0L)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("금액이 없으면 막는다")
+        void rejectsNullAmount() {
+            ExpenseServiceDto.CreateCommand cmd = new ExpenseServiceDto.CreateCommand(
+                USER_ID, 1L, null, ExpenseType.EXPENSE, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                null, null, null, null, null);
+            assertThatThrownBy(() -> sut.createExpense(cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("수정에서도 음수를 막는다 — 만든 뒤 뒤집는 경로를 남기지 않는다")
+        void rejectsNegativeAmountOnUpdate() {
+            ExpenseServiceDto.UpdateCommand cmd = new ExpenseServiceDto.UpdateCommand(
+                1L, null, ExpenseType.EXPENSE, -5_000L,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                null, null, null, null, null, null);
+            assertThatThrownBy(() -> sut.updateExpense(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
     }
 }
