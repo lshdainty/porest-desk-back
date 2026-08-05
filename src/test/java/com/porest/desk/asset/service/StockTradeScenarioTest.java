@@ -199,7 +199,8 @@ class StockTradeScenarioTest {
     }
 
     private CreateTradeCommand trade(TradeType type, String qty, long amount, long fee, int day) {
-        return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK, SAMSUNG, true,
+        return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK,
+            null, SAMSUNG, true,
             new BigDecimal(qty), amount, fee, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
     }
 
@@ -448,6 +449,7 @@ class StockTradeScenarioTest {
             given(assetRepository.findById(99L)).willReturn(Optional.of(bank));
 
             var cmd = new CreateTradeCommand(USER_ID, 99L, TradeType.BUY, HoldingType.STOCK,
+            null,
                 SAMSUNG, true, BigDecimal.TEN, 100_000L, 0L,
                 LocalDateTime.of(2026, 8, 3, 10, 0), null, null);
 
@@ -460,6 +462,7 @@ class StockTradeScenarioTest {
         void othersAssetRejected() {
             assertThatThrownBy(() -> sut.createTrade(
                 new CreateTradeCommand(999L, ASSET_ID, TradeType.BUY, HoldingType.STOCK,
+            null,
                     SAMSUNG, true, BigDecimal.TEN, 100_000L, 0L,
                     LocalDateTime.of(2026, 8, 3, 10, 0), null, null)))
                 .isInstanceOf(RuntimeException.class);
@@ -473,7 +476,8 @@ class StockTradeScenarioTest {
     class SettlementAccount {
 
         private CreateTradeCommand viaBank(TradeType type, String qty, long amount, int day) {
-            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK, SAMSUNG, true,
+            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK,
+            null, SAMSUNG, true,
                 new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null,
                 BANK_ID);
         }
@@ -573,7 +577,8 @@ class StockTradeScenarioTest {
     class NonStock {
 
         private CreateTradeCommand goldTrade(TradeType type, String qty, long amount, int day) {
-            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.GOLD, "금 현물", false,
+            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.GOLD,
+            null, "금 현물", false,
                 new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
         }
 

@@ -80,7 +80,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_INVALID_AMOUNT);
         }
 
-        AssetHolding holding = findHolding(asset.getRowId(), command.holdingKey());
+        AssetHolding holding = findHolding(asset.getRowId(), command.holdingRowId(), command.holdingKey());
         BigDecimal quantityDelta;
         long costDelta;
         Long realized = null;
@@ -126,7 +126,11 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             command.description());
         tradeRepository.save(trade);
 
-        applyToHolding(asset, command, holding, quantityDelta, costDelta);
+        AssetHolding applied = applyToHolding(asset, command, holding, quantityDelta, costDelta);
+        // 이 거래가 어느 보유를 건드렸는지 id 로 남긴다 — 이름이 바뀌어도 안 끊긴다.
+        if (applied != null && applied.getRowId() != null) {
+            trade.linkHolding(applied.getRowId());
+        }
 
         // 증권계좌는 예수금이 있어야 주식을 산다 — 결제 계좌를 골랐으면 통장에서 주식이
         // 바로 사지는 게 아니라 두 단계로 나뉜다.
@@ -175,7 +179,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         }
 
         Asset asset = trade.getAsset();
-        AssetHolding holding = findHolding(asset.getRowId(), trade.getHoldingKey());
+        AssetHolding holding = findHolding(asset.getRowId(), trade.getHoldingRowId(), trade.getHoldingKey());
         if (holding != null) {
             // 남겨 둔 변동분을 부호만 뒤집어 되돌린다 — 현재 원가로 다시 계산하면 어긋난다.
             holding.applyTrade(trade.getQuantityDelta().negate(), -trade.getCostDelta());
@@ -243,12 +247,29 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         return settlement;
     }
 
-    private AssetHolding findHolding(Long assetRowId, String holdingKey) {
+    /**
+     * 보유를 찾는다 — <b>row_id 가 우선</b>이고 없으면 이름으로 떨어진다.
+     *
+     * <p>미연동 종목의 holdingKey 는 항목명이라, 이름을 고치면 거래와 보유가 끊긴다.
+     * 보유가 제자리 수정되도록 바뀌면서 row_id 가 안정됐으므로 id 로 묶는다.
+     * 이름 경로는 id 가 없는 기존 거래와, 아직 보유가 없는 첫 매수를 위해 남긴다.
+     */
+    private AssetHolding findHolding(Long assetRowId, Long holdingRowId, String holdingKey) {
+        List<AssetHolding> active = holdingRepository.findActiveByAsset(assetRowId).stream()
+            .filter(h -> h.getIsDeleted() == YNType.N)
+            .toList();
+        if (holdingRowId != null) {
+            AssetHolding byId = active.stream()
+                .filter(h -> holdingRowId.equals(h.getRowId()))
+                .findFirst().orElse(null);
+            if (byId != null) {
+                return byId;
+            }
+        }
         if (holdingKey == null) {
             return null;
         }
-        return holdingRepository.findActiveByAsset(assetRowId).stream()
-            .filter(h -> h.getIsDeleted() == YNType.N)
+        return active.stream()
             .filter(h -> holdingKey.equals(h.holdingKey()))
             .findFirst()
             .orElse(null);
@@ -269,8 +290,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             .longValueExact();
     }
 
-    private void applyToHolding(Asset asset, AssetTradeServiceDto.CreateTradeCommand command,
-                                AssetHolding holding, BigDecimal quantityDelta, long costDelta) {
+    private AssetHolding applyToHolding(Asset asset, AssetTradeServiceDto.CreateTradeCommand command,
+                                        AssetHolding holding, BigDecimal quantityDelta, long costDelta) {
         if (holding == null) {
             boolean linked = Boolean.TRUE.equals(command.linked());
             AssetHolding created = AssetHolding.create(asset,
@@ -281,13 +302,14 @@ public class AssetTradeServiceImpl implements AssetTradeService {
                 linked ? null : command.holdingKey(),
                 null, costDelta, nextSortOrder(asset.getRowId()));
             holdingRepository.save(created);
-            return;
+            return created;
         }
         holding.applyTrade(quantityDelta, costDelta);
         // 다 팔면 보유가 사라진다 — 0 주를 들고 있는 행은 목록만 어지럽힌다.
         if (holding.getQuantity() == null || holding.getQuantity().signum() <= 0) {
             holding.deleteHolding();
         }
+        return holding;
     }
 
     private int nextSortOrder(Long assetRowId) {

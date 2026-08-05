@@ -8,6 +8,11 @@ import java.util.List;
 public class ExpenseSplitServiceDto {
 
     public record SplitCommand(
+        /**
+         * 기존 분할 행 아이디 — 있으면 제자리 수정, 없으면 신규.
+         * 지금은 분할에 상태 컬럼이 없어 잃는 게 없지만, 붙는 순간 통째 교체가 그걸 날린다.
+         */
+        Long rowId,
         Long categoryRowId,
         Long amount,
         String label,

@@ -68,7 +68,8 @@ class ExpenseSplitServiceImplTest {
         given(expense.getAmount()).willReturn(10_000L);
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
 
-        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(10L, 5_000L, "절반", 0));
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 5_000L, "절반", 0));
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);
@@ -87,7 +88,8 @@ class ExpenseSplitServiceImplTest {
         given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(parent));
         given(expenseCategoryRepository.hasChildren(10L)).willReturn(true);
 
-        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(10L, 10_000L, "전부", 0));
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 10_000L, "전부", 0));
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);
@@ -108,7 +110,8 @@ class ExpenseSplitServiceImplTest {
         given(expenseCategoryRepository.findById(30L)).willReturn(Optional.of(incomeCat));
 
         // 합계는 거래 금액과 일치(타입 검증 분기까지 도달하도록)
-        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(30L, 10_000L, "전부", 0));
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(
+            null,30L, 10_000L, "전부", 0));
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);
@@ -121,7 +124,8 @@ class ExpenseSplitServiceImplTest {
         given(expense.getUser()).willReturn(user(999L));
         given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
 
-        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(10L, 10_000L, "전부", 0));
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 10_000L, "전부", 0));
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(ForbiddenException.class);
@@ -138,7 +142,8 @@ class ExpenseSplitServiceImplTest {
         ExpenseCategory othersCategory = category(20L, user(999L));
         given(expenseCategoryRepository.findById(20L)).willReturn(Optional.of(othersCategory));
 
-        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(20L, 10_000L, "전부", 0));
+        var splits = List.of(new ExpenseSplitServiceDto.SplitCommand(
+            null,20L, 10_000L, "전부", 0));
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(ForbiddenException.class);
@@ -165,8 +170,10 @@ class ExpenseSplitServiceImplTest {
             // +30,000 − 20,000 = 10,000. 합계 검사만 하면 통과해 버리고,
             // 카테고리 통계에 −20,000 짜리 항목이 박힌다.
             var splits = List.of(
-                new ExpenseSplitServiceDto.SplitCommand(10L, 30_000L, "식사", 0),
-                new ExpenseSplitServiceDto.SplitCommand(11L, -20_000L, "할인", 1));
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 30_000L, "식사", 0),
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,11L, -20_000L, "할인", 1));
 
             assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);
@@ -177,8 +184,10 @@ class ExpenseSplitServiceImplTest {
         void rejectsZeroSplit() {
             expenseOf(10_000L);
             var splits = List.of(
-                new ExpenseSplitServiceDto.SplitCommand(10L, 10_000L, "전부", 0),
-                new ExpenseSplitServiceDto.SplitCommand(11L, 0L, "빈 항목", 1));
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 10_000L, "전부", 0),
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,11L, 0L, "빈 항목", 1));
 
             assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);
@@ -189,7 +198,8 @@ class ExpenseSplitServiceImplTest {
         void rejectsNullSplitAmount() {
             expenseOf(10_000L);
             var splits = List.of(
-                new ExpenseSplitServiceDto.SplitCommand(10L, null, "빠뜨림", 0));
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, null, "빠뜨림", 0));
 
             assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(InvalidValueException.class);
@@ -209,8 +219,10 @@ class ExpenseSplitServiceImplTest {
             given(expenseSplitRepository.findByExpense(5L)).willReturn(List.of());
 
             var splits = List.of(
-                new ExpenseSplitServiceDto.SplitCommand(10L, 7_000L, "식사", 0),
-                new ExpenseSplitServiceDto.SplitCommand(11L, 3_000L, "음료", 1));
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 7_000L, "식사", 0),
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,11L, 3_000L, "음료", 1));
 
             org.assertj.core.api.Assertions.assertThatCode(() -> sut.replaceSplits(replaceCmd(splits)))
                 .doesNotThrowAnyException();

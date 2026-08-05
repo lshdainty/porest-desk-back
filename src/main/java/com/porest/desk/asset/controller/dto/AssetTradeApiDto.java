@@ -21,6 +21,8 @@ public final class AssetTradeApiDto {
         Long assetRowId,
         TradeType tradeType,
         HoldingType holdingType,
+        /** 보유 행 아이디 — 보내면 이름 대신 이걸로 묶어 종목명을 바꿔도 이력이 안 끊긴다. */
+        Long holdingRowId,
         /** 종목 식별자 — 연동은 토스 종목코드, 미연동은 항목명. */
         String holdingKey,
         Boolean linked,

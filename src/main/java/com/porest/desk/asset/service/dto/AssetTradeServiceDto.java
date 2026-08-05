@@ -22,6 +22,8 @@ public final class AssetTradeServiceDto {
         TradeType tradeType,
         HoldingType holdingType,
         /** 종목 식별자 — 연동은 토스 종목코드, 미연동은 항목명. */
+        /** 보유 행 아이디 — 있으면 이름 대신 이걸로 묶는다(이름을 고쳐도 안 끊긴다). */
+        Long holdingRowId,
         String holdingKey,
         Boolean linked,
         BigDecimal quantity,

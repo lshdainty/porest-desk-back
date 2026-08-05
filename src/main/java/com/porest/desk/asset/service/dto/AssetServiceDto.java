@@ -62,6 +62,14 @@ public class AssetServiceDto {
      * holdingType 미지정은 STOCK 으로 본다(구버전 클라이언트 하위호환).
      */
     public record HoldingCommand(
+        /**
+         * 기존 보유 행 아이디 — 있으면 제자리 수정, 없으면 신규.
+         *
+         * <p>이게 없으면 편집할 때마다 보유를 통째로 지우고 새로 만들게 되고, row_id 가
+         * 매번 바뀌어 거래(asset_trade)가 이름으로 묶일 수밖에 없다. 그러면 종목명을
+         * 바꾸는 순간 원가와 매매 이력이 끊긴다.
+         */
+        Long rowId,
         HoldingType holdingType,
         Boolean linked,
         String tossSymbol,

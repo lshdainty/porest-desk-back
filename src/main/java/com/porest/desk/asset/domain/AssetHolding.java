@@ -124,6 +124,25 @@ public class AssetHolding extends AuditingFieldsWithIp {
         this.totalCost = Math.max(0L, (totalCost != null ? totalCost : 0L) + costDelta);
     }
 
+    /**
+     * 편집 폼이 보낸 값으로 제자리 수정 — row_id 가 그대로라 거래(asset_trade) 연결이 끊기지 않는다.
+     * 원가는 매수·매도가 쌓은 값이라 안 보내오면(null) 유지한다.
+     */
+    public void updateHolding(HoldingType holdingType, YNType linked, String tossSymbol,
+                              BigDecimal quantity, String holdingName, Long holdingValue,
+                              Long totalCost, Integer sortOrder) {
+        this.holdingType = holdingType != null ? holdingType : this.holdingType;
+        this.linked = linked != null ? linked : this.linked;
+        this.tossSymbol = tossSymbol;
+        this.quantity = quantity;
+        this.holdingName = holdingName;
+        this.holdingValue = holdingValue;
+        if (totalCost != null) {
+            this.totalCost = totalCost;
+        }
+        this.sortOrder = sortOrder != null ? sortOrder : this.sortOrder;
+    }
+
     /** 사용자가 보유를 직접 고칠 때 — 매수/매도를 거치지 않는 보정 경로. */
     public void adjust(BigDecimal quantity, Long holdingValue, Long totalCost) {
         this.quantity = quantity;

@@ -45,6 +45,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -243,14 +244,13 @@ public class AssetServiceImpl implements AssetService {
             balanceHistoryService.relinkCheckCardHistory(asset, asset.getPaymentAsset());
         }
 
-        // 보유 교체 — null=무변경, 리스트=전체 교체(기존 활성 soft delete 후 신규 insert).
+        // 보유 동기화 — null=무변경, 리스트=rowId 로 맞춘다(있으면 제자리 수정, 없으면 신규,
+        // 안 온 건 삭제). 통째로 갈아끼우면 row_id 가 매번 바뀌어 거래(asset_trade)를
+        // 이름으로 묶을 수밖에 없고, 종목명을 고치는 순간 원가와 이력이 끊긴다.
         List<AssetServiceDto.HoldingInfo> holdings;
         if (command.holdings() != null) {
             validateHoldings(asset.getAssetType(), command.holdings());
-            for (AssetHolding old : assetHoldingRepository.findActiveByAsset(assetId)) {
-                old.deleteHolding(); // dirty checking — UPDATE 는 save 안 함
-            }
-            holdings = saveHoldings(asset, command.holdings());
+            holdings = syncHoldings(asset, command.holdings());
         } else {
             holdings = activeHoldingInfos(assetId);
         }
@@ -452,7 +452,67 @@ public class AssetServiceImpl implements AssetService {
         }
     }
 
-    /** 보유 신규 저장 — sortOrder = 배열 인덱스. */
+    /**
+     * 보유 목록을 rowId 로 맞춘다 — 있으면 제자리 수정, 없으면 신규, 안 온 건 삭제.
+     *
+     * <p>row_id 가 유지돼야 거래(asset_trade)가 보유를 안정적으로 가리킬 수 있다. 통째로
+     * 갈아끼우면 id 가 매번 바뀌어 이름으로 묶게 되고, 종목명을 고치는 순간 끊긴다.
+     */
+    private List<AssetServiceDto.HoldingInfo> syncHoldings(Asset asset,
+                                                           List<AssetServiceDto.HoldingCommand> holdings) {
+        List<AssetHolding> existing = assetHoldingRepository.findActiveByAsset(asset.getRowId());
+        Map<Long, AssetHolding> byId = existing.stream()
+            .filter(h -> h.getRowId() != null)
+            .collect(Collectors.toMap(AssetHolding::getRowId, h -> h, (a, b) -> a));
+        // 원가는 매수·매도가 쌓은 값이고 편집 폼이 늘 보내오지는 않는다. rowId 로 못 찾는
+        // 신규 행이면 종목 식별자로라도 이어 붙인다 — 안 그러면 다음 매도에서 대금 전액이 이익이 된다.
+        Map<String, Long> costByKey = existing.stream()
+            .filter(h -> h.holdingKey() != null && h.getTotalCost() != null)
+            .collect(Collectors.toMap(AssetHolding::holdingKey, AssetHolding::getTotalCost, (a, b) -> a));
+
+        List<AssetServiceDto.HoldingInfo> result = new ArrayList<>(holdings.size());
+        Set<AssetHolding> kept = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (int i = 0; i < holdings.size(); i++) {
+            AssetServiceDto.HoldingCommand hc = holdings.get(i);
+            boolean linked = Boolean.TRUE.equals(hc.linked());
+            AssetHolding found = hc.rowId() != null ? byId.get(hc.rowId()) : null;
+            if (found != null) {
+                found.updateHolding(
+                    hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
+                    linked ? YNType.Y : YNType.N,
+                    linked ? hc.tossSymbol() : null,
+                    hc.quantity(),
+                    linked ? null : hc.holdingName(),
+                    linked ? null : hc.holdingValue(),
+                    hc.totalCost(),
+                    i);
+                kept.add(found);
+                result.add(AssetServiceDto.HoldingInfo.from(found));
+                continue;
+            }
+            AssetHolding created = AssetHolding.create(
+                asset,
+                hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
+                linked ? YNType.Y : YNType.N,
+                linked ? hc.tossSymbol() : null,
+                hc.quantity(),
+                linked ? null : hc.holdingName(),
+                linked ? null : hc.holdingValue(),
+                resolveCost(hc, costByKey),
+                i);
+            assetHoldingRepository.save(created);
+            result.add(AssetServiceDto.HoldingInfo.from(created));
+        }
+        // 목록에서 빠진 보유만 지운다. id 로 매칭되지 않은 것도 여기 걸린다.
+        for (AssetHolding h : existing) {
+            if (!kept.contains(h)) {
+                h.deleteHolding();
+            }
+        }
+        return result;
+    }
+
+    /** 보유 신규 저장 — sortOrder = 배열 인덱스. 생성 경로 전용. */
     private List<AssetServiceDto.HoldingInfo> saveHoldings(Asset asset, List<AssetServiceDto.HoldingCommand> holdings) {
         if (holdings == null || holdings.isEmpty()) {
             return List.of();

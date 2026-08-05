@@ -596,8 +596,10 @@ class ExpenseServiceImplTest {
 
         // 20,000 으로 상향하면서 합이 20,000 인 분할을 함께 전달
         var splits = List.of(
-                new ExpenseSplitServiceDto.SplitCommand(10L, 12_000L, "a", 0),
-                new ExpenseSplitServiceDto.SplitCommand(10L, 8_000L, "b", 1));
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 12_000L, "a", 0),
+                new ExpenseSplitServiceDto.SplitCommand(
+            null,10L, 8_000L, "b", 1));
 
         sut.updateExpense(5L, USER_ID, updateCmdWithSplits(10L, 20_000L, splits));
 
@@ -717,8 +719,10 @@ class ExpenseServiceImplTest {
             null,
             null,
             null, null, null,
-                List.of(new ExpenseSplitServiceDto.SplitCommand(2L, 4_000L, "식비", 0),
-                        new ExpenseSplitServiceDto.SplitCommand(8L, 6_000L, "생활", 1)));
+                List.of(new ExpenseSplitServiceDto.SplitCommand(
+            null,2L, 4_000L, "식비", 0),
+                        new ExpenseSplitServiceDto.SplitCommand(
+            null,8L, 6_000L, "생활", 1)));
 
         sut.updateExpense(5L, USER_ID, cmd);
 

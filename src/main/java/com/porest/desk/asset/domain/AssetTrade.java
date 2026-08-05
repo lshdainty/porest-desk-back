@@ -172,6 +172,20 @@ public class AssetTrade extends AuditingFieldsWithIp {
     @Column(name = "settlement_transfer_row_id")
     private Long settlementTransferRowId;
 
+    /**
+     * 보유 행 아이디 — 종목을 이름이 아니라 id 로 가리킨다.
+     *
+     * <p>{@code holding_key} 는 미연동 종목에서 항목명이라, 이름을 고치면 거래와 보유가
+     * 끊겼다. 보유가 제자리 수정되도록 바뀌면서 row_id 가 안정돼 이제 id 로 묶을 수 있다.
+     * 기존 거래는 null 이라 종전대로 이름으로 찾는다.
+     */
+    @Column(name = "holding_row_id")
+    private Long holdingRowId;
+
+    public void linkHolding(Long holdingRowId) {
+        this.holdingRowId = holdingRowId;
+    }
+
     public void linkSettlementTransfer(Long transferRowId) {
         this.settlementTransferRowId = transferRowId;
     }

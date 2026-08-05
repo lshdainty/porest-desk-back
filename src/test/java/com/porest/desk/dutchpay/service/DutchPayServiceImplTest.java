@@ -13,6 +13,7 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,6 +27,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
@@ -115,7 +117,8 @@ class DutchPayServiceImplTest {
         var cmd = new DutchPayServiceDto.CreateCommand(
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
                 LocalDate.of(2026, 6, 1),
-                List.of(new DutchPayServiceDto.ParticipantCommand(null, "참가자A", -1_000L)));
+                List.of(new DutchPayServiceDto.ParticipantCommand(
+            null,null, "참가자A", -1_000L)));
 
         assertThatThrownBy(() -> sut.createDutchPay(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -130,8 +133,10 @@ class DutchPayServiceImplTest {
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
                 LocalDate.of(2026, 6, 1),
                 List.of(
-                        new DutchPayServiceDto.ParticipantCommand(50L, "철수", 5_000L),
-                        new DutchPayServiceDto.ParticipantCommand(50L, "철수(중복)", 5_000L)));
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,50L, "철수", 5_000L),
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,50L, "철수(중복)", 5_000L)));
 
         assertThatThrownBy(() -> sut.createDutchPay(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -146,8 +151,10 @@ class DutchPayServiceImplTest {
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
                 LocalDate.of(2026, 6, 1),
                 List.of(
-                        new DutchPayServiceDto.ParticipantCommand(null, "영희", 5_000L),
-                        new DutchPayServiceDto.ParticipantCommand(null, "영희", 5_000L)));
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "영희", 5_000L),
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "영희", 5_000L)));
 
         assertThatThrownBy(() -> sut.createDutchPay(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -213,9 +220,12 @@ class DutchPayServiceImplTest {
         var cmd = new DutchPayServiceDto.CreateCommand(
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.EQUAL, LocalDate.of(2026, 6, 1),
                 List.of(
-                        new DutchPayServiceDto.ParticipantCommand(null, "A", 3_000L),
-                        new DutchPayServiceDto.ParticipantCommand(null, "B", 3_000L),
-                        new DutchPayServiceDto.ParticipantCommand(null, "C", 4_000L)));
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "A", 3_000L),
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "B", 3_000L),
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "C", 4_000L)));
 
         var info = sut.createDutchPay(cmd);
 
@@ -232,8 +242,10 @@ class DutchPayServiceImplTest {
         var cmd = new DutchPayServiceDto.CreateCommand(
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1),
                 List.of(
-                        new DutchPayServiceDto.ParticipantCommand(null, "A", 4_000L),
-                        new DutchPayServiceDto.ParticipantCommand(null, "B", 4_000L)));
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "A", 4_000L),
+                        new DutchPayServiceDto.ParticipantCommand(
+            null,null, "B", 4_000L)));
 
         var info = sut.createDutchPay(cmd); // 예외 없이 성공
 
@@ -241,5 +253,59 @@ class DutchPayServiceImplTest {
                 .mapToLong(DutchPayServiceDto.ParticipantInfo::amount).sum();
         assertThat(sum).isEqualTo(8_000L);            // 합 8,000
         assertThat(info.totalAmount()).isEqualTo(10_000L); // total 10,000 (불일치 허용)
+    }
+
+    @Nested
+    @DisplayName("참가자 수정 — rowId 로 맞춰 정산 표시를 지킨다")
+    class ParticipantSync {
+
+        private DutchPayServiceDto.UpdateCommand updateCmd(
+                List<DutchPayServiceDto.ParticipantCommand> participants) {
+            return new DutchPayServiceDto.UpdateCommand(
+                "회식", null, 100_000L, "KRW", SplitMethod.EQUAL,
+                LocalDate.of(2026, 8, 1), participants);
+        }
+
+        @Test
+        @DisplayName("금액만 고쳐도 이미 체크한 정산 완료가 풀리지 않는다")
+        void keepsPaidFlagOnUpdate() {
+            // 4명이 나눠 낸 회식비에서 한 명이 이미 입금해 체크해 뒀다.
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 200_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant paid = DutchPayParticipant.create(dp, null, "김철수", 50_000L);
+            ReflectionTestUtils.setField(paid, "rowId", 77L);
+            paid.markPaid();
+            dp.addParticipant(paid);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            // 금액만 40,000 으로 고쳐 저장 — rowId 를 함께 보낸다.
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(77L, null, "김철수", 40_000L))));
+
+            assertThat(paid.getIsPaid()).isEqualTo(YNType.Y);
+            assertThat(paid.getPaidAt()).isNotNull();
+            assertThat(paid.getAmount()).isEqualTo(40_000L);
+            assertThat(paid.getIsDeleted()).isEqualTo(YNType.N);
+        }
+
+        @Test
+        @DisplayName("목록에서 빠진 참가자는 지워진다")
+        void removesMissingParticipant() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant gone = DutchPayParticipant.create(dp, null, "박영희", 50_000L);
+            ReflectionTestUtils.setField(gone, "rowId", 78L);
+            dp.addParticipant(gone);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(null, null, "김철수", 100_000L))));
+
+            assertThat(gone.getIsDeleted()).isEqualTo(YNType.Y);
+        }
     }
 }
