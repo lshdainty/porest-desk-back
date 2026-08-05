@@ -88,4 +88,51 @@ public interface AssetBalanceHistoryRepository extends JpaRepository<AssetBalanc
         """, nativeQuery = true)
     List<Object[]> aggregateBalances(@Param("assetIds") Collection<Long> assetIds,
                                      @Param("at") LocalDateTime at);
+
+    /**
+     * 구간 내 <b>일자별</b> 변동을 DB 가 집계해 돌려준다 — 추이 그래프용.
+     *
+     * <p>시점마다 쿼리를 날리면 12개월 추이에 12번, 26주면 26번이다. 대신 일자별로 접어
+     * 한 번에 받고 자바에서 누적한다. 돌아오는 행 수는 <b>활동이 있던 날짜 수</b>라
+     * 거래 건수와 무관하다.
+     *
+     * <p>같은 날 안에서 앵커가 찍히면 그 앞의 flow 는 묻힌다. 그래서 {@code NOT EXISTS} 를
+     * <b>같은 날짜로 한정</b>해 걸고, 살아남은 것만 집계한다 —
+     * {@code anchorAmount} 는 그날 마지막 앵커(없으면 null), {@code flowAfter} 는 그 앵커
+     * 이후의 flow 합(앵커가 없으면 그날 flow 전부)이다.
+     *
+     * <p>자바 누적: 앵커가 있는 날은 {@code running = anchorAmount + flowAfter},
+     * 없는 날은 {@code running += flowAfter}.
+     *
+     * @return [assetRowId(Number), channel(String), date(Date), anchorAmount(Number|null), flowAfter(Number)]
+     */
+    @Query(value = """
+        SELECT h.asset_row_id,
+               h.channel,
+               CAST(h.effective_at AS DATE) AS d,
+               MAX(CASE WHEN h.source_type IN ('INIT', 'MANUAL', 'VALUATION') THEN h.amount END),
+               COALESCE(SUM(CASE WHEN h.source_type IN ('INIT', 'MANUAL', 'VALUATION')
+                                 THEN 0 ELSE h.amount END), 0)
+        FROM asset_balance_history h
+        WHERE h.asset_row_id IN (:assetIds)
+          AND h.is_deleted = 'N'
+          AND h.effective_at > :from
+          AND h.effective_at <= :to
+          AND NOT EXISTS (
+            SELECT 1 FROM asset_balance_history a
+            WHERE a.asset_row_id = h.asset_row_id
+              AND a.channel = h.channel
+              AND a.is_deleted = 'N'
+              AND a.source_type IN ('INIT', 'MANUAL', 'VALUATION')
+              AND CAST(a.effective_at AS DATE) = CAST(h.effective_at AS DATE)
+              AND a.effective_at <= :to
+              AND (a.effective_at > h.effective_at
+                   OR (a.effective_at = h.effective_at AND a.row_id > h.row_id))
+          )
+        GROUP BY h.asset_row_id, h.channel, CAST(h.effective_at AS DATE)
+        ORDER BY h.asset_row_id, h.channel, CAST(h.effective_at AS DATE)
+        """, nativeQuery = true)
+    List<Object[]> aggregateDailyDeltas(@Param("assetIds") Collection<Long> assetIds,
+                                        @Param("from") LocalDateTime from,
+                                        @Param("to") LocalDateTime to);
 }

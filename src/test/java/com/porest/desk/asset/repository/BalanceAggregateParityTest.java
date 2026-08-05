@@ -3,6 +3,7 @@ package com.porest.desk.asset.repository;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetBalanceHistory;
+import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
 import com.porest.desk.asset.service.AssetBalanceHistoryService.Split;
 import com.porest.desk.asset.type.AssetType;
@@ -51,6 +52,12 @@ class BalanceAggregateParityTest {
     @Autowired private TestEntityManager em;
     @Autowired private AssetBalanceHistoryRepository repository;
 
+    /**
+     * 읽기 전용 집계만 쓰므로 저장소만 주면 된다 — 슬라이스에 없는 빈(UserClock 등)을
+     * 끌어오지 않으려고 직접 만든다. recompute 계열은 이 테스트에서 호출하지 않는다.
+     */
+    private AssetBalanceHistoryService service;
+
     private User user;
     private Asset asset;
     private Asset other;
@@ -59,6 +66,7 @@ class BalanceAggregateParityTest {
 
     @BeforeEach
     void setUp() {
+        service = new AssetBalanceHistoryService(repository, null, null);
         user = em.persist(User.createUser(null, "tester", "테스터", "tester@porest.com"));
         asset = persistAsset("증권계좌");
         other = persistAsset("급여통장");
@@ -336,6 +344,12 @@ class BalanceAggregateParityTest {
     @Test
     @DisplayName("무작위 이력 200건 — 두 경로가 항상 같은 값을 낸다")
     void randomizedParity() {
+        seedRandomHistory();
+        assertParity(asset, other);
+    }
+
+    /** 씨앗 고정 무작위 이력 — 실패하면 항상 같은 이력으로 재현된다. */
+    private void seedRandomHistory() {
         // 씨앗 고정 — 실패하면 항상 같은 이력으로 재현된다.
         long seed = 20260805L;
         List<BalanceSourceType> types = List.of(
@@ -367,7 +381,140 @@ class BalanceAggregateParityTest {
             // 시각은 무작위로 골라 소급 입력이 자연스럽게 섞이게 한다.
             row(target, type, channel, amount, instants.get((r / 13) % instants.size()));
         }
+    }
 
-        assertParity(asset, other);
+    // === 추이(여러 시점) 대조 ====================================================
+
+    /** 시점 여러 개를 자바 계산과 나란히 비교한다 — 추이 그래프가 쓰는 경로. */
+    private void assertTrendParity(List<LocalDateTime> points, Asset... targets) {
+        em.flush();
+        em.clear();
+        List<Long> ids = java.util.Arrays.stream(targets).map(Asset::getRowId).toList();
+
+        Map<Long, List<AssetBalanceHistory>> byAsset =
+            repository.findActiveByAssetIds(ids, YNType.N).stream()
+                .collect(Collectors.groupingBy(h -> h.getAsset().getRowId(),
+                    LinkedHashMap::new, Collectors.toList()));
+        BalanceResolver resolver = BalanceResolver.of(byAsset);
+
+        Map<Long, List<Split>> queried = service.balancesAtPoints(
+            java.util.Arrays.asList(targets), points);
+
+        for (Long id : ids) {
+            List<Split> sql = queried.getOrDefault(id, List.of());
+            assertThat(sql).as("자산 %d — 시점 개수가 다르다", id).hasSize(points.size());
+            for (int i = 0; i < points.size(); i++) {
+                assertThat(sql.get(i))
+                    .as("자산 %d, 시점 %s — 자바 계산과 쿼리 결과가 달라졌다", id, points.get(i))
+                    .isEqualTo(resolver.splitAt(id, points.get(i)));
+            }
+        }
+    }
+
+    /** 월말 시점들 — 순자산 추이가 쓰는 모양. */
+    private List<LocalDateTime> monthEnds(int fromMonth, int toMonth) {
+        List<LocalDateTime> points = new ArrayList<>();
+        for (int m = fromMonth; m <= toMonth; m++) {
+            points.add(java.time.LocalDate.of(2026, m, 1)
+                .with(java.time.temporal.TemporalAdjusters.lastDayOfMonth())
+                .atTime(java.time.LocalTime.MAX));
+        }
+        return points;
+    }
+
+    @Nested
+    @DisplayName("추이 — 여러 시점")
+    class Trend {
+
+        @Test
+        @DisplayName("초기 잔액 + 매달 지출")
+        void monthlyExpenses() {
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 3_000_000L, at(1, 1));
+            for (int m = 2; m <= 8; m++) {
+                row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -100_000L * m, at(m, 10));
+            }
+            assertTrendParity(monthEnds(1, 8), asset);
+        }
+
+        @Test
+        @DisplayName("중간에 수동 조정이 끼면 그 시점부터 값이 갈아엎힌다")
+        void manualAnchorMidTrend() {
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 3_000_000L, at(1, 1));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -500_000L, at(2, 10));
+            row(asset, BalanceSourceType.MANUAL, BalanceChannel.CASH, 1_000_000L, at(4, 15));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -70_000L, at(5, 10));
+            assertTrendParity(monthEnds(1, 8), asset);
+        }
+
+        @Test
+        @DisplayName("같은 날 앵커와 flow 가 섞여도 같다 — 앵커 앞의 flow 는 묻힌다")
+        void anchorAndFlowSameDay() {
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 1_000_000L, at(1, 1));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -30_000L,
+                LocalDateTime.of(2026, 4, 15, 9, 0));   // 앵커 앞 — 묻힘
+            row(asset, BalanceSourceType.MANUAL, BalanceChannel.CASH, 800_000L,
+                LocalDateTime.of(2026, 4, 15, 12, 0));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -20_000L,
+                LocalDateTime.of(2026, 4, 15, 18, 0));  // 앵커 뒤 — 반영
+            assertTrendParity(monthEnds(1, 8), asset);
+        }
+
+        @Test
+        @DisplayName("투자 계좌 — 예수금과 평가금액이 각자 흐른다")
+        void investmentTrend() {
+            row(asset, BalanceSourceType.TRANSFER, BalanceChannel.CASH, 1_000_000L, at(2, 1));
+            row(asset, BalanceSourceType.VALUATION, BalanceChannel.HOLDING, 600_000L, at(2, 2));
+            row(asset, BalanceSourceType.TRADE, BalanceChannel.CASH, -600_000L, at(2, 2));
+            row(asset, BalanceSourceType.VALUATION, BalanceChannel.HOLDING, 750_000L, at(4, 1));
+            row(asset, BalanceSourceType.VALUATION, BalanceChannel.HOLDING, 900_000L, at(6, 1));
+            assertTrendParity(monthEnds(1, 8), asset);
+        }
+
+        @Test
+        @DisplayName("첫 시점보다 앞선 이력은 시작값에 접혀 들어간다")
+        void historyBeforeWindow() {
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 5_000_000L,
+                LocalDateTime.of(2025, 3, 1, 12, 0));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -1_000_000L,
+                LocalDateTime.of(2025, 8, 1, 12, 0));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -50_000L, at(3, 10));
+            assertTrendParity(monthEnds(1, 8), asset);
+        }
+
+        @Test
+        @DisplayName("자산 여러 개의 추이를 한 번에")
+        void multiAssetTrend() {
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 1_000_000L, at(1, 1));
+            row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -100_000L, at(3, 1));
+            row(other, BalanceSourceType.INIT, BalanceChannel.CASH, 3_000_000L, at(1, 1));
+            row(other, BalanceSourceType.MANUAL, BalanceChannel.CASH, 2_000_000L, at(5, 1));
+            row(other, BalanceSourceType.TRANSFER, BalanceChannel.CASH, -500_000L, at(7, 1));
+            assertTrendParity(monthEnds(1, 8), asset, other);
+        }
+
+        @Test
+        @DisplayName("주간 시점 26개 — 자산 잔액 추이가 쓰는 모양")
+        void weeklyPoints() {
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 2_000_000L, at(1, 1));
+            for (int m = 2; m <= 8; m++) {
+                row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -33_000L, at(m, 7));
+                row(asset, BalanceSourceType.EXPENSE, BalanceChannel.CASH, -47_000L, at(m, 21));
+            }
+            row(asset, BalanceSourceType.MANUAL, BalanceChannel.CASH, 1_500_000L, at(5, 15));
+
+            List<LocalDateTime> weeks = new ArrayList<>();
+            java.time.LocalDate monday = java.time.LocalDate.of(2026, 3, 2);
+            for (int i = 0; i < 26; i++) {
+                weeks.add(monday.plusWeeks(i).plusDays(6).atTime(java.time.LocalTime.MAX));
+            }
+            assertTrendParity(weeks, asset);
+        }
+
+        @Test
+        @DisplayName("무작위 이력 200건의 추이도 같다")
+        void randomizedTrend() {
+            seedRandomHistory();
+            assertTrendParity(monthEnds(1, 8), asset, other);
+        }
     }
 }

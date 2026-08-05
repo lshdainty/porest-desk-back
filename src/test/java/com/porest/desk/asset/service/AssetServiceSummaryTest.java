@@ -73,11 +73,13 @@ class AssetServiceSummaryTest {
         Asset loan = asset(3L, AssetType.LOAN);
         given(assetRepository.findByUser(USER_ID)).willReturn(List.of(bank, creditCard, loan));
 
-        BalanceResolver resolver = mock(BalanceResolver.class);
-        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
-        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(1_000_000L);
-        given(resolver.balanceAt(eq(2L), any(LocalDateTime.class))).willReturn(-300_000L);
-        given(resolver.balanceAt(eq(3L), any(LocalDateTime.class))).willReturn(-500_000L);
+        // 잔액은 이제 DB 집계로 온다 — 자산별 값을 그대로 돌려준다.
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(1_000_000L, 0L));
+        balances.put(2L, new AssetBalanceHistoryService.Split(-300_000L, 0L));
+        balances.put(3L, new AssetBalanceHistoryService.Split(-500_000L, 0L));
 
         AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
 
@@ -94,10 +96,12 @@ class AssetServiceSummaryTest {
         Asset usd = foreignAsset(2L, AssetType.BANK_ACCOUNT, "USD", "1400");
         given(assetRepository.findByUser(USER_ID)).willReturn(List.of(krw, usd));
 
-        BalanceResolver resolver = mock(BalanceResolver.class);
-        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
-        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(3_500_000L);
-        given(resolver.balanceAt(eq(2L), any(LocalDateTime.class))).willReturn(1_000L);  // $1,000
+        // 잔액은 이제 DB 집계로 온다 — 자산별 값을 그대로 돌려준다.
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(3_500_000L, 0L));
+        balances.put(2L, new AssetBalanceHistoryService.Split(1_000L, 0L));  // $1,000
 
         AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
 
@@ -113,10 +117,12 @@ class AssetServiceSummaryTest {
         Asset usdLoan = foreignAsset(2L, AssetType.LOAN, "USD", "1400");
         given(assetRepository.findByUser(USER_ID)).willReturn(List.of(krw, usdLoan));
 
-        BalanceResolver resolver = mock(BalanceResolver.class);
-        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
-        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(20_000_000L);
-        given(resolver.balanceAt(eq(2L), any(LocalDateTime.class))).willReturn(-10_000L); // -$10,000
+        // 잔액은 이제 DB 집계로 온다 — 자산별 값을 그대로 돌려준다.
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(20_000_000L, 0L));
+        balances.put(2L, new AssetBalanceHistoryService.Split(-10_000L, 0L)); // -$10,000
 
         AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
 
@@ -131,9 +137,11 @@ class AssetServiceSummaryTest {
         Asset bank = asset(1L, AssetType.BANK_ACCOUNT);
         given(assetRepository.findByUser(USER_ID)).willReturn(List.of(bank));
 
-        BalanceResolver resolver = mock(BalanceResolver.class);
-        given(balanceHistoryService.resolverFor(anyCollection())).willReturn(resolver);
-        given(resolver.balanceAt(eq(1L), any(LocalDateTime.class))).willReturn(1_234_567L);
+        // 잔액은 이제 DB 집계로 온다 — 자산별 값을 그대로 돌려준다.
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(1_234_567L, 0L));
 
         assertThat(sut.getAssetSummary(USER_ID, null, null).totalAssets()).isEqualTo(1_234_567L);
     }

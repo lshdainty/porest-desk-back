@@ -161,6 +161,10 @@ class StockTradeScenarioTest {
                 });
             return null;
         }).given(balanceHistoryService).removeTrade(any());
+        // 예수금 검증이 캐시 대신 이력 집계를 본다 — 흉내 낸 예수금을 그대로 돌려준다.
+        willAnswer(inv -> new AssetBalanceHistoryService.Split(
+            cash, account.getHoldingBalance() != null ? account.getHoldingBalance() : 0L))
+            .given(balanceHistoryService).balanceAt(any(), any());
     }
 
     // === 헬퍼 ==================================================================
