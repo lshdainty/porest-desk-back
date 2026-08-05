@@ -407,7 +407,10 @@ class StockTradeScenarioTest {
             assertThat(cash).isEqualTo(cashAfterSell - 3_197_000L);
             assertThat(samsung().getQuantity()).isEqualByComparingTo("100");
             assertThat(samsung().getTotalCost()).isEqualTo(7_005_000L); // 판 만큼의 원가가 되돌아온다
-            verify(expenseRepository).delete(any(Expense.class));
+            // 손익 거래는 soft delete 로 무른다 — 물리 삭제하면 그 행에 달아 둔
+            // 카테고리·분할까지 흔적 없이 사라진다(다른 모든 거래와 같은 규약).
+            verify(expenseRepository, never()).delete(any(Expense.class));
+            assertThat(expenses).allMatch(e -> e.getIsDeleted() == YNType.Y);
         }
     }
 

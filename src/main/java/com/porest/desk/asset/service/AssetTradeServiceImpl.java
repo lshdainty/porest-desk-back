@@ -211,8 +211,10 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             assetService.deleteTransfer(trade.getSettlementTransferRowId(), userRowId);
         }
         if (trade.getRealizedExpenseRowId() != null) {
+            // soft delete 로 지운다 — 다른 모든 거래가 그렇고, 물리 삭제하면 그 행에
+            // 달아 둔 카테고리·분할까지 흔적 없이 사라진다.
             expenseRepository.findById(trade.getRealizedExpenseRowId())
-                .ifPresent(expenseRepository::delete);
+                .ifPresent(Expense::deleteExpense);
         }
         trade.deleteTrade();
         // 이동평균은 순서에 의존한다 — 중간 거래를 지우면 그 뒤 매도들의 원가·손익이 달라진다.
@@ -283,7 +285,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         Long expenseRowId = trade.getRealizedExpenseRowId();
         if (realized == 0L) {
             if (expenseRowId != null) {
-                expenseRepository.findById(expenseRowId).ifPresent(expenseRepository::delete);
+                expenseRepository.findById(expenseRowId).ifPresent(Expense::deleteExpense);
                 trade.recordRealized(0L, null);
             }
             return;
