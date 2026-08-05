@@ -69,6 +69,7 @@ class ExpenseApiControllerTest {
             null,
             null,
             null, null, null,
+            null, // autoSource — 손으로 쓴 거래
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of());
     }
