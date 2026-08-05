@@ -53,13 +53,32 @@ public class AssetBalanceHistoryService {
     public void recordInit(Asset asset, LocalDateTime effectiveAt) {
         long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
         repository.save(AssetBalanceHistory.of(
-            asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(), initial, effectiveAt));
+            asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(),
+            normalizeAnchor(asset, initial), effectiveAt));
     }
 
     /** 사용자의 수동 잔액 수정 — 절대 앵커(점프). 가계부 통계엔 영향 없음. */
     public void recordManual(Asset asset, long newBalance, LocalDateTime effectiveAt) {
         repository.save(AssetBalanceHistory.of(
-            asset.getUser(), asset, BalanceSourceType.MANUAL, asset.getRowId(), newBalance, effectiveAt));
+            asset.getUser(), asset, BalanceSourceType.MANUAL, asset.getRowId(),
+            normalizeAnchor(asset, newBalance), effectiveAt));
+    }
+
+    /**
+     * 사용자가 넣은 절대 잔액을 규약에 맞춰 정규화한다.
+     *
+     * <p>신용카드는 <b>미결제 사용액이 음수</b>다. 잔액을 움직이는 모든 경로가 이미 그 규약을
+     * 따른다 — 결제하면 {@code -amount}, 환불하면 {@code +amount}, 대금을 갚으면 {@code +원금}
+     * 이라 0 으로 수렴한다. 화면은 "현재 사용액" 을 묻고 사용자는 당연히 양수를 치므로,
+     * 막지 않고 여기서 뒤집는다.
+     *
+     * <p>여기서 안 잡으면 부호가 섞인다 — 잔액 자체는 부호에 무관한 소비자(순자산 {@code abs},
+     * 청구액, 한도 게이지)를 통과해 버리고, 부호를 그대로 더하는 화면 합계에서만 어긋난다.
+     */
+    private long normalizeAnchor(Asset asset, long amount) {
+        return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD
+            ? -Math.abs(amount)
+            : amount;
     }
 
     /**
