@@ -89,13 +89,16 @@ public class ConstellationDaily extends AuditingFieldsWithIp {
         return daily;
     }
 
-    public void addPoints(int points) {
-        this.points += points;
-    }
-
-    /** 회수 반영 — 0 밑으로 내려가지 않게 방어. GROWN 확정 상태/수집 스냅샷은 불변. */
-    public void subtractPoints(int points) {
-        this.points = Math.max(0, this.points - points);
+    /**
+     * 원장에서 집계한 값으로 맞춘다 — 더하고 빼는 게 아니라 통째로 받아 적는다.
+     *
+     * <p>이 컬럼은 원장 합계의 표시용 사본이다. 증감으로 관리하면 적립·회수 어느 한쪽을
+     * 빠뜨렸을 때 조용히 어긋나고, 그때 별자리 수집 판정까지 틀어진다.
+     *
+     * <p>GROWN 확정 상태와 수집 스냅샷은 건드리지 않는다 — 점수가 깎여도 이미 딴 별자리는 남는다.
+     */
+    public void syncPoints(int points) {
+        this.points = Math.max(0, points);
     }
 
     /** 목표 도달 — 수집 확정 (이후 회수돼도 되돌리지 않음). */

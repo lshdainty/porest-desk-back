@@ -47,7 +47,7 @@ class ConstellationDailyRepositoryTest {
     private ConstellationDaily persistDaily(User user, LocalDate date, Constellation c, boolean grown) {
         ConstellationDaily daily = ConstellationDaily.open(user, date, c);
         if (grown) {
-            daily.addPoints(7);
+            daily.syncPoints(7);
             daily.grow();
         }
         return em.persist(daily);

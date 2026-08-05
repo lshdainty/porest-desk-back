@@ -5,6 +5,7 @@ import com.porest.desk.constellation.domain.Constellation;
 import com.porest.desk.constellation.domain.ConstellationCollection;
 import com.porest.desk.constellation.domain.ConstellationDaily;
 import com.porest.desk.constellation.domain.ConstellationProfile;
+import java.util.ArrayList;
 import com.porest.desk.constellation.domain.TodoStarlight;
 import com.porest.desk.constellation.repository.ConstellationCollectionRepository;
 import com.porest.desk.constellation.repository.ConstellationDailyRepository;
@@ -18,6 +19,7 @@ import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +36,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -81,9 +84,44 @@ class StarlightServiceImplTest {
         return todo;
     }
 
+    /**
+     * 그날의 별빛 합계는 원장 집계로 온다 — 테스트도 원장을 흉내 낸다.
+     * seed 는 "이미 쌓여 있던 점수", 그 뒤 적립·회수가 여기에 반영된다.
+     */
+    private int seededPoints;
+    private final List<TodoStarlight> savedLedger = new ArrayList<>();
+
+    @BeforeEach
+    void mimicLedger() {
+        seededPoints = 0;
+        savedLedger.clear();
+        lenient().when(starlightRepository.sumPointsByUserAndDate(any(), any()))
+            .thenAnswer(inv -> seededPoints + savedLedger.stream()
+                .filter(t -> t.getIsDeleted() == YNType.N)
+                .mapToInt(TodoStarlight::getPoints).sum());
+        lenient().when(starlightRepository.save(any(TodoStarlight.class)))
+            .thenAnswer(inv -> {
+                TodoStarlight t = inv.getArgument(0);
+                savedLedger.add(t);
+                return t;
+            });
+    }
+
+    /**
+     * 회수 테스트가 직접 만든 원장 항목을 합계에 편입시킨다.
+     * seed 안에 이미 이 항목이 들어 있다고 보고 그만큼 덜어 낸다 — 회수하면 합계가 줄어야 한다.
+     */
+    private TodoStarlight seedLedger(TodoStarlight ledger) {
+        seededPoints -= ledger.getPoints();
+        savedLedger.add(ledger);
+        return ledger;
+    }
+
     private ConstellationDaily openDaily(Constellation constellation, int points) {
         ConstellationDaily daily = ConstellationDaily.open(user(), today, constellation);
-        daily.addPoints(points);
+        daily.syncPoints(points);
+        seededPoints = points;
+        savedLedger.clear();
         return daily;
     }
 
@@ -216,7 +254,8 @@ class StarlightServiceImplTest {
     void revokeSameDay() {
         Constellation c = dipper();
         ConstellationDaily daily = openDaily(c, 3);
-        TodoStarlight ledger = TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today);
+        TodoStarlight ledger = seedLedger(
+            TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today));
         given(starlightRepository.findActiveBySource(StarlightSourceType.TODO, 7L)).willReturn(Optional.of(ledger));
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
 
@@ -248,7 +287,8 @@ class StarlightServiceImplTest {
         Constellation c = dipper();
         ConstellationDaily daily = openDaily(c, 7);
         daily.grow();
-        TodoStarlight ledger = TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today);
+        TodoStarlight ledger = seedLedger(
+            TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today));
         given(starlightRepository.findActiveBySource(StarlightSourceType.TODO, 7L)).willReturn(Optional.of(ledger));
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
 
@@ -300,7 +340,8 @@ class StarlightServiceImplTest {
         ConstellationDaily daily = openDaily(c, 1);
         Memo memo = Memo.createMemo(user(), null, "m", "c", null, null);
         ReflectionTestUtils.setField(memo, "rowId", 20L);
-        TodoStarlight ledger = TodoStarlight.earn(user(), StarlightSourceType.MEMO, 20L, 1, today);
+        TodoStarlight ledger = seedLedger(
+            TodoStarlight.earn(user(), StarlightSourceType.MEMO, 20L, 1, today));
         given(starlightRepository.findActiveBySource(StarlightSourceType.MEMO, 20L)).willReturn(Optional.of(ledger));
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
 
@@ -368,7 +409,7 @@ class StarlightServiceImplTest {
         ConstellationProfile profile = ConstellationProfile.createProfile(user());
         ReflectionTestUtils.setField(profile, "guardCount", 1);
         ConstellationDaily withered = ConstellationDaily.open(user(), today.minusDays(1), c);
-        withered.addPoints(2);
+        withered.syncPoints(2);
         given(dailyRepository.findLatestGrownDate(USER_ID)).willReturn(Optional.of(today.minusDays(2)));
         given(dailyRepository.findByUserAndDateBetween(USER_ID, today.minusDays(1), today.minusDays(1)))
             .willReturn(List.of(withered));

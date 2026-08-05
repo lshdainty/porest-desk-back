@@ -24,4 +24,13 @@ public interface TodoStarlightRepository {
     Map<StarlightSourceType, Integer> sumActivePointsByDate(Long userRowId, LocalDate earnDate);
 
     TodoStarlight save(TodoStarlight starlight);
+
+    /**
+     * 그날의 별빛 합계 — <b>원장에서 집계</b>한다.
+     *
+     * <p>daily.points 는 원장 합계를 받아 적어 둔 캐시였다. 금액이든 점수든 파생값을
+     * 따로 저장하면 어긋난다 — 적립·회수 어느 한쪽을 빠뜨리면 조용히 벌어진다.
+     * 하루치라 행 수가 적어 집계가 싸다.
+     */
+    int sumPointsByUserAndDate(Long userRowId, LocalDate earnDate);
 }

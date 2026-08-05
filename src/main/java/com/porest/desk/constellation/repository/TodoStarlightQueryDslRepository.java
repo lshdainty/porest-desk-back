@@ -90,4 +90,19 @@ public class TodoStarlightQueryDslRepository implements TodoStarlightRepository 
         entityManager.persist(entity);
         return entity;
     }
+
+    @Override
+    public int sumPointsByUserAndDate(Long userRowId, LocalDate earnDate) {
+        // 회수된 행은 뺀다 — 적립만 세면 회수 뒤에도 값이 남는다.
+        // QueryDSL 7 은 fluent 집계를 안 열어 둬서 JPQL 로 간다(합산은 DB 가 한다).
+        Long sum = entityManager.createQuery(
+                "select coalesce(sum(s.points), 0) from TodoStarlight s "
+                    + "where s.user.rowId = :userRowId and s.earnDate = :earnDate "
+                    + "and s.isDeleted = :notDeleted", Long.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("earnDate", earnDate)
+            .setParameter("notDeleted", YNType.N)
+            .getSingleResult();
+        return sum != null ? sum.intValue() : 0;
+    }
 }

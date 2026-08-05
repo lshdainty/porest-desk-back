@@ -106,11 +106,14 @@ public class StarlightServiceImpl implements StarlightService {
                 reconcileGuards(user.getRowId());
                 return dailyRepository.save(ConstellationDaily.open(user, today, dailyTarget(today)));
             });
-        daily.addPoints(points);
+        // 그날 합계는 원장에서 집계한다 — 캐시로 들고 있으면 적립·회수 어느 한쪽을
+        // 빠뜨렸을 때 조용히 어긋난다. 하루치라 행 수가 적어 집계가 싸다.
+        int dailyPoints = starlightRepository.sumPointsByUserAndDate(user.getRowId(), today);
+        daily.syncPoints(dailyPoints);
         log.debug("별빛 적립: userRowId={}, sourceType={}, points={}, dailyPoints={}",
-            user.getRowId(), sourceType, points, daily.getPoints());
+            user.getRowId(), sourceType, points, dailyPoints);
 
-        if (!daily.isGrown() && daily.getPoints() >= daily.getConstellation().getStarCount()) {
+        if (!daily.isGrown() && dailyPoints >= daily.getConstellation().getStarCount()) {
             daily.grow();
             collectionRepository.save(ConstellationCollection.collect(user, daily.getConstellation(), today));
             findOrCreateProfile(user).recordGrown();
@@ -130,7 +133,8 @@ public class StarlightServiceImpl implements StarlightService {
             }
             ledger.revoke();
             dailyRepository.findByUserAndDate(ledger.getUser().getRowId(), today)
-                .ifPresent(daily -> daily.subtractPoints(ledger.getPoints()));
+                .ifPresent(daily -> daily.syncPoints(
+                    starlightRepository.sumPointsByUserAndDate(ledger.getUser().getRowId(), today)));
             log.debug("별빛 회수: sourceType={}, sourceRowId={}, points={}", sourceType, sourceRowId, ledger.getPoints());
         });
     }
