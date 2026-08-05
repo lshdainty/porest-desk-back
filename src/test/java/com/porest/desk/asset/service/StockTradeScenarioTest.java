@@ -8,6 +8,7 @@ import com.porest.desk.asset.domain.AssetTrade;
 import com.porest.desk.asset.repository.AssetHoldingRepository;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTradeRepository;
+import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.service.dto.AssetTradeServiceDto.CreateTradeCommand;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.HoldingType;
@@ -65,6 +66,13 @@ class StockTradeScenarioTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private UserClock userClock;
+    @Mock private AssetService assetService;
+
+    /** 예수금 충당 이체를 흉내 낸다 — 통장은 빠지고 예수금은 들어온다. */
+    private record Funding(long rowId, long amount) {}
+
+    private final List<Funding> transfers = new ArrayList<>();
+    private final List<Long> deletedTransferIds = new ArrayList<>();
     @InjectMocks private AssetTradeServiceImpl sut;
 
     private static final long USER_ID = 1L;
@@ -147,16 +155,34 @@ class StockTradeScenarioTest {
         // 취소는 그 거래가 남긴 flow 를 되돌린다.
         willAnswer(inv -> {
             Long id = inv.getArgument(0);
+            // 매매 flow 는 결제 계좌와 무관하게 언제나 예수금이다 — 결제 계좌는 이체로
+            // 예수금을 채울 뿐이고, 그 이체는 deleteTransfer 가 따로 되돌린다.
             trades.stream().filter(t -> id.equals(t.getRowId())).findFirst()
-                .ifPresent(t -> {
-                    if (t.getSettlementAsset() != null) {
-                        bankFlow -= t.cashDelta();
-                    } else {
-                        cash -= t.cashDelta();
-                    }
-                });
+                .ifPresent(t -> cash -= t.cashDelta());
             return null;
         }).given(balanceHistoryService).removeTrade(any());
+
+        // 예수금 충당 이체 — 실제 서비스가 하는 것과 같은 방향으로 두 자산을 움직인다.
+        willAnswer(inv -> {
+            AssetServiceDto.CreateTransferCommand c = inv.getArgument(0);
+            long id = 900L + transfers.size();
+            transfers.add(new Funding(id, c.amount()));
+            bankFlow -= c.amount();
+            cash += c.amount();
+            AssetServiceDto.TransferInfo info = org.mockito.Mockito.mock(AssetServiceDto.TransferInfo.class);
+            org.mockito.Mockito.lenient().when(info.rowId()).thenReturn(id);
+            return info;
+        }).given(assetService).createTransfer(any());
+
+        willAnswer(inv -> {
+            Long id = inv.getArgument(0);
+            deletedTransferIds.add(id);
+            transfers.stream().filter(t -> id.equals(t.rowId())).findFirst().ifPresent(t -> {
+                bankFlow += t.amount();
+                cash -= t.amount();
+            });
+            return null;
+        }).given(assetService).deleteTransfer(any(), any());
         // 예수금 검증이 캐시 대신 이력 집계를 본다 — 흉내 낸 예수금을 그대로 돌려준다.
         // 예수금 검증이 이력 집계를 본다 — 흉내 낸 예수금을 그대로 돌려준다(평가금액은 안 쓴다).
         willAnswer(inv -> new AssetBalanceHistoryService.Split(cash, 0L))
@@ -443,7 +469,7 @@ class StockTradeScenarioTest {
     // === 결제 계좌 =============================================================
 
     @Nested
-    @DisplayName("증권계좌에 예수금을 안 넣고 통장에서 바로 결제")
+    @DisplayName("결제 계좌 매수 — 통장에서 예수금으로 채우고 예수금에서 산다")
     class SettlementAccount {
 
         private CreateTradeCommand viaBank(TradeType type, String qty, long amount, int day) {
@@ -453,46 +479,90 @@ class StockTradeScenarioTest {
         }
 
         @Test
-        @DisplayName("매수 — 예수금이 아니라 통장에서 빠진다")
-        void buySettlesFromBank() {
+        @DisplayName("예수금 0 에서 700만 매수 — 통장에서 700만 이체 후 예수금에서 결제")
+        void fundsShortfallThenBuys() {
             sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
 
+            // ① 이체: 통장 -700만 → 예수금 +700만  ② 매수: 예수금 -700만
+            assertThat(transfers).hasSize(1);
+            assertThat(transfers.get(0).amount()).isEqualTo(7_000_000L);
             assertThat(bankFlow).isEqualTo(-7_000_000L);
-            assertThat(cash).isZero(); // 증권계좌 예수금은 그대로
+            assertThat(cash).isZero();
             assertThat(samsung().getTotalCost()).isEqualTo(7_000_000L);
         }
 
         @Test
-        @DisplayName("매수 — 통장이 마이너스가 돼도 막지 않는다")
+        @DisplayName("예수금이 일부 있으면 모자란 만큼만 이체한다 — 400만 있고 1,000만 매수 → 600만")
+        void fundsOnlyTheShortfall() {
+            deposit(4_000_000L);
+
+            sut.createTrade(viaBank(TradeType.BUY, "100", 10_000_000L, 3));
+
+            assertThat(transfers).hasSize(1);
+            assertThat(transfers.get(0).amount()).isEqualTo(6_000_000L);
+            assertThat(bankFlow).isEqualTo(-6_000_000L);
+            assertThat(cash).isZero();  // 400만 + 600만 - 1,000만
+        }
+
+        @Test
+        @DisplayName("예수금이 충분하면 이체가 아예 생기지 않는다")
+        void noTransferWhenCashIsEnough() {
+            deposit(10_000_000L);
+
+            sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
+
+            assertThat(transfers).isEmpty();
+            assertThat(bankFlow).isZero();
+            assertThat(cash).isEqualTo(3_000_000L);
+        }
+
+        @Test
+        @DisplayName("통장이 마이너스가 돼도 막지 않는다 — 기록용 앱이다")
         void bankMayGoNegative() {
-            // 초기 잔액을 안 채우고 쓰는 가계부에선 통장이 마이너스로 누적된다 —
-            // 예수금과 달리 여기서 막으면 그 사용법이 통째로 막힌다.
             sut.createTrade(viaBank(TradeType.BUY, "100", 99_000_000L, 3));
 
             assertThat(bankFlow).isEqualTo(-99_000_000L);
         }
 
         @Test
-        @DisplayName("매도 — 대금이 통장으로 들어오고 손익은 그대로 잡힌다")
-        void sellSettlesToBank() {
+        @DisplayName("매도 대금은 예수금에 남는다 — 팔았다고 통장으로 자동 이체되지 않는다")
+        void sellKeepsProceedsInCash() {
             sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
+            int transfersAfterBuy = transfers.size();
 
             sut.createTrade(viaBank(TradeType.SELL, "100", 8_000_000L, 20));
 
-            assertThat(bankFlow).isEqualTo(1_000_000L); // -700만 +800만
-            assertThat(cash).isZero();
+            assertThat(transfers).hasSize(transfersAfterBuy); // 매도는 이체를 만들지 않는다
+            assertThat(bankFlow).isEqualTo(-7_000_000L);      // 매수 때 나간 그대로
+            assertThat(cash).isEqualTo(8_000_000L);           // 대금은 예수금에
             assertThat(savedRealizedExpense().getAmount()).isEqualTo(1_000_000L);
         }
 
         @Test
-        @DisplayName("취소 — 통장에서 나간 돈이 되돌아온다")
-        void cancelRestoresBank() {
+        @DisplayName("취소 — 이체와 매수가 함께 되돌아 매수 직전으로 복귀한다")
+        void cancelRestoresBothLegs() {
+            deposit(4_000_000L);
+            var bought = sut.createTrade(viaBank(TradeType.BUY, "100", 10_000_000L, 3));
+
+            sut.deleteTrade(bought.rowId(), USER_ID);
+
+            // 이체를 안 지우면 "통장에서 600만 빼서 예수금에 넣어 둔" 상태로 남는다.
+            assertThat(deletedTransferIds).containsExactly(transfers.get(0).rowId());
+            assertThat(bankFlow).isZero();
+            assertThat(cash).isEqualTo(4_000_000L);
+            assertThat(samsung()).isNull();
+        }
+
+        @Test
+        @DisplayName("이체가 안 생긴 매수를 취소해도 지울 이체가 없다")
+        void cancelWithoutTransfer() {
+            deposit(10_000_000L);
             var bought = sut.createTrade(viaBank(TradeType.BUY, "100", 7_000_000L, 3));
 
             sut.deleteTrade(bought.rowId(), USER_ID);
 
-            assertThat(bankFlow).isZero();
-            assertThat(samsung()).isNull();
+            assertThat(deletedTransferIds).isEmpty();
+            assertThat(cash).isEqualTo(10_000_000L);
         }
     }
 

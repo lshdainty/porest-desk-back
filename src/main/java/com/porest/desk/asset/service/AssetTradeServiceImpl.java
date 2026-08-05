@@ -8,6 +8,7 @@ import com.porest.desk.asset.domain.AssetTrade;
 import com.porest.desk.asset.repository.AssetHoldingRepository;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTradeRepository;
+import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.service.dto.AssetTradeServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.HoldingType;
@@ -55,6 +56,11 @@ public class AssetTradeServiceImpl implements AssetTradeService {
     private final ExpenseRepository expenseRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
     private final UserClock userClock;
+    /** 예수금 충당 이체를 만들고 지운다 — 매수 한 건이 이체+매수 두 기록이 된다. */
+    private final AssetService assetService;
+
+    /** 자동 생성 이체의 메모 — 사용자가 직접 만든 이체와 구분된다. */
+    private static final String SETTLEMENT_TRANSFER_DESC = "예수금 입금 (매수)";
 
     @Override
     @Transactional
@@ -103,12 +109,13 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             case SELL -> amount - fee;
             case OPENING -> 0L;
         };
-        // 결제 계좌를 고르면 증권계좌 예수금 대신 거기서 오간다 — 증권계좌로 돈을 옮기는
-        // 이체를 먼저 적지 않아도 매수 한 번으로 끝난다.
-        Asset settlement = resolveSettlementAsset(command.settlementAssetRowId(), command.userRowId());
+        // 결제 계좌는 매수에만 쓴다 — 매도 대금은 예수금에 남기고 사용자가 이체로 관리한다
+        // (팔았다고 통장으로 자동 이체되지는 않는다).
+        Asset settlement = type == TradeType.BUY
+            ? resolveSettlementAsset(command.settlementAssetRowId(), command.userRowId())
+            : null;
         // 예수금이 모자라도 막지 않는다 — 이건 기록용 앱이다. 입금을 안 적고 매수만 적는
-        // 사용자가 있고, 마이너스 통장처럼 음수로 쌓이는 게 정상이다. 현실 은행처럼 검사하면
-        // "실제로는 샀는데 앱에서만 기록이 안 되는" 상태가 된다.
+        // 사용자가 있고, 마이너스 통장처럼 음수로 쌓이는 게 정상이다.
 
         AssetTrade trade = AssetTrade.create(user, asset, settlement, type,
             command.holdingType() != null ? command.holdingType() : HoldingType.STOCK,
@@ -120,6 +127,24 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         tradeRepository.save(trade);
 
         applyToHolding(asset, command, holding, quantityDelta, costDelta);
+
+        // 증권계좌는 예수금이 있어야 주식을 산다 — 결제 계좌를 골랐으면 통장에서 주식이
+        // 바로 사지는 게 아니라 두 단계로 나뉜다.
+        //   ① 이체  통장 → 예수금 (모자란 만큼만)
+        //   ② 매수  예수금 → 보유
+        // 예수금이 충분하면 ①이 생기지 않는다. 이 이체는 앱이 매수 때문에 만든 것이라
+        // 거래를 취소하면 함께 지운다(카드 결제의 card_billing ↔ 이체와 같은 구조).
+        if (settlement != null) {
+            long cashNow = balanceHistoryService.balanceAt(asset, trade.getTradeDate()).cash();
+            long shortfall = -cashDelta - cashNow;
+            if (shortfall > 0) {
+                AssetServiceDto.TransferInfo funding = assetService.createTransfer(
+                    new AssetServiceDto.CreateTransferCommand(
+                        command.userRowId(), settlement.getRowId(), asset.getRowId(),
+                        shortfall, 0L, 0L, SETTLEMENT_TRANSFER_DESC, trade.getTradeDate()));
+                trade.linkSettlementTransfer(funding.rowId());
+            }
+        }
         // 예수금 flow — 평가금액은 시세×수량으로 따로 산정되므로 건드리지 않는다.
         // 기초 보유는 돈이 오간 적이 없어 이력을 남기지 않는다.
         if (cashDelta != 0L) {
@@ -169,6 +194,12 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         }
 
         balanceHistoryService.removeTrade(trade.getRowId());
+        // 예수금 충당 이체도 함께 지운다 — 사용자가 만든 게 아니라 이 매수 때문에 앱이
+        // 만든 것이라, 매수가 사라지면 존재 이유가 없다. 안 지우면 "통장에서 빼서 예수금에
+        // 넣어 둔" 상태로 남아 매수 전으로 안 돌아간다.
+        if (trade.getSettlementTransferRowId() != null) {
+            assetService.deleteTransfer(trade.getSettlementTransferRowId(), userRowId);
+        }
         if (trade.getRealizedExpenseRowId() != null) {
             expenseRepository.findById(trade.getRealizedExpenseRowId())
                 .ifPresent(expenseRepository::delete);
