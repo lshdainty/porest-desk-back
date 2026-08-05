@@ -1,5 +1,6 @@
 package com.porest.desk.expense.service;
 
+import com.porest.core.type.YNType;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
@@ -38,7 +39,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     @Override
     @Transactional
     public ExpenseTemplateServiceDto.TemplateInfo createTemplate(ExpenseTemplateServiceDto.CreateCommand command) {
-        validateAmount(command.amount());
+        // 저장소를 건드리기 전에 금액부터 가린다 — 잘못된 금액이면 조회 없이 바로 거절한다.
+        Long amount = resolveAmount(command.amount(), command.lockAmount());
         log.debug("경비 템플릿 생성 시작: userRowId={}, templateName={}", command.userRowId(), command.templateName());
 
         User user = userRepository.findById(command.userRowId())
@@ -68,7 +70,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
         ExpenseTemplate template = ExpenseTemplate.createTemplate(
             user, command.templateName(), category, asset,
-            command.expenseType(), command.amount(), command.description(),
+            command.expenseType(), amount, command.description(),
             command.merchant(), command.paymentMethod(), command.sortOrder(),
             command.lockAmount()
         );
@@ -91,7 +93,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     @Override
     @Transactional
     public ExpenseTemplateServiceDto.TemplateInfo updateTemplate(Long templateId, Long userRowId, ExpenseTemplateServiceDto.UpdateCommand command) {
-        validateAmount(command.amount());
+        Long amount = resolveAmount(command.amount(), command.lockAmount());
         log.debug("경비 템플릿 수정 시작: templateId={}", templateId);
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
@@ -120,7 +122,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
 
         template.updateTemplate(
             command.templateName(), category, asset,
-            command.expenseType(), command.amount(), command.description(),
+            command.expenseType(), amount, command.description(),
             command.merchant(), command.paymentMethod(),
             command.lockAmount()
         );
@@ -222,10 +224,25 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             });
     }
 
-    /** 프리셋 금액도 0보다 커야 한다 — 불러 쓰는 거래가 그 값을 그대로 받는다. */
-    private void validateAmount(Long amount) {
+    /**
+     * 프리셋 금액 — 고정 금액을 켰을 때만 존재한다.
+     *
+     * <p>프리셋은 <b>금액을 모르는 채로 양식만</b> 저장하려고 만든 것이다. 매번 금액이 다른
+     * 항목(변동 구독료·병원비)은 불러올 때 금액칸이 비어 있어야 편하다.
+     *
+     * <p>둘 중 하나다 — 고정이면 금액이 있고, 아니면 금액이 없다. 중간 상태를 두지 않는다.
+     * 고정을 끈 채로 들어온 금액은 <b>버린다</b>. 남겨 두면 화면엔 안 보이는 값이 붙어 다니다
+     * 나중에 고정을 켜는 순간 엉뚱한 금액이 살아난다.
+     *
+     * @return 저장할 금액 — 고정이 아니면 항상 null
+     */
+    private Long resolveAmount(Long amount, YNType lockAmount) {
+        if (lockAmount != YNType.Y) {
+            return null;
+        }
         if (amount == null || amount <= 0) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
         }
+        return amount;
     }
 }
