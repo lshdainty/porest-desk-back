@@ -165,8 +165,25 @@ public class AssetTrade extends AuditingFieldsWithIp {
      * 기초 보유(OPENING)는 앱을 쓰기 전 일이라 돈이 오가지 않는다.
      */
     /** 돈이 실제로 오가는 자산 — 결제 계좌를 골랐으면 거기, 아니면 증권계좌 예수금. */
+    /**
+     * 예수금 충당 이체 — 결제 계좌 매수에서 부족분만큼 자동 생성한다.
+     * 앱이 만든 것이라 거래를 취소하면 함께 지운다.
+     */
+    @Column(name = "settlement_transfer_row_id")
+    private Long settlementTransferRowId;
+
+    public void linkSettlementTransfer(Long transferRowId) {
+        this.settlementTransferRowId = transferRowId;
+    }
+
+    /**
+     * 현금이 오가는 자산 — <b>언제나 증권계좌 예수금</b>이다.
+     *
+     * <p>증권계좌는 예수금이 있어야 주식을 산다. 결제 계좌를 골랐어도 통장에서 주식이
+     * 바로 사지는 게 아니라, 통장 → 예수금 이체가 먼저 일어나고 매수는 예수금에서 나간다.
+     */
     public Asset cashAsset() {
-        return settlementAsset != null ? settlementAsset : asset;
+        return asset;
     }
 
     public long cashDelta() {

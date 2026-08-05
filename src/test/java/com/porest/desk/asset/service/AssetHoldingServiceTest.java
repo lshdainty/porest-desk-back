@@ -437,4 +437,26 @@ class AssetHoldingServiceTest {
         then(balanceHistoryService).should().recordValuation(any(), c.capture(), any());
         return c.getValue();
     }
+
+    @Test
+    @DisplayName("음수 평가액 보유는 거부한다 — 투자 자산이 부(−)로 뒤집힌다")
+    void rejectsNegativeHoldingValue() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
+            manualHolding("해외 ETF", -1_870_000L)
+        )))).isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("음수 매수원가는 거부한다 — 매도 시 실현손익이 부풀려진다")
+    void rejectsNegativeTotalCost() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var holding = new AssetServiceDto.HoldingCommand(
+            HoldingType.STOCK, false, null, new BigDecimal("10"), "삼성전자", 700_000L, -500_000L);
+
+        assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(holding))))
+            .isInstanceOf(InvalidValueException.class);
+    }
 }

@@ -11,6 +11,7 @@ import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -22,7 +23,9 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -139,5 +142,78 @@ class ExpenseSplitServiceImplTest {
 
         assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Nested
+    @DisplayName("분할 금액 부호 — 합계만 맞으면 통과하던 구멍")
+    class SplitAmountSign {
+
+        /** 개별 금액 검증이 합계 검사보다 먼저 도므로 getAmount 는 스텁하지 않는다. */
+        private Expense expenseOf(long amount) {
+            User u = user(USER_ID);
+            Expense expense = mock(Expense.class);
+            given(expense.getUser()).willReturn(u);
+            lenient().when(expense.getAmount()).thenReturn(amount);
+            given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+            return expense;
+        }
+
+        @Test
+        @DisplayName("음수 분할 — 합계가 맞아도 거부한다")
+        void rejectsNegativeSplit() {
+            expenseOf(10_000L);
+            // +30,000 − 20,000 = 10,000. 합계 검사만 하면 통과해 버리고,
+            // 카테고리 통계에 −20,000 짜리 항목이 박힌다.
+            var splits = List.of(
+                new ExpenseSplitServiceDto.SplitCommand(10L, 30_000L, "식사", 0),
+                new ExpenseSplitServiceDto.SplitCommand(11L, -20_000L, "할인", 1));
+
+            assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("0원 분할 — 아무것도 안 담는 항목은 거부한다")
+        void rejectsZeroSplit() {
+            expenseOf(10_000L);
+            var splits = List.of(
+                new ExpenseSplitServiceDto.SplitCommand(10L, 10_000L, "전부", 0),
+                new ExpenseSplitServiceDto.SplitCommand(11L, 0L, "빈 항목", 1));
+
+            assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("금액이 없는 분할 — NPE 대신 검증 오류로 막는다")
+        void rejectsNullSplitAmount() {
+            expenseOf(10_000L);
+            var splits = List.of(
+                new ExpenseSplitServiceDto.SplitCommand(10L, null, "빠뜨림", 0));
+
+            assertThatThrownBy(() -> sut.replaceSplits(replaceCmd(splits)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("정상 분할은 그대로 통과한다 — 7,000 + 3,000 = 10,000")
+        void acceptsValidSplits() {
+            User u = user(USER_ID);
+            Expense expense = mock(Expense.class);
+            given(expense.getUser()).willReturn(u);
+            given(expense.getAmount()).willReturn(10_000L);
+            given(expense.getExpenseType()).willReturn(ExpenseType.EXPENSE);
+            given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+            given(expenseCategoryRepository.findById(anyLong()))
+                .willAnswer(inv -> Optional.of(category(inv.getArgument(0), u)));
+            given(expenseSplitRepository.findByExpense(5L)).willReturn(List.of());
+
+            var splits = List.of(
+                new ExpenseSplitServiceDto.SplitCommand(10L, 7_000L, "식사", 0),
+                new ExpenseSplitServiceDto.SplitCommand(11L, 3_000L, "음료", 1));
+
+            org.assertj.core.api.Assertions.assertThatCode(() -> sut.replaceSplits(replaceCmd(splits)))
+                .doesNotThrowAnyException();
+        }
     }
 }

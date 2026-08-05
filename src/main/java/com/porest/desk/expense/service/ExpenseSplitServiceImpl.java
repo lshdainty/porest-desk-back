@@ -88,6 +88,13 @@ public class ExpenseSplitServiceImpl implements ExpenseSplitService {
 
     private void validateAmountSum(Expense expense, List<ExpenseSplitServiceDto.SplitCommand> splits) {
         if (splits.isEmpty()) return;
+        // 개별 금액부터 본다. 합계만 검사하면 [+30,000, -20,000] 처럼 서로 상쇄되는 조합이
+        // 통과해 카테고리 통계에 음수 항목이 박힌다(컬럼 정의도 '절대값'이다).
+        for (ExpenseSplitServiceDto.SplitCommand sc : splits) {
+            if (sc.amount() == null || sc.amount() <= 0) {
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
+            }
+        }
         long sum = splits.stream().mapToLong(ExpenseSplitServiceDto.SplitCommand::amount).sum();
         long expected = Math.abs(expense.getAmount());
         if (sum != expected) {

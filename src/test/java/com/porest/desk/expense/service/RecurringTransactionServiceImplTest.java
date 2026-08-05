@@ -15,6 +15,7 @@ import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -150,5 +151,40 @@ class RecurringTransactionServiceImplTest {
     void getRecurringsRejectsNegativeLimit() {
         assertThatThrownBy(() -> sut.getRecurrings(USER_ID, false, -1))
                 .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Nested
+    @DisplayName("금액 부호 — 실행될 때마다 잔액이 거꾸로 간다")
+    class AmountSign {
+
+        private RecurringTransactionServiceDto.CreateCommand cmdAmount(Long amount) {
+            return new RecurringTransactionServiceDto.CreateCommand(
+                USER_ID, 1L, null, null, ExpenseType.EXPENSE, amount,
+                null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        @Test
+        @DisplayName("음수 금액으로 반복거래를 만들 수 없다 — 매달 잔액이 늘어난다")
+        void rejectsNegative() {
+            assertThatThrownBy(() -> sut.createRecurring(cmdAmount(-10_000L)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("0원 반복거래도 막는다")
+        void rejectsZero() {
+            assertThatThrownBy(() -> sut.createRecurring(cmdAmount(0L)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("수정에서도 음수를 막는다")
+        void rejectsNegativeOnUpdate() {
+            var cmd = new RecurringTransactionServiceDto.UpdateCommand(
+                1L, null, ExpenseType.EXPENSE, -5_000L,
+                null, null, null, null, null, null, null, null, null, null, null, null);
+            assertThatThrownBy(() -> sut.updateRecurring(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
     }
 }
