@@ -8,6 +8,8 @@ import java.util.List;
 public class ExpenseSplitApiDto {
 
     public record SplitRequest(
+        /** 기존 분할 행 아이디 — 보내면 제자리 수정된다. */
+        Long rowId,
         Long categoryRowId,
         Long amount,
         String label,

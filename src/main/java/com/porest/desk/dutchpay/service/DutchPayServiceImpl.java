@@ -18,6 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.Set;
+import java.util.Map;
+import java.util.HashSet;
 
 @Service
 @RequiredArgsConstructor
@@ -95,8 +99,7 @@ public class DutchPayServiceImpl implements DutchPayService {
             command.dutchPayDate()
         );
 
-        dutchPay.clearParticipants();
-        addParticipants(dutchPay, command.participants());
+        syncParticipants(dutchPay, command.participants());
 
         dutchPayRepository.save(dutchPay);
         log.info("더치페이 수정 완료: dutchPayId={}", dutchPayId);
@@ -164,6 +167,50 @@ public class DutchPayServiceImpl implements DutchPayService {
             throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
         }
         return expense;
+    }
+
+    /**
+     * 참가자 목록을 rowId 로 맞춰 간다 — 있으면 제자리 수정, 없으면 신규, 안 온 건 삭제.
+     *
+     * <p>통째로 지우고 새로 만들면 <b>정산 완료 표시(is_paid/paid_at)가 전부 풀린다.</b>
+     * 3명이 이미 입금해 체크해 뒀는데 금액 한 줄 고쳤다고 그게 날아가면 안 된다.
+     */
+    private void syncParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
+        if (participants == null) {
+            return;
+        }
+        validateNoDuplicateParticipants(participants);
+        List<DutchPayParticipant> existing = List.copyOf(dutchPay.getActiveParticipants());
+        Map<Long, DutchPayParticipant> byId = existing.stream()
+            .filter(pt -> pt.getRowId() != null)
+            .collect(Collectors.toMap(DutchPayParticipant::getRowId, pt -> pt, (a, b) -> a));
+
+        Set<DutchPayParticipant> kept =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (DutchPayServiceDto.ParticipantCommand pc : participants) {
+            if (pc.amount() == null || pc.amount() <= 0) {
+                throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
+            }
+            User participantUser = null;
+            if (pc.userRowId() != null) {
+                participantUser = userRepository.findById(pc.userRowId())
+                    .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+            }
+            DutchPayParticipant found = pc.rowId() != null ? byId.get(pc.rowId()) : null;
+            if (found != null) {
+                found.updateParticipant(participantUser, pc.participantName(), pc.amount());
+                kept.add(found);
+            } else {
+                dutchPay.addParticipant(
+                    DutchPayParticipant.create(dutchPay, participantUser, pc.participantName(), pc.amount()));
+            }
+        }
+        // 목록에서 빠진 참가자만 지운다. id 로 매칭되지 않은 것도 여기 걸린다.
+        for (DutchPayParticipant pt : existing) {
+            if (!kept.contains(pt)) {
+                pt.deleteParticipant();
+            }
+        }
     }
 
     private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {

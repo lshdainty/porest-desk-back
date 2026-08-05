@@ -32,7 +32,7 @@ public class AssetTradeApiController {
         AssetTradeServiceDto.TradeInfo info = assetTradeService.createTrade(
             new AssetTradeServiceDto.CreateTradeCommand(
                 loginUser.getRowId(), request.assetRowId(), request.tradeType(),
-                request.holdingType(), request.holdingKey(), request.linked(),
+                request.holdingType(), request.holdingRowId(), request.holdingKey(), request.linked(),
                 request.quantity(), request.amount(), request.fee(),
                 request.tradeDate(), request.description(), request.settlementAssetRowId()));
         return ApiResponse.success(AssetTradeApiDto.TradeResponse.from(info));

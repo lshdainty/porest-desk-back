@@ -57,6 +57,8 @@ public class AssetApiDto {
      * holdingType 미지정은 STOCK 으로 본다(구버전 클라이언트 하위호환).
      */
     public record HoldingRequest(
+        /** 기존 보유 행 아이디 — 보내면 제자리 수정돼 원가와 매매 이력 연결이 유지된다. */
+        Long rowId,
         HoldingType holdingType,
         Boolean linked,
         String tossSymbol,
@@ -68,7 +70,7 @@ public class AssetApiDto {
     ) {
         public AssetServiceDto.HoldingCommand toCommand() {
             return new AssetServiceDto.HoldingCommand(
-                holdingType, linked, tossSymbol, quantity, holdingName, holdingValue, totalCost);
+                rowId, holdingType, linked, tossSymbol, quantity, holdingName, holdingValue, totalCost);
         }
 
         public static List<AssetServiceDto.HoldingCommand> toCommands(List<HoldingRequest> requests) {

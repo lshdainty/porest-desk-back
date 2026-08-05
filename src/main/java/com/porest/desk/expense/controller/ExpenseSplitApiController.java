@@ -39,7 +39,7 @@ public class ExpenseSplitApiController {
         List<ExpenseSplitServiceDto.SplitCommand> splits = request.splits() != null
             ? request.splits().stream()
                 .map(s -> new ExpenseSplitServiceDto.SplitCommand(
-                    s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
+                    s.rowId(), s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
                 .toList()
             : List.of();
 

@@ -80,7 +80,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_INVALID_AMOUNT);
         }
 
-        AssetHolding holding = findHolding(asset.getRowId(), command.holdingKey());
+        AssetHolding holding = findHolding(asset.getRowId(), command.holdingRowId(), command.holdingKey());
         BigDecimal quantityDelta;
         long costDelta;
         Long realized = null;
@@ -126,7 +126,11 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             command.description());
         tradeRepository.save(trade);
 
-        applyToHolding(asset, command, holding, quantityDelta, costDelta);
+        AssetHolding applied = applyToHolding(asset, command, holding, quantityDelta, costDelta);
+        // 이 거래가 어느 보유를 건드렸는지 id 로 남긴다 — 이름이 바뀌어도 안 끊긴다.
+        if (applied != null && applied.getRowId() != null) {
+            trade.linkHolding(applied.getRowId());
+        }
 
         // 증권계좌는 예수금이 있어야 주식을 산다 — 결제 계좌를 골랐으면 통장에서 주식이
         // 바로 사지는 게 아니라 두 단계로 나뉜다.
@@ -159,6 +163,12 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             trade.recordRealized(0L, null);
         }
 
+        // 과거 날짜 거래를 뒤늦게 넣으면 그 뒤 매도들의 원가·손익이 달라진다 — 맨 뒤에
+        // 붙은 게 아니면 그 종목을 다시 쌓는다(맨 뒤면 방금 계산한 값이 이미 맞다).
+        if (isBackdated(asset, trade)) {
+            replayHolding(asset, trade.getHoldingRowId(), command.holdingKey());
+        }
+
         log.info("투자 거래 등록: assetId={}, type={}, key={}, qty={}, amount={}, realized={}",
             asset.getRowId(), type, command.holdingKey(), quantity, amount, realized);
         return AssetTradeServiceDto.TradeInfo.from(trade);
@@ -175,7 +185,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         }
 
         Asset asset = trade.getAsset();
-        AssetHolding holding = findHolding(asset.getRowId(), trade.getHoldingKey());
+        AssetHolding holding = findHolding(asset.getRowId(), trade.getHoldingRowId(), trade.getHoldingKey());
         if (holding != null) {
             // 남겨 둔 변동분을 부호만 뒤집어 되돌린다 — 현재 원가로 다시 계산하면 어긋난다.
             holding.applyTrade(trade.getQuantityDelta().negate(), -trade.getCostDelta());
@@ -205,6 +215,9 @@ public class AssetTradeServiceImpl implements AssetTradeService {
                 .ifPresent(expenseRepository::delete);
         }
         trade.deleteTrade();
+        // 이동평균은 순서에 의존한다 — 중간 거래를 지우면 그 뒤 매도들의 원가·손익이 달라진다.
+        // 그 종목만 처음부터 다시 쌓아 맞춘다.
+        replayHolding(asset, trade.getHoldingRowId(), trade.getHoldingKey());
         log.info("투자 거래 취소: tradeId={}, assetId={}", tradeRowId, asset.getRowId());
     }
 
@@ -214,6 +227,87 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         return tradeRepository.findActiveByAsset(assetRowId, YNType.N).stream()
             .map(AssetTradeServiceDto.TradeInfo::from)
             .toList();
+    }
+
+
+    /**
+     * 한 종목의 거래를 처음부터 다시 쌓아 수량·원가·실현손익을 맞춘다.
+     *
+     * <p>이동평균은 순서에 의존한다. 앞선 매수를 지우거나 과거 날짜 거래를 뒤늦게 넣으면
+     * 그 뒤 매도들의 "판 만큼의 원가" 가 달라지는데, 각 거래에 박아 둔 변동분은 그때의
+     * 값이라 그대로 두면 어긋난다. 그래서 그 종목만 시간순으로 다시 굴린다.
+     *
+     * <p>재계산 단위는 <b>(자산, 종목)</b> 하나다 — 다른 계좌·다른 종목은 건드리지 않는다.
+     * 매도에 딸린 손익 거래(expense)도 새 값으로 갱신한다.
+     *
+     * <p>예수금은 건드리지 않는다. flow 의 단순 합이라 순서와 무관하게 이미 맞다.
+     */
+    private void replayHolding(Asset asset, Long holdingRowId, String holdingKey) {
+        List<AssetTrade> trades = tradeRepository.findForReplay(asset.getRowId(), holdingRowId, holdingKey);
+        if (trades.isEmpty()) {
+            return;
+        }
+        BigDecimal quantity = BigDecimal.ZERO;
+        long totalCost = 0L;
+
+        for (AssetTrade t : trades) {
+            if (t.getTradeType() == TradeType.SELL) {
+                BigDecimal sellQty = t.getQuantity();
+                long soldCost = proportionalCost(totalCost, sellQty, quantity);
+                long realized = (t.getAmount() - t.getFee()) - soldCost;
+                t.replaceDeltas(sellQty.negate(), -soldCost, realized);
+                quantity = quantity.subtract(sellQty);
+                totalCost = Math.max(0L, totalCost - soldCost);
+                syncRealizedExpense(t, realized);
+            } else {
+                long cost = t.getAmount() + t.getFee();
+                t.replaceDeltas(t.getQuantity(), cost, null);
+                quantity = quantity.add(t.getQuantity());
+                totalCost += cost;
+            }
+        }
+
+        // 보유도 다시 쌓은 값으로 맞춘다 — 거래가 진실이고 보유는 그 결과다.
+        AssetHolding holding = findHolding(asset.getRowId(), holdingRowId, holdingKey);
+        if (holding != null) {
+            if (quantity.signum() <= 0) {
+                holding.deleteHolding();
+            } else {
+                holding.adjust(quantity, holding.getHoldingValue(), totalCost);
+            }
+        }
+    }
+
+    /** 재계산으로 손익이 바뀌면 딸린 거래도 따라간다 — 0 이 되면 지우고, 없다가 생기면 만든다. */
+    private void syncRealizedExpense(AssetTrade trade, long realized) {
+        Long expenseRowId = trade.getRealizedExpenseRowId();
+        if (realized == 0L) {
+            if (expenseRowId != null) {
+                expenseRepository.findById(expenseRowId).ifPresent(expenseRepository::delete);
+                trade.recordRealized(0L, null);
+            }
+            return;
+        }
+        if (expenseRowId != null) {
+            Expense pl = expenseRepository.findById(expenseRowId).orElse(null);
+            if (pl != null) {
+                pl.updateExpense(null, trade.getAsset(),
+                    realized > 0 ? ExpenseType.INCOME : ExpenseType.EXPENSE,
+                    Math.abs(realized), trade.getHoldingKey(), trade.getTradeDate(),
+                    null, "TRADE", null, null, null, null, null);
+                trade.recordRealized(realized, expenseRowId);
+                return;
+            }
+        }
+        Expense created = createRealizedExpense(trade.getUser(), trade.getAsset(), trade, realized);
+        trade.recordRealized(realized, created.getRowId());
+    }
+
+    /** 방금 넣은 거래가 그 종목의 마지막이 아니면 소급 입력이다. */
+    private boolean isBackdated(Asset asset, AssetTrade trade) {
+        List<AssetTrade> all = tradeRepository.findForReplay(
+            asset.getRowId(), trade.getHoldingRowId(), trade.getHoldingKey());
+        return !all.isEmpty() && !all.get(all.size() - 1).getRowId().equals(trade.getRowId());
     }
 
     // === 내부 ===================================================================
@@ -243,12 +337,29 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         return settlement;
     }
 
-    private AssetHolding findHolding(Long assetRowId, String holdingKey) {
+    /**
+     * 보유를 찾는다 — <b>row_id 가 우선</b>이고 없으면 이름으로 떨어진다.
+     *
+     * <p>미연동 종목의 holdingKey 는 항목명이라, 이름을 고치면 거래와 보유가 끊긴다.
+     * 보유가 제자리 수정되도록 바뀌면서 row_id 가 안정됐으므로 id 로 묶는다.
+     * 이름 경로는 id 가 없는 기존 거래와, 아직 보유가 없는 첫 매수를 위해 남긴다.
+     */
+    private AssetHolding findHolding(Long assetRowId, Long holdingRowId, String holdingKey) {
+        List<AssetHolding> active = holdingRepository.findActiveByAsset(assetRowId).stream()
+            .filter(h -> h.getIsDeleted() == YNType.N)
+            .toList();
+        if (holdingRowId != null) {
+            AssetHolding byId = active.stream()
+                .filter(h -> holdingRowId.equals(h.getRowId()))
+                .findFirst().orElse(null);
+            if (byId != null) {
+                return byId;
+            }
+        }
         if (holdingKey == null) {
             return null;
         }
-        return holdingRepository.findActiveByAsset(assetRowId).stream()
-            .filter(h -> h.getIsDeleted() == YNType.N)
+        return active.stream()
             .filter(h -> holdingKey.equals(h.holdingKey()))
             .findFirst()
             .orElse(null);
@@ -269,8 +380,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             .longValueExact();
     }
 
-    private void applyToHolding(Asset asset, AssetTradeServiceDto.CreateTradeCommand command,
-                                AssetHolding holding, BigDecimal quantityDelta, long costDelta) {
+    private AssetHolding applyToHolding(Asset asset, AssetTradeServiceDto.CreateTradeCommand command,
+                                        AssetHolding holding, BigDecimal quantityDelta, long costDelta) {
         if (holding == null) {
             boolean linked = Boolean.TRUE.equals(command.linked());
             AssetHolding created = AssetHolding.create(asset,
@@ -281,13 +392,14 @@ public class AssetTradeServiceImpl implements AssetTradeService {
                 linked ? null : command.holdingKey(),
                 null, costDelta, nextSortOrder(asset.getRowId()));
             holdingRepository.save(created);
-            return;
+            return created;
         }
         holding.applyTrade(quantityDelta, costDelta);
         // 다 팔면 보유가 사라진다 — 0 주를 들고 있는 행은 목록만 어지럽힌다.
         if (holding.getQuantity() == null || holding.getQuantity().signum() <= 0) {
             holding.deleteHolding();
         }
+        return holding;
     }
 
     private int nextSortOrder(Long assetRowId) {

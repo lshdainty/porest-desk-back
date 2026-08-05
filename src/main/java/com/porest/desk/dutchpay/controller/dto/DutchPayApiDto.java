@@ -31,6 +31,8 @@ public class DutchPayApiDto {
     ) {}
 
     public record ParticipantRequest(
+        /** 기존 참가자 행 아이디 — 보내면 제자리 수정돼 정산 완료 표시가 유지된다. */
+        Long rowId,
         Long userRowId,
         String participantName,
         Long amount

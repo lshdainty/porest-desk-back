@@ -77,7 +77,7 @@ public class ExpenseApiController {
             ? null
             : request.splits().stream()
                 .map(s -> new ExpenseSplitServiceDto.SplitCommand(
-                    s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
+                    s.rowId(), s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
                 .toList();
 
         ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, loginUser.getRowId(), new ExpenseServiceDto.UpdateCommand(

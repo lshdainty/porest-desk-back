@@ -128,6 +128,18 @@ class StockTradeScenarioTest {
             Long id = inv.getArgument(0);
             return trades.stream().filter(t -> id.equals(t.getRowId())).findFirst();
         });
+        // 재계산용 조회 — 그 종목의 활성 거래를 (거래일시, row_id) 오름차순으로.
+        given(tradeRepository.findForReplay(any(), any(), any())).willAnswer(inv -> {
+            Long holdingRowId = inv.getArgument(1);
+            String key = inv.getArgument(2);
+            return trades.stream()
+                .filter(t -> t.getIsDeleted() == YNType.N)
+                .filter(t -> (holdingRowId != null && holdingRowId.equals(t.getHoldingRowId()))
+                    || (t.getHoldingRowId() == null && key != null && key.equals(t.getHoldingKey())))
+                .sorted(java.util.Comparator.comparing(AssetTrade::getTradeDate)
+                    .thenComparing(AssetTrade::getRowId))
+                .toList();
+        });
 
         willAnswer(inv -> {
             Expense e = inv.getArgument(0);
@@ -199,7 +211,8 @@ class StockTradeScenarioTest {
     }
 
     private CreateTradeCommand trade(TradeType type, String qty, long amount, long fee, int day) {
-        return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK, SAMSUNG, true,
+        return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK,
+            null, SAMSUNG, true,
             new BigDecimal(qty), amount, fee, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
     }
 
@@ -207,6 +220,11 @@ class StockTradeScenarioTest {
         return holdings.stream()
             .filter(h -> SAMSUNG.equals(h.holdingKey()) && h.getIsDeleted() == YNType.N)
             .findFirst().orElse(null);
+    }
+
+    /** 저장된 거래를 id 로 다시 꺼낸다 — 재계산이 값을 갈아끼웠는지 보려면 원본을 봐야 한다. */
+    private AssetTrade tradeOf(Long rowId) {
+        return trades.stream().filter(t -> rowId.equals(t.getRowId())).findFirst().orElseThrow();
     }
 
     private Expense savedRealizedExpense() {
@@ -448,6 +466,7 @@ class StockTradeScenarioTest {
             given(assetRepository.findById(99L)).willReturn(Optional.of(bank));
 
             var cmd = new CreateTradeCommand(USER_ID, 99L, TradeType.BUY, HoldingType.STOCK,
+            null,
                 SAMSUNG, true, BigDecimal.TEN, 100_000L, 0L,
                 LocalDateTime.of(2026, 8, 3, 10, 0), null, null);
 
@@ -460,6 +479,7 @@ class StockTradeScenarioTest {
         void othersAssetRejected() {
             assertThatThrownBy(() -> sut.createTrade(
                 new CreateTradeCommand(999L, ASSET_ID, TradeType.BUY, HoldingType.STOCK,
+            null,
                     SAMSUNG, true, BigDecimal.TEN, 100_000L, 0L,
                     LocalDateTime.of(2026, 8, 3, 10, 0), null, null)))
                 .isInstanceOf(RuntimeException.class);
@@ -473,7 +493,8 @@ class StockTradeScenarioTest {
     class SettlementAccount {
 
         private CreateTradeCommand viaBank(TradeType type, String qty, long amount, int day) {
-            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK, SAMSUNG, true,
+            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK,
+            null, SAMSUNG, true,
                 new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null,
                 BANK_ID);
         }
@@ -573,7 +594,8 @@ class StockTradeScenarioTest {
     class NonStock {
 
         private CreateTradeCommand goldTrade(TradeType type, String qty, long amount, int day) {
-            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.GOLD, "금 현물", false,
+            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.GOLD,
+            null, "금 현물", false,
                 new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
         }
 
@@ -592,6 +614,94 @@ class StockTradeScenarioTest {
             // 판 만큼의 원가 = 3,000,000 * 1.25/3.75 = 1,000,000 → 실현손익 100,000
             assertThat(gold.getTotalCost()).isEqualTo(2_000_000L);
             assertThat(savedRealizedExpense().getAmount()).isEqualTo(100_000L);
+        }
+    }
+
+    @Nested
+    @DisplayName("재계산 — 순서가 바뀌면 그 뒤 손익을 다시 쌓는다")
+    class Replay {
+
+        /**
+         * 이동평균은 순서에 의존한다. 각 거래에 박아 둔 변동분은 "그때의" 값이라,
+         * 앞선 거래가 사라지거나 과거 날짜 거래가 끼어들면 그대로는 어긋난다.
+         */
+        @Test
+        @DisplayName("중간 매수를 지우면 그 뒤 매도의 실현손익이 다시 계산된다")
+        void deletingMiddleBuyRecalculatesLaterSell() {
+            deposit(50_000_000L);
+            var first = sut.createTrade(trade(TradeType.BUY, "10", 700_000L, 0L, 2));   // 평단 70,000
+            sut.createTrade(trade(TradeType.BUY, "10", 900_000L, 0L, 10));              // 평단 80,000
+            var sold = sut.createTrade(trade(TradeType.SELL, "10", 1_000_000L, 0L, 20));
+
+            // 20주 원가 1,600,000 중 절반을 팔았으니 800,000 → 손익 +200,000
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(200_000L);
+
+            // "3월 매수는 사실 다른 증권사 거래였다" — 지운다.
+            sut.deleteTrade(first.rowId(), USER_ID);
+
+            // 남은 건 10주 900,000 뿐이고 그걸 1,000,000 에 팔았으니 +100,000 이어야 한다.
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(100_000L);
+        }
+
+        @Test
+        @DisplayName("과거 날짜 매수를 뒤늦게 넣어도 그 뒤 매도가 다시 계산된다")
+        void backdatedBuyRecalculatesLaterSell() {
+            deposit(50_000_000L);
+            sut.createTrade(trade(TradeType.BUY, "10", 900_000L, 0L, 10));
+            var sold = sut.createTrade(trade(TradeType.SELL, "10", 1_000_000L, 0L, 20));
+
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(100_000L);
+
+            // 2일자 매수를 8월 말에 뒤늦게 입력 — 평단이 섞여 손익이 달라져야 한다.
+            sut.createTrade(trade(TradeType.BUY, "10", 700_000L, 0L, 2));
+
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(200_000L);
+        }
+
+        @Test
+        @DisplayName("맨 뒤에 붙는 거래는 다시 쌓지 않는다 — 이미 맞는 값이다")
+        void appendingDoesNotChangeEarlier() {
+            deposit(50_000_000L);
+            sut.createTrade(trade(TradeType.BUY, "10", 700_000L, 0L, 2));
+            var sold = sut.createTrade(trade(TradeType.SELL, "5", 500_000L, 0L, 10));
+            long before = tradeOf(sold.rowId()).getRealizedPl();
+
+            sut.createTrade(trade(TradeType.BUY, "10", 900_000L, 0L, 20));
+
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(before);
+        }
+
+        @Test
+        @DisplayName("재계산 후 보유 수량·원가도 다시 쌓은 값으로 맞는다")
+        void holdingFollowsReplay() {
+            deposit(50_000_000L);
+            var first = sut.createTrade(trade(TradeType.BUY, "10", 700_000L, 0L, 2));
+            sut.createTrade(trade(TradeType.BUY, "10", 900_000L, 0L, 10));
+            sut.createTrade(trade(TradeType.SELL, "10", 1_000_000L, 0L, 20));
+
+            sut.deleteTrade(first.rowId(), USER_ID);
+
+            // 10주 사서 10주 팔았으니 보유가 없어야 한다.
+            assertThat(samsung()).isNull();
+        }
+
+        @Test
+        @DisplayName("다른 종목은 건드리지 않는다 — 재계산 단위는 (자산, 종목) 하나다")
+        void doesNotTouchOtherHoldings() {
+            deposit(50_000_000L);
+            var kakaoBuy = new CreateTradeCommand(USER_ID, ASSET_ID, TradeType.BUY,
+                HoldingType.STOCK, null, "035720", true, new BigDecimal("5"), 500_000L, 0L,
+                LocalDateTime.of(2026, 8, 5, 10, 0), null, null);
+            sut.createTrade(kakaoBuy);
+            var first = sut.createTrade(trade(TradeType.BUY, "10", 700_000L, 0L, 2));
+
+            sut.deleteTrade(first.rowId(), USER_ID);
+
+            AssetHolding kakao = holdings.stream()
+                .filter(h -> "035720".equals(h.holdingKey()) && h.getIsDeleted() == YNType.N)
+                .findFirst().orElse(null);
+            assertThat(kakao).isNotNull();
+            assertThat(kakao.getTotalCost()).isEqualTo(500_000L);
         }
     }
 }

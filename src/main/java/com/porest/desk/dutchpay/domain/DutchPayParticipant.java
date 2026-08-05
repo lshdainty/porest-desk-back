@@ -81,6 +81,13 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
         this.paidAt = null;
     }
 
+    /** 이름·금액을 제자리에서 고친다 — 정산 표시(is_paid/paid_at)는 그대로 둔다. */
+    public void updateParticipant(User user, String participantName, Long amount) {
+        this.user = user;
+        this.participantName = participantName;
+        this.amount = amount;
+    }
+
     public void updateAmount(Long amount) {
         this.amount = amount;
     }
