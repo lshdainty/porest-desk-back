@@ -5,6 +5,7 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.expense.domain.ExpenseCategory;
+import com.porest.core.type.YNType;
 import com.porest.desk.expense.domain.ExpenseTemplate;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -27,6 +28,8 @@ import java.time.LocalDate;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
@@ -71,6 +74,72 @@ class ExpenseTemplateServiceImplTest {
         return new ExpenseTemplateServiceDto.UpdateCommand(
                 "점심 템플릿", categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
                 null, null, null, null);
+    }
+
+    @Test
+    @DisplayName("createTemplate — 고정 금액을 안 쓰면 금액 없이도 저장된다")
+    void createAllowsBlankAmountWhenNotLocked() {
+        // 프리셋은 금액을 모르는 채로 양식만 저장하려고 만든 것이다.
+        // 매번 금액이 다른 항목(구독료 변동·병원비 등)은 불러올 때 비어 있어야 편하다.
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        given(expenseTemplateRepository.save(any(ExpenseTemplate.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "구독", 10L, null, ExpenseType.EXPENSE, null,
+                null, null, null, null, YNType.N);
+
+        assertThatCode(() -> sut.createTemplate(cmd)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("createTemplate — 고정 금액을 쓰면 금액이 있어야 한다")
+    void createRequiresAmountWhenLocked() {
+        // 고정 금액은 불러오는 거래가 그 값을 그대로 받는다 — 비어 있으면 의미가 없다.
+        // 금액 검증이 사용자 조회보다 먼저라 저장소를 건드리지 않는다.
+        var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "점심", 10L, null, ExpenseType.EXPENSE, null,
+                null, null, null, null, YNType.Y);
+
+        assertThatThrownBy(() -> sut.createTemplate(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("createTemplate — 고정 금액이 꺼져 있으면 적어 넣은 금액은 버린다")
+    void createDropsAmountWhenNotLocked() {
+        // 둘 중 하나다 — 고정이면 금액이 있고, 아니면 없다. 중간 상태를 남기면
+        // 화면엔 안 보이는 값이 붙어 다니다 고정을 켜는 순간 엉뚱한 금액이 살아난다.
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        given(expenseTemplateRepository.save(any(ExpenseTemplate.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "구독", 10L, null, ExpenseType.EXPENSE, 10_000L,
+                null, null, null, null, YNType.N);
+
+        var info = sut.createTemplate(cmd);
+
+        assertThat(info.amount()).isNull();
+    }
+
+    @Test
+    @DisplayName("createTemplate — 고정 금액을 켰는데 0 이면 거부한다")
+    void createRejectsZeroWhenLocked() {
+        var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "점심", 10L, null, ExpenseType.EXPENSE, 0L,
+                null, null, null, null, YNType.Y);
+
+        assertThatThrownBy(() -> sut.createTemplate(cmd))
+                .isInstanceOf(InvalidValueException.class);
     }
 
     @Test
@@ -192,7 +261,7 @@ class ExpenseTemplateServiceImplTest {
         void rejectsNegative() {
             var cmd = new ExpenseTemplateServiceDto.CreateCommand(
                 USER_ID, "잘못된 프리셋", 1L, null, ExpenseType.EXPENSE, -10_000L,
-                null, null, null, null, null);
+                null, null, null, null, YNType.Y);
             assertThatThrownBy(() -> sut.createTemplate(cmd))
                 .isInstanceOf(InvalidValueException.class);
         }
@@ -202,7 +271,7 @@ class ExpenseTemplateServiceImplTest {
         void rejectsNegativeOnUpdate() {
             var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
                 "프리셋", 1L, null, ExpenseType.EXPENSE, -5_000L,
-                null, null, null, null);
+                null, null, null, YNType.Y);
             assertThatThrownBy(() -> sut.updateTemplate(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
         }
