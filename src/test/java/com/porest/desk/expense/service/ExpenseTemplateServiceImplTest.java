@@ -15,6 +15,7 @@ import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -180,5 +181,30 @@ class ExpenseTemplateServiceImplTest {
         assertThat(info.description()).isEqualTo("점심");
         verify(expenseRepository).save(org.mockito.ArgumentMatchers.any());
         verify(template).incrementUseCount();
+    }
+
+    @Nested
+    @DisplayName("금액 부호 — 음수 프리셋이 저장되면 그걸 불러 쓰는 거래도 오염된다")
+    class AmountSign {
+
+        @Test
+        @DisplayName("음수 금액 프리셋을 만들 수 없다")
+        void rejectsNegative() {
+            var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "잘못된 프리셋", 1L, null, ExpenseType.EXPENSE, -10_000L,
+                null, null, null, null, null);
+            assertThatThrownBy(() -> sut.createTemplate(cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("수정에서도 음수를 막는다")
+        void rejectsNegativeOnUpdate() {
+            var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
+                "프리셋", 1L, null, ExpenseType.EXPENSE, -5_000L,
+                null, null, null, null);
+            assertThatThrownBy(() -> sut.updateTemplate(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
     }
 }

@@ -38,6 +38,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     @Override
     @Transactional
     public ExpenseTemplateServiceDto.TemplateInfo createTemplate(ExpenseTemplateServiceDto.CreateCommand command) {
+        validateAmount(command.amount());
         log.debug("경비 템플릿 생성 시작: userRowId={}, templateName={}", command.userRowId(), command.templateName());
 
         User user = userRepository.findById(command.userRowId())
@@ -90,6 +91,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     @Override
     @Transactional
     public ExpenseTemplateServiceDto.TemplateInfo updateTemplate(Long templateId, Long userRowId, ExpenseTemplateServiceDto.UpdateCommand command) {
+        validateAmount(command.amount());
         log.debug("경비 템플릿 수정 시작: templateId={}", templateId);
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
@@ -218,5 +220,12 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
                 log.warn("경비 템플릿 조회 실패 - 존재하지 않는 템플릿: templateId={}", templateId);
                 return new EntityNotFoundException(DeskErrorCode.EXPENSE_TEMPLATE_NOT_FOUND);
             });
+    }
+
+    /** 프리셋 금액도 0보다 커야 한다 — 불러 쓰는 거래가 그 값을 그대로 받는다. */
+    private void validateAmount(Long amount) {
+        if (amount == null || amount <= 0) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
+        }
     }
 }

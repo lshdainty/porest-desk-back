@@ -374,13 +374,15 @@ class StockTradeScenarioTest {
     class Validation {
 
         @Test
-        @DisplayName("예수금보다 많이 살 수 없다")
-        void cannotBuyOverCash() {
+        @DisplayName("예수금보다 많이 사도 막지 않는다 — 예수금이 마이너스로 쌓인다")
+        void buyingOverCashIsAllowed() {
             deposit(1_000_000L);
 
-            assertThatThrownBy(() -> sut.createTrade(trade(TradeType.BUY, "100", 7_000_000L, 0L, 3)))
-                .isInstanceOf(InvalidValueException.class);
-            assertThat(cash).isEqualTo(1_000_000L);
+            // 이건 기록용 앱이다. 입금을 안 적고 매수만 적는 사용자가 있고, 마이너스 통장처럼
+            // 음수로 쌓이는 게 정상이다. 막으면 "실제로는 샀는데 앱에는 못 적는" 상태가 된다.
+            sut.createTrade(trade(TradeType.BUY, "100", 7_000_000L, 0L, 3));
+
+            assertThat(cash).isEqualTo(-6_000_000L);
         }
 
         @Test

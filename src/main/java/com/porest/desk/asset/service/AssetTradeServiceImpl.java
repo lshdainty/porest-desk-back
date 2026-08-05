@@ -106,17 +106,9 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         // 결제 계좌를 고르면 증권계좌 예수금 대신 거기서 오간다 — 증권계좌로 돈을 옮기는
         // 이체를 먼저 적지 않아도 매수 한 번으로 끝난다.
         Asset settlement = resolveSettlementAsset(command.settlementAssetRowId(), command.userRowId());
-        // 예수금으로 살 때만 잔액을 본다. 결제 계좌는 마이너스를 막지 않는다 —
-        // 초기 잔액을 안 채우고 쓰는 가계부에선 통장이 마이너스로 누적되는 게 정상이다.
-        if (type == TradeType.BUY && settlement == null) {
-            // 캐시 컬럼이 아니라 이력에서 집계한 값으로 본다 — 캐시는 낡을 수 있고,
-            // 돈을 막는 판단을 낡은 값으로 하면 멀쩡한 매수가 거부된다.
-            long cash = balanceHistoryService
-                .balanceAt(asset, userClock.now(command.userRowId())).cash();
-            if (cash + cashDelta < 0) {
-                throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_INSUFFICIENT_CASH);
-            }
-        }
+        // 예수금이 모자라도 막지 않는다 — 이건 기록용 앱이다. 입금을 안 적고 매수만 적는
+        // 사용자가 있고, 마이너스 통장처럼 음수로 쌓이는 게 정상이다. 현실 은행처럼 검사하면
+        // "실제로는 샀는데 앱에서만 기록이 안 되는" 상태가 된다.
 
         AssetTrade trade = AssetTrade.create(user, asset, settlement, type,
             command.holdingType() != null ? command.holdingType() : HoldingType.STOCK,

@@ -45,6 +45,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     @Override
     @Transactional
     public RecurringTransactionServiceDto.RecurringInfo createRecurring(RecurringTransactionServiceDto.CreateCommand command) {
+        validateAmount(command.amount());
         log.debug("반복 거래 생성 시작: userRowId={}", command.userRowId());
 
         User user = userRepository.findById(command.userRowId())
@@ -131,6 +132,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     @Override
     @Transactional
     public RecurringTransactionServiceDto.RecurringInfo updateRecurring(Long recurringId, Long userRowId, RecurringTransactionServiceDto.UpdateCommand command) {
+        validateAmount(command.amount());
         log.debug("반복 거래 수정 시작: recurringId={}", recurringId);
 
         RecurringTransaction recurring = findRecurringOrThrow(recurringId);
@@ -348,5 +350,12 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                 log.warn("반복 거래 조회 실패 - 존재하지 않는 반복 거래: recurringId={}", recurringId);
                 return new EntityNotFoundException(DeskErrorCode.RECURRING_TRANSACTION_NOT_FOUND);
             });
+    }
+
+    /** 반복거래 금액도 0보다 커야 한다 — 실행될 때마다 지출 flow 를 만들기 때문이다. */
+    private void validateAmount(Long amount) {
+        if (amount == null || amount <= 0) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
+        }
     }
 }

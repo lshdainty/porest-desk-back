@@ -356,6 +356,15 @@ public class AssetServiceImpl implements AssetService {
             if (hc.quantity() != null && hc.quantity().signum() < 0) {
                 throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
             }
+            // 평가액이 음수면 투자 자산이 부(−)로 뒤집히고, 원가가 음수면 매도 실현손익이
+            // (대금 − 원가)라 그만큼 부풀려진다. 둘 다 0 은 허용한다 — 평가액 0 인 보유와
+            // 원가를 모르는 기초 보유가 실제로 있다.
+            if (hc.holdingValue() != null && hc.holdingValue() < 0) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
+            if (hc.totalCost() != null && hc.totalCost() < 0) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
 
             if (linked) {
                 // 토스는 국내·미국 주식 시세만 제공한다 — 금·코인은 연동 대상이 아니다.
@@ -883,6 +892,11 @@ public class AssetServiceImpl implements AssetService {
         }
         // 이체 금액은 0보다 커야 함 — 음수는 잔액 흐름을 역전시켜 자금이 거꾸로 이동(검증 누락 시 위험).
         if (command.amount() == null || command.amount() <= 0) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
+        }
+        // 수수료도 음수면 안 된다. 출금은 -(amount + fee) 라 fee 가 음수면 그만큼 덜 빠지고
+        // 입금은 그대로 들어와 없던 돈이 생긴다(100,000 이체에 fee -50,000 → 순자산 +50,000).
+        if (command.fee() != null && command.fee() < 0) {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
         }
 

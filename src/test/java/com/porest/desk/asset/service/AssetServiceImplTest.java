@@ -16,6 +16,7 @@ import com.porest.desk.toss.credential.service.TossCredentialService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -34,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -458,5 +460,56 @@ class AssetServiceImplTest {
         sut.snapshotTossValuations();
 
         verify(balanceHistoryService, never()).recordValuation(any(), anyLong(), any());
+    }
+
+    @Nested
+    @DisplayName("이체 수수료 부호 — 음수면 없던 돈이 생긴다")
+    class TransferFeeSign {
+
+        @Test
+        @DisplayName("음수 수수료는 거부한다 — 출금은 줄고 입금은 그대로라 돈이 늘어난다")
+        void rejectsNegativeFee() {
+            User u = user(USER_ID);
+            // 수수료 검증이 자산 조회보다 먼저 도므로 자산 스텁은 lenient 로 둔다.
+            Asset from = mock(Asset.class);
+            Asset to = mock(Asset.class);
+            lenient().when(from.getUser()).thenReturn(u);
+            lenient().when(to.getUser()).thenReturn(u);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            lenient().when(assetRepository.findById(10L)).thenReturn(Optional.of(from));
+            lenient().when(assetRepository.findById(11L)).thenReturn(Optional.of(to));
+
+            // amount 100,000 / fee -50,000 → 출금 -(100,000-50,000)= -50,000, 입금 +100,000.
+            // 순자산이 50,000 늘어난다.
+            var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 11L, 100_000L, -50_000L, 0L, "이체",
+                LocalDate.of(2026, 6, 1).atStartOfDay());
+
+            assertThatThrownBy(() -> sut.createTransfer(cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("수수료 0 은 정상 — 대부분의 이체가 수수료가 없다")
+        void allowsZeroFee() {
+            User u = user(USER_ID);
+            Asset from = mock(Asset.class);
+            Asset to = mock(Asset.class);
+            given(from.getUser()).willReturn(u);
+            given(to.getUser()).willReturn(u);
+            given(from.getAssetType()).willReturn(AssetType.BANK_ACCOUNT);
+            given(to.getAssetType()).willReturn(AssetType.BANK_ACCOUNT);
+            given(assetRepository.findById(10L)).willReturn(Optional.of(from));
+            given(assetRepository.findById(11L)).willReturn(Optional.of(to));
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(assetTransferRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            var cmd = new AssetServiceDto.CreateTransferCommand(
+                USER_ID, 10L, 11L, 100_000L, 0L, 0L, "이체",
+                LocalDate.of(2026, 6, 1).atStartOfDay());
+
+            org.assertj.core.api.Assertions.assertThatCode(() -> sut.createTransfer(cmd))
+                .doesNotThrowAnyException();
+        }
     }
 }
