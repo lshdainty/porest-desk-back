@@ -147,14 +147,15 @@ public class AssetServiceImpl implements AssetService {
 
         // 잔액은 캐시 컬럼이 아니라 이력에서 산정한다 — 요약·순자산·추이가 쓰는 것과 같은 계산이라
         // 목록 금액과 총합이 어긋날 여지가 없다(캐시가 낡아 있어도 스스로 맞춰진다).
-        BalanceResolver resolver = balanceHistoryService.resolverFor(assets);
         LocalDateTime now = userClock.now(userRowId);
+        Map<Long, AssetBalanceHistoryService.Split> balances =
+            balanceHistoryService.balancesAt(assets, now);
 
         return assets.stream()
             .map(a -> AssetServiceDto.AssetInfo.from(
                 a,
                 holdingsByAsset.getOrDefault(a.getRowId(), List.of()),
-                resolver.splitAt(a.getRowId(), now)))
+                balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO)))
             .toList();
     }
 
@@ -695,18 +696,21 @@ public class AssetServiceImpl implements AssetService {
             prevAsOf = selectedMonthEnd.minusMonths(1)
                 .with(TemporalAdjusters.lastDayOfMonth()).atTime(LocalTime.MAX);
         }
-        return buildSummaryAt(included, resolver, asOf, prevAsOf);
+        return buildSummaryAt(included, asOf, prevAsOf);
     }
 
     /** 기준시각(asOf) 잔액으로 요약을 구성하고, 전월 시점(prevAsOf) 순자산과의 증감을 계산. */
-    private AssetServiceDto.AssetSummary buildSummaryAt(List<Asset> included, BalanceResolver resolver,
+    private AssetServiceDto.AssetSummary buildSummaryAt(List<Asset> included,
                                                         LocalDateTime asOf, LocalDateTime prevAsOf) {
+        // 두 시점을 한 번씩 — DB 가 집계한다(이력을 앱으로 가져오지 않는다).
+        Map<Long, AssetBalanceHistoryService.Split> at = balanceHistoryService.balancesAt(included, asOf);
+        Map<Long, AssetBalanceHistoryService.Split> prev = balanceHistoryService.balancesAt(included, prevAsOf);
         long totalBalance = 0, totalAssets = 0, totalDebt = 0;
         Map<AssetType, long[]> byTypeAcc = new EnumMap<>(AssetType.class); // long[2] = { sumBalance, count }
         for (Asset a : included) {
             // 외화 자산은 원화로 환산해 더한다 — 환산하지 않으면 USD 1,000 잔고가
             // 순자산에 1,000원으로 들어가 합계가 무너진다(원화 자산은 환산율 1이라 그대로).
-            long bal = a.balanceInKrw(resolver.balanceAt(a.getRowId(), asOf));
+            long bal = a.balanceInKrw(totalOf(at, a));
             totalBalance += bal;
             if (DEBT_TYPES.contains(a.getAssetType())) {
                 totalDebt += Math.abs(bal);
@@ -719,7 +723,7 @@ public class AssetServiceImpl implements AssetService {
         }
         long netWorth = totalAssets - totalDebt;
 
-        long lastMonthNetWorth = netWorthAt(included, resolver, prevAsOf);
+        long lastMonthNetWorth = netWorthOf(included, prev);
         long changeAmount = netWorth - lastMonthNetWorth;
         double changePercent = lastMonthNetWorth == 0
             ? 0.0
@@ -744,19 +748,37 @@ public class AssetServiceImpl implements AssetService {
         log.debug("순자산 추이 조회: userRowId={}, months={}", userRowId, n);
 
         List<Asset> included = includedAssets(userRowId);
-        BalanceResolver resolver = balanceHistoryService.resolverFor(included);
-
         LocalDate today = userClock.today(userRowId);
         LocalDateTime now = userClock.now(userRowId);
-        List<AssetServiceDto.NetWorthTrendPoint> points = new ArrayList<>(n);
+
+        // 시점마다 쿼리를 날리면 12개월에 12번이다. 시점 목록을 한 번에 넘겨
+        // 집계 2회(시작 시점 + 일자별 변동)로 끝낸다.
+        List<LocalDate> labels = new ArrayList<>(n);
+        List<LocalDateTime> asOfs = new ArrayList<>(n);
         for (int i = n - 1; i >= 0; i--) {
             LocalDate m = today.minusMonths(i);
-            // 현재 월(i=0)은 지금 시각, 과거 월은 월말 23:59:59.999999 기준 → 현재 점 = summary netWorth 와 동일
-            LocalDateTime asOf = (i == 0)
-                ? now
-                : m.with(TemporalAdjusters.lastDayOfMonth()).atTime(LocalTime.MAX);
-            long nw = netWorthAt(included, resolver, asOf);
-            points.add(new AssetServiceDto.NetWorthTrendPoint(m.getYear(), m.getMonthValue(), nw));
+            labels.add(m);
+            // 현재 월(i=0)은 지금 시각, 과거 월은 월말 23:59:59.999999 → 현재 점 = summary netWorth 와 동일
+            asOfs.add(i == 0 ? now : m.with(TemporalAdjusters.lastDayOfMonth()).atTime(LocalTime.MAX));
+        }
+        Map<Long, List<AssetBalanceHistoryService.Split>> series =
+            balanceHistoryService.balancesAtPoints(included, asOfs);
+
+        List<AssetServiceDto.NetWorthTrendPoint> points = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            long assets = 0, debt = 0;
+            for (Asset a : included) {
+                List<AssetBalanceHistoryService.Split> seq = series.get(a.getRowId());
+                long bal = a.balanceInKrw(
+                    seq == null ? 0L : seq.get(i).total());
+                if (DEBT_TYPES.contains(a.getAssetType())) {
+                    debt += Math.abs(bal);
+                } else {
+                    assets += bal;
+                }
+            }
+            LocalDate m = labels.get(i);
+            points.add(new AssetServiceDto.NetWorthTrendPoint(m.getYear(), m.getMonthValue(), assets - debt));
         }
         return points;
     }
@@ -772,24 +794,30 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
 
-        BalanceResolver resolver = balanceHistoryService.resolverFor(List.of(asset));
-
         // window: 이번 주 월요일 기준 n-1주 전 ~ 이번 주
         LocalDate today = userClock.today(userRowId);
         LocalDate currentMonday = today.with(DayOfWeek.MONDAY);
         LocalDate firstMonday = currentMonday.minusWeeks(n - 1);
         LocalDateTime now = userClock.now(userRowId);
 
-        List<AssetServiceDto.AssetBalancePoint> points = new ArrayList<>(n);
+        // 주마다 쿼리를 날리면 26주에 26번이다 — 시점 목록을 한 번에 넘겨 집계 2회로 끝낸다.
+        List<LocalDate> weekStarts = new ArrayList<>(n);
+        List<LocalDateTime> asOfs = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             LocalDate weekStart = firstMonday.plusWeeks(i);
+            weekStarts.add(weekStart);
             // 그 주 일요일 끝 시점(미래면 지금) 기준 잔액
             LocalDateTime asOf = weekStart.plusDays(6).atTime(LocalTime.MAX);
-            if (asOf.isAfter(now)) {
-                asOf = now;
-            }
-            long balance = resolver.balanceAt(asset.getRowId(), asOf);
-            points.add(new AssetServiceDto.AssetBalancePoint(weekStart, balance));
+            asOfs.add(asOf.isAfter(now) ? now : asOf);
+        }
+        List<AssetBalanceHistoryService.Split> series = balanceHistoryService
+            .balancesAtPoints(List.of(asset), asOfs)
+            .getOrDefault(asset.getRowId(), List.of());
+
+        List<AssetServiceDto.AssetBalancePoint> points = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            long balance = i < series.size() ? series.get(i).total() : 0L;
+            points.add(new AssetServiceDto.AssetBalancePoint(weekStarts.get(i), balance));
         }
         return points;
     }
@@ -798,10 +826,10 @@ public class AssetServiceImpl implements AssetService {
      * 기준시각의 순자산 = Σ(비채무 잔액) − Σ|채무 잔액|. summary/trend 가 공유.
      * 외화 자산은 원화로 환산해 더한다(환산하지 않으면 통화 단위가 섞여 합계가 무의미해진다).
      */
-    private long netWorthAt(List<Asset> included, BalanceResolver resolver, LocalDateTime at) {
+    private long netWorthOf(List<Asset> included, Map<Long, AssetBalanceHistoryService.Split> balances) {
         long assets = 0, debt = 0;
         for (Asset a : included) {
-            long bal = a.balanceInKrw(resolver.balanceAt(a.getRowId(), at));
+            long bal = a.balanceInKrw(totalOf(balances, a));
             if (DEBT_TYPES.contains(a.getAssetType())) {
                 debt += Math.abs(bal);
             } else {
@@ -809,6 +837,11 @@ public class AssetServiceImpl implements AssetService {
             }
         }
         return assets - debt;
+    }
+
+    /** 집계 결과에서 그 자산의 총잔액(예수금 + 평가금액). 이력이 없으면 0. */
+    private static long totalOf(Map<Long, AssetBalanceHistoryService.Split> balances, Asset a) {
+        return balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO).total();
     }
 
     private List<Asset> includedAssets(Long userRowId) {

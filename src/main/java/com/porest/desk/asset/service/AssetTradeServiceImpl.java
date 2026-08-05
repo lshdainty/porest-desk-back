@@ -109,7 +109,10 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         // 예수금으로 살 때만 잔액을 본다. 결제 계좌는 마이너스를 막지 않는다 —
         // 초기 잔액을 안 채우고 쓰는 가계부에선 통장이 마이너스로 누적되는 게 정상이다.
         if (type == TradeType.BUY && settlement == null) {
-            long cash = asset.getCashBalance() != null ? asset.getCashBalance() : 0L;
+            // 캐시 컬럼이 아니라 이력에서 집계한 값으로 본다 — 캐시는 낡을 수 있고,
+            // 돈을 막는 판단을 낡은 값으로 하면 멀쩡한 매수가 거부된다.
+            long cash = balanceHistoryService
+                .balanceAt(asset, userClock.now(command.userRowId())).cash();
             if (cash + cashDelta < 0) {
                 throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_INSUFFICIENT_CASH);
             }

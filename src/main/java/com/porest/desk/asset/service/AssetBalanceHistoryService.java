@@ -14,6 +14,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.TreeMap;
+import java.util.ArrayList;
+import java.time.LocalDate;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -270,7 +273,134 @@ public class AssetBalanceHistoryService {
         applySplits(List.of(asset));
     }
 
-    // === 읽기 ===
+
+    // === 읽기 (집계 쿼리) =======================================================
+
+    /**
+     * 기준시각의 자산별 잔액 — <b>DB 가 집계</b>한다. 이력을 앱으로 가져오지 않는다.
+     *
+     * @return 자산 rowId → 채널별 잔액. 이력이 없는 자산은 {@link Split#ZERO}.
+     */
+    public Map<Long, Split> balancesAt(Collection<Asset> assets, LocalDateTime at) {
+        List<Long> ids = assets.stream().map(Asset::getRowId).filter(java.util.Objects::nonNull).toList();
+        return balancesAtByIds(ids, at);
+    }
+
+    public Map<Long, Split> balancesAtByIds(Collection<Long> assetRowIds, LocalDateTime at) {
+        Map<Long, Split> result = new LinkedHashMap<>();
+        for (Long id : assetRowIds) {
+            result.put(id, Split.ZERO);
+        }
+        if (assetRowIds.isEmpty()) {
+            return result;
+        }
+        for (Object[] row : repository.aggregateBalances(assetRowIds, at)) {
+            Long assetId = ((Number) row[0]).longValue();
+            BalanceChannel channel = BalanceChannel.valueOf((String) row[1]);
+            long amount = ((Number) row[2]).longValue();
+            result.merge(assetId, channelSplit(channel, amount), Split::plus);
+        }
+        return result;
+    }
+
+    /** 한 자산의 기준시각 잔액. */
+    public Split balanceAt(Asset asset, LocalDateTime at) {
+        return balancesAt(List.of(asset), at).getOrDefault(asset.getRowId(), Split.ZERO);
+    }
+
+    /**
+     * 여러 시점의 자산별 잔액 — 추이 그래프용. <b>쿼리 2회</b>로 끝난다.
+     *
+     * <p>첫 시점 잔액을 집계로 한 번 잡고, 그 뒤는 일자별 변동을 한 번에 받아 자바에서 누적한다.
+     * 시점마다 쿼리를 날리면 12개월에 12번·26주에 26번이 된다.
+     *
+     * @param points 오름차순 시점들. 마지막 시점 이후 기록은 어디에도 안 들어간다.
+     * @return 자산 rowId → 시점별 잔액(points 와 같은 순서·길이)
+     */
+    public Map<Long, List<Split>> balancesAtPoints(Collection<Asset> assets, List<LocalDateTime> points) {
+        List<Long> ids = assets.stream().map(Asset::getRowId).filter(java.util.Objects::nonNull).toList();
+        if (points.isEmpty()) {
+            return Map.of();
+        }
+        LocalDateTime first = points.get(0);
+        LocalDateTime last = points.get(points.size() - 1);
+
+        Map<Long, Split> running = new LinkedHashMap<>(balancesAtByIds(ids, first));
+        Map<Long, List<Split>> out = new LinkedHashMap<>();
+        for (Long id : ids) {
+            List<Split> seq = new ArrayList<>(points.size());
+            seq.add(running.getOrDefault(id, Split.ZERO));
+            out.put(id, seq);
+        }
+        if (ids.isEmpty() || points.size() == 1) {
+            return out;
+        }
+
+        // 일자별 변동 — 자산·채널·날짜 오름차순으로 돌아온다.
+        List<Object[]> deltas = repository.aggregateDailyDeltas(ids, first, last);
+        // 날짜 → 그 날짜의 변동들. 시점 경계를 넘길 때마다 스냅샷을 찍는다.
+        Map<LocalDate, List<Object[]>> byDate = new TreeMap<>();
+        for (Object[] row : deltas) {
+            byDate.computeIfAbsent(toLocalDate(row[2]), k -> new ArrayList<>()).add(row);
+        }
+
+        int idx = 1; // points.get(0) 은 이미 채웠다
+        for (Map.Entry<LocalDate, List<Object[]>> e : byDate.entrySet()) {
+            LocalDate date = e.getKey();
+            // 이 날짜보다 앞선 시점들은 지금까지의 누적으로 확정한다.
+            while (idx < points.size() && points.get(idx).toLocalDate().isBefore(date)) {
+                snapshot(out, ids, running, idx);
+                idx++;
+            }
+            for (Object[] row : e.getValue()) {
+                apply(running, row);
+            }
+        }
+        while (idx < points.size()) {
+            snapshot(out, ids, running, idx);
+            idx++;
+        }
+        return out;
+    }
+
+    private void snapshot(Map<Long, List<Split>> out, Collection<Long> ids,
+                          Map<Long, Split> running, int idx) {
+        for (Long id : ids) {
+            out.get(id).add(running.getOrDefault(id, Split.ZERO));
+        }
+    }
+
+    /** 앵커가 있는 날은 그 값으로 갈아엎고, 없는 날은 flow 를 더한다. */
+    private void apply(Map<Long, Split> running, Object[] row) {
+        Long assetId = ((Number) row[0]).longValue();
+        BalanceChannel channel = BalanceChannel.valueOf((String) row[1]);
+        Long anchor = row[3] != null ? ((Number) row[3]).longValue() : null;
+        long flowAfter = row[4] != null ? ((Number) row[4]).longValue() : 0L;
+
+        Split cur = running.getOrDefault(assetId, Split.ZERO);
+        long cash = cur.cash();
+        long holding = cur.holding();
+        long next = anchor != null ? anchor + flowAfter
+            : (channel == BalanceChannel.HOLDING ? holding : cash) + flowAfter;
+        running.put(assetId, channel == BalanceChannel.HOLDING
+            ? new Split(cash, next) : new Split(next, holding));
+    }
+
+    private static Split channelSplit(BalanceChannel channel, long amount) {
+        return channel == BalanceChannel.HOLDING ? new Split(0L, amount) : new Split(amount, 0L);
+    }
+
+    private static LocalDate toLocalDate(Object value) {
+        if (value instanceof java.sql.Date d) {
+            return d.toLocalDate();
+        }
+        if (value instanceof LocalDate d) {
+            return d;
+        }
+        return LocalDate.parse(value.toString());
+    }
+
+    // === 읽기 (자바 계산 — 대조용, 곧 제거) ===
 
     /** 주어진 자산들의 이력을 1회 조회해 기준시각 잔액 계산기를 만든다. */
     public BalanceResolver resolverFor(Collection<Asset> assets) {
@@ -300,6 +430,11 @@ public class AssetBalanceHistoryService {
 
         BalanceResolver(Map<Long, List<AssetBalanceHistory>> byAsset) {
             this.byAsset = byAsset;
+        }
+
+        /** 이력 맵으로 직접 만든다 — 집계 쿼리와 값이 같은지 대조하는 테스트에서 쓴다. */
+        public static BalanceResolver of(Map<Long, List<AssetBalanceHistory>> byAsset) {
+            return new BalanceResolver(byAsset);
         }
 
         /** 총잔액 = 예수금 + 평가금액. */
@@ -340,6 +475,11 @@ public class AssetBalanceHistoryService {
 
         public long total() {
             return cash + holding;
+        }
+
+        /** 채널별로 더한다 — 집계 결과가 채널마다 한 행씩 오므로 합쳐 하나로 만든다. */
+        public Split plus(Split other) {
+            return new Split(cash + other.cash, holding + other.holding);
         }
     }
 }

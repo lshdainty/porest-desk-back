@@ -232,9 +232,9 @@ class AssetHoldingServiceTest {
         AssetHolding h2 = AssetHolding.create(
             a2, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0L, 0);
         given(assetHoldingRepository.findActiveByAssets(anyList())).willReturn(List.of(h1, h2));
-        // 목록 잔액은 이력에서 산정한다 — 이력 조회도 자산 전체 1회다(N+1 금지).
-        given(balanceHistoryService.resolverFor(anyCollection()))
-            .willReturn(new AssetBalanceHistoryService.BalanceResolver(java.util.Map.of()));
+        // 목록 잔액은 DB 집계로 온다 — 자산 전체 1쿼리다(N+1 금지).
+        given(balanceHistoryService.balancesAt(anyCollection(), any()))
+            .willReturn(java.util.Map.of());
 
         List<AssetServiceDto.AssetInfo> infos = sut.getAssets(USER_ID);
 
