@@ -86,7 +86,9 @@ class InvestmentCashPreservedTest {
         Asset a = Asset.createAsset(user, "주식계좌", AssetType.INVESTMENT, 0L, "KRW",
             null, null, null, null, 0, YNType.Y, null, null, null, null);
         ReflectionTestUtils.setField(a, "rowId", ASSET_ID);
-        a.updateBalances(0L, 48_000_000L); // cash 0 / holding 4,800만 → balance 4,800만
+        // 잔액은 이력 집계로 온다 — 예수금 0 / 평가금액 4,800만 상태를 그대로 흉내 낸다.
+        given(balanceHistoryService.balanceAt(any(), any()))
+            .willReturn(new AssetBalanceHistoryService.Split(0L, 48_000_000L));
         given(assetRepository.findById(ASSET_ID)).willReturn(Optional.of(a));
         return a;
     }

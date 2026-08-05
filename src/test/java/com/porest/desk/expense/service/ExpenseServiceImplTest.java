@@ -512,7 +512,7 @@ class ExpenseServiceImplTest {
 
         assertThat(info.amount()).isEqualTo(10_000L);
         verify(expenseRepository).save(any(Expense.class));
-        verify(balanceHistoryService).recordExpense(any(), any(), eq(ExpenseType.EXPENSE), eq(10_000L), any(), eq(true));
+        verify(balanceHistoryService).recordExpense(any(), any(), eq(ExpenseType.EXPENSE), eq(10_000L), any());
     }
 
     @Test

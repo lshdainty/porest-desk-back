@@ -266,29 +266,6 @@ class ImportServiceImplTest {
             .containsExactly("식비", "아침", "미분류");
         assertThat(captor.getAllValues().get(2).parentRowId()).isEqualTo(100L);
     }
-
-    @Test
-    @DisplayName("execute — 잔액 재산정은 행마다가 아니라 자산당 한 번만 한다")
-    void recomputesOncePerAsset() {
-        // 행마다 재산정하면 그 자산의 전체 이력을 매번 다시 읽어 O(N²) 이 된다.
-        // 1만 행이면 수천만 건 읽기라 요청이 사실상 끝나지 않는다.
-        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
-        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
-        given(assetRepository.findByUser(1L)).willReturn(List.of());
-
-        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
-            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
-
-        sut.execute(csv(POREST_CSV), ImportSource.POREST, mapping, false, true, 1L);
-
-        // 자산 이름이 매칭되지 않아 assetRowId 가 없으므로 재산정 대상도 비어 있어야 한다.
-        verify(balanceHistoryService, times(1)).recomputeAssets(any());
-        // 건별 커밋 대신 청크로 한 번에 — 커밋(디스크 동기화) 횟수를 줄이는 게 목적.
-        verify(expenseService, times(1)).createExpensesChunk(any());
-        verify(expenseService, never()).createExpense(any(), anyBoolean());
-    }
-
     @Test
     @DisplayName("execute — 이체 행은 실패가 아니라 건너뜀으로 집계한다")
     void countsTransferRowsAsSkipped() {

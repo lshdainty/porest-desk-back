@@ -4,7 +4,6 @@ import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetBalanceHistory;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
-import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
 import com.porest.desk.asset.service.AssetBalanceHistoryService.Split;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.BalanceChannel;
@@ -36,8 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 잔액 집계 쿼리가 기존 자바 계산과 <b>같은 값</b>을 내는지 대조한다.
  *
- * <p>자바 계산({@link BalanceResolver})을 지우기 전에, 같은 이력에 대해 두 경로가 항상 일치하는지
- * 먼저 못 박는다. 한쪽만 고치면 조용히 어긋나므로 케이스마다 둘을 나란히 돌려 비교한다.
+ * <p>기준은 테스트가 직접 들고 있는 단순 구현({@link #expected})이다. 프로덕션에는 자바 계산이
+ * 없으므로(전부 SQL) 둘 다 같은 코드를 쓰면 대조가 아무것도 증명하지 못한다.
  *
  * <p>대조 대상은 값만이 아니라 규칙이다 — 마지막 절대 앵커가 그 앞을 덮는지, 같은 시각 앵커
  * 둘 중 뒤엣것을 쓰는지, 소급 입력된 행이 시각 순서대로 끼는지, 채널이 서로를 안 건드리는지.
@@ -96,24 +95,40 @@ class BalanceAggregateParityTest {
 
         List<Long> ids = java.util.Arrays.stream(targets).map(Asset::getRowId).toList();
 
-        // 자바 경로 — 이력 전체를 읽어 접는다(지우려는 그 방식).
-        Map<Long, List<AssetBalanceHistory>> byAsset =
-            repository.findActiveByAssetIds(ids, YNType.N).stream()
-                .collect(Collectors.groupingBy(h -> h.getAsset().getRowId(),
-                    LinkedHashMap::new, Collectors.toList()));
-        BalanceResolver resolver = BalanceResolver.of(byAsset);
-
-        // 쿼리 경로 — DB 가 집계한다.
         Map<Long, Split> queried = toSplits(repository.aggregateBalances(ids, NOW));
 
         for (Long id : ids) {
-            Split java = resolver.splitAt(id, NOW);
-            Split sql = queried.getOrDefault(id, Split.ZERO);
-            assertThat(sql)
-                .as("자산 %d — 자바 계산과 쿼리 결과가 달라졌다", id)
-                .isEqualTo(java);
+            assertThat(queried.getOrDefault(id, Split.ZERO))
+                .as("자산 %d — 집계 쿼리가 규칙과 다른 값을 냈다", id)
+                .isEqualTo(expected(id, NOW));
         }
     }
+
+    /**
+     * 대조용 기준 구현 — 규칙을 가장 단순하게 옮긴 것.
+     *
+     * <p>프로덕션에는 이 계산이 없다(전부 SQL 이다). 그래서 테스트가 자기 기준을 들고
+     * 쿼리와 맞춰 본다 — 둘 다 같은 코드를 쓰면 대조가 아무것도 증명하지 못한다.
+     *
+     * <p>규칙: (기준시각 이하 마지막 절대 앵커) + (그 앵커 이후 flow 합). 채널은 서로 독립.
+     */
+    private Split expected(Long assetRowId, LocalDateTime at) {
+        List<AssetBalanceHistory> rows = repository.findActiveByAssetIds(List.of(assetRowId), YNType.N);
+        long cash = 0, holding = 0;
+        for (AssetBalanceHistory h : rows) { // effective_at, row_id 오름차순으로 온다
+            if (h.getEffectiveAt().isAfter(at)) {
+                break;
+            }
+            boolean anchor = h.isAbsolute();
+            if (h.isHolding()) {
+                holding = anchor ? h.getAmount() : holding + h.getAmount();
+            } else {
+                cash = anchor ? h.getAmount() : cash + h.getAmount();
+            }
+        }
+        return new Split(cash, holding);
+    }
+
 
     private Map<Long, Split> toSplits(List<Object[]> rows) {
         Map<Long, long[]> acc = new LinkedHashMap<>();
@@ -391,12 +406,6 @@ class BalanceAggregateParityTest {
         em.clear();
         List<Long> ids = java.util.Arrays.stream(targets).map(Asset::getRowId).toList();
 
-        Map<Long, List<AssetBalanceHistory>> byAsset =
-            repository.findActiveByAssetIds(ids, YNType.N).stream()
-                .collect(Collectors.groupingBy(h -> h.getAsset().getRowId(),
-                    LinkedHashMap::new, Collectors.toList()));
-        BalanceResolver resolver = BalanceResolver.of(byAsset);
-
         Map<Long, List<Split>> queried = service.balancesAtPoints(
             java.util.Arrays.asList(targets), points);
 
@@ -405,8 +414,8 @@ class BalanceAggregateParityTest {
             assertThat(sql).as("자산 %d — 시점 개수가 다르다", id).hasSize(points.size());
             for (int i = 0; i < points.size(); i++) {
                 assertThat(sql.get(i))
-                    .as("자산 %d, 시점 %s — 자바 계산과 쿼리 결과가 달라졌다", id, points.get(i))
-                    .isEqualTo(resolver.splitAt(id, points.get(i)));
+                    .as("자산 %d, 시점 %s — 집계 쿼리가 규칙과 다른 값을 냈다", id, points.get(i))
+                    .isEqualTo(expected(id, points.get(i)));
             }
         }
     }

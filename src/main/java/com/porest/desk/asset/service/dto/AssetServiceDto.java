@@ -143,26 +143,27 @@ public class AssetServiceDto {
         LocalDateTime createAt,
         LocalDateTime modifyAt
     ) {
+        /** 잔액 없이(0) 만든다 — 잔액이 화면에 안 쓰이는 응답 전용. */
         public static AssetInfo from(Asset asset) {
-            return from(asset, List.of());
+            return from(asset, List.of(), null);
         }
 
+        /** 잔액 없이(0) 만든다 — 호출부가 집계 결과를 따로 붙일 때. */
         public static AssetInfo from(Asset asset, List<HoldingInfo> holdings) {
             return from(asset, holdings, null);
         }
 
         /**
-         * @param split 이력에서 산정한 채널별 잔액. null 이면 자산의 캐시 컬럼을 쓴다
-         *              (단건 조회처럼 방금 recompute 한 직후라 캐시가 정확한 경로).
+         * @param split 이력에서 집계한 채널별 잔액. 자산에 잔액 캐시 컬럼은 없다 —
+         *             금액은 언제나 이력이 진실이고, 캐시를 두면 어긋난 값으로 판단하게 된다.
          */
         public static AssetInfo from(Asset asset, List<HoldingInfo> holdings,
                                      AssetBalanceHistoryService.Split split) {
-            long balance = split != null ? split.total()
-                : (asset.getBalance() != null ? asset.getBalance() : 0L);
-            long cash = split != null ? split.cash()
-                : (asset.getCashBalance() != null ? asset.getCashBalance() : 0L);
-            long holdingValue = split != null ? split.holding()
-                : (asset.getHoldingBalance() != null ? asset.getHoldingBalance() : 0L);
+            AssetBalanceHistoryService.Split s =
+                split != null ? split : AssetBalanceHistoryService.Split.ZERO;
+            long balance = s.total();
+            long cash = s.cash();
+            long holdingValue = s.holding();
             return new AssetInfo(
                 asset.getRowId(),
                 asset.getUser().getRowId(),

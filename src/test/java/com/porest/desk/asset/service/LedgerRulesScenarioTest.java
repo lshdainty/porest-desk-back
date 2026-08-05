@@ -139,9 +139,25 @@ class LedgerRulesScenarioTest {
         return t;
     }
 
-    /** 이력만 남기고 asset.balance 캐시를 안 거치는 경로가 없는지 — 항상 이력에서 다시 읽는다. */
+    /**
+     * 이력에서 잔액을 다시 읽는다 — 규칙이 맞는지 보는 게 목적이라 산술만 흉내 낸다.
+     * 실물은 SQL 집계이고, 그쪽이 이 규칙대로 도는지는 BalanceAggregateParityTest 가 본다.
+     */
     private long balanceOf(Asset a) {
-        return sut.resolverFor(List.of(a)).balanceAt(a.getRowId(), NOW);
+        long running = 0;
+        List<AssetBalanceHistory> rows = store.stream()
+            .sorted(java.util.Comparator.comparing(AssetBalanceHistory::getEffectiveAt)
+                .thenComparing(store::indexOf))
+            .toList();
+        for (AssetBalanceHistory h : rows) {
+            if (!h.getAsset().getRowId().equals(a.getRowId())
+                || h.getIsDeleted() == YNType.Y
+                || h.getEffectiveAt().isAfter(NOW)) {
+                continue;
+            }
+            running = h.isAbsolute() ? h.getAmount() : running + h.getAmount();
+        }
+        return running;
     }
 
     // === 규칙 1 · 4 — 체크카드는 즉시, 취소하면 원복 ============================

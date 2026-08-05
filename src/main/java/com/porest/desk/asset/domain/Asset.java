@@ -51,22 +51,6 @@ public class Asset extends AuditingFieldsWithIp {
     @Column(name = "asset_type", nullable = false, length = 30)
     private AssetType assetType;
 
-    @Column(name = "balance", nullable = false)
-    private Long balance;
-
-    /**
-     * 예수금·현금 잔액 (파생 캐시). 이체·거래가 쌓이는 채널이다.
-     *
-     * <p>{@code balance = cashBalance + holdingBalance} — 실제 증권 계좌처럼 예수금과
-     * 평가금액을 따로 든다. 한 칸에 담으면 평가액 갱신이 이체를 덮어써 돈이 사라진다.
-     */
-    @Column(name = "cash_balance", nullable = false)
-    private Long cashBalance;
-
-    /** 보유 종목 평가금액 (파생 캐시). 보유가 없으면 0. */
-    @Column(name = "holding_balance", nullable = false)
-    private Long holdingBalance;
-
     @Column(name = "initial_balance", nullable = false)
     private Long initialBalance;
 
@@ -134,11 +118,8 @@ public class Asset extends AuditingFieldsWithIp {
         asset.cardCatalog = cardCatalog;
         asset.assetName = assetName;
         asset.assetType = assetType;
-        asset.balance = balance;
-        // 생성 시점엔 아직 이력이 없다 — 초기 잔액은 예수금으로 잡고,
-        // 보유 평가액은 recordValuation 이 HOLDING 채널에 따로 앵커를 찍는다.
-        asset.cashBalance = balance != null ? balance : 0L;
-        asset.holdingBalance = 0L;
+        // 잔액 캐시는 두지 않는다 — 금액은 asset_balance_history 가 진실이고,
+        // 캐시를 두면 낡은 값으로 판단하게 된다. 초기 잔액은 INIT 앵커로 남는다.
         asset.initialBalance = balance;
         asset.currency = currency;
         asset.exchangeRate = normalizeRate(exchangeRate, currency);
@@ -154,7 +135,7 @@ public class Asset extends AuditingFieldsWithIp {
         return asset;
     }
 
-    // balance 는 여기서 받지 않는다 — 잔액은 asset_balance_history(recompute)에서 단독 관리.
+    // 잔액은 여기서 받지 않는다 — asset_balance_history 가 단독 관리하고 조회 때 집계한다.
     // 잔액 직접 수정은 AssetBalanceHistoryService.recordManual → recompute 경로로만 반영.
     public void updateAsset(String assetName, AssetType assetType, String currency,
                             BigDecimal exchangeRate, String color, String institution, String memo,
@@ -201,24 +182,6 @@ public class Asset extends AuditingFieldsWithIp {
         return exchangeRate.multiply(BigDecimal.valueOf(rawBalance))
             .setScale(0, java.math.RoundingMode.HALF_UP)
             .longValueExact();
-    }
-
-    public void updateBalance(Long balance) {
-        this.balance = balance;
-        this.cashBalance = balance;
-        this.holdingBalance = 0L;
-    }
-
-    /** 채널별 잔액 갱신 — recompute 가 이력에서 산정해 넣는다. 총잔액은 둘의 합. */
-    public void updateBalances(long cash, long holding) {
-        this.cashBalance = cash;
-        this.holdingBalance = holding;
-        this.balance = cash + holding;
-    }
-
-    /** 보유 평가금액이 잡힌 자산인가 — 예수금과 평가금액을 나눠 보여 줄지 판단. */
-    public boolean hasHoldingBalance() {
-        return holdingBalance != null && holdingBalance != 0L;
     }
 
     /** 토스 종목 1:1 연결 — 종목코드 + 보유수량. 토스 시세 × 수량으로 평가액 실시간 계산. */

@@ -267,7 +267,8 @@ class CardPaymentServiceImplTest {
     @DisplayName("getCardBilling — 결제일 미설정 카드는 잔액 전액 fallback(기간 null)")
     void upcomingFallsBackToBalanceWithoutPaymentDay() {
         Asset card = creditCard(null);
-        given(card.getBalance()).willReturn(-33_800L);
+        given(balanceHistoryService.balanceAt(any(), any()))
+            .willReturn(new AssetBalanceHistoryService.Split(-33_800L, 0L));
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
 
@@ -285,7 +286,6 @@ class CardPaymentServiceImplTest {
     void manualPaymentBelongsToUpcomingCycle() {
         Asset paymentAsset = mock(Asset.class);
         lenient().when(paymentAsset.getRowId()).thenReturn(9L);
-        lenient().when(paymentAsset.getBalance()).thenReturn(1_000_000L);
         Asset card = creditCard(12);
         given(card.getPaymentAsset()).willReturn(paymentAsset);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
@@ -433,8 +433,7 @@ class CardPaymentServiceImplTest {
     @Test
     @DisplayName("출금계좌 잔액이 모자라도 결제된다 — 기록용 앱이라 막지 않는다")
     void paysDespiteInsufficientBalance() {
-        Asset paymentAsset = mock(Asset.class);
-        lenient().when(paymentAsset.getBalance()).thenReturn(0L); // 통장 잔액을 안 맞춰 둔 상태
+        Asset paymentAsset = mock(Asset.class); // 통장 잔액을 안 맞춰 둔 상태
         Asset card = creditCard(25);
         given(card.getPaymentAsset()).willReturn(paymentAsset);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));

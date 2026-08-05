@@ -141,9 +141,9 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         expenseRepository.save(expense);
 
-        // 자산 잔액 이력: 거래 flow 적재 → recompute 가 asset.balance 반영 (단일 writer)
+        // 자산 잔액 이력: 거래 flow 적재 — 잔액은 조회할 때 이력에서 집계한다
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
-            command.expenseType(), command.amount(), command.expenseDate(), !bulk);
+            command.expenseType(), command.amount(), command.expenseDate());
 
         // 예산 임계 도달 시 알림 (생성이므로 이전 기여분 없음). 생성 시점엔 분할이 아직 없어 거래 카테고리로 귀속.
         // 대량 적재에선 건너뛴다 — 행 수만큼 알림이 쏟아지고 매번 집계 쿼리가 돈다.
@@ -238,7 +238,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.originalAmount(), command.originalCurrency(), command.exchangeRate()
         );
 
-        // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함) → recompute 가 잔액 반영
+        // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함)
         balanceHistoryService.removeExpense(expense.getRowId());
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
@@ -298,7 +298,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         validateExpenseOwnership(expense, userRowId);
 
         expense.deleteExpense();
-        // 자산 잔액 이력: 해당 거래 flow soft-delete → recompute 가 잔액 반영
+        // 자산 잔액 이력: 해당 거래 flow soft-delete
         balanceHistoryService.removeExpense(expenseId);
 
         log.info("지출 삭제 완료: expenseId={}", expenseId);

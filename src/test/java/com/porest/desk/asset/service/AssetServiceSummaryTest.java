@@ -4,7 +4,6 @@ import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
-import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.repository.CardCatalogRepository;

@@ -34,7 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>잔액이 바뀌는 모든 서비스 경로에서 이 컴포넌트로 이력을 남긴다. 적재/삭제 직후
  * 해당 자산의 {@code asset.balance} 를 {@code balanceAt(now)} 로 재산정하므로,
  * 개별 자산 잔액 · summary · trend · byType 이 전부 이력이라는 한 소스에서 나와 항상 일치한다.
- * 조회는 {@link BalanceResolver} 로 "기준시각 이하 최신 절대 앵커 + 그 이후 flow 합" 을 계산한다.
+ * 조회는 <b>SQL 집계</b>로 "기준시각 이하 최신 절대 앵커 + 그 이후 flow 합" 을 구한다 —
+ * 이력을 앱으로 가져와 접지 않는다. 자산에 잔액 캐시 컬럼도 두지 않는다(금액을 낡은 값으로
+ * 판단하는 사고가 반복돼서 없앴다).
  * 호출자(@Transactional)의 트랜잭션에 합류한다.
  */
 @Service
@@ -52,14 +54,12 @@ public class AssetBalanceHistoryService {
         long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(), initial, effectiveAt));
-        recompute(asset);
     }
 
     /** 사용자의 수동 잔액 수정 — 절대 앵커(점프). 가계부 통계엔 영향 없음. */
     public void recordManual(Asset asset, long newBalance, LocalDateTime effectiveAt) {
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.MANUAL, asset.getRowId(), newBalance, effectiveAt));
-        recompute(asset);
     }
 
     /**
@@ -71,22 +71,11 @@ public class AssetBalanceHistoryService {
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.VALUATION, BalanceChannel.HOLDING,
             asset.getRowId(), valuation, effectiveAt));
-        recompute(asset);
     }
 
     /** 수입/지출 거래 — flow(INCOME=+, EXPENSE=-). asset 미연결/널이면 no-op. */
-    public void recordExpense(Asset asset, Long expenseId, ExpenseType type, Long amount, LocalDateTime effectiveAt) {
-        recordExpense(asset, expenseId, type, amount, effectiveAt, true);
-    }
-
-    /**
-     * @param recompute false 면 이력만 남기고 잔액 재산정을 미룬다(대량 적재용).
-     *                  재산정은 그 자산의 <b>전체 이력을 다시 읽어</b> 계산하므로 행마다 하면
-     *                  N 행에 대해 O(N²) 이 된다(1만 행이면 수천만 건 읽기). 호출자가 끝나고
-     *                  {@link #recomputeAssets(Collection)} 로 자산당 한 번만 수행해야 한다.
-     */
     public void recordExpense(Asset asset, Long expenseId, ExpenseType type, Long amount,
-                              LocalDateTime effectiveAt, boolean recompute) {
+                              LocalDateTime effectiveAt) {
         if (asset == null || type == null || amount == null) {
             return;
         }
@@ -94,9 +83,6 @@ public class AssetBalanceHistoryService {
         long signed = (type == ExpenseType.INCOME) ? amount : -amount;
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), target, BalanceSourceType.EXPENSE, expenseId, signed, effectiveAt));
-        if (recompute) {
-            recompute(target);
-        }
     }
 
     /**
@@ -119,65 +105,8 @@ public class AssetBalanceHistoryService {
         return asset;
     }
 
-    /**
-     * 미뤄둔 잔액 재산정 — 자산 목록을 한 번의 이력 조회로 처리한다.
-     *
-     * <p>대량 적재(가져오기) 직후 호출한다. 넘어온 id 로 자산을 다시 읽는 이유는,
-     * 적재 루프가 건별 트랜잭션이라 그때의 엔티티가 이미 detached 라서다 —
-     * detached 엔티티에 잔액을 써도 반영되지 않는다.
-     */
-    @Transactional
-    public void recomputeAssets(Collection<Long> assetRowIds) {
-        if (assetRowIds == null || assetRowIds.isEmpty()) {
-            return;
-        }
-        List<Asset> assets = assetRowIds.stream()
-            .map(assetRepository::findById)
-            .flatMap(Optional::stream)
-            // 체크카드는 잔액이 연결 계좌에서 움직인다 — 재산정 대상도 그 계좌여야 한다.
-            // 카드만 돌리면 flow 를 받은 통장이 갱신되지 않고 남는다.
-            .map(this::balanceTargetOf)
-            .distinct()
-            .toList();
-        if (assets.isEmpty()) {
-            return;
-        }
-        applySplits(assets);
-    }
 
-    /**
-     * 그 사용자의 모든 자산을 이력에서 다시 계산해 캐시(balance·예수금·평가금액)에 반영한다.
-     *
-     * <p>스키마가 바뀌어 캐시 컬럼이 비어 있거나(신규 컬럼은 DEFAULT 0 으로 생긴다),
-     * 이력을 직접 손봐 캐시와 어긋났을 때 되맞추는 수단이다. 이력이 진실이고 캐시는 파생이라
-     * 몇 번 돌려도 결과가 같다.
-     *
-     * @return 다시 계산한 자산 수
-     */
-    @Transactional
-    public int recomputeAllForUser(Long userRowId) {
-        List<Asset> assets = assetRepository.findByUser(userRowId);
-        applySplits(assets);
-        return assets.size();
-    }
 
-    /**
-     * 이력 한 번 읽어 자산들의 채널별 잔액을 채운다.
-     *
-     * <p>{@link Asset#updateBalance(Long)} 처럼 총액만 넣으면 전액이 예수금으로 몰리고
-     * 평가금액이 0 이 된다 — 총액은 맞아도 화면이 틀린다(웹 자산 목록은
-     * {@code balance = cashBalance + 라이브 평가액} 으로 다시 조립한다).
-     */
-    private void applySplits(List<Asset> assets) {
-        if (assets.isEmpty()) {
-            return;
-        }
-        BalanceResolver resolver = resolverFor(assets);
-        for (Asset a : assets) {
-            Split split = resolver.splitAt(a.getRowId(), userClock.nowIn(a.getUser().getTimezone()));
-            a.updateBalances(split.cash(), split.holding());
-        }
-    }
 
     /**
      * 체크카드 연결 계좌를 지정·변경했을 때, 그 카드로 쓴 <b>기존</b> 지출 이력도 새 계좌로 옮긴다.
@@ -199,9 +128,6 @@ public class AssetBalanceHistoryService {
             affected.add(h.getAsset()); // 옮기기 전 소속 — 여기서도 빠져야 한다
             h.moveTo(newAccount);
         }
-        for (Asset a : affected) {
-            recompute(a);
-        }
     }
 
     /**
@@ -217,7 +143,6 @@ public class AssetBalanceHistoryService {
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.TRADE, BalanceChannel.CASH,
             tradeId, cashDelta, effectiveAt));
-        recompute(asset);
     }
 
     /** 거래 취소 시 그 거래의 이력 row 를 soft-delete 후 자산 재산정. */
@@ -243,8 +168,6 @@ public class AssetBalanceHistoryService {
         repository.save(AssetBalanceHistory.of(
             transfer.getUser(), transfer.getToAsset(), BalanceSourceType.TRANSFER, transfer.getRowId(),
             transfer.principalAmount(), effectiveAt));
-        recompute(transfer.getFromAsset());
-        recompute(transfer.getToAsset());
     }
 
     /** 이체 삭제 시 양쪽 자산의 이력 row 를 soft-delete 후 영향 자산 재산정. */
@@ -259,19 +182,9 @@ public class AssetBalanceHistoryService {
             affected.add(h.getAsset());
         }
         for (Asset a : affected) {
-            recompute(a);
         }
     }
 
-    /** 해당 자산의 현재 잔액(balanceAt(now))을 이력으로부터 재산정해 asset.balance 캐시에 반영. */
-    private void recompute(Asset asset) {
-        if (asset == null) {
-            return;
-        }
-        // effective_at 은 사용자 벽시계 기준 컬럼(클라이언트가 보내는 거래 일시와 같은 축)이므로
-        // 기준 시각도 사용자 타임존으로 잡는다. UTC 로 비교하면 오늘 거래가 미래로 취급된다.
-        applySplits(List.of(asset));
-    }
 
 
     // === 읽기 (집계 쿼리) =======================================================
@@ -398,75 +311,6 @@ public class AssetBalanceHistoryService {
             return d;
         }
         return LocalDate.parse(value.toString());
-    }
-
-    // === 읽기 (자바 계산 — 대조용, 곧 제거) ===
-
-    /** 주어진 자산들의 이력을 1회 조회해 기준시각 잔액 계산기를 만든다. */
-    public BalanceResolver resolverFor(Collection<Asset> assets) {
-        List<Long> ids = assets.stream().map(Asset::getRowId).toList();
-        List<AssetBalanceHistory> rows = ids.isEmpty()
-            ? List.of()
-            : repository.findActiveByAssetIds(ids, YNType.N);
-        Map<Long, List<AssetBalanceHistory>> byAsset = rows.stream()
-            .collect(Collectors.groupingBy(h -> h.getAsset().getRowId(), LinkedHashMap::new, Collectors.toList()));
-        return new BalanceResolver(byAsset);
-    }
-
-    /**
-     * 기준시각 잔액 계산기. 자산별 이력(시각 오름차순)을 들고 있다가 채널별로 따로 산정해 합친다.
-     *
-     * <pre>
-     *   balanceAt(asset, T) = cashAt(T) + holdingAt(T)
-     *   cashAt(T)    = (T 이하 최신 CASH 절대 앵커).amount + 그 이후 CASH flow 합
-     *   holdingAt(T) = (T 이하 최신 HOLDING 절대 앵커).amount
-     * </pre>
-     *
-     * <p>채널을 나누기 전에는 평가액 앵커가 그 앞의 이체 flow 를 통째로 삼켜서,
-     * 증권계좌로 넣은 돈이 다음 평가 스냅샷에 조용히 사라졌다.
-     */
-    public static class BalanceResolver {
-        private final Map<Long, List<AssetBalanceHistory>> byAsset;
-
-        BalanceResolver(Map<Long, List<AssetBalanceHistory>> byAsset) {
-            this.byAsset = byAsset;
-        }
-
-        /** 이력 맵으로 직접 만든다 — 집계 쿼리와 값이 같은지 대조하는 테스트에서 쓴다. */
-        public static BalanceResolver of(Map<Long, List<AssetBalanceHistory>> byAsset) {
-            return new BalanceResolver(byAsset);
-        }
-
-        /** 총잔액 = 예수금 + 평가금액. */
-        public long balanceAt(Long assetRowId, LocalDateTime at) {
-            Split s = splitAt(assetRowId, at);
-            return s.cash() + s.holding();
-        }
-
-        /** 채널별 잔액. 투자 자산의 예수금을 따로 보여 줄 때 쓴다. */
-        public Split splitAt(Long assetRowId, LocalDateTime at) {
-            List<AssetBalanceHistory> rows = byAsset.get(assetRowId);
-            if (rows == null) {
-                return Split.ZERO;
-            }
-            long cash = 0L;
-            long holding = 0L;
-            for (AssetBalanceHistory h : rows) { // effective_at, row_id 오름차순
-                if (h.getEffectiveAt().isAfter(at)) {
-                    break;
-                }
-                if (h.isHolding()) {
-                    // 평가금액은 통째 갱신이라 절대 앵커만 있다. flow 가 섞여 들어와도
-                    // 예수금을 건드리지 않도록 같은 채널 안에서 처리한다.
-                    holding = h.isAbsolute() ? h.getAmount() : holding + h.getAmount();
-                } else if (h.isAbsolute()) {
-                    cash = h.getAmount();
-                } else {
-                    cash += h.getAmount();
-                }
-            }
-            return new Split(cash, holding);
-        }
     }
 
     /** 채널별 잔액 — 총잔액은 둘의 합. */
