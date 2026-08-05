@@ -10,7 +10,6 @@ import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetHoldingRepository;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
-import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.HoldingType;
@@ -127,7 +126,8 @@ public class AssetServiceImpl implements AssetService {
         }
         log.info("자산 등록 완료: assetId={}, userRowId={}", asset.getRowId(), command.userRowId());
 
-        return AssetServiceDto.AssetInfo.from(asset, holdings);
+        return AssetServiceDto.AssetInfo.from(asset, holdings,
+            balanceHistoryService.balanceAt(asset, userClock.now(command.userRowId())));
     }
 
     @Override
@@ -165,7 +165,8 @@ public class AssetServiceImpl implements AssetService {
 
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
-        return AssetServiceDto.AssetInfo.from(asset, activeHoldingInfos(assetId));
+        return AssetServiceDto.AssetInfo.from(asset, activeHoldingInfos(assetId),
+            balanceHistoryService.balanceAt(asset, userClock.now(userRowId)));
     }
 
     @Override
@@ -192,10 +193,14 @@ public class AssetServiceImpl implements AssetService {
             && (command.assetType() != null ? command.assetType() : asset.getAssetType()) == AssetType.INVESTMENT;
         // 보유가 남아 있는지 — 빈 리스트(전량 매도·전부 삭제)와 구분해야 한다.
         boolean hasHoldings = investHoldings && !command.holdings().isEmpty();
+        // 지금 잔액은 이력에서 집계한다 — 캐시 컬럼은 낡을 수 있고, 앵커를 찍을지
+        // 말지를 낡은 값으로 판단하면 멀쩡한 입력이 버려지거나 헛 앵커가 쌓인다.
+        AssetBalanceHistoryService.Split current =
+            balanceHistoryService.balanceAt(asset, userClock.now(userRowId));
         Long holdingValuation = null;
         if (investHoldings) {
             Long computed = computeInvestmentBalance(userRowId, command.holdings());
-            holdingValuation = computed != null ? computed : asset.getHoldingBalance();
+            holdingValuation = computed != null ? computed : current.holding();
         }
         Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
             ? asset.getPaymentAsset().getRowId() : null;
@@ -216,7 +221,7 @@ public class AssetServiceImpl implements AssetService {
 
         // 평가금액(HOLDING)과 예수금(CASH)은 서로 다른 칸이라 각각 반영한다.
         // 한쪽 가지가 다른 쪽을 막으면 전량 매도처럼 두 칸이 동시에 바뀌는 상황에서 입력이 버려진다.
-        if (investHoldings && !Objects.equals(asset.getHoldingBalance(), holdingValuation)) {
+        if (investHoldings && !Objects.equals(current.holding(), holdingValuation)) {
             balanceHistoryService.recordValuation(asset, holdingValuation, userClock.now(userRowId));
         }
         // 예수금은 보유가 없을 때만 잔액칸으로 조정한다 — 보유가 있으면 그 값은 평가금액을 포함한
@@ -226,7 +231,7 @@ public class AssetServiceImpl implements AssetService {
         // 옮겨오면 총액은 그대로인 채 칸만 바뀌는데, 총액끼리 비교하면 '안 바뀌었다'로 보여
         // 매도 대금이 통째로 사라진다.
         if (!hasHoldings && command.balance() != null
-            && !Objects.equals(asset.getCashBalance(), command.balance())) {
+            && !Objects.equals(current.cash(), command.balance())) {
             balanceHistoryService.recordManual(asset, command.balance(), userClock.now(userRowId));
         }
 
@@ -251,7 +256,8 @@ public class AssetServiceImpl implements AssetService {
         }
 
         log.info("자산 수정 완료: assetId={}", assetId);
-        return AssetServiceDto.AssetInfo.from(asset, holdings);
+        return AssetServiceDto.AssetInfo.from(asset, holdings,
+            balanceHistoryService.balanceAt(asset, userClock.now(userRowId)));
     }
 
     @Override
@@ -677,8 +683,6 @@ public class AssetServiceImpl implements AssetService {
         log.debug("자산 요약 조회: userRowId={}, year={}, month={}", userRowId, year, month);
 
         List<Asset> included = includedAssets(userRowId);
-        BalanceResolver resolver = balanceHistoryService.resolverFor(included);
-
         LocalDate today = userClock.today(userRowId);
         boolean isPastPeriod = year != null && month != null
             && !(year == today.getYear() && month == today.getMonthValue());
@@ -923,7 +927,7 @@ public class AssetServiceImpl implements AssetService {
                 transfer.getRowId(), interestExpense.getRowId(), interest);
         }
 
-        // 자산 잔액 이력: 출금/입금 flow 2건 적재 → recompute 가 양쪽 잔액 반영 (단일 writer)
+        // 자산 잔액 이력: 출금/입금 flow 2건 적재 — 잔액은 조회할 때 집계한다
         // 이자 지출은 잔액에 또 반영하지 않는다 — 출금액(amount)에 이미 포함돼 있어 이중 차감이 된다.
         balanceHistoryService.recordTransfer(transfer);
         log.info("자산 이체 완료: transferId={}", transfer.getRowId());
@@ -959,7 +963,7 @@ public class AssetServiceImpl implements AssetService {
             expenseRepository.findById(transfer.getInterestExpenseRowId())
                 .ifPresent(Expense::deleteExpense);
         }
-        // 자산 잔액 이력: 양쪽 flow soft-delete → recompute 가 양쪽 잔액 반영 (단일 writer)
+        // 자산 잔액 이력: 양쪽 flow soft-delete — 잔액은 조회할 때 집계한다
         balanceHistoryService.removeTransfer(transferId);
         // 카드 결제로 만들어진 이체였다면 그 청구 회차도 함께 무른다. COMPLETED 로 남겨두면
         // '이미 낸 회차' 로 집계돼(선결제 차감) 다음 청구액이 0 이 되고, 잔액만 되돌아온 채
@@ -1010,13 +1014,5 @@ public class AssetServiceImpl implements AssetService {
                 log.warn("자산 조회 실패 - 존재하지 않는 자산: assetId={}", assetId);
                 return new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND);
             });
-    }
-
-    @Override
-    @Transactional
-    public int recomputeBalances(Long userRowId) {
-        int count = balanceHistoryService.recomputeAllForUser(userRowId);
-        log.info("자산 잔액 재산정 완료: userRowId={}, assets={}", userRowId, count);
-        return count;
     }
 }

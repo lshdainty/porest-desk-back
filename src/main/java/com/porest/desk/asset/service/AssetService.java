@@ -38,5 +38,4 @@ public interface AssetService {
      *
      * @return 다시 계산한 자산 수
      */
-    int recomputeBalances(Long userRowId);
 }

@@ -150,7 +150,6 @@ public class ImportServiceImpl implements ImportService {
             pending.clear();
         }
         // 미뤄둔 잔액 재산정 — 자산당 1회. 행마다 하면 자산 전체 이력을 매번 다시 읽어 O(N²) 이 된다.
-        balanceHistoryService.recomputeAssets(touchedAssets);
 
         log.info("가져오기 완료: userRowId={}, imported={}, skipped={}, failed={}", userRowId, imported, skipped, failed);
         return new ExecuteResult(imported, skipped, failed, failures);

@@ -30,6 +30,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -62,6 +63,15 @@ class AssetHoldingServiceTest {
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private AssetServiceImpl sut;
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubBalances() {
+        // 잔액은 이력 집계로 온다 — 보유 편집 판정이 이 값을 본다.
+        lenient().when(balanceHistoryService.balanceAt(any(), any()))
+            .thenReturn(AssetBalanceHistoryService.Split.ZERO);
+        lenient().when(balanceHistoryService.balancesAt(anyCollection(), any()))
+            .thenReturn(java.util.Map.of());
+    }
 
     private static final long USER_ID = 1L;
 

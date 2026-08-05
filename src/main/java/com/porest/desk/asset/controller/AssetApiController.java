@@ -30,20 +30,6 @@ public class AssetApiController {
 
     // === Asset ===
 
-    /**
-     * 내 자산 잔액 전체 재산정 — 이력에서 다시 계산해 캐시를 되맞춘다.
-     *
-     * <p>잔액은 asset_balance_history 가 진실이고 asset 컬럼은 파생 캐시다. 스키마 변경으로
-     * 캐시가 비었거나(신규 컬럼은 DEFAULT 0) 이력을 직접 손봐 어긋났을 때 쓴다.
-     * 본인 자산만 대상이라 남의 데이터를 건드리지 않는다. 몇 번 호출해도 결과가 같다.
-     */
-    @PostMapping("/assets/recompute")
-    public ApiResponse<AssetApiDto.RecomputeResponse> recomputeBalances(
-            @LoginUser UserPrincipal loginUser) {
-        int count = assetService.recomputeBalances(loginUser.getRowId());
-        return ApiResponse.success(new AssetApiDto.RecomputeResponse(count));
-    }
-
     @PostMapping("/asset")
     public ApiResponse<AssetApiDto.AssetResponse> createAsset(
             @LoginUser UserPrincipal loginUser,

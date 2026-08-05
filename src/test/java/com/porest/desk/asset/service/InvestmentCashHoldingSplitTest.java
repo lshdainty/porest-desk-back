@@ -1,8 +1,21 @@
 package com.porest.desk.asset.service;
 
+import com.porest.core.type.YNType;
+import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetBalanceHistory;
-import com.porest.desk.asset.service.AssetBalanceHistoryService.BalanceResolver;
+import com.porest.desk.asset.repository.AssetBalanceHistoryRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService.Split;
+import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.common.config.database.JpaAuditingConfig;
+import com.porest.desk.common.config.database.LoginUserAuditorAware;
+import com.porest.desk.user.domain.User;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 import com.porest.desk.asset.type.BalanceChannel;
 import com.porest.desk.asset.type.BalanceSourceType;
 import org.junit.jupiter.api.DisplayName;
@@ -26,29 +39,66 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>여기 테스트는 전부 "예수금과 평가금액은 서로를 덮지 않는다" 를 각도만 바꿔 확인한다.
  */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import({JpaAuditingConfig.class, LoginUserAuditorAware.class})
+@ActiveProfiles("test")
 @DisplayName("투자 계좌 예수금/평가금액 분리")
 class InvestmentCashHoldingSplitTest {
 
-    private static final long ACC = 1L;
+    /** 시나리오가 자산을 하나만 쓰므로 식별자는 의미 없다 — 하네스가 무시한다. */
+    private static final long ACC = 0L;
 
-    /** 시각 오름차순으로 넣어 주는 빌더 — resolver 는 정렬된 입력을 가정한다. */
-    private static class History {
-        private final List<AssetBalanceHistory> rows = new ArrayList<>();
+    @Autowired private TestEntityManager em;
+    @Autowired private AssetBalanceHistoryRepository repository;
 
+    private User user;
+    private Asset account;
+
+    @BeforeEach
+    void setUp() {
+        user = em.persist(User.createUser(null, "tester", "테스터", "tester@porest.com"));
+        account = em.persist(Asset.createAsset(user, "증권계좌", AssetType.INVESTMENT, 0L, "KRW",
+            null, null, null, null, 0, YNType.Y, null, null, null, null));
+    }
+
+    /**
+     * 이력을 실제로 적재하는 빌더 — 잔액은 DB 집계로 나오므로 진짜 행이 있어야 한다.
+     * {@code build()} 는 아무것도 안 돌려주고, 조회는 {@link #splitNow()} 로 한다.
+     */
+    private class History {
         History cash(BalanceSourceType type, long amount, LocalDateTime at) {
-            rows.add(AssetBalanceHistory.of(null, null, type, BalanceChannel.CASH, null, amount, at));
+            em.persist(AssetBalanceHistory.of(user, account, type, BalanceChannel.CASH, null, amount, at));
             return this;
         }
 
         History holding(long valuation, LocalDateTime at) {
-            rows.add(AssetBalanceHistory.of(null, null, BalanceSourceType.VALUATION,
+            em.persist(AssetBalanceHistory.of(user, account, BalanceSourceType.VALUATION,
                 BalanceChannel.HOLDING, null, valuation, at));
             return this;
         }
 
-        BalanceResolver build() {
-            rows.sort(Comparator.comparing(AssetBalanceHistory::getEffectiveAt));
-            return new BalanceResolver(Map.of(ACC, List.copyOf(rows)));
+        History build() {
+            em.flush();
+            em.clear();
+            return this;
+        }
+
+        Split splitAt(long ignored, LocalDateTime at) {
+            long cash = 0, holding = 0;
+            for (Object[] r : repository.aggregateBalances(List.of(account.getRowId()), at)) {
+                long amount = ((Number) r[2]).longValue();
+                if (BalanceChannel.valueOf((String) r[1]) == BalanceChannel.HOLDING) {
+                    holding = amount;
+                } else {
+                    cash = amount;
+                }
+            }
+            return new Split(cash, holding);
+        }
+
+        long balanceAt(long ignored, LocalDateTime at) {
+            return splitAt(ignored, at).total();
         }
     }
 
@@ -68,7 +118,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("입금 후 평가 스냅샷이 돌아도 예수금 100만원이 남는다")
         void snapshotDoesNotEatTransfer() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .holding(800_000L, at(3, 16))            // 삼성전자 10주 × 8만
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(4, 9))
@@ -100,7 +150,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("자산 편집(평가액 재산정)이 이체를 지우지 않는다 — 메모만 고쳐도 안전")
         void assetEditDoesNotEatTransfer() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .holding(800_000L, at(1, 9))
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(4, 9))
@@ -118,7 +168,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("입금 100만 → 60만어치 매수 → 예수금 40만 + 평가 60만 = 100만")
         void depositThenBuy() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(1, 10))
                 // 매수 = 예수금이 나가고(지출 flow) 보유가 생긴다
@@ -135,7 +185,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("주가가 오르면 평가금액만 오른다 — 예수금 40만은 그대로")
         void priceRiseMovesOnlyHolding() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(1, 10))
                 .cash(BalanceSourceType.EXPENSE, -600_000L, at(2, 10))
@@ -152,7 +202,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("전량 매도 → 평가 0, 예수금에 매도대금이 들어온다")
         void sellAll() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(1, 10))
                 .cash(BalanceSourceType.EXPENSE, -600_000L, at(2, 10))
@@ -172,7 +222,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("출금 — 예수금에서 은행으로 50만 빼면 예수금만 준다")
         void withdraw() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(1, 10))
                 .holding(600_000L, at(2, 10))
@@ -190,7 +240,7 @@ class InvestmentCashHoldingSplitTest {
     @DisplayName("과거 시점 조회 — 추이 그래프가 쓰는 경로")
     class PointInTime {
 
-        private BalanceResolver history() {
+        private History history() {
             return new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(4, 9))
@@ -237,7 +287,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("은행 계좌 — 평가금액 채널이 없어 예수금이 곧 잔액")
         void bankAccount() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 3_000_000L, at(1, 9))
                 .cash(BalanceSourceType.EXPENSE, -45_000L, at(2, 12))
                 .cash(BalanceSourceType.TRANSFER, -1_000_000L, at(4, 9))
@@ -252,7 +302,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("수동 잔액 조정은 종전대로 예수금을 덮어쓴다(점프)")
         void manualJump() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 3_000_000L, at(1, 9))
                 .cash(BalanceSourceType.EXPENSE, -45_000L, at(2, 12))
                 .cash(BalanceSourceType.MANUAL, 2_500_000L, at(3, 9))   // 통장 보고 맞춤
@@ -265,7 +315,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("신용카드 — 쓰면 음수로 누적")
         void creditCard() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.INIT, 0L, at(1, 9))
                 .cash(BalanceSourceType.EXPENSE, -448_600L, at(3, 12))
                 .build();
@@ -281,7 +331,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("이력이 없는 자산은 0")
         void noHistory() {
-            BalanceResolver r = new BalanceResolver(Map.of());
+            History r = new History().build();
             assertThat(r.splitAt(ACC, at(9, 23))).isEqualTo(Split.ZERO);
             assertThat(r.balanceAt(ACC, at(9, 23))).isZero();
         }
@@ -289,7 +339,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("평가금액만 있고 예수금 기록이 없어도 총액은 평가금액")
         void holdingOnly() {
-            BalanceResolver r = new History().holding(800_000L, at(1, 16)).build();
+            History r = new History().holding(800_000L, at(1, 16)).build();
 
             Split s = r.splitAt(ACC, at(9, 23));
             assertThat(s.cash()).isZero();
@@ -300,7 +350,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("보유를 전부 지우면 평가금액 0 — 마지막 평가액이 남지 않는다")
         void holdingsCleared() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(1, 10))
                 .holding(800_000L, at(2, 16))
                 .holding(0L, at(3, 11))
@@ -314,7 +364,7 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("예수금이 마이너스여도 총액은 두 채널의 합 그대로")
         void negativeCash() {
-            BalanceResolver r = new History()
+            History r = new History()
                 .cash(BalanceSourceType.TRANSFER, 100_000L, at(1, 10))
                 .cash(BalanceSourceType.EXPENSE, -150_000L, at(2, 10))
                 .holding(800_000L, at(2, 16))
@@ -328,9 +378,10 @@ class InvestmentCashHoldingSplitTest {
         @Test
         @DisplayName("채널 배정이 없으면(구버전 행) 예수금으로 본다 — 계산이 종전과 같다")
         void nullChannelFallsBackToCash() {
-            AssetBalanceHistory legacy =
-                AssetBalanceHistory.of(null, null, BalanceSourceType.INIT, null, 500_000L, at(1, 9));
-            BalanceResolver r = new BalanceResolver(Map.of(ACC, List.of(legacy)));
+            // 채널을 안 준 구버전 행 — of(...) 오버로드가 CASH 로 채운다.
+            em.persist(AssetBalanceHistory.of(user, account, BalanceSourceType.INIT,
+                null, 500_000L, at(1, 9)));
+            History r = new History().build();
 
             Split s = r.splitAt(ACC, at(9, 23));
             assertThat(s.cash()).isEqualTo(500_000L);
@@ -341,19 +392,27 @@ class InvestmentCashHoldingSplitTest {
     @Test
     @DisplayName("순자산 시나리오 — 은행 195.5만 + 증권(예수금 40만 + 평가 140만) = 375.5만")
     void netWorthAcrossAccounts() {
-        long bank = new History()
-            .cash(BalanceSourceType.INIT, 3_000_000L, at(1, 9))
-            .cash(BalanceSourceType.EXPENSE, -45_000L, at(2, 12))
-            .cash(BalanceSourceType.TRANSFER, -1_000_000L, at(4, 9))
-            .build()
-            .balanceAt(ACC, at(9, 23));
+        // 계좌가 둘인 유일한 시나리오 — 은행은 따로 만들어 섞이지 않게 한다.
+        Asset bankAsset = em.persist(Asset.createAsset(user, "급여통장", AssetType.BANK_ACCOUNT,
+            0L, "KRW", null, null, null, null, 0, YNType.Y, null, null, null, null));
+        em.persist(AssetBalanceHistory.of(user, bankAsset, BalanceSourceType.INIT,
+            BalanceChannel.CASH, null, 3_000_000L, at(1, 9)));
+        em.persist(AssetBalanceHistory.of(user, bankAsset, BalanceSourceType.EXPENSE,
+            BalanceChannel.CASH, null, -45_000L, at(2, 12)));
+        em.persist(AssetBalanceHistory.of(user, bankAsset, BalanceSourceType.TRANSFER,
+            BalanceChannel.CASH, null, -1_000_000L, at(4, 9)));
 
-        Split brokerage = new History()
+        History r = new History()
             .cash(BalanceSourceType.TRANSFER, 1_000_000L, at(4, 9))
             .cash(BalanceSourceType.EXPENSE, -600_000L, at(6, 10))
             .holding(1_400_000L, at(6, 16))
-            .build()
-            .splitAt(ACC, at(9, 23));
+            .build();
+
+        Split brokerage = r.splitAt(ACC, at(9, 23));
+        long bank = 0;
+        for (Object[] row : repository.aggregateBalances(List.of(bankAsset.getRowId()), at(9, 23))) {
+            bank += ((Number) row[2]).longValue();
+        }
 
         assertThat(bank).isEqualTo(1_955_000L);
         assertThat(brokerage.cash()).isEqualTo(400_000L);

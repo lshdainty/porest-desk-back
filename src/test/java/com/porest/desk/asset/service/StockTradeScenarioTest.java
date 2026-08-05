@@ -141,8 +141,6 @@ class StockTradeScenarioTest {
                 bankFlow += delta;
             } else {
                 cash += delta;
-                account.updateBalances(cash, account.getHoldingBalance() != null
-                    ? account.getHoldingBalance() : 0L);
             }
             return null;
         }).given(balanceHistoryService).recordTrade(any(), any(), any(Long.class), any());
@@ -155,15 +153,13 @@ class StockTradeScenarioTest {
                         bankFlow -= t.cashDelta();
                     } else {
                         cash -= t.cashDelta();
-                        account.updateBalances(cash, account.getHoldingBalance() != null
-                            ? account.getHoldingBalance() : 0L);
                     }
                 });
             return null;
         }).given(balanceHistoryService).removeTrade(any());
         // 예수금 검증이 캐시 대신 이력 집계를 본다 — 흉내 낸 예수금을 그대로 돌려준다.
-        willAnswer(inv -> new AssetBalanceHistoryService.Split(
-            cash, account.getHoldingBalance() != null ? account.getHoldingBalance() : 0L))
+        // 예수금 검증이 이력 집계를 본다 — 흉내 낸 예수금을 그대로 돌려준다(평가금액은 안 쓴다).
+        willAnswer(inv -> new AssetBalanceHistoryService.Split(cash, 0L))
             .given(balanceHistoryService).balanceAt(any(), any());
     }
 
@@ -171,11 +167,9 @@ class StockTradeScenarioTest {
 
     private void deposit(long amount) {
         cash += amount; // 통장 → 증권계좌 이체로 들어온 예수금
-        account.updateBalances(cash, 0L);
     }
 
     private void syncAsset(long holdingValuation) {
-        account.updateBalances(cash, holdingValuation);
     }
 
     private CreateTradeCommand trade(TradeType type, String qty, long amount, long fee, int day) {
@@ -240,9 +234,9 @@ class StockTradeScenarioTest {
 
             syncAsset(8_000_000L); // 평가액만 800만으로 갱신 (시세 상승)
 
+            // 시세가 움직여도 예수금과 원가는 안 건드린다 — 평가금액만 갈아엎힌다.
             assertThat(cash).isEqualTo(cashAfterBuy);
             assertThat(samsung().getTotalCost()).isEqualTo(costAfterBuy);
-            assertThat(account.getBalance()).isEqualTo(cashAfterBuy + 8_000_000L);
         }
 
         @Test

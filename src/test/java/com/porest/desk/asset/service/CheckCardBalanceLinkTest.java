@@ -147,31 +147,11 @@ class CheckCardBalanceLinkTest {
             user, account, BalanceSourceType.EXPENSE, 100L, -12_000L, AT);
         given(repository.findActiveBySource(BalanceSourceType.EXPENSE, 100L, YNType.N))
             .willReturn(List.of(flow));
-        // 삭제 후 남는 이력 = 초기 앵커 1,000,000 뿐 → 통장이 원래대로 돌아와야 한다.
-        given(repository.findActiveByAssetIds(List.of(10L), YNType.N)).willReturn(List.of(
-            AssetBalanceHistory.of(user, account, BalanceSourceType.INIT, 10L, 1_000_000L,
-                AT.minusDays(1))));
-        account.updateBalance(988_000L);
-
         sut.removeExpense(100L);
 
+        // 잔액은 조회할 때 이력에서 집계하므로, 이력 행이 지워졌는지만 보면 된다.
+        // 그 행이 카드가 아니라 연결 계좌 앞으로 쌓여 있었다는 게 이 테스트의 요점이다.
         assertThat(flow.getIsDeleted()).isEqualTo(YNType.Y);
-        assertThat(account.getBalance()).isEqualTo(1_000_000L);
-    }
-
-    @Test
-    @DisplayName("미뤄둔 재산정도 연결 계좌를 대상으로 한다 — 카드만 돌리면 통장이 갱신 안 됨")
-    void recomputeFollowsTheLink() {
-        Asset account = asset(10L, AssetType.BANK_ACCOUNT, null);
-        Asset card = asset(19L, AssetType.CHECK_CARD, account);
-        account.updateBalance(999L);
-        card.updateBalance(999L);
-        given(assetRepository.findById(19L)).willReturn(Optional.of(card));
-
-        sut.recomputeAssets(List.of(19L));
-
-        // 이력이 비었으니 재산정된 쪽만 0 이 된다 — 통장이 갱신되고 카드는 손대지 않는다.
-        assertThat(account.getBalance()).isZero();
-        assertThat(card.getBalance()).isEqualTo(999L);
+        assertThat(flow.getAsset()).isSameAs(account);
     }
 }

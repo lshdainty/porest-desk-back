@@ -218,8 +218,10 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         return entityManager.getReference(AssetTransfer.class, transferRowId);
     }
 
-    private static long absBalance(Asset card) {
-        return Math.abs(card.getBalance() != null ? card.getBalance() : 0L);
+    private long absBalance(Asset card) {
+        // 캐시 컬럼이 아니라 이력 집계 — 청구액을 낡은 값으로 잡으면 결제 금액이 틀어진다.
+        return Math.abs(balanceHistoryService
+            .balanceAt(card, userClock.now(card.getUser().getRowId())).total());
     }
 
     /** 결제 회차 — 청구 기간(전월 1일~말일)과 그 회차의 결제 필요 잔여액. */
