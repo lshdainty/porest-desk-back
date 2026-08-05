@@ -87,6 +87,11 @@ public class ExpenseServiceDto {
         java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
         Long todoRowId,
+        /**
+         * 시스템이 만든 거래의 출처 (TRADE_REALIZED / TRANSFER_INTEREST). null 이면 손으로 쓴 거래.
+         * 값이 있으면 금액·날짜·자산이 잠긴다 — 화면이 입력을 막을 수 있게 내려 준다.
+         */
+        String autoSource,
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
@@ -120,6 +125,7 @@ public class ExpenseServiceDto {
                 expense.getExchangeRate(),
                 expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
                 expense.getTodo() != null ? expense.getTodo().getRowId() : null,
+                expense.getAutoSource(),
                 expense.getCreateAt(),
                 expense.getModifyAt(),
                 splitCategoryRowIds != null ? splitCategoryRowIds : List.of()
