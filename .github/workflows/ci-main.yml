@@ -63,4 +63,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Jenkins Deploy
-        run: curl -s -X POST "${{ secrets.JENKINS_URL }}/generic-webhook-trigger/invoke?token=porest-desk-back-deploy"
+        env:
+          JENKINS_URL: ${{ secrets.JENKINS_URL }}
+        run: |
+          set -euo pipefail
+          # 시크릿에 줄바꿈이나 공백이 딸려 오면 curl 이 URL 을 못 읽는다(exit 3).
+          # 값이 마스킹돼 로그로는 안 보이니 여기서 털어 낸다.
+          BASE="$(printf '%s' "${JENKINS_URL}" | tr -d '[:space:]')"
+          BASE="${BASE%/}"
+          case "${BASE}" in
+            http://*|https://*) ;;
+            "") echo "::error::JENKINS_URL 이 비어 있습니다."; exit 1 ;;
+            *) echo "::error::JENKINS_URL 은 http:// 또는 https:// 로 시작해야 합니다."; exit 1 ;;
+          esac
+          # -f 가 없으면 404·500 에도 curl 이 0 을 돌려준다. 토큰을 틀리게 적어도
+          # 초록불이 뜨고 배포는 안 되는 상태가 되므로, HTTP 오류를 실패로 받는다.
+          curl -fsS -X POST "${BASE}/generic-webhook-trigger/invoke?token=porest-desk-back-deploy"
