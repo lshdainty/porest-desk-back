@@ -36,6 +36,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -328,11 +329,27 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.info("지출 삭제 완료: expenseId={}", expenseId);
     }
 
+    /**
+     * 집계에 넣을 거래만 남긴다 — <b>아직 오지 않은 건 뺀다.</b>
+     *
+     * <p>반복거래는 미래분을 미리 만들어 둔다. 그걸 그대로 더하면 8월 수입에 아직 안 받은
+     * 급여 400만원이 잡혀, 통장에는 없는 돈이 이번 달 수입으로 보인다. 잔액은 현재 시각
+     * 기준이라 애초에 미래분이 안 들어가는데, 집계만 들어가서 둘이 어긋났다.
+     *
+     * <p>목록·캘린더에서는 여전히 보인다 — 거기서는 "예정" 으로 표시한다.
+     */
+    private List<Expense> aggregatable(List<Expense> all, Long userRowId) {
+        LocalDateTime now = userClock.now(userRowId);
+        return all.stream()
+            .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now))
+            .toList();
+    }
+
     @Override
     public ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date) {
         log.debug("지출 일별 요약 조회: userRowId={}, date={}", userRowId, date);
 
-        List<Expense> expenses = expenseRepository.findDailySummary(userRowId, date);
+        List<Expense> expenses = aggregatable(expenseRepository.findDailySummary(userRowId, date), userRowId);
 
         // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계로 잡는다 — Expense 가 부호를 결정한다.
         Long totalIncome = expenses.stream().mapToLong(Expense::incomeContribution).sum();
@@ -346,7 +363,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.debug("지출 기간 요약 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
         validateDateRange(startDate, endDate);
 
-        List<Expense> expenses = expenseRepository.findByDateRange(userRowId, startDate, endDate);
+        List<Expense> expenses = aggregatable(
+            expenseRepository.findByDateRange(userRowId, startDate, endDate), userRowId);
 
         // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계로 잡는다 — Expense 가 부호를 결정한다.
         Long totalIncome = expenses.stream().mapToLong(Expense::incomeContribution).sum();
@@ -490,25 +508,25 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.debug("지출 월별 트렌드 조회: userRowId={}, months={}", userRowId, n);
 
         LocalDate now = userClock.today(userRowId);
-        List<ExpenseServiceDto.MonthlyTrend> trends = new java.util.ArrayList<>(n);
+        LocalDate from = now.minusMonths(n - 1L).withDayOfMonth(1);
+        LocalDate to = now.withDayOfMonth(1).plusMonths(1).minusDays(1);
 
+        // 달마다 쿼리를 날리면 24개월에 24번이다 — 한 번 받아 자바에서 월별로 접는다.
+        Map<String, List<Expense>> byMonth = aggregatable(
+                expenseRepository.findByDateRange(userRowId, from, to), userRowId).stream()
+            .collect(Collectors.groupingBy(
+                e -> e.getExpenseDate().getYear() + "-" + e.getExpenseDate().getMonthValue()));
+
+        List<ExpenseServiceDto.MonthlyTrend> trends = new java.util.ArrayList<>(n);
         for (int i = n - 1; i >= 0; i--) {
             LocalDate m = now.minusMonths(i);
             int y = m.getYear();
             int mm = m.getMonthValue();
-            LocalDate ms = LocalDate.of(y, mm, 1);
-            LocalDate me = ms.plusMonths(1).minusDays(1);
-            List<Expense> expenses = expenseRepository.findByDateRange(userRowId, ms, me);
-
-            long income = expenses.stream()
-                .filter(e -> e.getExpenseType() == ExpenseType.INCOME)
-                .mapToLong(Expense::getAmount)
-                .sum();
-            long expense = expenses.stream()
-                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-                .mapToLong(Expense::getAmount)
-                .sum();
-
+            List<Expense> bucket = byMonth.getOrDefault(y + "-" + mm, List.of());
+            // 환불은 수입이 아니라 지출 상계다 — range 요약과 같은 규칙을 써야 두 화면이 맞는다.
+            // 예전엔 getAmount() 를 그냥 더해 같은 달인데 3,000원씩 어긋났다.
+            long income = bucket.stream().mapToLong(Expense::incomeContribution).sum();
+            long expense = bucket.stream().mapToLong(Expense::expenseContribution).sum();
             trends.add(new ExpenseServiceDto.MonthlyTrend(y, mm, income, expense));
         }
         return trends;
@@ -519,18 +537,22 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.debug("거래처별 요약 조회: userRowId={}", userRowId);
         validateDateRange(startDate, endDate);
 
-        List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
+        List<Expense> expenses = aggregatable(
+            expenseRepository.findByUser(userRowId, null, null, startDate, endDate), userRowId);
 
+        // 환불도 같은 가맹점으로 묶어 빼 준다 — 지출만 세면 환불한 건도 쓴 걸로 남는다.
+        // 건수는 실제 지출 건만 센다(환불이 건수를 늘리면 "몇 번 갔나" 가 틀린다).
         return expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE || e.isRefund())
             .filter(e -> e.getMerchant() != null && !e.getMerchant().isBlank())
             .collect(Collectors.groupingBy(Expense::getMerchant))
             .entrySet().stream()
             .map(entry -> new ExpenseServiceDto.MerchantSummary(
                 entry.getKey(),
-                entry.getValue().stream().mapToLong(Expense::getAmount).sum(),
-                entry.getValue().size()
+                entry.getValue().stream().mapToLong(Expense::expenseContribution).sum(),
+                (int) entry.getValue().stream().filter(e -> !e.isRefund()).count()
             ))
+            .filter(m -> m.totalAmount() != 0L)  // 전액 환불된 가맹점은 목록에서 뺀다
             .sorted((a, b) -> Long.compare(b.totalAmount(), a.totalAmount()))
             .toList();
     }
@@ -540,10 +562,12 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.debug("자산별 요약 조회: userRowId={}", userRowId);
         validateDateRange(startDate, endDate);
 
-        List<Expense> expenses = expenseRepository.findByUser(userRowId, null, null, startDate, endDate);
+        List<Expense> expenses = aggregatable(
+            expenseRepository.findByUser(userRowId, null, null, startDate, endDate), userRowId);
 
+        // 거래처별 요약과 같은 규칙 — 환불을 상계한다.
         return expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE || e.isRefund())
             .filter(e -> e.getAsset() != null)
             .collect(Collectors.groupingBy(e -> e.getAsset().getRowId()))
             .entrySet().stream()
@@ -553,8 +577,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                 return new ExpenseServiceDto.AssetSummary(
                     first.getAsset().getRowId(),
                     first.getAsset().getAssetName(),
-                    assetExpenses.stream().mapToLong(Expense::getAmount).sum(),
-                    assetExpenses.size()
+                    assetExpenses.stream().mapToLong(Expense::expenseContribution).sum(),
+                    (int) assetExpenses.stream().filter(e -> !e.isRefund()).count()
                 );
             })
             .sorted((a, b) -> Long.compare(b.totalAmount(), a.totalAmount()))

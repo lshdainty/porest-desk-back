@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
@@ -369,5 +370,93 @@ class ExpenseServiceSummaryTest {
         assertThat(result.get(1).assetName()).isEqualTo("통장");      // 8,000
         assertThat(result.get(1).totalAmount()).isEqualTo(8_000L);
         assertThat(result.get(1).count()).isEqualTo(2);
+    }
+
+    // ── 환불 상계·미래 제외 ─────────────────────────────────────────────
+
+    private Expense at(ExpenseType type, long amount, LocalDateTime when, String merchant) {
+        return Expense.createExpense(null, null, null, type, amount, null,
+            when, merchant, "CARD", null, null, null, null, null);
+    }
+
+    /** 환불 = INCOME + 원거래 지정. 수입이 아니라 지출을 깎는다. */
+    private Expense refund(long amount, LocalDateTime when, String merchant) {
+        return Expense.createExpense(null, null, null, ExpenseType.INCOME, amount, null,
+            when, merchant, "CARD", null, 999L, null, null, null);
+    }
+
+    @Test
+    @DisplayName("추이(trend)도 환불을 상계한다 — 기간 요약과 같은 값이어야 한다")
+    void trendOffsetsRefund() {
+        LocalDateTime past = LocalDateTime.now().minusDays(3);
+        List<Expense> rows = List.of(
+            at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
+            refund(3_000L, past, "쿠팡"));
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class)))
+            .willReturn(rows);
+
+        var trend = sut.getMonthlyTrend(USER_ID, 1);
+
+        // 상계 전에는 수입 3,000 / 지출 50,000 으로 나와 기간 요약과 어긋났다.
+        assertThat(trend.get(0).totalIncome()).isZero();
+        assertThat(trend.get(0).totalExpense()).isEqualTo(47_000L);
+    }
+
+    @Test
+    @DisplayName("거래처별 요약도 환불을 상계한다 — 건수는 실제 지출 건만 센다")
+    void merchantOffsetsRefund() {
+        LocalDateTime past = LocalDateTime.now().minusDays(3);
+        given(expenseRepository.findByUser(anyLong(), any(), any(), any(), any()))
+            .willReturn(List.of(
+                at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
+                refund(3_000L, past, "쿠팡")));
+
+        var result = sut.getMerchantSummary(USER_ID, null, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).totalAmount()).isEqualTo(47_000L);
+        assertThat(result.get(0).count()).isEqualTo(1); // 환불이 방문 횟수를 늘리면 안 된다
+    }
+
+    @Test
+    @DisplayName("전액 환불된 가맹점은 거래처 목록에서 빠진다")
+    void fullyRefundedMerchantDisappears() {
+        LocalDateTime past = LocalDateTime.now().minusDays(3);
+        given(expenseRepository.findByUser(anyLong(), any(), any(), any(), any()))
+            .willReturn(List.of(
+                at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
+                refund(50_000L, past, "쿠팡")));
+
+        assertThat(sut.getMerchantSummary(USER_ID, null, null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("아직 오지 않은 거래는 합계에서 뺀다 — 통장에 없는 급여가 수입으로 잡히면 안 된다")
+    void futureRowsExcludedFromSummary() {
+        LocalDateTime past = LocalDateTime.now().minusDays(1);
+        LocalDateTime future = LocalDateTime.now().plusDays(19);
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class)))
+            .willReturn(List.of(
+                at(ExpenseType.EXPENSE, 52_400L, past, "지하철"),
+                at(ExpenseType.INCOME, 4_000_000L, future, "급여")));  // 반복거래 선생성분
+
+        var summary = sut.getRangeSummary(USER_ID,
+            LocalDate.now().withDayOfMonth(1), LocalDate.now().withDayOfMonth(1).plusMonths(1).minusDays(1));
+
+        assertThat(summary.totalIncome()).isZero();
+        assertThat(summary.totalExpense()).isEqualTo(52_400L);
+    }
+
+    @Test
+    @DisplayName("지나간 예약분은 그때부터 합계에 들어간다")
+    void pastScheduledRowsCount() {
+        LocalDateTime yesterday = LocalDateTime.now().minusDays(1);
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class)))
+            .willReturn(List.of(at(ExpenseType.INCOME, 4_000_000L, yesterday, "급여")));
+
+        var summary = sut.getRangeSummary(USER_ID,
+            LocalDate.now().withDayOfMonth(1), LocalDate.now().withDayOfMonth(1).plusMonths(1).minusDays(1));
+
+        assertThat(summary.totalIncome()).isEqualTo(4_000_000L);
     }
 }
