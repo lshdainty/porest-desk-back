@@ -88,6 +88,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_INVALID_AMOUNT("EXP_021", "error.expense.invalid.amount", HttpStatus.BAD_REQUEST),
     EXPENSE_AUTO_GENERATED_READONLY("EXP_022", "error.expense.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_AUTO_GENERATED_READONLY("AST_030", "error.asset.transfer.auto.generated.readonly", HttpStatus.BAD_REQUEST),
+    ASSET_TRANSFER_CARD_PAYMENT_READONLY("AST_031", "error.asset.transfer.card.payment.readonly", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),
@@ -139,6 +140,8 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CARD_BILLING_PAYMENT_ASSET_REQUIRED("CARD_006", "error.card.billing.payment.asset.required", HttpStatus.BAD_REQUEST),
     CARD_BILLING_INSUFFICIENT_BALANCE("CARD_007", "error.card.billing.insufficient.balance", HttpStatus.BAD_REQUEST),
     CARD_BILLING_INVALID_AMOUNT("CARD_008", "error.card.billing.invalid.amount", HttpStatus.BAD_REQUEST),
+    CARD_BILLING_NOT_FOUND("CARD_009", "error.card.billing.not.found", HttpStatus.NOT_FOUND),
+    CARD_BILLING_NOT_CANCELABLE("CARD_010", "error.card.billing.not.cancelable", HttpStatus.BAD_REQUEST),
 
     // Toss Securities (토스증권 Open API 연동)
     TOSS_NOT_CONFIGURED("TOSS_001", "error.toss.not.configured", HttpStatus.SERVICE_UNAVAILABLE),

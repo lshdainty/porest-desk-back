@@ -8,6 +8,7 @@ import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,5 +45,19 @@ public class CardBillingApiController {
         CardPaymentServiceDto.BillingInfo info =
             cardPaymentService.payCard(id, loginUser.getRowId(), amount);
         return ApiResponse.success(CardBillingApiDto.BillingItemResponse.from(info));
+    }
+
+    /**
+     * 카드 결제 취소 — 결제로 만든 이체를 무르고 청구 회차를 되돌린다.
+     *
+     * <p>잘못 누른 결제를 되돌릴 길이 없었다. 그 이체는 청구와 묶여 있어 사용자가 직접
+     * 지울 수 없게 잠가 뒀는데(그래야 따로 놀지 않는다), 취소 경로도 없어 영구적이었다.
+     */
+    @DeleteMapping("/card-billing/{billingId}")
+    public ApiResponse<Void> cancelPayment(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long billingId) {
+        cardPaymentService.cancelPayment(billingId, loginUser.getRowId());
+        return ApiResponse.success(null);
     }
 }

@@ -67,6 +67,16 @@ public class CardBillingQueryDslRepository implements CardBillingRepository {
     }
 
     @Override
+    public Optional<CardBilling> findById(Long rowId) {
+        return Optional.ofNullable(
+            queryFactory.selectFrom(billing)
+                .leftJoin(billing.cardAsset).fetchJoin()
+                .leftJoin(billing.transfer).fetchJoin()
+                .where(billing.rowId.eq(rowId))
+                .fetchOne());
+    }
+
+    @Override
     public Optional<CardBilling> findActiveByTransfer(Long transferRowId) {
         return Optional.ofNullable(queryFactory.selectFrom(billing)
             .where(billing.transfer.rowId.eq(transferRowId), billing.isDeleted.eq(YNType.N))

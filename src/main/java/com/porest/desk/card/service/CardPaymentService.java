@@ -17,6 +17,14 @@ public interface CardPaymentService {
      */
     CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount);
 
+    /**
+     * 카드 결제 취소 — 결제로 만들어진 이체를 무르고 청구 회차를 되돌린다.
+     *
+     * <p>잘못 누른 결제를 되돌릴 길이 없었다. 이체는 CARD_PAYMENT 로 잠겨 있어 사용자가
+     * 지울 수 없고(그래야 청구와 따로 놀지 않는다), 취소 API 도 없어 영구적이었다.
+     */
+    void cancelPayment(Long billingRowId, Long userRowId);
+
     /** 스케줄러용 — today 가 결제일(말일 보정 포함)인 모든 신용카드 자동결제 처리. */
     void processDueCardPayments(LocalDate today);
 }
