@@ -193,7 +193,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         AssetHolding holding = findHolding(asset.getRowId(), trade.getHoldingRowId(), trade.getHoldingKey());
         if (holding != null) {
             // 남겨 둔 변동분을 부호만 뒤집어 되돌린다 — 현재 원가로 다시 계산하면 어긋난다.
-            holding.applyTrade(trade.getQuantityDelta().negate(), -trade.getCostDelta());
+            holding.applyTrade(trade.getQuantityDelta().negate(), -trade.getCostDelta(),
+                trade.getTradeType() == TradeType.SELL);
             if (holding.getQuantity() == null || holding.getQuantity().signum() <= 0) {
                 holding.deleteHolding();
             }
@@ -479,7 +480,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             holdingRepository.save(created);
             return created;
         }
-        holding.applyTrade(quantityDelta, costDelta);
+        holding.applyTrade(quantityDelta, costDelta, command.tradeType() == TradeType.SELL);
         // 다 팔면 보유가 사라진다 — 0 주를 들고 있는 행은 목록만 어지럽힌다.
         if (holding.getQuantity() == null || holding.getQuantity().signum() <= 0) {
             holding.deleteHolding();
