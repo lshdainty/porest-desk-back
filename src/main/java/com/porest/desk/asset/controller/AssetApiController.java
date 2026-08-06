@@ -153,7 +153,8 @@ public class AssetApiController {
             loginUser.getRowId(),
             request.fromAssetRowId(), request.toAssetRowId(),
             request.amount(), request.fee(), request.interestAmount(),
-            request.description(), request.transferDate()
+            request.description(), request.transferDate(),
+            null  // 사용자가 만든 이체
         ));
         return ApiResponse.success(AssetApiDto.TransferResponse.from(info));
     }
@@ -167,11 +168,24 @@ public class AssetApiController {
         return ApiResponse.success(AssetApiDto.TransferListResponse.from(infos));
     }
 
+    @PutMapping("/asset-transfer/{id}")
+    public ApiResponse<AssetApiDto.TransferResponse> updateTransfer(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestBody AssetApiDto.CreateTransferRequest request) {
+        AssetServiceDto.TransferInfo info = assetService.updateTransfer(id,
+            new AssetServiceDto.CreateTransferCommand(
+                loginUser.getRowId(), request.fromAssetRowId(), request.toAssetRowId(),
+                request.amount(), request.fee(), request.interestAmount(),
+                request.description(), request.transferDate(), null));
+        return ApiResponse.success(AssetApiDto.TransferResponse.from(info));
+    }
+
     @DeleteMapping("/asset-transfer/{id}")
     public ApiResponse<Void> deleteTransfer(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        assetService.deleteTransfer(id, loginUser.getRowId());
+        assetService.deleteTransferByUser(id, loginUser.getRowId());
         return ApiResponse.success();
     }
 }

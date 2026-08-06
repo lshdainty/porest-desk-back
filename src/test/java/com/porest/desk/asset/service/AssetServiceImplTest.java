@@ -1,6 +1,7 @@
 package com.porest.desk.asset.service;
 
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.type.YNType;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetTransfer;
@@ -29,6 +30,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -80,7 +82,8 @@ class AssetServiceImplTest {
 
     private Asset assetOwnedBy(long ownerRowId) {
         Asset a = mock(Asset.class);
-        given(a.getUser()).willReturn(user(ownerRowId));
+        // 자동 생성 이체처럼 소유권 검사 전에 막히는 경로도 있어 lenient 로 둔다.
+        lenient().when(a.getUser()).thenReturn(user(ownerRowId));
         return a;
     }
 
@@ -122,7 +125,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(10L)).willReturn(Optional.of(fromAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -138,7 +141,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -150,7 +153,7 @@ class AssetServiceImplTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 10L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 10L, 50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -162,7 +165,7 @@ class AssetServiceImplTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, -50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, -50_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -178,7 +181,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(toAsset));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 1_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 30_000L, 1_000L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
         sut.createTransfer(cmd);
 
         verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));
@@ -195,7 +198,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(checkCard));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 30_000L, 0L, 0L, "이체", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
         assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -213,7 +216,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(11L)).willReturn(Optional.of(creditCard));
 
         var cmd = new AssetServiceDto.CreateTransferCommand(
-                USER_ID, 10L, 11L, 30_000L, 0L, 0L, "카드 결제", LocalDate.of(2026, 6, 1).atStartOfDay());
+                USER_ID, 10L, 11L, 30_000L, 0L, 0L, "카드 결제", LocalDate.of(2026, 6, 1).atStartOfDay(), null);
         sut.createTransfer(cmd);
 
         verify(balanceHistoryService).recordTransfer(any(AssetTransfer.class));
@@ -483,7 +486,7 @@ class AssetServiceImplTest {
             // 순자산이 50,000 늘어난다.
             var cmd = new AssetServiceDto.CreateTransferCommand(
                 USER_ID, 10L, 11L, 100_000L, -50_000L, 0L, "이체",
-                LocalDate.of(2026, 6, 1).atStartOfDay());
+                LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
             assertThatThrownBy(() -> sut.createTransfer(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -506,10 +509,91 @@ class AssetServiceImplTest {
 
             var cmd = new AssetServiceDto.CreateTransferCommand(
                 USER_ID, 10L, 11L, 100_000L, 0L, 0L, "이체",
-                LocalDate.of(2026, 6, 1).atStartOfDay());
+                LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
             org.assertj.core.api.Assertions.assertThatCode(() -> sut.createTransfer(cmd))
                 .doesNotThrowAnyException();
         }
+    }
+
+    // ── 이체 수정 ──────────────────────────────────────────────────
+
+    private AssetTransfer transferOf(long rowId, Asset from, Asset to, long amount, String autoSource) {
+        AssetTransfer t = AssetTransfer.createTransfer(user(USER_ID), from, to, amount, 0L, 0L,
+            "이체", LocalDate.of(2026, 6, 1).atStartOfDay());
+        ReflectionTestUtils.setField(t, "rowId", rowId);
+        if (autoSource != null) {
+            t.markAutoGenerated(autoSource);
+        }
+        return t;
+    }
+
+    @Test
+    @DisplayName("updateTransfer — 옛 잔액 이력을 걷어내고 새 값으로 다시 만든다")
+    void updateTransferRebuildsSideEffects() {
+        Asset from = assetOwnedBy(USER_ID);
+        ReflectionTestUtils.setField(from, "rowId", 10L);
+        Asset to = assetOwnedBy(USER_ID);
+        ReflectionTestUtils.setField(to, "rowId", 11L);
+        AssetTransfer transfer = transferOf(5L, from, to, 50_000L, null);
+
+        given(assetTransferRepository.findById(5L)).willReturn(Optional.of(transfer));
+        given(assetRepository.findById(10L)).willReturn(Optional.of(from));
+        given(assetRepository.findById(11L)).willReturn(Optional.of(to));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+            USER_ID, 10L, 11L, 80_000L, 0L, 0L, "고친 이체",
+            LocalDate.of(2026, 6, 2).atStartOfDay(), null);
+        sut.updateTransfer(5L, cmd);
+
+        // 필드만 바꾸면 옛 flow 가 남아 잔액이 어긋난다 — 걷어내고 다시 찍어야 한다.
+        verify(balanceHistoryService).removeTransfer(5L);
+        verify(balanceHistoryService).recordTransfer(transfer);
+        assertThat(transfer.getAmount()).isEqualTo(80_000L);
+        assertThat(transfer.getRowId()).isEqualTo(5L);  // rowId 는 유지 — 참조가 안 끊긴다
+    }
+
+    @Test
+    @DisplayName("updateTransfer — 매수가 만든 충당 이체는 못 고친다")
+    void updateTransferRejectsAutoGenerated() {
+        Asset from = assetOwnedBy(USER_ID);
+        Asset to = assetOwnedBy(USER_ID);
+        AssetTransfer transfer = transferOf(5L, from, to, 50_000L, "TRADE_SETTLEMENT");
+        given(assetTransferRepository.findById(5L)).willReturn(Optional.of(transfer));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+            USER_ID, 10L, 11L, 80_000L, 0L, 0L, "고침",
+            LocalDate.of(2026, 6, 2).atStartOfDay(), null);
+
+        assertThatThrownBy(() -> sut.updateTransfer(5L, cmd))
+            .isInstanceOf(InvalidValueException.class);
+        // 아무것도 건드리지 않는다
+        verify(balanceHistoryService, never()).removeTransfer(anyLong());
+    }
+
+    @Test
+    @DisplayName("deleteTransferByUser — 시스템이 만든 이체는 사용자가 못 지운다")
+    void userDeleteRejectsAutoGenerated() {
+        Asset from = assetOwnedBy(USER_ID);
+        Asset to = assetOwnedBy(USER_ID);
+        AssetTransfer transfer = transferOf(5L, from, to, 50_000L, "TRADE_SETTLEMENT");
+        given(assetTransferRepository.findById(5L)).willReturn(Optional.of(transfer));
+
+        assertThatThrownBy(() -> sut.deleteTransferByUser(5L, USER_ID))
+            .isInstanceOf(InvalidValueException.class);
+        assertThat(transfer.getIsDeleted()).isEqualTo(YNType.N);
+    }
+
+    @Test
+    @DisplayName("deleteTransfer(내부) — 매수 취소가 충당 이체를 지우는 길은 막지 않는다")
+    void internalDeleteAllowsAutoGenerated() {
+        Asset from = assetOwnedBy(USER_ID);
+        Asset to = assetOwnedBy(USER_ID);
+        AssetTransfer transfer = transferOf(5L, from, to, 50_000L, "TRADE_SETTLEMENT");
+        given(assetTransferRepository.findById(5L)).willReturn(Optional.of(transfer));
+
+        sut.deleteTransfer(5L, USER_ID);
+
+        assertThat(transfer.getIsDeleted()).isEqualTo(YNType.Y);
     }
 }

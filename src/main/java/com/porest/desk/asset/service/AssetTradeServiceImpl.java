@@ -146,7 +146,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
                 AssetServiceDto.TransferInfo funding = assetService.createTransfer(
                     new AssetServiceDto.CreateTransferCommand(
                         command.userRowId(), settlement.getRowId(), asset.getRowId(),
-                        shortfall, 0L, 0L, SETTLEMENT_TRANSFER_DESC, trade.getTradeDate()));
+                        shortfall, 0L, 0L, SETTLEMENT_TRANSFER_DESC, trade.getTradeDate(),
+                        "TRADE_SETTLEMENT"));
                 trade.linkSettlementTransfer(funding.rowId());
             }
         }

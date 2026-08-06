@@ -27,7 +27,13 @@ public interface AssetService {
 
     AssetServiceDto.TransferInfo createTransfer(AssetServiceDto.CreateTransferCommand command);
     List<AssetServiceDto.TransferInfo> getTransfers(Long userRowId, LocalDate startDate, LocalDate endDate);
+    /** 이체 수정 — 이자 지출·잔액 이력을 되돌렸다 다시 만든다. rowId 는 유지된다. */
+    AssetServiceDto.TransferInfo updateTransfer(Long transferId, AssetServiceDto.CreateTransferCommand command);
+
     void deleteTransfer(Long transferId, Long userRowId);
+
+    /** 사용자가 누른 삭제 — 시스템이 만든 이체(매매 충당·카드 결제)는 막는다. */
+    void deleteTransferByUser(Long transferId, Long userRowId);
 
     /**
      * 그 사용자의 모든 자산 잔액을 이력에서 다시 계산한다 (관리 수단).
