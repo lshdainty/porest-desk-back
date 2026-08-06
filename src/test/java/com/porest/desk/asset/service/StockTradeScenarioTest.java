@@ -41,6 +41,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.never;
@@ -88,6 +89,8 @@ class StockTradeScenarioTest {
     private final List<Expense> expenses = new ArrayList<>();
     /** 예수금 — recordTrade 가 flow 를 남기면 여기에 누적한다. */
     private long cash;
+    /** HOLDING 채널 — recordValuation 이 통째로 갈아 끼운다(앵커). */
+    private long holdingValuation;
     /** 결제 계좌(통장)로 나간 flow 누적 — 예수금과 따로 본다. */
     private long bankFlow;
     private Asset bank;
@@ -173,6 +176,12 @@ class StockTradeScenarioTest {
                 .ifPresent(t -> cash -= t.cashDelta());
             return null;
         }).given(balanceHistoryService).removeTrade(any());
+
+        // 평가금액 앵커 — 서비스가 보유 상태에 맞춰 통째로 다시 찍는다.
+        willAnswer(inv -> {
+            holdingValuation = inv.getArgument(1);
+            return null;
+        }).given(balanceHistoryService).recordValuation(any(), anyLong(), any());
 
         // 예수금 충당 이체 — 실제 서비스가 하는 것과 같은 방향으로 두 자산을 움직인다.
         willAnswer(inv -> {
@@ -705,6 +714,58 @@ class StockTradeScenarioTest {
                 .findFirst().orElse(null);
             assertThat(kakao).isNotNull();
             assertThat(kakao.getTotalCost()).isEqualTo(500_000L);
+        }
+    }
+
+    @Nested
+    @DisplayName("순자산 보존 — 매매는 돈의 자리만 바꾼다")
+    class NetWorthPreserved {
+
+        /** 예수금 + 평가금액. 매매 전후로 이 값이 변하면 순자산이 증발하거나 부풀었다는 뜻이다. */
+        private long netWorth() {
+            return cash + holdingValuation;
+        }
+
+        @Test
+        @DisplayName("미연동 종목 매수 — 예수금이 준 만큼 평가금액이 는다")
+        void buyKeepsNetWorth() {
+            deposit(10_000L);
+            long before = netWorth();
+
+            sut.createTrade(trade(TradeType.BUY, "1", 10_000L, 0L, 3));
+
+            assertThat(cash).isZero();
+            assertThat(holdingValuation).isEqualTo(10_000L); // 시세를 모르니 산 값이 곧 현재 값
+            assertThat(netWorth()).isEqualTo(before);        // 증발하지 않는다
+        }
+
+        @Test
+        @DisplayName("매도 — 평가금액이 준 만큼 예수금이 는다(손익 제외)")
+        void sellKeepsNetWorth() {
+            deposit(10_000L);
+            sut.createTrade(trade(TradeType.BUY, "10", 10_000L, 0L, 3));
+            long before = netWorth();
+
+            // 산 값 그대로 되판다 — 손익 0 이라 순자산이 그대로여야 한다.
+            sut.createTrade(trade(TradeType.SELL, "10", 10_000L, 0L, 10));
+
+            assertThat(cash).isEqualTo(10_000L);
+            assertThat(holdingValuation).isZero();
+            assertThat(netWorth()).isEqualTo(before);
+        }
+
+        @Test
+        @DisplayName("매수 취소 — 평가금액도 함께 되돌아온다")
+        void cancelBuyRestores() {
+            deposit(10_000L);
+            long before = netWorth();
+            var bought = sut.createTrade(trade(TradeType.BUY, "1", 10_000L, 0L, 3));
+
+            sut.deleteTrade(bought.rowId(), USER_ID);
+
+            assertThat(cash).isEqualTo(10_000L);
+            assertThat(holdingValuation).isZero();
+            assertThat(netWorth()).isEqualTo(before);
         }
     }
 }

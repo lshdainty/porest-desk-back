@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Objects;
@@ -168,6 +169,9 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         if (isBackdated(asset, trade)) {
             replayHolding(asset, trade.getHoldingRowId(), command.holdingKey());
         }
+        // 보유가 확정된 뒤에 평가금액을 맞춘다 — 안 하면 예수금만 빠지고 산 물건 값이
+        // 어디에도 안 잡혀 순자산이 매수금액만큼 증발한다.
+        syncHoldingValuation(asset, trade.getTradeDate());
 
         log.info("투자 거래 등록: assetId={}, type={}, key={}, qty={}, amount={}, realized={}",
             asset.getRowId(), type, command.holdingKey(), quantity, amount, realized);
@@ -220,6 +224,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         // 이동평균은 순서에 의존한다 — 중간 거래를 지우면 그 뒤 매도들의 원가·손익이 달라진다.
         // 그 종목만 처음부터 다시 쌓아 맞춘다.
         replayHolding(asset, trade.getHoldingRowId(), trade.getHoldingKey());
+        syncHoldingValuation(asset, userClock.now(userRowId));
         log.info("투자 거래 취소: tradeId={}, assetId={}", tradeRowId, asset.getRowId());
     }
 
@@ -278,6 +283,29 @@ public class AssetTradeServiceImpl implements AssetTradeService {
                 holding.adjust(quantity, holding.getHoldingValue(), totalCost);
             }
         }
+    }
+
+    /**
+     * 보유 평가금액(HOLDING 채널)을 지금 보유 상태에 맞춘다.
+     *
+     * <p>이게 없으면 매수할 때 예수금만 빠지고 산 물건의 값이 어디에도 안 잡혀 <b>순자산이
+     * 매수금액만큼 증발</b>한다. 매도는 반대로 부풀어 오른다. 돈이 자산 안에서 자리만 옮긴
+     * 것이므로 순자산은 그대로여야 한다.
+     *
+     * <p>값은 <b>평가액이 있으면 그것, 없으면 취득원가</b>다. 미연동 종목은 시세를 모르니
+     * 산 값이 곧 현재 값이고, 사용자가 시세를 알게 되면 손으로 고친다. 연동 종목은 토스
+     * 스냅샷이 다음 갱신 때 이 값을 덮어쓴다.
+     */
+    private void syncHoldingValuation(Asset asset, LocalDateTime at) {
+        long total = holdingRepository.findActiveByAsset(asset.getRowId()).stream()
+            .mapToLong(h -> {
+                if (h.getHoldingValue() != null) {
+                    return h.getHoldingValue();
+                }
+                return h.getTotalCost() != null ? h.getTotalCost() : 0L;
+            })
+            .sum();
+        balanceHistoryService.recordValuation(asset, total, at);
     }
 
     /** 재계산으로 손익이 바뀌면 딸린 거래도 따라간다 — 0 이 되면 지우고, 없다가 생기면 만든다. */

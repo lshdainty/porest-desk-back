@@ -89,6 +89,47 @@ class AssetServiceSummaryTest {
     }
 
     @Test
+    @DisplayName("선결제한 카드(잔액 양수) — 자산으로 잡히고 두 번 깎이지 않는다")
+    void overpaidCardCountsAsAsset() {
+        Asset bank = asset(1L, AssetType.BANK_ACCOUNT);
+        Asset creditCard = asset(2L, AssetType.CREDIT_CARD);
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(bank, creditCard));
+
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(1_000_000L, 0L));
+        // 낼 돈보다 많이 넣어 둔 상태 — 카드사가 내 돈을 들고 있다.
+        balances.put(2L, new AssetBalanceHistoryService.Split(356_800L, 0L));
+
+        AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
+
+        // 유형으로 갈라 abs() 를 씌우면 자산에서 빠지고 부채로도 더해져 713,600 이 두 번 깎였다.
+        assertThat(summary.totalAssets()).isEqualTo(1_356_800L);
+        assertThat(summary.totalDebt()).isZero();
+        assertThat(summary.netWorth()).isEqualTo(1_356_800L);
+        // 같은 응답 안에서 두 값이 어긋나면 화면의 분해 합계와 헤드라인이 안 맞는다.
+        assertThat(summary.netWorth()).isEqualTo(summary.totalBalance());
+    }
+
+    @Test
+    @DisplayName("대출을 양수로 입력해도 왜곡되지 않는다")
+    void positiveLoanIsNotDoubleCounted() {
+        Asset loan = asset(3L, AssetType.LOAN);
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(loan));
+
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(3L, new AssetBalanceHistoryService.Split(500_000L, 0L));
+
+        AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
+
+        assertThat(summary.netWorth()).isEqualTo(500_000L);
+        assertThat(summary.netWorth()).isEqualTo(summary.totalBalance());
+    }
+
+    @Test
     @DisplayName("외화통장 — 원화 350만 + 달러 $1,000(환율 1,400) 이면 총자산 490만원")
     void foreignAccountConvertedIntoTotal() {
         Asset krw = asset(1L, AssetType.BANK_ACCOUNT);
