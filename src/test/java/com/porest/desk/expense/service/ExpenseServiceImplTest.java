@@ -2,6 +2,7 @@ package com.porest.desk.expense.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
@@ -45,6 +46,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
@@ -254,7 +256,7 @@ class ExpenseServiceImplTest {
 
         LocalDate start = LocalDate.of(2026, 6, 1);
         LocalDate end = LocalDate.of(2026, 6, 30);
-        given(expenseRepository.findByDateRange(USER_ID, start, end)).willReturn(List.of(e1, e2));
+        given(expenseRepository.findByDateRange(USER_ID, start, end, null)).willReturn(List.of(e1, e2));
         given(expenseSplitRepository.findByExpenseIds(any())).willReturn(List.of());
 
         // 부모1 산하일 때
@@ -863,5 +865,28 @@ class ExpenseServiceImplTest {
             assertThatThrownBy(() -> sut.deleteExpense(1L, USER_ID))
                 .isInstanceOf(InvalidValueException.class);
         }
+    }
+
+    @Test
+    @DisplayName("원거래를 지우면 거기 달린 환불도 함께 사라진다 — 없는 지출을 계속 상계하지 않게")
+    void deletingOriginalAlsoDeletesRefunds() {
+        User u = user(USER_ID);
+        Expense original = Expense.createExpense(u, null, null, ExpenseType.EXPENSE, 50_000L, "쿠팡",
+            LocalDateTime.of(2026, 6, 1, 12, 0), "쿠팡", "CARD", null, null, null, null, null);
+        ReflectionTestUtils.setField(original, "rowId", 1L);
+        Expense refund = Expense.createExpense(u, null, null, ExpenseType.INCOME, 3_000L, "환불",
+            LocalDateTime.of(2026, 6, 3, 12, 0), "쿠팡", "CARD", null, 1L, null, null, null);
+        ReflectionTestUtils.setField(refund, "rowId", 2L);
+
+        given(expenseRepository.findById(1L)).willReturn(Optional.of(original));
+        given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(refund));
+
+        sut.deleteExpense(1L, USER_ID);
+
+        assertThat(original.getIsDeleted()).isEqualTo(YNType.Y);
+        assertThat(refund.getIsDeleted()).isEqualTo(YNType.Y);
+        // 잔액 이력도 양쪽 다 되돌린다 — 환불 flow 가 남으면 잔액이 어긋난다.
+        verify(balanceHistoryService).removeExpense(1L);
+        verify(balanceHistoryService).removeExpense(2L);
     }
 }

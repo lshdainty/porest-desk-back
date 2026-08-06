@@ -75,6 +75,7 @@ class ExpenseTemplateApiControllerTest {
             null,
             null, null, null,
             null, // autoSource — 손으로 쓴 거래
+            0, 0L, // 환불 없음
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of());
     }

@@ -91,6 +91,9 @@ public class ExpenseApiDto {
          * 값이 있으면 금액·날짜·자산이 잠긴다 — 화면이 입력을 막을 수 있게 내려 준다.
          */
         String autoSource,
+        /** 이 거래에 달린 환불 건수·합계 — 지우면 함께 사라지므로 화면이 미리 알린다. */
+        int refundCount,
+        long refundedAmount,
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터 split-aware 용.
@@ -120,6 +123,8 @@ public class ExpenseApiDto {
                 info.calendarEventRowId(),
                 info.todoRowId(),
                 info.autoSource(),
+                info.refundCount(),
+                info.refundedAmount(),
                 info.createAt(),
                 info.modifyAt(),
                 info.splitCategoryRowIds()

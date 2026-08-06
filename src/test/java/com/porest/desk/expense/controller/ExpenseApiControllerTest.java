@@ -70,6 +70,7 @@ class ExpenseApiControllerTest {
             null,
             null, null, null,
             null, // autoSource — 손으로 쓴 거래
+            0, 0L, // 환불 없음
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of());
     }
@@ -206,7 +207,7 @@ class ExpenseApiControllerTest {
     @Test
     @DisplayName("GET /expenses/summary/range — 기간 파라미터로 범위 요약 위임")
     void getRangeSummary() throws Exception {
-        given(expenseService.getRangeSummary(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        given(expenseService.getRangeSummary(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), null))
                 .willReturn(new ExpenseServiceDto.RangeSummary(
                         LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                         1000L, 5000L, List.of(), List.of()));
@@ -218,7 +219,7 @@ class ExpenseApiControllerTest {
                 .andExpect(jsonPath("$.data.totalIncome").value(1000))
                 .andExpect(jsonPath("$.data.totalExpense").value(5000));
 
-        verify(expenseService).getRangeSummary(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        verify(expenseService).getRangeSummary(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), null);
     }
 
     @Test

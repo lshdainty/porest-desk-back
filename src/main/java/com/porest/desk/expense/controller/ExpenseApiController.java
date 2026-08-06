@@ -119,8 +119,10 @@ public class ExpenseApiController {
     public ApiResponse<ExpenseApiDto.RangeSummaryResponse> getRangeSummary(
             @LoginUser UserPrincipal loginUser,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        ExpenseServiceDto.RangeSummary summary = expenseService.getRangeSummary(loginUser.getRowId(), startDate, endDate);
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long assetId) {
+        ExpenseServiceDto.RangeSummary summary =
+            expenseService.getRangeSummary(loginUser.getRowId(), startDate, endDate, assetId);
         return ApiResponse.success(ExpenseApiDto.RangeSummaryResponse.from(summary));
     }
 

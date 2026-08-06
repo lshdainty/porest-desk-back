@@ -131,6 +131,12 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
 
     @Override
     public List<Expense> findByDateRange(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        return findByDateRange(userRowId, startDate, endDate, null);
+    }
+
+    @Override
+    public List<Expense> findByDateRange(Long userRowId, LocalDate startDate, LocalDate endDate,
+                                         Long assetRowId) {
         return queryFactory.selectFrom(expense)
             .leftJoin(expense.category).fetchJoin()
             .leftJoin(expense.asset).fetchJoin()
@@ -138,7 +144,9 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
                 expense.user.rowId.eq(userRowId),
                 expense.isDeleted.eq(YNType.N),
                 expense.expenseDate.goe(toStartOfDay(startDate)),
-                expense.expenseDate.loe(toEndOfDay(endDate))
+                expense.expenseDate.loe(toEndOfDay(endDate)),
+                // 자산 필터 — 목록·캘린더가 걸러지는데 상단 합계만 전체 값이라 안 맞았다.
+                assetRowId == null ? null : expense.asset.rowId.eq(assetRowId)
             )
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
             .fetch();
@@ -190,6 +198,30 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .leftJoin(expense.asset).fetchJoin()
             .where(builder)
             .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
+            .fetch();
+    }
+
+    @Override
+    public List<Expense> findActiveRefundsOfMany(List<Long> expenseRowIds) {
+        if (expenseRowIds == null || expenseRowIds.isEmpty()) {
+            return List.of();
+        }
+        return queryFactory.selectFrom(expense)
+            .where(
+                expense.refundOfExpenseRowId.in(expenseRowIds),
+                expense.isDeleted.eq(YNType.N)
+            )
+            .fetch();
+    }
+
+    @Override
+    public List<Expense> findActiveRefundsOf(Long expenseRowId) {
+        return queryFactory.selectFrom(expense)
+            .where(
+                expense.refundOfExpenseRowId.eq(expenseRowId),
+                expense.isDeleted.eq(YNType.N)
+            )
+            .orderBy(expense.expenseDate.asc())
             .fetch();
     }
 

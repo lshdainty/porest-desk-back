@@ -86,13 +86,18 @@ public class DashboardServiceImpl implements DashboardService {
             .orElse(null);
 
         // Expense summary
-        List<Expense> todayExpenses = expenseRepository.findDailySummary(userRowId, today);
+        // 아직 오지 않은 거래(반복거래 선생성분)는 합계에서 뺀다 — 안 그러면 통장에 없는
+        // 급여가 이번 달 수입으로 잡힌다. 목록·캘린더에서는 "예정" 으로 계속 보인다.
+        LocalDateTime nowTs = userClock.now(userRowId);
+        List<Expense> todayExpenses = notFuture(
+            expenseRepository.findDailySummary(userRowId, today), nowTs);
         // 환불은 수입이 아니라 지출 상계 — Expense 가 부호를 결정한다.
         long todayIncome = todayExpenses.stream().mapToLong(Expense::incomeContribution).sum();
         long todayExpenseAmount = todayExpenses.stream().mapToLong(Expense::expenseContribution).sum();
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
-        List<Expense> monthExpenses = expenseRepository.findByDateRange(userRowId, monthStart, monthEnd);
+        List<Expense> monthExpenses = notFuture(
+            expenseRepository.findByDateRange(userRowId, monthStart, monthEnd), nowTs);
         long monthlyIncome = monthExpenses.stream().mapToLong(Expense::incomeContribution).sum();
         long monthlyExpenseAmount = monthExpenses.stream().mapToLong(Expense::expenseContribution).sum();
 
@@ -161,5 +166,12 @@ public class DashboardServiceImpl implements DashboardService {
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
         user.updateDashboard(dashboard);
         return user.getDashboard();
+    }
+
+    /** 아직 오지 않은 거래는 집계에서 뺀다 (ExpenseServiceImpl.aggregatable 과 같은 규칙). */
+    private static List<Expense> notFuture(List<Expense> all, LocalDateTime now) {
+        return all.stream()
+            .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now))
+            .toList();
     }
 }

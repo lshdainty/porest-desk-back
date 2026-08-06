@@ -27,6 +27,10 @@ public interface ExpenseService {
     void deleteExpense(Long expenseId, Long userRowId);
     ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date);
     ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
+
+    /** 자산으로 좁힌 기간 요약 — assetRowId 가 null 이면 전체. */
+    ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate,
+                                                  Long assetRowId);
     List<ExpenseServiceDto.MonthlyTrend> getMonthlyTrend(Long userRowId, Integer months);
     List<ExpenseServiceDto.MerchantSummary> getMerchantSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<ExpenseServiceDto.AssetSummary> getAssetSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
