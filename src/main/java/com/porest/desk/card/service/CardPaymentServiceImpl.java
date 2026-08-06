@@ -209,7 +209,9 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "신용카드 자동결제",
             // 이체가 일시(DATETIME)로 바뀜 — 자동결제는 사용자가 시각을 고른 게 아니라
             // 결제일 자체가 기준이므로 그날 시작으로 둔다.
-            date.atStartOfDay()
+            date.atStartOfDay(),
+            // 카드 결제는 청구 회차와 묶여 있다 — 이 이체만 따로 고치면 청구가 어긋난다.
+            "CARD_PAYMENT"
         ));
     }
 

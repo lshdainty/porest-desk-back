@@ -244,7 +244,12 @@ public class AssetServiceDto {
         /** 이자 (대출 상환 시). amount 중 이 금액은 부채를 줄이지 않고 지출로 잡힌다. */
         Long interestAmount,
         String description,
-        LocalDateTime transferDate
+        LocalDateTime transferDate,
+        /**
+         * 시스템이 만드는 이체면 그 출처 (TRADE_SETTLEMENT). 사용자가 만드는 이체는 null.
+         * 값이 있으면 이후 수정·삭제가 잠긴다.
+         */
+        String autoSource
     ) {}
 
     public record TransferInfo(
@@ -261,6 +266,11 @@ public class AssetServiceDto {
         /** 원금 = amount − interestAmount. 입금 자산(대출)에 실제로 반영된 금액. */
         Long principalAmount,
         String description,
+        /**
+         * 시스템이 만든 이체의 출처 (TRADE_SETTLEMENT). null 이면 사용자가 직접 만든 이체.
+         * 값이 있으면 수정·삭제가 잠긴다 — 화면이 버튼을 감출 수 있게 내려 준다.
+         */
+        String autoSource,
         LocalDateTime transferDate,
         LocalDateTime createAt
     ) {
@@ -277,6 +287,7 @@ public class AssetServiceDto {
                 transfer.getInterestAmount(),
                 transfer.principalAmount(),
                 transfer.getDescription(),
+                transfer.getAutoSource(),
                 transfer.getTransferDate(),
                 transfer.getCreateAt()
             );
