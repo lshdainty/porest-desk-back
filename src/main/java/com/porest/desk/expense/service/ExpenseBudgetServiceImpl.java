@@ -21,6 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import com.porest.desk.expense.domain.ExpenseAggregates;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -87,6 +90,17 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         log.debug("예산 이행률 조회: userRowId={}, months={}", userRowId, n);
 
         LocalDate now = userClock.today(userRowId);
+
+        // 달마다 쿼리를 날리면 24개월에 24번이다 — 한 번 받아 월별로 접는다.
+        LocalDate from = now.minusMonths(n - 1L).withDayOfMonth(1);
+        LocalDate to = now.withDayOfMonth(1).plusMonths(1).minusDays(1);
+        Map<String, List<Expense>> byMonth = ExpenseAggregates
+            .countable(expenseRepository.findByDateRange(userRowId, from, to, null),
+                userClock.now(userRowId))
+            .stream()
+            .collect(Collectors.groupingBy(
+                e -> e.getExpenseDate().getYear() + "-" + e.getExpenseDate().getMonthValue()));
+
         List<ExpenseBudgetServiceDto.ComplianceMonth> result = new ArrayList<>(n);
 
         for (int i = n - 1; i >= 0; i--) {
@@ -108,13 +122,10 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
                     .mapToLong(ExpenseBudget::getBudgetAmount)
                     .sum();
 
-            LocalDate ms = LocalDate.of(y, mm, 1);
-            LocalDate me = ms.plusMonths(1).minusDays(1);
-            List<Expense> expenses = expenseRepository.findByDateRange(userRowId, ms, me);
-            long totalSpent = expenses.stream()
-                .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
-                .mapToLong(Expense::getAmount)
-                .sum();
+            // 요약·추이와 같은 규칙으로 센다 — 여기만 raw 합이라 같은 화면에서 상단 카드와
+            // 이행률 차트가 달랐다(20361% vs 20460%). 규칙은 ExpenseAggregates 에 하나뿐이다.
+            long totalSpent = ExpenseAggregates.expenseSum(
+                byMonth.getOrDefault(y + "-" + mm, List.of()));
 
             double compliancePercent = totalLimit > 0
                 ? Math.round(((double) totalSpent / totalLimit) * 1000.0) / 10.0
