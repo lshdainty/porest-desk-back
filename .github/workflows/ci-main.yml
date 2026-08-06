@@ -5,6 +5,10 @@ on:
     branches: [ main, master ]
   push:
     branches: [ main, master ]
+  # 손으로 돌릴 수 있게 열어 둔다. 머지했는데 실행이 안 잡히는 일이 실제로 있었고
+  # (2026-08-07 Actions 장애 — push 이벤트가 통째로 유실됐다) 그때 다시 굴릴 방법이
+  # 없었다. 배포만 다시 태우고 싶을 때도 쓴다.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -59,7 +63,9 @@ jobs:
 
   trigger-deploy:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # PR 만 빼면 된다. `== 'push'` 로 못 박으면 수동 실행이 테스트만 하고 끝나
+    # 정작 필요한 배포를 건너뛴다.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Jenkins Deploy
