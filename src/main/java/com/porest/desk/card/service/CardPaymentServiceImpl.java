@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.porest.desk.card.type.BillingStatus;
+import java.util.Objects;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
@@ -117,6 +119,35 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         log.info("카드 수동 결제 완료: cardRowId={}, amount={}, 남은청구액={}",
             cardRowId, payAmount, remaining - payAmount);
         return CardPaymentServiceDto.BillingInfo.from(billing);
+    }
+
+    @Override
+    @Transactional
+    public void cancelPayment(Long billingRowId, Long userRowId) {
+        log.debug("카드 결제 취소 시작: billingRowId={}", billingRowId);
+
+        CardBilling billing = cardBillingRepository.findById(billingRowId)
+            .filter(b -> b.getIsDeleted() == YNType.N)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.CARD_BILLING_NOT_FOUND));
+        if (!Objects.equals(billing.getCardAsset().getUser().getRowId(), userRowId)) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_ACCESS_DENIED);
+        }
+        // 이미 무른 회차(취소·건너뜀)는 되돌릴 게 없다.
+        if (billing.getStatus() != BillingStatus.COMPLETED) {
+            throw new InvalidValueException(DeskErrorCode.CARD_BILLING_NOT_CANCELABLE);
+        }
+
+        // 결제로 만든 이체를 무른다. 그 안에서 잔액 이력이 되돌아가고 청구 회차도 cancel 된다
+        // (deleteTransfer 가 findActiveByTransfer 로 찾아 취소한다) — 여기서 또 부르지 않는다.
+        if (billing.getTransfer() != null) {
+            assetService.deleteTransfer(billing.getTransfer().getRowId(), userRowId);
+        } else {
+            // 이체 없이 기록만 남은 회차 — 청구만 되돌린다.
+            billing.cancel();
+        }
+
+        log.info("카드 결제 취소 완료: billingRowId={}, cardRowId={}",
+            billingRowId, billing.getCardAsset().getRowId());
     }
 
     @Override

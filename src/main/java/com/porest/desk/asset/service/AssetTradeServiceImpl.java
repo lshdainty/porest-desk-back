@@ -281,7 +281,11 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             if (quantity.signum() <= 0) {
                 holding.deleteHolding();
             } else {
-                holding.adjust(quantity, holding.getHoldingValue(), totalCost);
+                // 손으로 넣은 평가액도 수량 변화만큼 따라가야 한다 — 다시 쌓아 수량이
+                // 달라졌는데 평가액만 옛 값이면 순자산이 그만큼 어긋난다.
+                holding.adjust(quantity,
+                    scaleValuation(holding.getHoldingValue(), holding.getQuantity(), quantity),
+                    totalCost);
             }
         }
     }
@@ -307,6 +311,20 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             })
             .sum();
         balanceHistoryService.recordValuation(asset, total, at);
+    }
+
+    /** 수량이 바뀐 비율만큼 평가액을 옮긴다. 평가액이 없으면(연동·미입력) 그대로 둔다. */
+    private static Long scaleValuation(Long valuation, BigDecimal before, BigDecimal after) {
+        if (valuation == null) {
+            return null;
+        }
+        if (before == null || before.signum() <= 0 || after.signum() <= 0) {
+            return 0L;
+        }
+        return BigDecimal.valueOf(valuation)
+            .multiply(after)
+            .divide(before, 0, RoundingMode.HALF_UP)
+            .longValue();
     }
 
     /** 재계산으로 손익이 바뀌면 딸린 거래도 따라간다 — 0 이 되면 지우고, 없다가 생기면 만든다. */

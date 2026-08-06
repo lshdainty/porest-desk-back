@@ -24,4 +24,7 @@ public interface CardBillingRepository {
 
     /** 정산 이체로 청구 회차 찾기 — 이체가 지워질 때 함께 무르기 위해. */
     Optional<CardBilling> findActiveByTransfer(Long transferRowId);
+
+    /** 결제 취소 대상 회차 조회. */
+    Optional<CardBilling> findById(Long rowId);
 }

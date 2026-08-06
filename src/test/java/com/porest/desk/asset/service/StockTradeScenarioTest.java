@@ -755,6 +755,36 @@ class StockTradeScenarioTest {
         }
 
         @Test
+        @DisplayName("평가액을 넣어 둔 보유에 더 사도 순자산이 그대로다")
+        void buyOnValuedHoldingKeepsNetWorth() {
+            deposit(24_000L);
+            // 골드바를 이미 갖고 있고, 시세를 몰라 평가액을 손으로 18,000 넣어 둔 상태.
+            sut.createTrade(trade(TradeType.BUY, "3", 18_000L, 0L, 3));
+            // 시세를 몰라 사용자가 평가액만 손으로 넣은 상태를 만든다.
+            ReflectionTestUtils.setField(samsung(), "holdingValue", 18_000L);
+            long before = netWorth();
+
+            sut.createTrade(trade(TradeType.BUY, "1", 6_000L, 0L, 5));
+
+            // 평가액을 그대로 두면 예수금만 빠져 6,000 이 증발한다.
+            assertThat(samsung().getHoldingValue()).isEqualTo(24_000L);
+            assertThat(netWorth()).isEqualTo(before);
+        }
+
+        @Test
+        @DisplayName("평가액을 넣어 둔 보유를 일부 팔면 판 비율만큼 준다")
+        void sellOnValuedHoldingScalesValuation() {
+            deposit(24_000L);
+            sut.createTrade(trade(TradeType.BUY, "4", 24_000L, 0L, 3));
+            ReflectionTestUtils.setField(samsung(), "holdingValue", 24_000L);
+
+            sut.createTrade(trade(TradeType.SELL, "1", 6_000L, 0L, 10));
+
+            // 4개 중 1개를 팔았으니 평가액도 3/4 만 남는다.
+            assertThat(samsung().getHoldingValue()).isEqualTo(18_000L);
+        }
+
+        @Test
         @DisplayName("매수 취소 — 평가금액도 함께 되돌아온다")
         void cancelBuyRestores() {
             deposit(10_000L);

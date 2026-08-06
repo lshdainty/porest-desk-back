@@ -120,8 +120,46 @@ public class AssetHolding extends AuditingFieldsWithIp {
      */
     public void applyTrade(BigDecimal quantityDelta, long costDelta) {
         BigDecimal base = quantity != null ? quantity : BigDecimal.ZERO;
-        this.quantity = base.add(quantityDelta);
+        BigDecimal next = base.add(quantityDelta);
+        applyValuationDelta(base, next, costDelta);
+        this.quantity = next;
         this.totalCost = Math.max(0L, (totalCost != null ? totalCost : 0L) + costDelta);
+    }
+
+    /**
+     * 손으로 넣어 둔 평가액을 거래에 맞춰 따라가게 한다.
+     *
+     * <p>평가액이 없으면(연동 종목이거나 아직 안 넣었으면) 아무것도 안 한다 — 그때는
+     * 취득원가나 시세 스냅샷이 평가금액을 대신한다.
+     *
+     * <p>평가액이 있는데 그대로 두면 <b>순자산이 증발한다.</b> 골드바 평가액 18,000 인
+     * 상태에서 6,000 어치를 더 사면 예수금은 6,000 빠지는데 평가액은 18,000 그대로라
+     * 6,000 이 사라진다. 돈이 자산 안에서 자리만 옮긴 것이므로 총액은 그대로여야 한다.
+     *
+     * <ul>
+     *   <li>매수: 산 값만큼 늘린다(18,000 + 6,000 = 24,000). 미연동은 시세를 모르니
+     *       방금 치른 값이 그 몫의 현재 값이다.</li>
+     *   <li>매도: 판 비율만큼 줄인다. 원가가 아니라 <b>평가액</b> 기준이라야 남은 몫의
+     *       평가가 유지된다.</li>
+     * </ul>
+     */
+    private void applyValuationDelta(BigDecimal before, BigDecimal after, long costDelta) {
+        if (holdingValue == null) {
+            return;
+        }
+        if (costDelta >= 0) {
+            this.holdingValue = holdingValue + costDelta;   // 매수 — 치른 값만큼
+            return;
+        }
+        // 매도 — 판 비율만큼 덜어낸다. 다 팔면 0.
+        if (before.signum() <= 0 || after.signum() <= 0) {
+            this.holdingValue = 0L;
+            return;
+        }
+        this.holdingValue = BigDecimal.valueOf(holdingValue)
+            .multiply(after)
+            .divide(before, 0, java.math.RoundingMode.HALF_UP)
+            .longValue();
     }
 
     /**

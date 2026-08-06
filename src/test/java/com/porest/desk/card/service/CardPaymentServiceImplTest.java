@@ -8,6 +8,8 @@ import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.core.type.YNType;
+import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.card.domain.CardBilling;
 import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.service.dto.CardPaymentServiceDto;
@@ -42,6 +44,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import com.porest.core.time.ServiceClock;
@@ -476,4 +479,61 @@ class CardPaymentServiceImplTest {
                 .isInstanceOf(InvalidValueException.class);
     }
 
+
+    // ── 결제 취소 ──────────────────────────────────────────────────
+
+    private CardBilling completedBilling(AssetTransfer transfer) {
+        // 카드 mock 을 먼저 만들어 둔다 — given(...) 인자 안에서 만들면 스터빙이 중첩된다.
+        Asset card = creditCard(25);
+        CardBilling b = mock(CardBilling.class);
+        lenient().when(b.getIsDeleted()).thenReturn(YNType.N);
+        lenient().when(b.getStatus()).thenReturn(BillingStatus.COMPLETED);
+        lenient().when(b.getCardAsset()).thenReturn(card);
+        lenient().when(b.getTransfer()).thenReturn(transfer);
+        return b;
+    }
+
+    @Test
+    @DisplayName("결제 취소 — 결제로 만든 이체를 무른다(잔액·청구가 그 연쇄로 되돌아간다)")
+    void cancelPaymentRevertsTransfer() {
+        AssetTransfer transfer = mock(AssetTransfer.class);
+        given(transfer.getRowId()).willReturn(77L);
+        // billing 도 먼저 만들어 둔다 — given(...) 인자 안에서 만들면 스터빙이 중첩된다.
+        CardBilling billing = completedBilling(transfer);
+        given(cardBillingRepository.findById(5L)).willReturn(Optional.of(billing));
+
+        sut.cancelPayment(5L, USER_ID);
+
+        verify(assetService).deleteTransfer(77L, USER_ID);
+    }
+
+    @Test
+    @DisplayName("결제 취소 — 남의 카드는 못 되돌린다")
+    void cancelPaymentRejectsOthers() {
+        CardBilling b = mock(CardBilling.class);
+        Asset othersCard = mock(Asset.class);
+        given(othersCard.getUser()).willReturn(user(999L));
+        given(b.getIsDeleted()).willReturn(YNType.N);
+        given(b.getCardAsset()).willReturn(othersCard);
+        given(cardBillingRepository.findById(5L)).willReturn(Optional.of(b));
+
+        assertThatThrownBy(() -> sut.cancelPayment(5L, USER_ID))
+            .isInstanceOf(InvalidValueException.class);
+        verify(assetService, never()).deleteTransfer(anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("결제 취소 — 이미 무른 회차는 다시 못 되돌린다")
+    void cancelPaymentRejectsNonCompleted() {
+        Asset card = creditCard(25);
+        CardBilling b = mock(CardBilling.class);
+        given(b.getIsDeleted()).willReturn(YNType.N);
+        given(b.getStatus()).willReturn(BillingStatus.SKIPPED);
+        given(b.getCardAsset()).willReturn(card);
+        given(cardBillingRepository.findById(5L)).willReturn(Optional.of(b));
+
+        assertThatThrownBy(() -> sut.cancelPayment(5L, USER_ID))
+            .isInstanceOf(InvalidValueException.class);
+        verify(assetService, never()).deleteTransfer(anyLong(), anyLong());
+    }
 }
