@@ -55,7 +55,6 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional(readOnly = true)
 public class AssetServiceImpl implements AssetService {
-    private static final Set<AssetType> DEBT_TYPES = Set.of(AssetType.CREDIT_CARD, AssetType.LOAN);
     private static final String FEATURE_SECURITIES = "SECURITIES";
 
     private final AssetRepository assetRepository;
@@ -785,8 +784,12 @@ public class AssetServiceImpl implements AssetService {
             // 순자산에 1,000원으로 들어가 합계가 무너진다(원화 자산은 환산율 1이라 그대로).
             long bal = a.balanceInKrw(totalOf(at, a));
             totalBalance += bal;
-            if (DEBT_TYPES.contains(a.getAssetType())) {
-                totalDebt += Math.abs(bal);
+            // 부채 유형이라도 <b>부호로</b> 가른다. abs() 로 묶으면 선결제한 카드(양수)가
+            // 자산에서 빠지고 부채로도 더해져 두 번 깎인다 — 그때 netWorth 가 totalBalance 와
+            // 어긋나고, 화면의 (계좌+투자−카드) 합계와 헤드라인 순자산이 안 맞는다.
+            // 대출을 양수로 입력한 경우도 같다.
+            if (bal < 0) {
+                totalDebt += -bal;
             } else {
                 totalAssets += bal;
             }
@@ -844,8 +847,9 @@ public class AssetServiceImpl implements AssetService {
                 List<AssetBalanceHistoryService.Split> seq = series.get(a.getRowId());
                 long bal = a.balanceInKrw(
                     seq == null ? 0L : seq.get(i).total());
-                if (DEBT_TYPES.contains(a.getAssetType())) {
-                    debt += Math.abs(bal);
+                // 요약과 같은 규칙 — 부호로 가른다(선결제 카드가 두 번 깎이지 않게).
+                if (bal < 0) {
+                    debt += -bal;
                 } else {
                     assets += bal;
                 }
@@ -896,20 +900,19 @@ public class AssetServiceImpl implements AssetService {
     }
 
     /**
-     * 기준시각의 순자산 = Σ(비채무 잔액) − Σ|채무 잔액|. summary/trend 가 공유.
-     * 외화 자산은 원화로 환산해 더한다(환산하지 않으면 통화 단위가 섞여 합계가 무의미해진다).
+     * 기준시각의 순자산 = 모든 자산 잔액의 합. summary/trend 가 공유.
+     *
+     * <p>부채는 잔액이 음수라 그냥 더하면 빠진다. 유형으로 가르고 abs() 를 씌우면
+     * 선결제한 카드(양수)가 자산에서 빠지고 부채로도 더해져 두 번 깎인다.
+     *
+     * <p>외화 자산은 원화로 환산해 더한다(환산하지 않으면 통화 단위가 섞여 합계가 무의미해진다).
      */
     private long netWorthOf(List<Asset> included, Map<Long, AssetBalanceHistoryService.Split> balances) {
-        long assets = 0, debt = 0;
+        long net = 0;
         for (Asset a : included) {
-            long bal = a.balanceInKrw(totalOf(balances, a));
-            if (DEBT_TYPES.contains(a.getAssetType())) {
-                debt += Math.abs(bal);
-            } else {
-                assets += bal;
-            }
+            net += a.balanceInKrw(totalOf(balances, a));
         }
-        return assets - debt;
+        return net;
     }
 
     /** 집계 결과에서 그 자산의 총잔액(예수금 + 평가금액). 이력이 없으면 0. */
