@@ -165,7 +165,7 @@ class ExpenseServiceSummaryTest {
         ExpenseCategory food = category(20L, "식비", null);
         // 분할 없음
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(List.of(
                         expenseIn(child, ExpenseType.EXPENSE, 5_000L),
                         expenseIn(child, ExpenseType.EXPENSE, 3_000L),
@@ -194,7 +194,7 @@ class ExpenseServiceSummaryTest {
         // 카테고리를 다 더해도 총액에 못 미쳐 사용자가 사라진 돈을 찾게 된다.
         ExpenseCategory food = category(20L, "식비", null);
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(List.of(
                         expenseIn(food, ExpenseType.EXPENSE, 10_000L),
                         expenseIn(null, ExpenseType.EXPENSE, 150_000L),   // 대출 이자
@@ -225,7 +225,7 @@ class ExpenseServiceSummaryTest {
     void monthlyBucketKeepsUncategorized() {
         ExpenseCategory food = category(20L, "식비", null);
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(List.of(
                         expenseIn(food, ExpenseType.EXPENSE, 10_000L),
                         expenseIn(null, ExpenseType.EXPENSE, 150_000L)
@@ -251,7 +251,7 @@ class ExpenseServiceSummaryTest {
         ReflectionTestUtils.setField(e1, "rowId", 100L);
         Expense e2 = expenseIn(lunch, ExpenseType.EXPENSE, 10_000L);  // split 없음
         ReflectionTestUtils.setField(e2, "rowId", 101L);
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(List.of(e1, e2));
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of(
                 ExpenseSplit.create(e1, coffee, 12_000L, "커피", 0),
@@ -279,7 +279,7 @@ class ExpenseServiceSummaryTest {
     void rangeSummaryMonthlyBuckets() {
         ExpenseCategory food = category(20L, "식비", null);
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(List.of(
                         expenseOn(food, ExpenseType.EXPENSE, 50_000L, LocalDateTime.of(2026, 4, 10, 12, 0)),
                         expenseOn(food, ExpenseType.INCOME, 200_000L, LocalDateTime.of(2026, 4, 25, 12, 0)),
@@ -318,7 +318,7 @@ class ExpenseServiceSummaryTest {
         ReflectionTestUtils.setField(e2, "rowId", 101L);
         Expense e3 = expenseOn(food, ExpenseType.INCOME, 200_000L, LocalDateTime.of(2026, 6, 25, 12, 0)); // 6월·수입(제외)
         ReflectionTestUtils.setField(e3, "rowId", 102L);
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(List.of(e1, e2, e3));
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of(
                 ExpenseSplit.create(e1, coffee, 12_000L, "커피", 0),
@@ -392,7 +392,7 @@ class ExpenseServiceSummaryTest {
         List<Expense> rows = List.of(
             at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
             refund(3_000L, past, "쿠팡"));
-        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class), isNull()))
             .willReturn(rows);
 
         var trend = sut.getMonthlyTrend(USER_ID, 1);
@@ -435,7 +435,7 @@ class ExpenseServiceSummaryTest {
     void futureRowsExcludedFromSummary() {
         LocalDateTime past = LocalDateTime.now().minusDays(1);
         LocalDateTime future = LocalDateTime.now().plusDays(19);
-        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class), isNull()))
             .willReturn(List.of(
                 at(ExpenseType.EXPENSE, 52_400L, past, "지하철"),
                 at(ExpenseType.INCOME, 4_000_000L, future, "급여")));  // 반복거래 선생성분
@@ -451,12 +451,26 @@ class ExpenseServiceSummaryTest {
     @DisplayName("지나간 예약분은 그때부터 합계에 들어간다")
     void pastScheduledRowsCount() {
         LocalDateTime yesterday = LocalDateTime.now().minusDays(1);
-        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class), isNull()))
             .willReturn(List.of(at(ExpenseType.INCOME, 4_000_000L, yesterday, "급여")));
 
         var summary = sut.getRangeSummary(USER_ID,
             LocalDate.now().withDayOfMonth(1), LocalDate.now().withDayOfMonth(1).plusMonths(1).minusDays(1));
 
         assertThat(summary.totalIncome()).isEqualTo(4_000_000L);
+    }
+
+    @Test
+    @DisplayName("자산 필터를 걸면 그 자산 거래만 합산한다 — 목록만 걸러지고 합계는 전체이던 문제")
+    void rangeSummaryRespectsAssetFilter() {
+        LocalDateTime past = LocalDateTime.now().minusDays(2);
+        given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class), eq(7L)))
+            .willReturn(List.of(at(ExpenseType.EXPENSE, 1_500L, past, "지하철")));
+
+        var summary = sut.getRangeSummary(USER_ID,
+            LocalDate.now().withDayOfMonth(1),
+            LocalDate.now().withDayOfMonth(1).plusMonths(1).minusDays(1), 7L);
+
+        assertThat(summary.totalExpense()).isEqualTo(1_500L);
     }
 }

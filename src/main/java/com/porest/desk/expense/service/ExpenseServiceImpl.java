@@ -179,10 +179,22 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
         Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(allExpenses);
+        // 환불 연결도 bulk 로 — 상세 화면이 목록 항목을 그대로 쓰므로 여기서 채워야 한다.
+        Map<Long, List<Expense>> refundsByExpense = loadRefundsByExpense(allExpenses);
         return allExpenses.stream()
             .map(e -> ExpenseServiceDto.ExpenseInfo.from(
-                e, splitCatsByExpense.getOrDefault(e.getRowId(), List.of())))
+                e,
+                splitCatsByExpense.getOrDefault(e.getRowId(), List.of()),
+                refundsByExpense.getOrDefault(e.getRowId(), List.of())))
             .toList();
+    }
+
+    /** 원거래별 환불 목록 (N+1 회피용 bulk 적재). */
+    private Map<Long, List<Expense>> loadRefundsByExpense(List<Expense> expenses) {
+        List<Long> ids = expenses.stream().map(Expense::getRowId).filter(java.util.Objects::nonNull).toList();
+        if (ids.isEmpty()) return Map.of();
+        return expenseRepository.findActiveRefundsOfMany(ids).stream()
+            .collect(Collectors.groupingBy(Expense::getRefundOfExpenseRowId));
     }
 
     /** 거래 목록의 활성 분할 카테고리 id 를 거래별로 묶어 반환(N+1 회피용 bulk 적재). */
@@ -322,11 +334,19 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_AUTO_GENERATED_READONLY);
         }
 
+        // 이 거래를 원거래로 삼는 환불도 함께 지운다. 남겨 두면 "없는 지출" 을 계속
+        // 상계해 지출 총액이 조용히 깎이고, 사용자는 원인을 추적할 방법이 없다.
+        List<Expense> refunds = expenseRepository.findActiveRefundsOf(expenseId);
+        for (Expense r : refunds) {
+            r.deleteExpense();
+            balanceHistoryService.removeExpense(r.getRowId());
+        }
+
         expense.deleteExpense();
         // 자산 잔액 이력: 해당 거래 flow soft-delete
         balanceHistoryService.removeExpense(expenseId);
 
-        log.info("지출 삭제 완료: expenseId={}", expenseId);
+        log.info("지출 삭제 완료: expenseId={}, 함께 지운 환불={}건", expenseId, refunds.size());
     }
 
     /**
@@ -360,11 +380,18 @@ public class ExpenseServiceImpl implements ExpenseService {
 
     @Override
     public ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate) {
-        log.debug("지출 기간 요약 조회: userRowId={}, startDate={}, endDate={}", userRowId, startDate, endDate);
+        return getRangeSummary(userRowId, startDate, endDate, null);
+    }
+
+    @Override
+    public ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate,
+                                                          Long assetRowId) {
+        log.debug("지출 기간 요약 조회: userRowId={}, startDate={}, endDate={}, assetRowId={}",
+            userRowId, startDate, endDate, assetRowId);
         validateDateRange(startDate, endDate);
 
         List<Expense> expenses = aggregatable(
-            expenseRepository.findByDateRange(userRowId, startDate, endDate), userRowId);
+            expenseRepository.findByDateRange(userRowId, startDate, endDate, assetRowId), userRowId);
 
         // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계로 잡는다 — Expense 가 부호를 결정한다.
         Long totalIncome = expenses.stream().mapToLong(Expense::incomeContribution).sum();
@@ -513,7 +540,7 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 달마다 쿼리를 날리면 24개월에 24번이다 — 한 번 받아 자바에서 월별로 접는다.
         Map<String, List<Expense>> byMonth = aggregatable(
-                expenseRepository.findByDateRange(userRowId, from, to), userRowId).stream()
+                expenseRepository.findByDateRange(userRowId, from, to, null), userRowId).stream()
             .collect(Collectors.groupingBy(
                 e -> e.getExpenseDate().getYear() + "-" + e.getExpenseDate().getMonthValue()));
 
