@@ -797,5 +797,42 @@ class StockTradeScenarioTest {
             assertThat(holdingValuation).isZero();
             assertThat(netWorth()).isEqualTo(before);
         }
+
+        @Test
+        @DisplayName("평가액이 원가와 다른 보유의 추가 매수 취소 — 산 값만큼 되돌아온다(비율이 아니다)")
+        void cancelBuyOnValuedHoldingSubtractsCost() {
+            deposit(24_000L);
+            // 2개를 12,000 에 사 두고, 시세가 올라 평가액을 18,000 으로 손보정한 상태.
+            // 평가액 ≠ 원가일 때만 비율 차감과 빼기가 갈라진다 — 같으면 우연히 답이 같아
+            // 버그가 숨는다(24,000×¾ = 24,000−6,000).
+            sut.createTrade(trade(TradeType.BUY, "2", 12_000L, 0L, 3));
+            ReflectionTestUtils.setField(samsung(), "holdingValue", 18_000L);
+            sut.createTrade(trade(TradeType.BUY, "1", 6_000L, 0L, 5)); // 18,000+6,000=24,000
+            var bought = tradeOf(2L);
+            long before = netWorth();
+
+            sut.deleteTrade(bought.getRowId(), USER_ID);
+
+            // 매수의 역은 빼기다 — 비율로 덜면 24,000×⅔=16,000 이 되어 2,000 이 증발한다.
+            assertThat(samsung().getHoldingValue()).isEqualTo(18_000L);
+            assertThat(netWorth()).isEqualTo(before);
+        }
+
+        @Test
+        @DisplayName("평가액이 원가와 다른 보유의 매도 취소 — 판 비율만큼 되돌아온다(+원가가 아니다)")
+        void cancelSellOnValuedHoldingRestoresRatio() {
+            deposit(24_000L);
+            // 4개를 24,000 에 사 두고, 시세가 올라 평가액 32,000 으로 손보정한 상태.
+            sut.createTrade(trade(TradeType.BUY, "4", 24_000L, 0L, 3));
+            ReflectionTestUtils.setField(samsung(), "holdingValue", 32_000L);
+            var sold = sut.createTrade(trade(TradeType.SELL, "1", 8_000L, 0L, 10)); // 32,000×¾=24,000
+            long before = netWorth();
+
+            sut.deleteTrade(sold.rowId(), USER_ID);
+
+            // 매도의 역은 역비율이다 — 원가를 도로 더하면 24,000+6,000=30,000 이 되어 2,000 이 샌다.
+            assertThat(samsung().getHoldingValue()).isEqualTo(32_000L);
+            assertThat(netWorth()).isEqualTo(before);
+        }
     }
 }

@@ -117,11 +117,14 @@ public class AssetHolding extends AuditingFieldsWithIp {
     /**
      * 거래 한 건을 반영한다 — 수량과 원가가 함께 움직인다.
      * 취소는 부호를 뒤집어 같은 메서드로 되돌린다.
+     *
+     * <p>매수/매도는 costDelta 부호로 알 수 없어 따로 받는다 — 매수의 취소도 음수로
+     * 들어와서, 부호로 가르면 매수 취소가 매도 취급되어 되돌린 값이 어긋난다.
      */
-    public void applyTrade(BigDecimal quantityDelta, long costDelta) {
+    public void applyTrade(BigDecimal quantityDelta, long costDelta, boolean sell) {
         BigDecimal base = quantity != null ? quantity : BigDecimal.ZERO;
         BigDecimal next = base.add(quantityDelta);
-        applyValuationDelta(base, next, costDelta);
+        applyValuationDelta(base, next, costDelta, sell);
         this.quantity = next;
         this.totalCost = Math.max(0L, (totalCost != null ? totalCost : 0L) + costDelta);
     }
@@ -138,17 +141,23 @@ public class AssetHolding extends AuditingFieldsWithIp {
      *
      * <ul>
      *   <li>매수: 산 값만큼 늘린다(18,000 + 6,000 = 24,000). 미연동은 시세를 모르니
-     *       방금 치른 값이 그 몫의 현재 값이다.</li>
+     *       방금 치른 값이 그 몫의 현재 값이다. 취소는 costDelta 가 음수로 들어와
+     *       같은 식으로 빠진다.</li>
      *   <li>매도: 판 비율만큼 줄인다. 원가가 아니라 <b>평가액</b> 기준이라야 남은 몫의
-     *       평가가 유지된다.</li>
+     *       평가가 유지된다. 취소는 before·after 가 뒤집혀 들어와 곱이 저절로
+     *       역연산이 된다.</li>
      * </ul>
+     *
+     * <p>연산과 역연산이 짝을 이뤄야 취소가 원래 값으로 돌아온다 — 매수 취소를 비율로
+     * 덜면(평가액 ≠ 원가일 때) 매수·취소 왕복마다 평가액이 새어 순자산이 표류한다.
      */
-    private void applyValuationDelta(BigDecimal before, BigDecimal after, long costDelta) {
+    private void applyValuationDelta(BigDecimal before, BigDecimal after, long costDelta, boolean sell) {
         if (holdingValue == null) {
             return;
         }
-        if (costDelta >= 0) {
-            this.holdingValue = holdingValue + costDelta;   // 매수 — 치른 값만큼
+        if (!sell) {
+            // 매수 — 치른 값만큼. 취소로 원가보다 아래로 뚫리면 0 에서 멈춘다(totalCost 와 같은 취급).
+            this.holdingValue = Math.max(0L, holdingValue + costDelta);
             return;
         }
         // 매도 — 판 비율만큼 덜어낸다. 다 팔면 0.
