@@ -23,6 +23,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -59,9 +60,13 @@ class ExpenseBudgetServiceComplianceTest {
         return ExpenseBudget.createBudget(null, cat, amount, 2026, 6);
     }
 
+    /**
+     * 이행률은 이제 거래 날짜로 월을 가른다 — 고정 날짜를 쓰면 대상 월(이번 달)에 안 잡힌다.
+     * 이번 달 1일 00:00 이면 항상 이번 달이고 미래도 아니라 집계에 들어간다.
+     */
     private Expense expense(ExpenseType type, long amount) {
         return Expense.createExpense(null, null, null, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null, null,
+                LocalDate.now().withDayOfMonth(1).atStartOfDay(), null, null, null, null,
             null,
             null,
             null);
@@ -72,7 +77,7 @@ class ExpenseBudgetServiceComplianceTest {
     }
 
     private void givenExpenses(List<Expense> expenses) {
-        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
                 .willReturn(expenses);
     }
 
@@ -167,5 +172,43 @@ class ExpenseBudgetServiceComplianceTest {
         givenBudgets(List.of(overallBudget(10_000L)));
         givenExpenses(List.of(expense(ExpenseType.EXPENSE, 9_994L)));
         assertThat(sut.getCompliance(USER_ID, 1).get(0).compliancePercent()).isEqualTo(99.9);
+    }
+
+    private Expense expenseAt(long amount, LocalDateTime when) {
+        return Expense.createExpense(null, null, null, ExpenseType.EXPENSE, amount, null,
+            when, null, null, null, null, null, null, null);
+    }
+
+    private Expense refundAt(long amount, LocalDateTime when) {
+        return Expense.createExpense(null, null, null, ExpenseType.INCOME, amount, null,
+            when, null, null, null, 999L, null, null, null);
+    }
+
+    @Test
+    @DisplayName("아직 오지 않은 지출은 이행률에서 뺀다 — 요약 카드와 차트가 어긋나면 안 된다")
+    void complianceExcludesFutureSpending() {
+        givenBudgets(List.of(overallBudget(500_000L)));
+        givenExpenses(List.of(
+            expenseAt(100_000L, LocalDateTime.now().minusDays(1)),
+            // 반복거래 선생성분 — 요약 카드는 안 세는데 차트만 세면 같은 화면에서 값이 달라진다.
+            expenseAt(400_000L, LocalDateTime.now().plusDays(10))));
+
+        var result = sut.getCompliance(USER_ID, 1);
+
+        assertThat(result.get(0).totalSpent()).isEqualTo(100_000L);
+        assertThat(result.get(0).compliancePercent()).isEqualTo(20.0);
+    }
+
+    @Test
+    @DisplayName("환불은 이행률에서도 지출을 깎는다")
+    void complianceOffsetsRefund() {
+        givenBudgets(List.of(overallBudget(500_000L)));
+        givenExpenses(List.of(
+            expenseAt(100_000L, LocalDateTime.now().minusDays(2)),
+            refundAt(30_000L, LocalDateTime.now().minusDays(1))));
+
+        var result = sut.getCompliance(USER_ID, 1);
+
+        assertThat(result.get(0).totalSpent()).isEqualTo(70_000L);
     }
 }

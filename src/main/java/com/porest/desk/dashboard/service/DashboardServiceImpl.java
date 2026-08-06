@@ -6,6 +6,7 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.dashboard.service.dto.DashboardServiceDto;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseAggregates;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.todo.domain.Todo;
@@ -168,10 +169,8 @@ public class DashboardServiceImpl implements DashboardService {
         return user.getDashboard();
     }
 
-    /** 아직 오지 않은 거래는 집계에서 뺀다 (ExpenseServiceImpl.aggregatable 과 같은 규칙). */
+    /** 아직 오지 않은 거래는 집계에서 뺀다 — 규칙은 ExpenseAggregates 에 하나뿐이다. */
     private static List<Expense> notFuture(List<Expense> all, LocalDateTime now) {
-        return all.stream()
-            .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now))
-            .toList();
+        return ExpenseAggregates.countable(all, now);
     }
 }

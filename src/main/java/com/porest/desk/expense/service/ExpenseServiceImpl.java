@@ -10,6 +10,7 @@ import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseAggregates;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.domain.ExpenseSplit;
@@ -359,10 +360,7 @@ public class ExpenseServiceImpl implements ExpenseService {
      * <p>목록·캘린더에서는 여전히 보인다 — 거기서는 "예정" 으로 표시한다.
      */
     private List<Expense> aggregatable(List<Expense> all, Long userRowId) {
-        LocalDateTime now = userClock.now(userRowId);
-        return all.stream()
-            .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now))
-            .toList();
+        return ExpenseAggregates.countable(all, userClock.now(userRowId));
     }
 
     @Override
