@@ -66,7 +66,7 @@ pipeline {
                             // dev 는 태그 위여도 --long 으로 -0-g<hash> 를 붙여
                             // 운영 이미지(vX.Y.Z)와 이름이 절대 겹치지 않게 한다
                             env.APP_VERSION = sh(
-                                script: 'git describe --tags --always --long 2>/dev/null || echo unknown',
+                                script: 'git describe --tags --match \'v*\' --always --long 2>/dev/null || echo unknown',
                                 returnStdout: true
                             ).trim()
                         }
