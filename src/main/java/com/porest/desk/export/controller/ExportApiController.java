@@ -1,5 +1,7 @@
 package com.porest.desk.export.controller;
 
+import com.porest.core.audit.AccessAction;
+import com.porest.core.audit.AuditAccess;
 import com.porest.core.controller.ApiResponse;
 import com.porest.core.util.FileUploadValidator;
 import com.porest.desk.export.controller.dto.ExportApiDto;
@@ -29,7 +31,14 @@ public class ExportApiController {
 
     private final ExportService exportService;
 
-    /** 파일 생성 + 다운로드 (CSV/Excel/JSON, 다종은 ZIP). */
+    /**
+     * 파일 생성 + 다운로드 (CSV/Excel/JSON, 다종은 ZIP).
+     *
+     * <p>본인 데이터지만 대량 반출이라 흔적을 남긴다 — 계정이 탈취됐을 때 소비 내역
+     * 전체가 빠져나간 사실을 사후에 확인할 수 있어야 한다. 응답이 스트리밍이라
+     * 기록 시점은 "다운로드 요청" 이지 "전송 완료" 가 아니다.</p>
+     */
+    @AuditAccess(action = AccessAction.EXPORT, targetType = "LEDGER", detail = "데이터 내보내기")
     @PostMapping("/export")
     public ResponseEntity<StreamingResponseBody> export(
             @LoginUser UserPrincipal loginUser,
