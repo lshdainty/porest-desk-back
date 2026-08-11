@@ -67,7 +67,7 @@ class TodoApiControllerTest {
                 100L, 1L, TodoType.TASK, "할일 제목", "내용",
                 TodoPriority.HIGH, "work", TodoStatus.PENDING,
                 LocalDate.of(2026, 7, 3), null, 0, YNType.N,
-                null, List.of(), 0, 0, null, null);
+                null, List.of(), 0, 0, null, null, 0);
     }
 
     @Test
