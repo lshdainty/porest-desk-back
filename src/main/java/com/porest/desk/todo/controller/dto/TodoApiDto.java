@@ -63,7 +63,9 @@ public class TodoApiDto {
         int subtaskCount,
         int subtaskCompletedCount,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        /** 이번 요청(상태 토글)으로 실제 적립된 별빛 — 그 외 응답은 0. */
+        int earnedStarlight
     ) {
         public static Response from(TodoServiceDto.TodoInfo info) {
             return new Response(
@@ -84,7 +86,8 @@ public class TodoApiDto {
                 info.subtaskCount(),
                 info.subtaskCompletedCount(),
                 info.createAt(),
-                info.modifyAt()
+                info.modifyAt(),
+                info.earnedStarlight()
             );
         }
     }

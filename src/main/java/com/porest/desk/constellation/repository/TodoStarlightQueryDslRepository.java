@@ -26,12 +26,13 @@ public class TodoStarlightQueryDslRepository implements TodoStarlightRepository 
     private static final QTodoStarlight starlight = QTodoStarlight.todoStarlight;
 
     @Override
-    public boolean existsBySourceIncludingRevoked(StarlightSourceType sourceType, Long sourceRowId) {
+    public Optional<TodoStarlight> findBySourceIncludingRevoked(StarlightSourceType sourceType, Long sourceRowId) {
         // 평생 1회 정책 — 회수(soft delete)된 행도 이력으로 취급하므로 is_deleted 필터 없음.
-        return queryFactory.selectOne()
-            .from(starlight)
-            .where(starlight.sourceType.eq(sourceType), starlight.sourceRowId.eq(sourceRowId))
-            .fetchFirst() != null;
+        return Optional.ofNullable(
+            queryFactory.selectFrom(starlight)
+                .where(starlight.sourceType.eq(sourceType), starlight.sourceRowId.eq(sourceRowId))
+                .fetchOne()
+        );
     }
 
     @Override

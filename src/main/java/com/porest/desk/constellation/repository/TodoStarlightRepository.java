@@ -9,10 +9,10 @@ import java.util.Optional;
 
 public interface TodoStarlightRepository {
     /**
-     * 같은 출처의 적립 이력 존재 여부 — 회수(soft delete)된 행 포함.
-     * true 면 평생 1회 정책에 따라 재적립 불가.
+     * 같은 출처의 원장 단건 — 회수(soft delete)된 행 포함.
+     * 행이 있으면 평생 1회 정책 대상이다(활성이면 차단, 당일 회수분이면 복원).
      */
-    boolean existsBySourceIncludingRevoked(StarlightSourceType sourceType, Long sourceRowId);
+    Optional<TodoStarlight> findBySourceIncludingRevoked(StarlightSourceType sourceType, Long sourceRowId);
 
     /** 유효(미회수) 원장 단건 — 회수 대상 조회용. */
     Optional<TodoStarlight> findActiveBySource(StarlightSourceType sourceType, Long sourceRowId);

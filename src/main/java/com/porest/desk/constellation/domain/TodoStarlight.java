@@ -79,4 +79,16 @@ public class TodoStarlight extends AuditingFieldsWithIp {
     public void revoke() {
         this.isDeleted = YNType.Y;
     }
+
+    public boolean isRevoked() {
+        return isDeleted == YNType.Y;
+    }
+
+    /**
+     * 복원 — 당일 회수분의 재완료. 새 행을 만들지 않고 같은 행을 되살려
+     * "출처당 원장 1행"이 유지된다(이중 적립 불가).
+     */
+    public void restore() {
+        this.isDeleted = YNType.N;
+    }
 }

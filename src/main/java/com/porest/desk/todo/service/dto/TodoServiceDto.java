@@ -60,7 +60,9 @@ public class TodoServiceDto {
         int subtaskCount,
         int subtaskCompletedCount,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        /** 이번 요청(상태 토글)으로 실제 적립된 별빛 — 조회·그 외 경로는 0. 화면 "+N" 토스트 근거. */
+        int earnedStarlight
     ) {
         public static TodoInfo from(Todo todo) {
             return from(todo, List.of(), 0, 0);
@@ -85,8 +87,15 @@ public class TodoServiceDto {
                 subtaskCount,
                 subtaskCompletedCount,
                 todo.getCreateAt(),
-                todo.getModifyAt()
+                todo.getModifyAt(),
+                0
             );
+        }
+
+        public TodoInfo withEarnedStarlight(int earned) {
+            return new TodoInfo(rowId, userRowId, type, title, content, priority, category, status,
+                dueDate, completedAt, sortOrder, isPinned, parentRowId, tags,
+                subtaskCount, subtaskCompletedCount, createAt, modifyAt, earned);
         }
     }
 

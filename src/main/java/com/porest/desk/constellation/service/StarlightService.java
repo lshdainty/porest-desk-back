@@ -9,11 +9,18 @@ import java.time.LocalDate;
 /**
  * 별빛 적립 엔진 — 할일/메모 이벤트의 부수효과로 호출된다 (별도 API 없음).
  * 규칙: 우선순위 가중(HIGH 3 · MEDIUM 2 · LOW 1), 메모 +1(일 최대 2),
- * 출처당 평생 1회(재완료 재적립 없음), 당일 해제만 회수, 수집 스냅샷 불변.
+ * 출처당 원장 1행 — 당일 회수분의 재완료는 복원(그 밖의 재적립 없음),
+ * 당일 해제만 회수, 수집 스냅샷 불변.
  */
 public interface StarlightService {
-    /** 할일 상태 토글 직후 호출 — COMPLETED 전이면 적립, 해제면 회수. TASK 타입만 대상. */
-    void onTodoStatusToggled(Todo todo);
+    /**
+     * 할일 상태 토글 직후 호출 — COMPLETED 전이면 적립(당일 회수분은 복원), 해제면 회수.
+     * TASK 타입만 대상.
+     *
+     * @return 이번 토글로 실제 적립(복원 포함)된 별빛. 회수·차단·비대상은 0 —
+     *         화면 토스트가 이 값을 그대로 보여 줘야 "+N" 이 거짓이 되지 않는다.
+     */
+    int onTodoStatusToggled(Todo todo);
 
     /** 메모 생성 직후 호출 — +1 별빛 (일 한도 2 초과 시 무시). */
     void onMemoCreated(Memo memo);

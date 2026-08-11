@@ -44,20 +44,22 @@ class TodoStarlightRepositoryTest {
     }
 
     @Test
-    @DisplayName("existsBySourceIncludingRevoked — 회수(soft delete)돼도 이력으로 true (평생 1회 근거)")
-    void existsIncludesRevoked() {
+    @DisplayName("findBySourceIncludingRevoked — 회수(soft delete)돼도 원장 행을 돌려준다 (평생 1회 근거)")
+    void findIncludesRevoked() {
         User user = persistUser("u1");
         TodoStarlight ledger = persistEarn(user, StarlightSourceType.TODO, 7L, 3, today);
         em.flush();
 
-        assertThat(repository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).isTrue();
+        assertThat(repository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L))
+            .hasValueSatisfying(found -> assertThat(found.isRevoked()).isFalse());
 
         ledger.revoke();
         em.flush();
 
-        assertThat(repository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).isTrue();
-        assertThat(repository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 999L)).isFalse();
-        assertThat(repository.existsBySourceIncludingRevoked(StarlightSourceType.MEMO, 7L)).isFalse();
+        assertThat(repository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L))
+            .hasValueSatisfying(found -> assertThat(found.isRevoked()).isTrue());
+        assertThat(repository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 999L)).isEmpty();
+        assertThat(repository.findBySourceIncludingRevoked(StarlightSourceType.MEMO, 7L)).isEmpty();
     }
 
     @Test

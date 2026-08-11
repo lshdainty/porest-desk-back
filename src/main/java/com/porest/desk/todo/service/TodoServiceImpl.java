@@ -144,12 +144,14 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = findTodoOrThrow(todoId);
         validateTodoOwnership(todo, userRowId);
         todo.toggleStatus();
-        // 별자리 게이미피케이션 — 완료 전이면 별빛 적립, 해제면 당일 회수 (같은 트랜잭션)
-        starlightService.onTodoStatusToggled(todo);
+        // 별자리 게이미피케이션 — 완료 전이면 별빛 적립(당일 회수분은 복원), 해제면 당일 회수
+        // (같은 트랜잭션). 실제 적립량을 응답에 실어 화면 "+N" 토스트가 거짓이 되지 않게 한다.
+        int earnedStarlight = starlightService.onTodoStatusToggled(todo);
 
-        log.info("할일 상태 토글 완료: todoId={}, newStatus={}", todoId, todo.getStatus());
+        log.info("할일 상태 토글 완료: todoId={}, newStatus={}, earnedStarlight={}",
+            todoId, todo.getStatus(), earnedStarlight);
 
-        return buildTodoInfo(todo);
+        return buildTodoInfo(todo).withEarnedStarlight(earnedStarlight);
     }
 
     @Override

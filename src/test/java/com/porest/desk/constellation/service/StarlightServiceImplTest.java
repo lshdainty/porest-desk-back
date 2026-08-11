@@ -131,7 +131,7 @@ class StarlightServiceImplTest {
     @DisplayName("HIGH 완료 → 3점 적립, 오늘 관측 행에 가산")
     void earnHighPriorityThreePoints() {
         ConstellationDaily daily = openDaily(dipper(), 0);
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(false);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(Optional.empty());
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
 
         sut.onTodoStatusToggled(task(7L, TodoPriority.HIGH));
@@ -165,12 +165,51 @@ class StarlightServiceImplTest {
     }
 
     @Test
-    @DisplayName("평생 1회 — 회수 이력 포함 기존 출처는 재적립 무시")
+    @DisplayName("평생 1회 — 활성 원장이 있는 출처는 재적립 무시(0 반환)")
     void lifetimeOncePerSource() {
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(true);
+        TodoStarlight active = TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L))
+            .willReturn(Optional.of(active));
 
-        sut.onTodoStatusToggled(task(7L, TodoPriority.HIGH));
+        int earned = sut.onTodoStatusToggled(task(7L, TodoPriority.HIGH));
 
+        assertThat(earned).isZero();
+        verify(starlightRepository, never()).save(any());
+        verify(dailyRepository, never()).findByUserAndDate(any(), any());
+    }
+
+    @Test
+    @DisplayName("당일 왕복 — 오늘 회수된 원장은 복원되고 그 점수가 돌아온다(같은 행, 이중 적립 없음)")
+    void sameDayRoundTripRestores() {
+        // 적립(합 3) 후 당일 회수돼 합이 0 인 상태에서 시작한다.
+        ConstellationDaily daily = openDaily(dipper(), 3);
+        TodoStarlight revoked = seedLedger(TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today));
+        revoked.revoke();
+        daily.syncPoints(0);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L))
+            .willReturn(Optional.of(revoked));
+        given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
+
+        int earned = sut.onTodoStatusToggled(task(7L, TodoPriority.HIGH));
+
+        assertThat(earned).isEqualTo(3);
+        assertThat(revoked.isRevoked()).isFalse();          // 같은 행이 되살아난다
+        verify(starlightRepository, never()).save(any());   // 새 행을 만들지 않는다
+        assertThat(daily.getPoints()).isEqualTo(3);          // 그날 합계도 되돌아온다
+    }
+
+    @Test
+    @DisplayName("타일 왕복 — 지난 날 회수된 원장은 복원하지 않는다(지난 합계·수집 불변)")
+    void pastDayRevokedStaysRevoked() {
+        TodoStarlight revoked = TodoStarlight.earn(user(), StarlightSourceType.TODO, 7L, 3, today.minusDays(1));
+        revoked.revoke();
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L))
+            .willReturn(Optional.of(revoked));
+
+        int earned = sut.onTodoStatusToggled(task(7L, TodoPriority.HIGH));
+
+        assertThat(earned).isZero();
+        assertThat(revoked.isRevoked()).isTrue();
         verify(starlightRepository, never()).save(any());
         verify(dailyRepository, never()).findByUserAndDate(any(), any());
     }
@@ -179,7 +218,7 @@ class StarlightServiceImplTest {
     @DisplayName("오늘 첫 적립 — 보호 정산 후 관측 행을 연다 (그날의 순환 목표 별자리)")
     void firstEarnOfDayOpensDaily() {
         Constellation c = dipper();
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(false);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(Optional.empty());
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.empty());
         given(dailyRepository.findLatestGrownDate(USER_ID)).willReturn(Optional.empty()); // reconcile no-op
         given(constellationRepository.findAllActive()).willReturn(List.of(c));
@@ -202,7 +241,7 @@ class StarlightServiceImplTest {
         Constellation c = dipper(); // 목표 7
         ConstellationDaily daily = openDaily(c, 5);
         ConstellationProfile profile = ConstellationProfile.createProfile(user());
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(false);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(Optional.empty());
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
         given(profileRepository.findByUser(USER_ID)).willReturn(Optional.of(profile));
 
@@ -221,7 +260,7 @@ class StarlightServiceImplTest {
         Constellation c = dipper();
         ConstellationDaily daily = openDaily(c, 7);
         daily.grow();
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 8L)).willReturn(false);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 8L)).willReturn(Optional.empty());
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
 
         sut.onTodoStatusToggled(task(8L, TodoPriority.LOW));
@@ -235,7 +274,7 @@ class StarlightServiceImplTest {
     void createsProfileOnFirstGrown() {
         Constellation c = dipper();
         ConstellationDaily daily = openDaily(c, 6);
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(false);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.TODO, 7L)).willReturn(Optional.empty());
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
         given(profileRepository.findByUser(USER_ID)).willReturn(Optional.empty());
         given(profileRepository.save(any(ConstellationProfile.class))).willAnswer(inv -> inv.getArgument(0));
@@ -310,7 +349,7 @@ class StarlightServiceImplTest {
         Memo memo = Memo.createMemo(user(), null, "m", "c", null, null);
         ReflectionTestUtils.setField(memo, "rowId", 20L);
         given(starlightRepository.countActiveMemoEarns(USER_ID, today)).willReturn(0L);
-        given(starlightRepository.existsBySourceIncludingRevoked(StarlightSourceType.MEMO, 20L)).willReturn(false);
+        given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.MEMO, 20L)).willReturn(Optional.empty());
         given(dailyRepository.findByUserAndDate(USER_ID, today)).willReturn(Optional.of(daily));
 
         sut.onMemoCreated(memo);

@@ -13,6 +13,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -78,7 +79,11 @@ public class DutchPay extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     // 참가자는 soft-delete(is_deleted) 로 관리 — 물리 삭제(orphanRemoval) 대신 플래그 처리.
+    // 순서를 등록순(row_id)으로 고정한다 — 정렬이 없으면 DB 반환 순서(수정된 행이 밀리는 등)에
+    // 따라 매번 달라지는데, 화면은 첫 참가자를 결제자로 그려서 완료 체크 한 번에 결제자가
+    // 다른 사람으로 뒤바뀌고 받을 돈 집계까지 흔들린다.
     @OneToMany(mappedBy = "dutchPay", cascade = CascadeType.ALL)
+    @OrderBy("rowId ASC")
     private List<DutchPayParticipant> participants = new ArrayList<>();
 
     /** 활성(미삭제) 참가자만. 정산/노출/검증의 기준. */
