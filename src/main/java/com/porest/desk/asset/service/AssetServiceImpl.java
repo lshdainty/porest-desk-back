@@ -23,6 +23,7 @@ import com.porest.desk.toss.credential.service.TossCredentialService;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.expense.domain.ExpenseAggregates;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
@@ -150,13 +151,47 @@ public class AssetServiceImpl implements AssetService {
         LocalDateTime now = userClock.now(userRowId);
         Map<Long, AssetBalanceHistoryService.Split> balances =
             balanceHistoryService.balancesAt(assets, now);
+        Map<Long, Long> checkCardUsed = checkCardMonthlyUsed(assets, userRowId, now);
 
         return assets.stream()
             .map(a -> AssetServiceDto.AssetInfo.from(
-                a,
-                holdingsByAsset.getOrDefault(a.getRowId(), List.of()),
-                balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO)))
+                    a,
+                    holdingsByAsset.getOrDefault(a.getRowId(), List.of()),
+                    balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO))
+                .withMonthlyUsedAmount(checkCardUsed.get(a.getRowId())))
             .toList();
+    }
+
+    /**
+     * 체크카드별 이번 달(1일~말일 캘린더 월) 사용 합계.
+     *
+     * <p>체크카드는 결제가 연결 계좌에서 즉시 빠져 잔액이 항상 0 이다 — 카드 화면에
+     * 보여줄 금액은 "이번 달 이 카드로 얼마 썼나" 뿐이고, 청구 사이클이 없으니 기간은
+     * 달력 그대로가 자연스럽다. 합산은 {@link ExpenseAggregates} 규칙(예정 제외·환불 상계)을
+     * 그대로 따른다. 이번 달 거래 1회 조회 후 자바에서 나눠 담는다 — 카드별 쿼리 금지.
+     */
+    private Map<Long, Long> checkCardMonthlyUsed(List<Asset> assets, Long userRowId, LocalDateTime now) {
+        Set<Long> checkCardIds = assets.stream()
+            .filter(a -> a.getAssetType() == AssetType.CHECK_CARD)
+            .map(Asset::getRowId)
+            .collect(Collectors.toSet());
+        if (checkCardIds.isEmpty()) {
+            return Map.of();
+        }
+        LocalDate monthStart = now.toLocalDate().withDayOfMonth(1);
+        LocalDate monthEnd = now.toLocalDate().withDayOfMonth(now.toLocalDate().lengthOfMonth());
+        List<Expense> countable = ExpenseAggregates.countable(
+            expenseRepository.findByDateRange(userRowId, monthStart, monthEnd), now);
+
+        Map<Long, Long> used = new HashMap<>();
+        for (Expense e : countable) {
+            Long assetId = e.getAsset() != null ? e.getAsset().getRowId() : null;
+            if (assetId == null || !checkCardIds.contains(assetId)) {
+                continue;
+            }
+            used.merge(assetId, e.expenseContribution(), Long::sum);
+        }
+        return used;
     }
 
     @Override
@@ -165,8 +200,11 @@ public class AssetServiceImpl implements AssetService {
 
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
+        LocalDateTime now = userClock.now(userRowId);
         return AssetServiceDto.AssetInfo.from(asset, activeHoldingInfos(assetId),
-            balanceHistoryService.balanceAt(asset, userClock.now(userRowId)));
+                balanceHistoryService.balanceAt(asset, now))
+            .withMonthlyUsedAmount(
+                checkCardMonthlyUsed(List.of(asset), userRowId, now).get(asset.getRowId()));
     }
 
     @Override
