@@ -143,7 +143,9 @@ public class AssetApiDto {
         // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 배열)
         List<HoldingResponse> holdings,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        /** 체크카드의 이번 달(1일~) 사용 합계. 체크카드만 값, 그 외 null — 잔액이 항상 0 이라 화면 표시용. */
+        Long monthlyUsedAmount
     ) {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
@@ -155,7 +157,8 @@ public class AssetApiDto {
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
                 info.tossSymbol(), info.tossQuantity(),
                 info.holdings().stream().map(HoldingResponse::from).toList(),
-                info.createAt(), info.modifyAt()
+                info.createAt(), info.modifyAt(),
+                info.monthlyUsedAmount()
             );
         }
     }

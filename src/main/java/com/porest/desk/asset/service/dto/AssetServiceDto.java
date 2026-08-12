@@ -149,7 +149,14 @@ public class AssetServiceDto {
         // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 리스트)
         List<HoldingInfo> holdings,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        /**
+         * 체크카드의 이번 달(1일~) 사용 합계 — 체크카드만 값, 그 외 null.
+         * 결제가 연결 계좌에서 즉시 빠져 balance 가 항상 0 이라, 이 값이 없으면
+         * 화면에서 "이 카드로 얼마 썼는지" 를 알 길이 없다. 순자산 계산과는 무관하다
+         * (돈은 이미 계좌에서 빠졌다 — balance 에 실으면 이중 차감이 된다).
+         */
+        Long monthlyUsedAmount
     ) {
         /** 잔액 없이(0) 만든다 — 잔액이 화면에 안 쓰이는 응답 전용. */
         public static AssetInfo from(Asset asset) {
@@ -195,8 +202,16 @@ public class AssetServiceDto {
                 asset.getTossQuantity(),
                 holdings != null ? holdings : List.of(),
                 asset.getCreateAt(),
-                asset.getModifyAt()
+                asset.getModifyAt(),
+                null
             );
+        }
+
+        public AssetInfo withMonthlyUsedAmount(Long monthlyUsed) {
+            return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
+                holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
+                isIncludedInTotal, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
+                tossSymbol, tossQuantity, holdings, createAt, modifyAt, monthlyUsed);
         }
     }
 
