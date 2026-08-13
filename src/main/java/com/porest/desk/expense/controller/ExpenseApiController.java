@@ -1,6 +1,7 @@
 package com.porest.desk.expense.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.desk.common.time.WallClockDateTimeParser;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.expense.controller.dto.ExpenseApiDto;
@@ -196,21 +197,8 @@ public class ExpenseApiController {
         return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
     }
 
-    /**
-     * expenseDate 문자열을 LocalDateTime 으로 유연 파싱.
-     * - "yyyy-MM-dd"        → 해당 일자 00:00:00
-     * - "yyyy-MM-ddTHH:mm"  → ISO_LOCAL_DATE_TIME (초 생략 허용)
-     * - "yyyy-MM-dd HH:mm"  → 공백 구분자 허용
-     * - null/빈 문자열은 null 반환
-     */
+    /** expenseDate 문자열 → LocalDateTime. 규칙은 {@link WallClockDateTimeParser} 참조. */
     private static LocalDateTime parseExpenseDate(String s) {
-        if (s == null || s.isBlank()) return null;
-        String trimmed = s.trim();
-        if (trimmed.length() == 10) {
-            return LocalDate.parse(trimmed).atStartOfDay();
-        }
-        // 공백 구분자를 ISO_LOCAL_DATE_TIME 호환으로 치환
-        String normalized = trimmed.replace(' ', 'T');
-        return LocalDateTime.parse(normalized);
+        return WallClockDateTimeParser.parse(s);
     }
 }
