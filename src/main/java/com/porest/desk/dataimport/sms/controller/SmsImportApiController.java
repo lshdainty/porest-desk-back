@@ -56,6 +56,7 @@ public class SmsImportApiController {
                 request.merchant(),
                 request.description(),
                 WallClockDateTimeParser.parse(request.expenseDate()),
+                request.paymentMethod(),
                 request.installmentMonths(),
                 request.originalAmount(),
                 request.originalCurrency(),

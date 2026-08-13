@@ -76,6 +76,8 @@ public class SmsImportServiceDto {
         String merchant,
         String description,
         LocalDateTime expenseDate,
+        /** 결제수단 코드(CASH/CARD/TRANSFER/OTHER). 비면 카드로 본다 — 카드 결제 문자이므로. */
+        String paymentMethod,
         Integer installmentMonths,
         BigDecimal originalAmount,
         String originalCurrency,

@@ -101,7 +101,7 @@ class SmsImportApiControllerTest {
         SmsImportApiDto.CommitRequest request = new SmsImportApiDto.CommitRequest(
             "KB국민카드1234승인 5,500원 일시불 08/13 13:22 스타벅스강남",
             100L, 50L, 5_500L, "스타벅스강남", null,
-            "2026-08-13T13:22", null, null, null, null, true);
+            "2026-08-13T13:22", "CARD", null, null, null, null, true);
 
         mockMvc.perform(post("/api/v1/import/sms/commit")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -128,7 +128,7 @@ class SmsImportApiControllerTest {
         SmsImportApiDto.CommitRequest request = new SmsImportApiDto.CommitRequest(
             "KB국민카드1234승인 5,500원 일시불 스타벅스강남",
             100L, 50L, 5_500L, "스타벅스강남", null,
-            "2026-08-13", null, null, null, null, false);
+            "2026-08-13", "CARD", null, null, null, null, false);
 
         mockMvc.perform(post("/api/v1/import/sms/commit")
                 .contentType(MediaType.APPLICATION_JSON)

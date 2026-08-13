@@ -95,7 +95,7 @@ class SmsImportServiceImplTest {
     private SmsImportServiceDto.CommitCommand commitCommand(Long assetRowId, boolean remember) {
         return new SmsImportServiceDto.CommitCommand(
             USER, KB_SMS, assetRowId, 10L, 5_500L, "스타벅스강남", null,
-            LocalDateTime.of(2026, 8, 13, 13, 22), null, null, null, null, remember);
+            LocalDateTime.of(2026, 8, 13, 13, 22), "CARD", null, null, null, null, remember);
     }
 
     private void givenExpenseCreated(Long expenseRowId) {
@@ -297,10 +297,6 @@ class SmsImportServiceImplTest {
         @DisplayName("ExpenseService 를 거쳐 지출을 만든다 — 확정 값 그대로")
         void createsExpense() {
             givenExpenseCreated(500L);
-            Asset kb = card(100L, "KB 국민 체크", "KB국민카드", AssetType.CHECK_CARD);
-            User owner = user(USER);
-            given(kb.getUser()).willReturn(owner);
-            given(assetRepository.findById(100L)).willReturn(Optional.of(kb));
 
             var result = sut.commit(commitCommand(100L, false));
 
@@ -315,22 +311,25 @@ class SmsImportServiceImplTest {
             assertThat(cmd.merchant()).isEqualTo("스타벅스강남");
             assertThat(cmd.categoryRowId()).isEqualTo(10L);
             assertThat(cmd.assetRowId()).isEqualTo(100L);
-            assertThat(cmd.paymentMethod()).isEqualTo("KB 국민 체크");
+            assertThat(cmd.paymentMethod()).isEqualTo("CARD");
             assertThat(cmd.expenseDate()).isEqualTo(LocalDateTime.of(2026, 8, 13, 13, 22));
             assertThat(result.expenseRowId()).isEqualTo(500L);
         }
 
         @Test
-        @DisplayName("자산을 고르지 않았으면 결제수단에 카드사명을 남긴다")
-        void paymentMethodFallsBackToIssuer() {
+        @DisplayName("결제수단을 안 보내면 카드로 채운다 — 폼 select 가 알아보는 코드여야 한다")
+        void paymentMethodDefaultsToCard() {
             givenExpenseCreated(500L);
+            var cmd = new SmsImportServiceDto.CommitCommand(
+                USER, KB_SMS, null, 10L, 5_500L, "스타벅스강남", null,
+                LocalDateTime.of(2026, 8, 13, 13, 22), null, null, null, null, null, false);
 
-            sut.commit(commitCommand(null, false));
+            sut.commit(cmd);
 
             ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
                 ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
             verify(expenseService).createExpense(captor.capture());
-            assertThat(captor.getValue().paymentMethod()).isEqualTo("KB국민카드");
+            assertThat(captor.getValue().paymentMethod()).isEqualTo("CARD");
         }
 
         @Test
@@ -344,7 +343,7 @@ class SmsImportServiceImplTest {
                 스타벅스강남""";
             var cmd = new SmsImportServiceDto.CommitCommand(
                 USER, cancelSms, 100L, 10L, 5_500L, "스타벅스강남", null,
-                LocalDateTime.of(2026, 8, 13, 14, 0), null, null, null, null, false);
+                LocalDateTime.of(2026, 8, 13, 14, 0), "CARD", null, null, null, null, false);
 
             assertThatThrownBy(() -> sut.commit(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -356,7 +355,7 @@ class SmsImportServiceImplTest {
         void rejectsNonPayment() {
             var cmd = new SmsImportServiceDto.CommitCommand(
                 USER, "오늘 저녁에 만나자", 100L, 10L, 5_500L, "x", null,
-                LocalDateTime.of(2026, 8, 13, 14, 0), null, null, null, null, false);
+                LocalDateTime.of(2026, 8, 13, 14, 0), "CARD", null, null, null, null, false);
 
             assertThatThrownBy(() -> sut.commit(cmd))
                 .isInstanceOf(InvalidValueException.class);

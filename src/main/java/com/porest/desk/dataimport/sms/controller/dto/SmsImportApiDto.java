@@ -80,6 +80,8 @@ public class SmsImportApiDto {
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" — 오프셋 없는 로컬 시각
         String expenseDate,
+        /** 결제수단 코드(CASH/CARD/TRANSFER/OTHER). 비면 서버가 카드로 채운다. */
+        String paymentMethod,
         Integer installmentMonths,
         BigDecimal originalAmount,
         String originalCurrency,

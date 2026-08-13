@@ -45,8 +45,13 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class SmsImportServiceImpl implements SmsImportService {
 
-    /** 결제 문자에서 온 거래임을 남기는 결제수단 표기 — 자산을 못 고른 경우의 대체값. */
-    private static final String PAYMENT_METHOD_FALLBACK = "카드";
+    /**
+     * 결제수단 기본값 — 앱·웹 폼이 쓰는 코드와 같은 값이어야 한다.
+     *
+     * <p>여기에 자산 이름 같은 자유 문자열을 넣으면, 나중에 그 지출을 편집할 때
+     * 결제수단 select 가 값을 못 알아본다(코드 목록에 없는 값이라 빈칸으로 떨어진다).
+     */
+    private static final String DEFAULT_PAYMENT_METHOD = "CARD";
 
     private final ExpenseService expenseService;
     private final ExpenseRepository expenseRepository;
@@ -111,7 +116,7 @@ public class SmsImportServiceImpl implements SmsImportService {
                 command.description(),
                 command.expenseDate(),
                 command.merchant(),
-                paymentMethodOf(command.assetRowId(), command.userRowId(), parsed),
+                paymentMethodOf(command.paymentMethod()),
                 command.installmentMonths(),
                 null,
                 command.originalAmount(),
@@ -315,19 +320,9 @@ public class SmsImportServiceImpl implements SmsImportService {
         return true;
     }
 
-    /**
-     * 결제수단 표기 — 자산을 고른 경우 그 자산 이름을 쓴다(가져오기와 같은 관례).
-     *
-     * <p>자산 없이 기록하는 경우엔 카드사명이라도 남긴다. 나중에 어느 카드였는지
-     * 되짚을 단서가 아예 없으면 대사가 불가능하다.
-     */
-    private String paymentMethodOf(Long assetRowId, Long userRowId, SmsParsed parsed) {
-        if (assetRowId != null) {
-            Optional<String> name = assetRepository.findById(assetRowId)
-                .filter(a -> a.getUser().getRowId().equals(userRowId))
-                .map(Asset::getAssetName);
-            if (name.isPresent()) return name.get();
-        }
-        return parsed.issuer() != null ? parsed.issuer().displayName() : PAYMENT_METHOD_FALLBACK;
+    /** 결제수단 — 클라이언트가 고른 코드를 그대로 쓰고, 비면 카드로 본다. */
+    private String paymentMethodOf(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isBlank()) return DEFAULT_PAYMENT_METHOD;
+        return paymentMethod.trim();
     }
 }
