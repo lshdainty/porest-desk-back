@@ -102,7 +102,7 @@ src/main/java/com/porest/desk/
 - `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 - `JWT_SECRET` (desk 자체 토큰 HS256 서명 키)
 - `SSO_API_URL`, `SSO_CLIENT_SECRET` (SSO 토큰 검증은 JWKS 공개키 사용)
-- `APP_ENCRYPTION_KEY` (토스 크리덴셜 등 민감값 암호화 키)
+- `APP_ENCRYPTION_KEY` (DB 보관 비밀값 공용 암호화 키 — 토스 크리덴셜 + SSO refresh token. 없으면 무음 재인증이 조용히 비활성)
 - `CORS_ORIGINS`
 
 ### 빌드 및 실행
