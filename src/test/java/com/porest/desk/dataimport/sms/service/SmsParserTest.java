@@ -125,6 +125,43 @@ class SmsParserTest {
         }
 
         @Test
+        @DisplayName("인터넷은행 체크카드 — 은행 이름으로 온다")
+        void internetBank() {
+            // 체크카드는 발급 주체가 은행이라 승인 알림이 카드사가 아니라 은행 이름으로 온다.
+            String sms = """
+                케이뱅크
+                체크카드 승인
+                5,500원
+                08/13 13:22
+                스타벅스강남""";
+
+            SmsParsed p = SmsParser.parse(sms, TODAY);
+
+            assertThat(p.issuer()).isEqualTo(SmsCardIssuer.KBANK);
+            assertThat(p.amount()).isEqualTo(5_500L);
+            assertThat(p.merchant()).isEqualTo("스타벅스강남");
+            assertThat(p.confidence()).isEqualTo(SmsConfidence.HIGH);
+        }
+
+        @Test
+        @DisplayName("시중은행 체크카드 — 은행 이름을 카드사로 이어 준다")
+        void retailBank() {
+            // 자산의 institution 이 "국민은행" 인 체크카드를 찾으려면 이 이름이 잡혀야 한다.
+            String sms = """
+                [Web발신]
+                국민은행 체크카드 승인
+                12,000원
+                08/13 19:05
+                김밥천국""";
+
+            SmsParsed p = SmsParser.parse(sms, TODAY);
+
+            assertThat(p.issuer()).isEqualTo(SmsCardIssuer.KB);
+            assertThat(p.amount()).isEqualTo(12_000L);
+            assertThat(p.merchant()).isEqualTo("김밥천국");
+        }
+
+        @Test
         @DisplayName("체크카드 — 할부 표기가 아예 없다")
         void checkCard() {
             String sms = """
