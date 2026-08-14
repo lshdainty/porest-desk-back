@@ -52,6 +52,7 @@ class SsoSessionServiceTest {
         props.setSessionExpiration(604_800_000L); // 7일
         sut = new SsoSessionService(sessionRepository, ssoOAuth2Client, cipher, props);
 
+        given(cipher.isConfigured()).willReturn(true);
         given(cipher.encrypt(anyString())).willAnswer(inv -> "enc(" + inv.getArgument(0) + ")");
         given(cipher.decrypt(anyString())).willAnswer(inv -> {
             String v = inv.getArgument(0);
@@ -94,6 +95,17 @@ class SsoSessionServiceTest {
         sut.create(7L, SESSION_ID, null, "iPhone");
         sut.create(7L, SESSION_ID, "  ", "iPhone");
 
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("암호화 키가 없으면 세션을 만들지 않는다 — 로그인까지 막으면 안 된다")
+    void create_withoutCipherKey_skipsInsteadOfThrowing() {
+        given(cipher.isConfigured()).willReturn(false);
+
+        sut.create(7L, SESSION_ID, "raw-refresh", "iPhone"); // 예외 없이 넘어가야 한다
+
+        // 평문으로 저장하는 선택지는 없다. 무음 재인증만 못 하고 로그인은 정상 동작한다.
         verify(sessionRepository, never()).save(any());
     }
 
