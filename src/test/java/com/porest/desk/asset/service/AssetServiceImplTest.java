@@ -596,4 +596,37 @@ class AssetServiceImplTest {
 
         assertThat(transfer.getIsDeleted()).isEqualTo(YNType.Y);
     }
+
+    @Test
+    @DisplayName("updateTransfer — 카드 환급 이체는 못 고친다(고치면 잔액이 다시 양수로 뜬다)")
+    void updateTransferRejectsCardRefund() {
+        Asset from = assetOwnedBy(USER_ID);
+        Asset to = assetOwnedBy(USER_ID);
+        AssetTransfer transfer = transferOf(5L, from, to, 228_600L, "CARD_REFUND");
+        given(assetTransferRepository.findById(5L)).willReturn(Optional.of(transfer));
+
+        var cmd = new AssetServiceDto.CreateTransferCommand(
+            USER_ID, 10L, 11L, 80_000L, 0L, 0L, "고침",
+            LocalDate.of(2026, 6, 2).atStartOfDay(), null);
+
+        assertThatThrownBy(() -> sut.updateTransfer(5L, cmd))
+            .isInstanceOf(InvalidValueException.class)
+            // 카드 결제·일반 자동생성과 구분되는 안내가 나가야 한다 — 셋이 같은 메시지면
+            // "카드 청구 화면에서 취소하세요" 같은 엉뚱한 안내가 환급에도 나간다
+            .hasMessageContaining(DeskErrorCode.ASSET_TRANSFER_CARD_REFUND_READONLY.getMessageKey());
+        verify(balanceHistoryService, never()).removeTransfer(anyLong());
+    }
+
+    @Test
+    @DisplayName("deleteTransferByUser — 카드 환급 이체는 사용자가 못 지운다")
+    void userDeleteRejectsCardRefund() {
+        Asset from = assetOwnedBy(USER_ID);
+        Asset to = assetOwnedBy(USER_ID);
+        AssetTransfer transfer = transferOf(5L, from, to, 228_600L, "CARD_REFUND");
+        given(assetTransferRepository.findById(5L)).willReturn(Optional.of(transfer));
+
+        assertThatThrownBy(() -> sut.deleteTransferByUser(5L, USER_ID))
+            .isInstanceOf(InvalidValueException.class);
+        assertThat(transfer.getIsDeleted()).isEqualTo(YNType.N);
+    }
 }

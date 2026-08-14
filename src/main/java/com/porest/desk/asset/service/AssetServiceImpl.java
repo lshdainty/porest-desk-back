@@ -1041,9 +1041,14 @@ public class AssetServiceImpl implements AssetService {
      * 카드는 카드 결제 취소로 가라고 알려 준다.
      */
     private static DeskErrorCode autoTransferErrorOf(AssetTransfer transfer) {
-        return "CARD_PAYMENT".equals(transfer.getAutoSource())
-            ? DeskErrorCode.ASSET_TRANSFER_CARD_PAYMENT_READONLY
-            : DeskErrorCode.ASSET_TRANSFER_AUTO_GENERATED_READONLY;
+        return switch (String.valueOf(transfer.getAutoSource())) {
+            case "CARD_PAYMENT" -> DeskErrorCode.ASSET_TRANSFER_CARD_PAYMENT_READONLY;
+            // 환급은 카드 잔액을 0 으로 맞추려고 만든 이체다. 이것만 고치면 잔액이 다시
+            // 양수로 뜨고, 다음 자정에 또 환급이 나간다. 잘못된 환급은 잔액 수동 보정으로
+            // 정정하면 청구 캡·환급 스윕이 잔액 기준이라 다음 실행에서 알아서 수렴한다.
+            case "CARD_REFUND" -> DeskErrorCode.ASSET_TRANSFER_CARD_REFUND_READONLY;
+            default -> DeskErrorCode.ASSET_TRANSFER_AUTO_GENERATED_READONLY;
+        };
     }
 
     /** 이체 양쪽 자산과 검증된 이자. 생성·수정이 같은 규칙을 쓴다. */
