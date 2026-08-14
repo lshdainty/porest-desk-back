@@ -42,8 +42,10 @@ class DutchPayRepositoryTest {
     private DutchPay persistDutchPay(User user, String title, LocalDate date, String... participantNames) {
         DutchPay dp = DutchPay.createDutchPay(user, null, title, null, 30_000L, "KRW",
                 SplitMethod.EQUAL, date);
-        for (String name : participantNames) {
-            dp.addParticipant(DutchPayParticipant.create(dp, user, name, 10_000L));
+        for (int i = 0; i < participantNames.length; i++) {
+            // 첫 사람이 결제자 — 한 정산에 결제자는 한 명이다.
+            dp.addParticipant(DutchPayParticipant.create(
+                dp, user, participantNames[i], 10_000L, i == 0));
         }
         return em.persist(dp); // cascade ALL → 참가자도 함께 저장
     }

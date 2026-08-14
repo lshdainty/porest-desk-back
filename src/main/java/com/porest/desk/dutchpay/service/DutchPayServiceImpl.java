@@ -180,6 +180,7 @@ public class DutchPayServiceImpl implements DutchPayService {
             return;
         }
         validateNoDuplicateParticipants(participants);
+        int payerIndex = resolvePayerIndex(participants);
         List<DutchPayParticipant> existing = List.copyOf(dutchPay.getActiveParticipants());
         Map<Long, DutchPayParticipant> byId = existing.stream()
             .filter(pt -> pt.getRowId() != null)
@@ -187,7 +188,8 @@ public class DutchPayServiceImpl implements DutchPayService {
 
         Set<DutchPayParticipant> kept =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        for (DutchPayServiceDto.ParticipantCommand pc : participants) {
+        for (int i = 0; i < participants.size(); i++) {
+            DutchPayServiceDto.ParticipantCommand pc = participants.get(i);
             if (pc.amount() == null || pc.amount() <= 0) {
                 throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
             }
@@ -198,11 +200,11 @@ public class DutchPayServiceImpl implements DutchPayService {
             }
             DutchPayParticipant found = pc.rowId() != null ? byId.get(pc.rowId()) : null;
             if (found != null) {
-                found.updateParticipant(participantUser, pc.participantName(), pc.amount());
+                found.updateParticipant(participantUser, pc.participantName(), pc.amount(), i == payerIndex);
                 kept.add(found);
             } else {
-                dutchPay.addParticipant(
-                    DutchPayParticipant.create(dutchPay, participantUser, pc.participantName(), pc.amount()));
+                dutchPay.addParticipant(DutchPayParticipant.create(
+                    dutchPay, participantUser, pc.participantName(), pc.amount(), i == payerIndex));
             }
         }
         // 목록에서 빠진 참가자만 지운다. id 로 매칭되지 않은 것도 여기 걸린다.
@@ -216,7 +218,9 @@ public class DutchPayServiceImpl implements DutchPayService {
     private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
         if (participants == null) return;
         validateNoDuplicateParticipants(participants);
-        for (DutchPayServiceDto.ParticipantCommand pc : participants) {
+        int payerIndex = resolvePayerIndex(participants);
+        for (int i = 0; i < participants.size(); i++) {
+            DutchPayServiceDto.ParticipantCommand pc = participants.get(i);
             // amount 는 not-null 컬럼 — null/0/음수는 정산 데이터를 오염시키므로 영속화 전에 차단.
             if (pc.amount() == null || pc.amount() <= 0) {
                 throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
@@ -227,7 +231,7 @@ public class DutchPayServiceImpl implements DutchPayService {
                     .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
             }
             DutchPayParticipant participant = DutchPayParticipant.create(
-                dutchPay, participantUser, pc.participantName(), pc.amount()
+                dutchPay, participantUser, pc.participantName(), pc.amount(), i == payerIndex
             );
             dutchPay.addParticipant(participant);
         }
@@ -238,6 +242,29 @@ public class DutchPayServiceImpl implements DutchPayService {
      * 활성 참가자 집합은 곧 이 요청의 목록이므로 요청 내 중복만 막으면 충분하다.
      * 등록 사용자(user_row_id)는 사용자 기준, 이름만 있는 참가자(user=null)는 이름 기준으로 판정.
      */
+    /**
+     * 결제자가 목록의 몇 번째인지 정한다. 한 정산에 결제자는 한 명이다.
+     *
+     * <p>아무도 표시돼 있지 않으면 <b>첫 사람</b>을 결제자로 본다. 이 필드를 모르는 구버전
+     * 앱이 여전히 정산을 만들 수 있어야 해서다 — 앱은 사용자가 원할 때 올리는 거라 백엔드보다
+     * 늦게 갱신되는 기간이 반드시 생긴다. 기존 데이터를 마이그레이션이 채운 규칙과 같다.
+     *
+     * <p>둘 이상이면 거부한다. 그건 클라이언트 버그이고, 넘어가면 화면마다 다른 사람을
+     * 결제자로 그리던 예전 증상으로 되돌아간다. MariaDB 에 조건부 UNIQUE 인덱스가 없어
+     * DB 가 못 막으므로 여기가 유일한 방어선이다.
+     */
+    private int resolvePayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants) {
+        List<Integer> marked = java.util.stream.IntStream.range(0, participants.size())
+            .filter(i -> Boolean.TRUE.equals(participants.get(i).isPayer()))
+            .boxed()
+            .toList();
+        if (marked.size() > 1) {
+            log.warn("더치페이 결제자 중복 - payerCount={}", marked.size());
+            throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PAYER);
+        }
+        return marked.isEmpty() ? 0 : marked.get(0);
+    }
+
     private void validateNoDuplicateParticipants(List<DutchPayServiceDto.ParticipantCommand> participants) {
         java.util.Set<Long> seenUserIds = new java.util.HashSet<>();
         java.util.Set<String> seenNamesNoUser = new java.util.HashSet<>();

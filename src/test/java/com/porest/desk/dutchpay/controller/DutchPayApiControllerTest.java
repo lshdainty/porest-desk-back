@@ -56,7 +56,7 @@ class DutchPayApiControllerTest {
 
     private DutchPayServiceDto.DutchPayInfo sampleDutchPay() {
         DutchPayServiceDto.ParticipantInfo participant =
-                new DutchPayServiceDto.ParticipantInfo(200L, 2L, "홍길동", 10000L, false, null);
+                new DutchPayServiceDto.ParticipantInfo(200L, 2L, "홍길동", 10000L, true, false, null);
         return new DutchPayServiceDto.DutchPayInfo(
                 100L, 1L, 50L, "저녁 정산", "회식", 30000L, "KRW",
                 SplitMethod.EQUAL, LocalDate.of(2026, 7, 3), false,
@@ -80,7 +80,11 @@ class DutchPayApiControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rowId").value(100))
-                .andExpect(jsonPath("$.data.participants[0].participantName").value("홍길동"));
+                .andExpect(jsonPath("$.data.participants[0].participantName").value("홍길동"))
+                // 키 이름을 못 박는다 — Jackson 이 record 의 isPayer 를 payer 로 줄이면
+                // 웹·앱이 결제자를 못 읽고 조용히 전원 참여자로 그린다
+                .andExpect(jsonPath("$.data.participants[0].isPayer").value(true))
+                .andExpect(jsonPath("$.data.participants[0].isPaid").value(false));
 
         var captor = ArgumentCaptor.forClass(DutchPayServiceDto.CreateCommand.class);
         verify(dutchPayService).createDutchPay(captor.capture());

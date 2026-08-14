@@ -20,8 +20,9 @@ class DutchPayParticipantSoftDeleteTest {
                 SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1));
     }
 
+    /** 갚을 참여자. 결제자는 {@link #payer} 로 따로 만든다. */
     private DutchPayParticipant participant(DutchPay dp, String name, long amount) {
-        DutchPayParticipant p = DutchPayParticipant.create(dp, null, name, amount);
+        DutchPayParticipant p = DutchPayParticipant.create(dp, null, name, amount, false);
         dp.addParticipant(p);
         return p;
     }

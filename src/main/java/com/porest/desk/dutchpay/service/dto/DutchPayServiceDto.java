@@ -44,7 +44,9 @@ public class DutchPayServiceDto {
         Long rowId,
         Long userRowId,
         String participantName,
-        Long amount
+        Long amount,
+        /** 이 사람이 결제했는가. 미지정(null)이면 서버가 첫 사람을 결제자로 본다. */
+        Boolean isPayer
     ) {}
 
     public record DutchPayInfo(
@@ -89,6 +91,7 @@ public class DutchPayServiceDto {
         Long userRowId,
         String participantName,
         Long amount,
+        boolean isPayer,
         boolean isPaid,
         LocalDateTime paidAt
     ) {
@@ -98,6 +101,7 @@ public class DutchPayServiceDto {
                 participant.getUser() != null ? participant.getUser().getRowId() : null,
                 participant.getParticipantName(),
                 participant.getAmount(),
+                participant.isPayer(),
                 participant.getIsPaid() == YNType.Y,
                 participant.getPaidAt()
             );

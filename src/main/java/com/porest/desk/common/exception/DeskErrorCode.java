@@ -117,6 +117,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     DUTCHPAY_ACCESS_DENIED("DUTCH_003", "error.dutchpay.access.denied", HttpStatus.FORBIDDEN),
     DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT("DUTCH_004", "error.dutchpay.invalid.participant.amount", HttpStatus.BAD_REQUEST),
     DUTCH_PAY_DUPLICATE_PARTICIPANT("DUTCH_005", "error.duplicate.dutch.pay.participant", HttpStatus.CONFLICT),
+    DUTCH_PAY_INVALID_PAYER("DUTCH_006", "error.dutchpay.invalid.payer", HttpStatus.BAD_REQUEST),
 
     // Notification
     NOTIFICATION_NOT_FOUND("NOTI_001", "error.notfound.notification", HttpStatus.NOT_FOUND),
