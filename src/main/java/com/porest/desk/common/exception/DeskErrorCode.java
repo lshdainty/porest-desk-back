@@ -89,6 +89,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_AUTO_GENERATED_READONLY("EXP_022", "error.expense.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_AUTO_GENERATED_READONLY("AST_030", "error.asset.transfer.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_PAYMENT_READONLY("AST_031", "error.asset.transfer.card.payment.readonly", HttpStatus.BAD_REQUEST),
+    ASSET_TRANSFER_CARD_REFUND_READONLY("AST_032", "error.asset.transfer.card.refund.readonly", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),

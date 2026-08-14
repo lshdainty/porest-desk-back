@@ -161,38 +161,16 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         for (Asset card : creditCards) {
             // 각 건 격리 — 한 카드 실패가 전체 배치를 멈추지 않도록 try-catch
             try {
-                if (!isPaymentDay(card.getPaymentDay(), today)) {
-                    continue;
+                if (isPaymentDay(card.getPaymentDay(), today)) {
+                    switch (payDueCard(card, today)) {
+                        case PAID -> success++;
+                        case SKIPPED -> skipped++;
+                        case ALREADY_DONE -> { }
+                    }
                 }
-                // 멱등성 — 이번 결제일에 이미 COMPLETED 가 있으면 skip
-                if (cardBillingRepository.existsCompletedByCardAndPaymentDate(card.getRowId(), today)) {
-                    log.debug("자동 카드 결제 멱등 skip: cardRowId={}, date={}", card.getRowId(), today);
-                    continue;
-                }
-
-                Long userRowId = card.getUser().getRowId();
-                Asset paymentAsset = card.getPaymentAsset();
-                // 결제일 당일 회차 = 전월 1일~말일 사용분(선결제 차감) — 잔액 전액 아님.
-                BillingCycle cycle = upcomingCycle(card, today);
-                long amount = cycle.amount();
-                LocalDate periodStart = cycle.periodStart();
-                LocalDate periodEnd = cycle.periodEnd();
-
-                if (amount == 0L) {
-                    cardBillingRepository.save(
-                        CardBilling.skipped(card, paymentAsset, periodStart, periodEnd, today));
-                    skipped++;
-                    continue;
-                }
-                // 결제계좌 미지정·잔액 부족으로 실패시키지 않는다 — 기록용 앱이라 통장을 안 적거나
-                // 잔액을 안 맞춰 둔 사용자가 있고, 막으면 카드 부채가 영원히 안 지워진다.
-                cardBillingRepository.save(payoff(
-                    card, paymentAsset, amount, periodStart, periodEnd, today, userRowId));
-                success++;
-
-                log.info("자동 카드 결제 완료: cardRowId={}, amount={}, 결제계좌={}",
-                    card.getRowId(), amount,
-                    paymentAsset != null ? paymentAsset.getRowId() : "미지정");
+                // 환급은 결제일과 무관하게 매일 본다 — 환불은 아무 날에나 들어오고,
+                // 결제일까지 기다리면 그동안 잔액이 양수로 떠 있게 된다.
+                refundOverpaymentIfAny(card, today);
             } catch (Exception e) {
                 failed++;
                 log.error("자동 카드 결제 실패: cardRowId={}", card.getRowId(), e);
@@ -201,6 +179,79 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
         log.info("자동 카드 결제 처리 완료: 대상={}건, 성공={}, 실패={}, 건너뜀={}",
             creditCards.size(), success, failed, skipped);
+    }
+
+    /** 결제일 처리 결과 — 집계용. */
+    private enum PayOutcome { PAID, SKIPPED, ALREADY_DONE }
+
+    /** 결제일 당일 청구 결제. 루프에서 환급 스윕과 나란히 두려고 분리했다. */
+    private PayOutcome payDueCard(Asset card, LocalDate today) {
+        // 멱등성 — 이번 결제일에 이미 COMPLETED 가 있으면 skip
+        if (cardBillingRepository.existsCompletedByCardAndPaymentDate(card.getRowId(), today)) {
+            log.debug("자동 카드 결제 멱등 skip: cardRowId={}, date={}", card.getRowId(), today);
+            return PayOutcome.ALREADY_DONE;
+        }
+
+        Long userRowId = card.getUser().getRowId();
+        Asset paymentAsset = card.getPaymentAsset();
+        // 결제일 당일 회차 = 전월 1일~말일 사용분(선결제 차감) — 잔액 전액 아님.
+        BillingCycle cycle = upcomingCycle(card, today);
+        long amount = cycle.amount();
+
+        if (amount == 0L) {
+            cardBillingRepository.save(
+                CardBilling.skipped(card, paymentAsset, cycle.periodStart(), cycle.periodEnd(), today));
+            return PayOutcome.SKIPPED;
+        }
+        // 결제계좌 미지정·잔액 부족으로 실패시키지 않는다 — 기록용 앱이라 통장을 안 적거나
+        // 잔액을 안 맞춰 둔 사용자가 있고, 막으면 카드 부채가 영원히 안 지워진다.
+        cardBillingRepository.save(payoff(
+            card, paymentAsset, amount, cycle.periodStart(), cycle.periodEnd(), today, userRowId));
+
+        log.info("자동 카드 결제 완료: cardRowId={}, amount={}, 결제계좌={}",
+            card.getRowId(), amount, paymentAsset != null ? paymentAsset.getRowId() : "미지정");
+        return PayOutcome.PAID;
+    }
+
+    /**
+     * 카드 잔액이 양수(과납·환불 초과분)면 실제 카드사처럼 결제계좌로 돌려준다.
+     *
+     * <p>결제를 다 낸 뒤 환불이 들어오면 카드 잔액이 양수가 된다. 실제 카드사는 그 돈을
+     * 결제계좌로 환급하거나 다음 청구에서 뺀다 — 카드에 잔고가 쌓여 있는 상태로 두지 않는다.
+     *
+     * <p>멱등은 따로 기록할 필요가 없다. 환급하면 잔액이 0 이 되므로 다음 실행에서 그냥 걸러진다.
+     */
+    private void refundOverpaymentIfAny(Asset card, LocalDate today) {
+        Long userRowId = card.getUser().getRowId();
+        long surplus = balanceHistoryService.balanceAt(card, userClock.now(userRowId)).total();
+        if (surplus <= 0L) {
+            return;
+        }
+
+        Asset paymentAsset = card.getPaymentAsset();
+        if (paymentAsset != null) {
+            // 카드 → 결제계좌. 결제 이체(createPaymentTransfer)의 거울상이다.
+            assetService.createTransfer(new AssetServiceDto.CreateTransferCommand(
+                userRowId,
+                card.getRowId(),
+                paymentAsset.getRowId(),
+                surplus,
+                0L,
+                0L,
+                "신용카드 환급",
+                today.atStartOfDay(),
+                // 환급도 잔액에 묶여 있다 — 이 이체만 따로 고치면 카드 잔액이 다시 어긋난다.
+                "CARD_REFUND"
+            ));
+        } else {
+            // 결제계좌를 안 적은 사용자 — 이체를 만들 곳이 없으니 카드 쪽만 0 으로 맞춘다.
+            // payoff 의 상계 fallback 과 같은 논리이고 방향만 반대다(+상계 ↔ −상계).
+            balanceHistoryService.recordExpense(
+                card, null, ExpenseType.EXPENSE, surplus, today.atStartOfDay());
+        }
+
+        log.info("카드 과납 환급: cardRowId={}, surplus={}, 결제계좌={}",
+            card.getRowId(), surplus, paymentAsset != null ? paymentAsset.getRowId() : "미지정(상계)");
     }
 
     /**
@@ -251,9 +302,10 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         return entityManager.getReference(AssetTransfer.class, transferRowId);
     }
 
-    private long absBalance(Asset card) {
+    /** 지금 이 카드에 남은 빚(양수). 잔액이 0 이상이면 빚이 없다는 뜻이라 0. */
+    private long currentDebt(Asset card) {
         // 캐시 컬럼이 아니라 이력 집계 — 청구액을 낡은 값으로 잡으면 결제 금액이 틀어진다.
-        return Math.abs(balanceHistoryService
+        return Math.max(0L, -balanceHistoryService
             .balanceAt(card, userClock.now(card.getUser().getRowId())).total());
     }
 
@@ -263,18 +315,34 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     /**
      * 다가오는 결제 회차 계산. 회차 금액 = 청구 기간(결제일의 전월 1일~말일) 카드 순사용액
      * (지출 − 환불) − 같은 회차에 이미 결제 완료된 금액(선결제 차감), 최소 0.
-     * 결제일 미설정(paymentDay null)이면 회차를 정의할 수 없어 종전처럼 잔액 전액을 반환한다.
+     *
+     * <p>그리고 <b>현재 카드빚을 넘지 않는다</b>. 지출 기록만 보고 청구하면, 사용자가 잔액을
+     * 수동 보정(MANUAL)해 빚을 줄여 놨거나 환불이 들어온 경우 이미 없는 빚을 또 결제해
+     * 카드 잔액이 양수로 역전된다. 실제 카드 앱이 승인취소분을 누적 청구액에서 바로 빼는 것과
+     * 같은 동작이다.
+     *
+     * <p>할부는 구매 시 전액이 잔액 이력에 잡히므로(회차 분할이 아님) 정상 상태에서는
+     * 빚 ≥ 회차 청구다 — 캡이 오발동하지 않는다.
      */
     private BillingCycle upcomingCycle(Asset card, LocalDate nextPaymentDate) {
+        LocalDate periodStart;
+        LocalDate periodEnd;
         if (nextPaymentDate == null) {
-            return new BillingCycle(null, null, absBalance(card));
+            // 결제일 미설정 — 회차를 당월 1일~말일로 본다(체크카드 월 사용액과 같은 기준).
+            // 종전엔 잔액 전액을 청구했는데, 절대값이라 잔액이 양수여도 그만큼 또 청구해
+            // 결제할수록 더 양수가 되는 결함이 있었다.
+            LocalDate today = userClock.today(card.getUser().getRowId());
+            periodStart = today.withDayOfMonth(1);
+            periodEnd = today.withDayOfMonth(today.lengthOfMonth());
+        } else {
+            periodStart = periodStartFor(nextPaymentDate);
+            periodEnd = periodEndFor(nextPaymentDate);
         }
-        LocalDate periodStart = periodStartFor(nextPaymentDate);
-        LocalDate periodEnd = periodEndFor(nextPaymentDate);
         long spend = cycleNetSpend(card.getRowId(), periodStart, periodEnd);
         long alreadyPaid = cardBillingRepository
             .sumCompletedAmountByCardAndPeriod(card.getRowId(), periodStart, periodEnd);
-        return new BillingCycle(periodStart, periodEnd, Math.max(0L, spend - alreadyPaid));
+        long billable = Math.max(0L, spend - alreadyPaid);
+        return new BillingCycle(periodStart, periodEnd, Math.min(billable, currentDebt(card)));
     }
 
     /**

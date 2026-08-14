@@ -84,7 +84,16 @@ class CardPaymentServiceImplTest {
         lenient().when(card.getAssetType()).thenReturn(AssetType.CREDIT_CARD);
         lenient().when(card.getRowId()).thenReturn(CARD_ID);
         lenient().when(card.getPaymentDay()).thenReturn(paymentDay);
+        // 청구는 현재 빚을 넘지 않는다(캡). 회차 산수 자체를 보는 테스트가 캡에 걸리지 않도록
+        // 빚을 넉넉히 잡아 둔다 — 캡·환급을 보는 테스트는 givenCardBalance 로 덮어쓴다.
+        givenCardBalance(-100_000_000L);
         return card;
+    }
+
+    /** 카드 잔액 — 음수면 빚, 양수면 과납(환급 대상). */
+    private void givenCardBalance(long balance) {
+        lenient().when(balanceHistoryService.balanceAt(any(), any()))
+            .thenReturn(new AssetBalanceHistoryService.Split(balance, 0L));
     }
 
     /**
@@ -267,19 +276,88 @@ class CardPaymentServiceImplTest {
     }
 
     @Test
-    @DisplayName("getCardBilling — 결제일 미설정 카드는 잔액 전액 fallback(기간 null)")
-    void upcomingFallsBackToBalanceWithoutPaymentDay() {
+    @DisplayName("getCardBilling — 결제일 미설정 카드는 당월 1일~말일 사용액으로 청구한다")
+    void upcomingUsesCalendarMonthWithoutPaymentDay() {
         Asset card = creditCard(null);
-        given(balanceHistoryService.balanceAt(any(), any()))
-            .willReturn(new AssetBalanceHistoryService.Split(-33_800L, 0L));
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(33_800L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
 
         CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
 
         assertThat(info.upcomingAmount()).isEqualTo(33_800L);
-        assertThat(info.upcomingPeriodStart()).isNull();
+        // 회차 기간이 잡힌다 — 종전엔 기간 없이 잔액 전액을 청구했다
+        assertThat(info.upcomingPeriodStart()).isEqualTo(LocalDate.of(2026, 7, 1));
+        assertThat(info.upcomingPeriodEnd()).isEqualTo(LocalDate.of(2026, 7, 31));
+        // 결제일이 없는 건 사실이므로 그대로 null
         assertThat(info.nextPaymentDate()).isNull();
+    }
+
+    @Test
+    @DisplayName("결제일 미설정 카드 — 잔액이 양수면 청구액 0(종전엔 절대값이라 양수도 또 청구했다)")
+    void positiveBalanceWithoutPaymentDayBillsNothing() {
+        Asset card = creditCard(null);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCardBalance(228_600L); // 과납 상태
+        givenCycleSpend(50_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isZero();
+    }
+
+    // === 청구 캡 — 없는 빚을 청구하지 않는다 ===
+
+    @Test
+    @DisplayName("청구 캡 — 잔액을 수동 보정해 빚이 줄었으면 청구도 그만큼만(양수 역전 방지)")
+    void billingIsCappedByCurrentDebt() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(500_000L);          // 기록상 사용액
+        givenCardBalance(-120_000L);        // 실제 남은 빚(수동 보정으로 줄어듦)
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        // 500,000 을 그대로 청구하면 잔액이 +380,000 으로 뒤집힌다
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(120_000L);
+    }
+
+    @Test
+    @DisplayName("청구 캡 — 잔액이 이미 양수면 청구액 0")
+    void positiveBalanceBillsNothing() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(500_000L);
+        givenCardBalance(228_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isZero();
+    }
+
+    @Test
+    @DisplayName("청구 캡 — 빚이 사용액보다 많으면 캡이 걸리지 않는다(할부 전액 선반영 등)")
+    void capDoesNotShrinkNormalBilling() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(280_000L);
+        // 할부는 구매 시 전액이 잔액에 잡히므로 빚이 회차 청구보다 크다 — 정상 상태
+        givenCardBalance(-1_530_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(280_000L);
     }
 
     // === payCard — 선결제 귀속 ===
@@ -535,5 +613,86 @@ class CardPaymentServiceImplTest {
         assertThatThrownBy(() -> sut.cancelPayment(5L, USER_ID))
             .isInstanceOf(InvalidValueException.class);
         verify(assetService, never()).deleteTransfer(anyLong(), anyLong());
+    }
+
+    // === 과납 환급 스윕 — 결제일과 무관하게 매일 검사 ===
+
+    /** 환급 스윕 대상 카드 1장으로 스케줄을 돌린다. */
+    private Asset scheduleWithOneCard(Integer paymentDay, Asset paymentAsset, long balance) {
+        Asset card = creditCard(paymentDay);
+        lenient().when(card.getPaymentAsset()).thenReturn(paymentAsset);
+        givenCardBalance(balance);
+        given(assetRepository.findAllByType(AssetType.CREDIT_CARD)).willReturn(List.of(card));
+        return card;
+    }
+
+    @Test
+    @DisplayName("환급 — 잔액이 양수면 결제계좌로 돌려주는 이체를 만든다(카드→계좌, CARD_REFUND)")
+    void refundsOverpaymentToPaymentAsset() {
+        Asset paymentAsset = mock(Asset.class);
+        lenient().when(paymentAsset.getRowId()).thenReturn(9L);
+        // 결제일이 아닌 날 — 환급은 결제일과 무관하게 돌아야 한다
+        scheduleWithOneCard(12, paymentAsset, 228_600L);
+
+        sut.processDueCardPayments(LocalDate.of(2026, 7, 24));
+
+        ArgumentCaptor<AssetServiceDto.CreateTransferCommand> captor =
+            ArgumentCaptor.forClass(AssetServiceDto.CreateTransferCommand.class);
+        verify(assetService).createTransfer(captor.capture());
+        AssetServiceDto.CreateTransferCommand cmd = captor.getValue();
+        // 방향이 결제와 반대다 — 카드에서 나가 결제계좌로 들어온다
+        assertThat(cmd.fromAssetRowId()).isEqualTo(CARD_ID);
+        assertThat(cmd.toAssetRowId()).isEqualTo(9L);
+        assertThat(cmd.amount()).isEqualTo(228_600L);
+        assertThat(cmd.autoSource()).isEqualTo("CARD_REFUND");
+    }
+
+    @Test
+    @DisplayName("환급 — 결제계좌를 안 만들었으면 이체 없이 카드 잔액만 0으로 상계한다")
+    void offsetsOverpaymentWithoutPaymentAsset() {
+        scheduleWithOneCard(12, null, 228_600L);
+
+        sut.processDueCardPayments(LocalDate.of(2026, 7, 24));
+
+        verify(assetService, never()).createTransfer(any());
+        // EXPENSE = 마이너스 flow — 양수 잔액을 0 으로 끌어내린다
+        then(balanceHistoryService).should()
+            .recordExpense(any(), isNull(), eq(ExpenseType.EXPENSE), eq(228_600L), any());
+    }
+
+    @Test
+    @DisplayName("환급 — 잔액이 0이거나 빚이면 아무것도 만들지 않는다(멱등)")
+    void doesNotRefundWhenNoSurplus() {
+        Asset paymentAsset = mock(Asset.class);
+        scheduleWithOneCard(12, paymentAsset, 0L);
+
+        sut.processDueCardPayments(LocalDate.of(2026, 7, 24));
+
+        verify(assetService, never()).createTransfer(any());
+        then(balanceHistoryService).should(never())
+            .recordExpense(any(), any(), eq(ExpenseType.EXPENSE), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("환급 — 빚이 남은 정상 카드는 건드리지 않는다")
+    void doesNotRefundWhenInDebt() {
+        Asset paymentAsset = mock(Asset.class);
+        scheduleWithOneCard(12, paymentAsset, -500_000L);
+
+        sut.processDueCardPayments(LocalDate.of(2026, 7, 24));
+
+        verify(assetService, never()).createTransfer(any());
+    }
+
+    @Test
+    @DisplayName("환급은 CardBilling 을 만들지 않는다 — 청구 회차와 무관한 정산이다")
+    void refundDoesNotCreateBilling() {
+        Asset paymentAsset = mock(Asset.class);
+        lenient().when(paymentAsset.getRowId()).thenReturn(9L);
+        scheduleWithOneCard(12, paymentAsset, 100_000L);
+
+        sut.processDueCardPayments(LocalDate.of(2026, 7, 24));
+
+        verify(cardBillingRepository, never()).save(any(CardBilling.class));
     }
 }
