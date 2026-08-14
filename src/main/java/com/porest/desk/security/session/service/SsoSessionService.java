@@ -56,11 +56,23 @@ public class SsoSessionService {
         static RefreshResult fromSso(String ssoAccessToken) { return new RefreshResult(true, ssoAccessToken); }
     }
 
-    /** 로그인 직후 세션 생성. refresh 를 못 받았으면 세션 없이 진행한다(재발급만 불가). */
+    /**
+     * 로그인 직후 세션 생성.
+     *
+     * <p>세션을 못 만들 사정이면 만들지 않고 넘어간다 — 무음 재인증만 안 되고 로그인은 된다.
+     * 여기서 예외를 던지면 로그인 트랜잭션이 통째로 깨져, 부가 기능 하나 때문에 아무도
+     * 못 들어오게 된다.
+     */
     @Transactional
     public void create(Long userRowId, String sessionId, String refreshToken, String userAgent) {
         if (refreshToken == null || refreshToken.isBlank()) {
             log.warn("SSO 가 refresh token 을 주지 않아 세션을 만들지 않는다. userRowId={}", userRowId);
+            return;
+        }
+        if (!cipher.isConfigured()) {
+            // 암호화 키 없이 평문으로 저장하는 선택지는 없다. 키를 채우면 그때부터 동작한다.
+            log.error("app.security.encryption-key 미설정 — SSO 세션을 만들지 않는다."
+                    + " 무음 재인증이 동작하지 않아 access token 만료마다 재로그인하게 된다. userRowId={}", userRowId);
             return;
         }
         sessionRepository.save(UserSsoSession.issue(
