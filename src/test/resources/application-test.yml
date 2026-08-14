@@ -14,6 +14,14 @@ spring:
     p6spy:
       enable-logging: false
 
+  # Redis — 전체 컨텍스트 기동 테스트에서 프로퍼티 바인딩만 통과시키기 위한 더미.
+  # 빈 생성 시점에는 접속하지 않으므로 실제 서버가 없어도 된다.
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+
   # JPA — 테스트마다 스키마 create-drop, H2 dialect.
   jpa:
     hibernate:
@@ -30,6 +38,8 @@ jwt:
   secret: test-jwt-secret-test-jwt-secret-test-jwt-secret-0123456789
   access-token-expiration: 3600000
   sso-secret: test-sso-secret-test-sso-secret-test-sso-secret-0123456789
+  # SSO JWKS — 기동 시 받아오지 않는다(첫 SSO 토큰 검증 때 조회).
+  sso-jwks-uri: http://localhost:0/.well-known/jwks.json
 
 app:
   sso:

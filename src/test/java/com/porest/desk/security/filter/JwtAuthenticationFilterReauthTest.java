@@ -12,6 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -55,7 +56,12 @@ class JwtAuthenticationFilterReauthTest {
 
         jwtTokenProvider = new JwtTokenProvider(props, null);
         tokenExchangeService = mock(TokenExchangeService.class);
-        sut = new JwtAuthenticationFilter(jwtTokenProvider, props, tokenExchangeService);
+        // 운영에서는 ObjectProvider 로 지연 조회한다 — 직접 주입하면 톰캣이 필터 빈을 모으는
+        // 시점에 JPA 가 통째로 끌려 들어와 기동이 깨진다(ApplicationContextLoadTest 참고).
+        @SuppressWarnings("unchecked")
+        ObjectProvider<TokenExchangeService> provider = mock(ObjectProvider.class);
+        given(provider.getObject()).willReturn(tokenExchangeService);
+        sut = new JwtAuthenticationFilter(jwtTokenProvider, props, provider);
         signingKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
     }
 
