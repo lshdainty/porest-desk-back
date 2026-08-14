@@ -284,4 +284,22 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }
+
+    @Override
+    public Optional<Long> findRecentCategoryRowIdByMerchant(Long userRowId, String merchant,
+                                                            ExpenseType expenseType) {
+        if (merchant == null || merchant.isBlank()) return Optional.empty();
+        Long categoryRowId = queryFactory.select(expense.category.rowId)
+            .from(expense)
+            .where(
+                expense.user.rowId.eq(userRowId),
+                expense.expenseType.eq(expenseType),
+                expense.merchant.equalsIgnoreCase(merchant.trim()),
+                expense.category.isNotNull(),
+                expense.isDeleted.eq(YNType.N)
+            )
+            .orderBy(expense.expenseDate.desc(), expense.rowId.desc())
+            .fetchFirst();
+        return Optional.ofNullable(categoryRowId);
+    }
 }

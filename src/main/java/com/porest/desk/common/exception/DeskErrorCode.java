@@ -171,6 +171,11 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     STOCK_WATCH_GROUP_LIMIT_EXCEEDED("STOCK_004", "error.stock.watch.group.limit", HttpStatus.BAD_REQUEST),
     STOCK_WATCH_ITEM_LIMIT_EXCEEDED("STOCK_005", "error.stock.watch.item.limit", HttpStatus.BAD_REQUEST),
     STOCK_WATCH_GROUP_NAME_DUPLICATE("STOCK_006", "error.duplicate.stock.watch.group.name", HttpStatus.CONFLICT),
+
+    // SMS (결제 문자 가져오기)
+    SMS_NOT_RECOGNIZED("SMS_001", "error.sms.not.recognized", HttpStatus.BAD_REQUEST),
+    SMS_CANCEL_NOT_SUPPORTED("SMS_002", "error.sms.cancel.not.supported", HttpStatus.BAD_REQUEST),
+    SMS_CARD_MAPPING_NOT_FOUND("SMS_003", "error.notfound.sms.card.mapping", HttpStatus.NOT_FOUND),
     ;
 
     private final String code;

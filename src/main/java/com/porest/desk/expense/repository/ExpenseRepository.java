@@ -44,4 +44,15 @@ public interface ExpenseRepository {
      * 단일 쿼리로 N+1 없음. 평균/주별 정규화는 호출자가 처리.
      */
     List<Object[]> sumGroupedByDayOfWeekAndHour(Long userRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
+
+    /**
+     * 같은 가맹점의 가장 최근 거래 카테고리 — 결제 문자 카테고리 추론용.
+     *
+     * <p>키워드 사전보다 이쪽이 먼저다. 사용자가 "스타벅스" 를 어디에 넣는지는
+     * 사람마다 다르고(카페 vs 간식 vs 업무), 본인이 전에 고른 답이 가장 정확하다.
+     *
+     * <p>가맹점명이 정확히 같은 건만 본다. 부분 일치로 넓히면 "GS25 강남" 과
+     * "GS칼텍스" 가 같은 카테고리로 묶인다.
+     */
+    Optional<Long> findRecentCategoryRowIdByMerchant(Long userRowId, String merchant, ExpenseType expenseType);
 }
