@@ -5,15 +5,20 @@ import com.porest.desk.common.config.properties.JwtProperties;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.controller.dto.TokenExchangeDto;
 import com.porest.desk.security.jwt.JwtTokenProvider;
+import com.porest.desk.security.principal.JwtUserPrincipal;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.security.service.TokenExchangeService;
+import com.porest.desk.security.session.service.SsoSessionService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,6 +33,7 @@ public class TokenExchangeController {
     private final JwtProperties jwtProperties;
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
+    private final SsoSessionService ssoSessionService;
 
     public static final String ACCESS_TOKEN_COOKIE = "desk_access_token";
 
@@ -38,15 +44,28 @@ public class TokenExchangeController {
     @PostMapping("/exchange-code")
     public ApiResponse<TokenExchangeDto.Response> exchangeCode(
             @RequestBody TokenExchangeDto.CodeRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
         TokenExchangeDto.Response exchangeResponse = tokenExchangeService.exchangeCode(
-                request.code(), request.codeVerifier(), request.redirectUri());
+                request.code(), request.codeVerifier(), request.redirectUri(),
+                httpRequest.getHeader(HttpHeaders.USER_AGENT));
         setAccessTokenCookie(response, exchangeResponse.accessToken());
         return ApiResponse.success(exchangeResponse);
     }
 
+    /**
+     * 로그아웃 — 쿠키를 지우고 이 기기의 SSO 세션도 끊는다.
+     *
+     * <p>세션을 남겨 두면 refresh token 이 최대 7일 더 살아 있다. 로그아웃한 사용자의 재발급
+     * 수단이 서버에 남는 셈이라 반드시 같이 끊는다. 다른 기기 세션은 건드리지 않는다.
+     */
     @PostMapping("/logout")
     public ApiResponse<Void> logout(HttpServletResponse response) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof JwtUserPrincipal principal
+                && principal.getSessionId() != null) {
+            ssoSessionService.revoke(principal.getSessionId());
+        }
         clearAccessTokenCookie(response);
         return ApiResponse.success(null);
     }
@@ -74,6 +93,7 @@ public class TokenExchangeController {
      */
     @PostMapping("/embed-token")
     public ApiResponse<TokenExchangeDto.EmbedTokenResponse> issueEmbedToken(@LoginUser UserPrincipal loginUser) {
+        // 임베드 토큰은 세션에 속하지 않는다(60초 단명). jti 없이 만들어 재발급 대상에서 빠진다.
         String token = jwtTokenProvider.createEmbedToken(
             loginUser.getUserId(),
             loginUser.getUserName(),
@@ -90,7 +110,9 @@ public class TokenExchangeController {
                 .httpOnly(true)
                 .secure(true)
                 .path("/")
-                .maxAge(jwtProperties.getAccessTokenExpiration() / 1000)
+                // 토큰 수명이 아니라 세션 수명으로 둔다. 토큰과 같이 1시간 만에 사라지면
+                // 만료된 토큰이 서버에 도달조차 못 해 재발급할 세션을 찾을 수 없다.
+                .maxAge(jwtProperties.getSessionExpiration() / 1000)
                 .sameSite("Lax")
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());

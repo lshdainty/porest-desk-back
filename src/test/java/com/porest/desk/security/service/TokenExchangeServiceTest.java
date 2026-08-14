@@ -36,6 +36,7 @@ class TokenExchangeServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private UserCalendarService userCalendarService;
     @Mock private com.porest.desk.security.client.SsoOAuth2Client ssoOAuth2Client;
+    @Mock private com.porest.desk.security.session.service.SsoSessionService ssoSessionService;
 
     @InjectMocks private TokenExchangeService sut;
 
@@ -62,10 +63,10 @@ class TokenExchangeServiceTest {
         given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
         given(userRepository.findByUserId("tester")).willReturn(Optional.empty());
         given(userRepository.save(any(User.class))).willReturn(user(7L));
-        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong()))
+        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong(), anyString()))
                 .willReturn("access");
 
-        sut.exchangeToken("sso");
+        sut.exchangeToken("sso", "sid");
 
         verify(userCalendarService).getOrCreateDefault(7L);
     }
@@ -76,10 +77,10 @@ class TokenExchangeServiceTest {
         Claims claims = deskClaims();
         given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
         given(userRepository.findByUserId("tester")).willReturn(Optional.of(user(7L)));
-        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong()))
+        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong(), anyString()))
                 .willReturn("access");
 
-        sut.exchangeToken("sso");
+        sut.exchangeToken("sso", "sid");
 
         verify(userCalendarService, never()).getOrCreateDefault(eq(7L));
         verify(userRepository, never()).save(any(User.class));
@@ -89,16 +90,19 @@ class TokenExchangeServiceTest {
     @DisplayName("exchangeCode — SSO 에 code 교환으로 ssoToken 받아 desk 토큰을 발급한다")
     void exchangeCode_exchangesViaSsoThenIssuesDeskToken() {
         given(ssoOAuth2Client.exchangeCodeForToken("authcode", "verifier", "https://desk/auth/callback"))
-                .willReturn("sso");
+                .willReturn(new com.porest.desk.security.client.SsoOAuth2Client.TokenPair("sso", "refresh"));
+        given(jwtTokenProvider.newSessionId()).willReturn("sid");
         Claims claims = deskClaims();
         given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
         given(userRepository.findByUserId("tester")).willReturn(Optional.of(user(7L)));
-        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong()))
+        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong(), anyString()))
                 .willReturn("desk-access");
 
-        var resp = sut.exchangeCode("authcode", "verifier", "https://desk/auth/callback");
+        var resp = sut.exchangeCode("authcode", "verifier", "https://desk/auth/callback", "JUnit/1.0");
 
         org.assertj.core.api.Assertions.assertThat(resp.accessToken()).isEqualTo("desk-access");
         verify(ssoOAuth2Client).exchangeCodeForToken("authcode", "verifier", "https://desk/auth/callback");
+        // 받은 refresh 는 세션에 남아야 한다 — 이게 빠지면 만료 후 조용히 재발급할 방법이 없다
+        verify(ssoSessionService).create(7L, "sid", "refresh", "JUnit/1.0");
     }
 }

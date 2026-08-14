@@ -38,7 +38,7 @@ class JwtTokenProviderTest {
     @Test
     @DisplayName("access 토큰 발급 — typ=access 클레임이 포함되고 만료가 약 30분")
     void createAccessToken_setsTypAccess() {
-        String token = sut.createAccessToken("u1", "User", "u@e.com", 100L);
+        String token = sut.createAccessToken("u1", "User", "u@e.com", 100L, "sid-1");
 
         Claims c = parse(token);
         assertThat(c.get("typ", String.class)).isEqualTo("access");
@@ -69,7 +69,7 @@ class JwtTokenProviderTest {
     @Test
     @DisplayName("access 토큰의 isEmbed=false")
     void accessToken_isNotEmbed() {
-        String token = sut.createAccessToken("u1", "User", "u@e.com", 100L);
+        String token = sut.createAccessToken("u1", "User", "u@e.com", 100L, "sid-1");
         assertThat(sut.validateAndGetClaims(token).isEmbed()).isFalse();
     }
 

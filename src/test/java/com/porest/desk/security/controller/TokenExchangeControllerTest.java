@@ -54,6 +54,19 @@ class TokenExchangeControllerTest {
     @MockitoBean private JwtTokenProvider jwtTokenProvider;
     @MockitoBean private MessageResolver messageResolver;
     @MockitoBean private UserRepository userRepository;
+    @MockitoBean private com.porest.desk.security.session.service.SsoSessionService ssoSessionService;
+
+    @Test
+    @DisplayName("POST /api/v1/auth/logout — 이 기기의 SSO 세션도 같이 끊는다")
+    void logout_revokesSsoSession() throws Exception {
+        given(jwtProperties.getSessionExpiration()).willReturn(604_800_000L);
+
+        mockMvc.perform(post("/api/v1/auth/logout"))
+                .andExpect(status().isOk());
+
+        // 세션이 남으면 로그아웃한 사용자의 refresh token 이 최대 7일 더 살아 재발급 수단이 된다
+        verify(ssoSessionService).revoke("test-session");
+    }
 
     @Test
     @DisplayName("POST /api/v1/auth/embed-token — 로그인 사용자 정보로 createEmbedToken 호출 + 60초 만료 응답")
