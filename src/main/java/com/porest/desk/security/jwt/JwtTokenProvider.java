@@ -15,6 +15,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -27,12 +28,21 @@ public class JwtTokenProvider {
     /** 임베드 토큰 만료(ms). 60초 — 차트 임베드 등 단명 컨텍스트 전용. */
     public static final long EMBED_TOKEN_EXPIRATION_MS = 60_000L;
 
-    public String createAccessToken(String userId, String userName, String userEmail, Long userRowId) {
+    /**
+     * 로그인 세션 토큰.
+     *
+     * <p>{@code sessionId} 는 jti 로 들어가 이 토큰이 어느 기기의 세션인지 가리킨다. 만료된
+     * 토큰에서도 읽히므로(서명은 그대로 검증된다) 만료 후 조용히 재발급할 때 세션을 찾는
+     * 열쇠가 된다. 재발급하더라도 같은 값을 유지해야 세션이 이어진다.
+     */
+    public String createAccessToken(String userId, String userName, String userEmail, Long userRowId,
+                                    String sessionId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtProperties.getAccessTokenExpiration());
 
         return Jwts.builder()
             .subject(userId)
+            .id(sessionId)
             .claim("userName", userName)
             .claim("userEmail", userEmail)
             .claim("userRowId", userRowId)
@@ -41,6 +51,11 @@ public class JwtTokenProvider {
             .expiration(expiry)
             .signWith(getSigningKey())
             .compact();
+    }
+
+    /** 세션 아이디를 새로 뽑는다 — 로그인 1회 = 기기 1대 = 이 값 1개. */
+    public String newSessionId() {
+        return UUID.randomUUID().toString();
     }
 
     /**
@@ -71,13 +86,43 @@ public class JwtTokenProvider {
             .parseSignedClaims(token)
             .getPayload();
 
+        return toPrincipal(claims);
+    }
+
+    /**
+     * 만료된 토큰의 claims — 서명은 검증하되 만료만 눈감는다.
+     *
+     * <p>만료 후 조용히 재발급하려면 그 토큰이 누구 것인지(jti) 알아야 하는데, 정상 파싱은
+     * 만료에서 막힌다. jjwt 는 서명을 먼저 검증하고 나서 만료를 보므로 {@code ExpiredJwtException}
+     * 이 들고 있는 claims 는 이미 서명이 확인된 값이다 — 위조 토큰으로는 여기 못 들어온다.
+     *
+     * <p>만료가 아닌 이유(서명 불일치·형식 오류)로 실패하면 {@code null}. 그런 토큰은 재발급
+     * 대상이 아니라 그냥 거절 대상이다.
+     */
+    public JwtClaimsPrincipal parseExpiredClaims(String token) {
+        try {
+            Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token);
+            return null; // 아직 안 만료됨 — 이 경로로 올 토큰이 아니다
+        } catch (ExpiredJwtException e) {
+            return toPrincipal(e.getClaims());
+        } catch (Exception e) {
+            log.warn("JWT token invalid (not expired): {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private JwtClaimsPrincipal toPrincipal(Claims claims) {
         String typ = claims.get("typ", String.class);
         return new JwtClaimsPrincipal(
             claims.getSubject(),
             claims.get("userName", String.class),
             claims.get("userEmail", String.class),
             claims.get("userRowId", Long.class),
-            typ == null ? "access" : typ // 기존 토큰 호환(typ 미존재 → access)
+            typ == null ? "access" : typ, // 기존 토큰 호환(typ 미존재 → access)
+            claims.getId() // jti — 세션 도입 前 토큰에는 없다(null)
         );
     }
 

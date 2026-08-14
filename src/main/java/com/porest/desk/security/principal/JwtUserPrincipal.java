@@ -14,4 +14,6 @@ public class JwtUserPrincipal implements AuditorPrincipal {
     public String getUserName() { return claims.userName(); }
     public String getUserEmail() { return claims.userEmail(); }
     public Long getUserRowId() { return claims.userRowId(); }
+    /** 이 토큰이 속한 기기 세션(jti). 로그아웃할 때 그 기기 세션만 끊는 데 쓴다. */
+    public String getSessionId() { return claims.sessionId(); }
 }
