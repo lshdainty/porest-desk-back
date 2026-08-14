@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -31,7 +32,18 @@ import java.util.Collections;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtProperties jwtProperties;
-    private final TokenExchangeService tokenExchangeService;
+    /**
+     * 지연 조회 — 빈을 직접 주입하면 애플리케이션이 뜨지 않는다.
+     *
+     * <p>톰캣이 필터 빈을 모으는 시점({@code ServletContextInitializerBeans})은 JPA 초기화보다
+     * 앞선다. 여기서 TokenExchangeService 를 직접 주입하면 그 시점에
+     * {@code UserRepository → QueryDslConfig → EntityManager} 가 통째로 끌려 들어와
+     * "No qualifying bean of type EntityManager" 로 기동이 깨진다.
+     *
+     * <p>ObjectProvider 는 주입 시점에 빈을 만들지 않는다. 실제로 재인증이 필요한 요청이
+     * 왔을 때 꺼내 쓰므로, 그때는 컨텍스트가 이미 다 올라와 있다.
+     */
+    private final ObjectProvider<TokenExchangeService> tokenExchangeServiceProvider;
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final long RENEWAL_THRESHOLD_MS = 600_000L;
@@ -90,7 +102,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String newToken;
         try {
-            newToken = tokenExchangeService.reauthenticate(expired);
+            newToken = tokenExchangeServiceProvider.getObject().reauthenticate(expired);
         } catch (Exception e) {
             // 재발급 실패가 요청 자체를 500 으로 만들면 안 된다 — 로그인하면 풀릴 일이다.
             log.error("무음 재인증 실패. userId={}, err={}", expired.userId(), e.getMessage());
