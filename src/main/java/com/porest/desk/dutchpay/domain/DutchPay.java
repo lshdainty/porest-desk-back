@@ -93,6 +93,21 @@ public class DutchPay extends AuditingFieldsWithIp {
             .toList();
     }
 
+    /** 결제한 사람. 저장된 값이라 참가자 순서가 바뀌어도 흔들리지 않는다. */
+    public DutchPayParticipant getPayer() {
+        return getActiveParticipants().stream()
+            .filter(DutchPayParticipant::isPayer)
+            .findFirst()
+            .orElse(null);
+    }
+
+    /** 결제자에게 갚아야 할 사람들 — 받을 돈·정산 완료 판정의 대상. */
+    public List<DutchPayParticipant> getDebtors() {
+        return getActiveParticipants().stream()
+            .filter(p -> !p.isPayer())
+            .toList();
+    }
+
     public static DutchPay createDutchPay(User user, Expense sourceExpense,
                                            String title, String description,
                                            Long totalAmount, String currency,
@@ -127,14 +142,22 @@ public class DutchPay extends AuditingFieldsWithIp {
         getActiveParticipants().forEach(DutchPayParticipant::deleteParticipant);
     }
 
+    /** 전체 정산 — 갚을 사람들만 완료 처리한다. 결제자는 애초에 갚을 게 없다. */
     public void settleAll() {
         this.isSettled = YNType.Y;
-        getActiveParticipants().forEach(DutchPayParticipant::markPaid);
+        getDebtors().forEach(DutchPayParticipant::markPaid);
     }
 
+    /**
+     * 정산 완료 판정 — <b>결제자를 뺀</b> 참여자가 전부 입금했으면 완료.
+     *
+     * <p>예전엔 결제자까지 is_paid 여야 완료로 봤는데, 결제자는 갚을 게 없어서 그 체크를
+     * 누를 UI 자체가 없었다. 전체 정산으로만 빠져나갈 수 있는 상태였다.
+     *
+     * <p>참여자가 결제자뿐이면(혼자 쓴 기록) 갚을 사람이 없으니 완료로 본다.
+     */
     public void checkSettled() {
-        List<DutchPayParticipant> active = getActiveParticipants();
-        boolean allPaid = !active.isEmpty() && active.stream()
+        boolean allPaid = !getActiveParticipants().isEmpty() && getDebtors().stream()
             .allMatch(p -> p.getIsPaid() == YNType.Y);
         this.isSettled = allPaid ? YNType.Y : YNType.N;
     }

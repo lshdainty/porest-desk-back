@@ -118,7 +118,7 @@ class DutchPayServiceImplTest {
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
                 LocalDate.of(2026, 6, 1),
                 List.of(new DutchPayServiceDto.ParticipantCommand(
-            null,null, "참가자A", -1_000L)));
+            null,null, "참가자A", -1_000L, true)));
 
         assertThatThrownBy(() -> sut.createDutchPay(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -134,9 +134,9 @@ class DutchPayServiceImplTest {
                 LocalDate.of(2026, 6, 1),
                 List.of(
                         new DutchPayServiceDto.ParticipantCommand(
-            null,50L, "철수", 5_000L),
+            null,50L, "철수", 5_000L, true),
                         new DutchPayServiceDto.ParticipantCommand(
-            null,50L, "철수(중복)", 5_000L)));
+            null,50L, "철수(중복)", 5_000L, false)));
 
         assertThatThrownBy(() -> sut.createDutchPay(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -152,9 +152,9 @@ class DutchPayServiceImplTest {
                 LocalDate.of(2026, 6, 1),
                 List.of(
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "영희", 5_000L),
+            null,null, "영희", 5_000L, true),
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "영희", 5_000L)));
+            null,null, "영희", 5_000L, false)));
 
         assertThatThrownBy(() -> sut.createDutchPay(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -177,10 +177,13 @@ class DutchPayServiceImplTest {
         DutchPay dp = DutchPay.createDutchPay(user(USER_ID), null, "회식", null, 20_000L, "KRW",
                 SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1));
         ReflectionTestUtils.setField(dp, "rowId", 5L);
-        DutchPayParticipant p1 = DutchPayParticipant.create(dp, null, "A", 10_000L);
+        DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "결제자", 10_000L, true);
+        ReflectionTestUtils.setField(payer, "rowId", 10L);
+        dp.addParticipant(payer);
+        DutchPayParticipant p1 = DutchPayParticipant.create(dp, null, "A", 10_000L, false);
         ReflectionTestUtils.setField(p1, "rowId", 11L);
         p1.markPaid();
-        DutchPayParticipant p2 = DutchPayParticipant.create(dp, null, "B", 10_000L);
+        DutchPayParticipant p2 = DutchPayParticipant.create(dp, null, "B", 10_000L, false);
         ReflectionTestUtils.setField(p2, "rowId", 12L);
         dp.addParticipant(p1);
         dp.addParticipant(p2);
@@ -198,9 +201,12 @@ class DutchPayServiceImplTest {
         DutchPay dp = DutchPay.createDutchPay(user(USER_ID), null, "회식", null, 20_000L, "KRW",
                 SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1));
         ReflectionTestUtils.setField(dp, "rowId", 5L);
-        DutchPayParticipant p1 = DutchPayParticipant.create(dp, null, "A", 10_000L);
+        DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "결제자", 10_000L, true);
+        ReflectionTestUtils.setField(payer, "rowId", 10L);
+        dp.addParticipant(payer);
+        DutchPayParticipant p1 = DutchPayParticipant.create(dp, null, "A", 10_000L, false);
         ReflectionTestUtils.setField(p1, "rowId", 11L);
-        DutchPayParticipant p2 = DutchPayParticipant.create(dp, null, "B", 10_000L);
+        DutchPayParticipant p2 = DutchPayParticipant.create(dp, null, "B", 10_000L, false);
         ReflectionTestUtils.setField(p2, "rowId", 12L);
         dp.addParticipant(p1);
         dp.addParticipant(p2);
@@ -221,11 +227,11 @@ class DutchPayServiceImplTest {
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.EQUAL, LocalDate.of(2026, 6, 1),
                 List.of(
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "A", 3_000L),
+            null,null, "A", 3_000L, true),
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "B", 3_000L),
+            null,null, "B", 3_000L, false),
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "C", 4_000L)));
+            null,null, "C", 4_000L, false)));
 
         var info = sut.createDutchPay(cmd);
 
@@ -243,9 +249,9 @@ class DutchPayServiceImplTest {
                 USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1),
                 List.of(
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "A", 4_000L),
+            null,null, "A", 4_000L, true),
                         new DutchPayServiceDto.ParticipantCommand(
-            null,null, "B", 4_000L)));
+            null,null, "B", 4_000L, false)));
 
         var info = sut.createDutchPay(cmd); // 예외 없이 성공
 
@@ -273,7 +279,7 @@ class DutchPayServiceImplTest {
             User u = user(USER_ID);
             DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 200_000L, "KRW",
                 SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
-            DutchPayParticipant paid = DutchPayParticipant.create(dp, null, "김철수", 50_000L);
+            DutchPayParticipant paid = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
             ReflectionTestUtils.setField(paid, "rowId", 77L);
             paid.markPaid();
             dp.addParticipant(paid);
@@ -282,7 +288,7 @@ class DutchPayServiceImplTest {
 
             // 금액만 40,000 으로 고쳐 저장 — rowId 를 함께 보낸다.
             sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
-                new DutchPayServiceDto.ParticipantCommand(77L, null, "김철수", 40_000L))));
+                new DutchPayServiceDto.ParticipantCommand(77L, null, "김철수", 40_000L, true))));
 
             assertThat(paid.getIsPaid()).isEqualTo(YNType.Y);
             assertThat(paid.getPaidAt()).isNotNull();
@@ -296,16 +302,112 @@ class DutchPayServiceImplTest {
             User u = user(USER_ID);
             DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
                 SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
-            DutchPayParticipant gone = DutchPayParticipant.create(dp, null, "박영희", 50_000L);
+            DutchPayParticipant gone = DutchPayParticipant.create(dp, null, "박영희", 50_000L, true);
             ReflectionTestUtils.setField(gone, "rowId", 78L);
             dp.addParticipant(gone);
             given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
             given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
             sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
-                new DutchPayServiceDto.ParticipantCommand(null, null, "김철수", 100_000L))));
+                new DutchPayServiceDto.ParticipantCommand(null, null, "김철수", 100_000L, true))));
 
             assertThat(gone.getIsDeleted()).isEqualTo(YNType.Y);
         }
+    }
+
+    // === 결제자 구분 ===
+
+    private DutchPayServiceDto.CreateCommand createWith(
+            List<DutchPayServiceDto.ParticipantCommand> participants) {
+        return new DutchPayServiceDto.CreateCommand(
+                USER_ID, null, "회식", null, 30_000L, "KRW", SplitMethod.EQUAL,
+                LocalDate.of(2026, 6, 1), participants);
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 결제자 표시가 없으면 첫 사람이 결제자(구버전 앱 호환)")
+    void createFallsBackToFirstParticipantAsPayer() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        // isPayer 를 아예 모르는 구버전 클라이언트 — null 로 온다
+        var info = sut.createDutchPay(createWith(List.of(
+                new DutchPayServiceDto.ParticipantCommand(null, null, "A", 10_000L, null),
+                new DutchPayServiceDto.ParticipantCommand(null, null, "B", 10_000L, null))));
+
+        // 여기서 막으면 앱을 안 올린 사용자가 정산을 아예 못 만든다
+        assertThat(info.participants())
+                .filteredOn(DutchPayServiceDto.ParticipantInfo::isPayer)
+                .extracting(DutchPayServiceDto.ParticipantInfo::participantName)
+                .containsExactly("A");
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 결제자가 둘이면 거부(화면마다 다른 사람을 결제자로 그린다)")
+    void createRejectsWhenMultiplePayers() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = createWith(List.of(
+                new DutchPayServiceDto.ParticipantCommand(null, null, "A", 10_000L, true),
+                new DutchPayServiceDto.ParticipantCommand(null, null, "B", 10_000L, true)));
+
+        assertThatThrownBy(() -> sut.createDutchPay(cmd))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 결제자가 첫 번째가 아니어도 그대로 저장된다(순서로 추측하지 않는다)")
+    void payerIsStoredNotInferredFromOrder() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        // 두 번째 사람이 결제했다 — 친구가 계산하고 내가 갚는 흔한 경우
+        var info = sut.createDutchPay(createWith(List.of(
+                new DutchPayServiceDto.ParticipantCommand(null, null, "A", 10_000L, false),
+                new DutchPayServiceDto.ParticipantCommand(null, null, "B", 10_000L, true),
+                new DutchPayServiceDto.ParticipantCommand(null, null, "C", 10_000L, false))));
+
+        assertThat(info.participants())
+                .filteredOn(DutchPayServiceDto.ParticipantInfo::isPayer)
+                .extracting(DutchPayServiceDto.ParticipantInfo::participantName)
+                .containsExactly("B");
+    }
+
+    @Test
+    @DisplayName("정산 완료 — 결제자는 빼고 본다(결제자는 갚을 게 없어 체크할 UI 자체가 없다)")
+    void settlementIgnoresPayer() {
+        DutchPay dp = DutchPay.createDutchPay(user(USER_ID), null, "회식", null, 20_000L, "KRW",
+                SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1));
+        ReflectionTestUtils.setField(dp, "rowId", 5L);
+        DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "결제자", 10_000L, true);
+        ReflectionTestUtils.setField(payer, "rowId", 10L);
+        DutchPayParticipant debtor = DutchPayParticipant.create(dp, null, "갚을사람", 10_000L, false);
+        ReflectionTestUtils.setField(debtor, "rowId", 11L);
+        dp.addParticipant(payer);
+        dp.addParticipant(debtor);
+        given(dutchPayRepository.findById(5L)).willReturn(Optional.of(dp));
+
+        var info = sut.markParticipantPaid(5L, USER_ID, 11L);
+
+        // 결제자는 미납 상태로 남아 있지만 완료다 — 예전엔 결제자까지 체크돼야 완료였다
+        assertThat(info.isSettled()).isTrue();
+        assertThat(payer.getIsPaid()).isEqualTo(YNType.N);
+    }
+
+    @Test
+    @DisplayName("전체 정산 — 결제자는 납부 처리하지 않는다")
+    void settleAllSkipsPayer() {
+        DutchPay dp = DutchPay.createDutchPay(user(USER_ID), null, "회식", null, 20_000L, "KRW",
+                SplitMethod.CUSTOM, LocalDate.of(2026, 6, 1));
+        ReflectionTestUtils.setField(dp, "rowId", 5L);
+        DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "결제자", 10_000L, true);
+        DutchPayParticipant debtor = DutchPayParticipant.create(dp, null, "갚을사람", 10_000L, false);
+        dp.addParticipant(payer);
+        dp.addParticipant(debtor);
+        given(dutchPayRepository.findById(5L)).willReturn(Optional.of(dp));
+        given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        sut.settleAll(5L, USER_ID);
+
+        assertThat(debtor.getIsPaid()).isEqualTo(YNType.Y);
+        assertThat(payer.getIsPaid()).isEqualTo(YNType.N);
     }
 }

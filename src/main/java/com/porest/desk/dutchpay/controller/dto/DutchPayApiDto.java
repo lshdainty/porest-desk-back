@@ -35,7 +35,14 @@ public class DutchPayApiDto {
         Long rowId,
         Long userRowId,
         String participantName,
-        Long amount
+        Long amount,
+        /**
+         * 이 사람이 결제했는가. 한 정산에 한 명이다.
+         *
+         * <p>nullable 이다 — 이 필드를 모르는 구버전 앱이 여전히 정산을 만들 수 있어야 한다.
+         * 아무도 표시돼 있지 않으면 서버가 첫 사람을 결제자로 본다.
+         */
+        Boolean isPayer
     ) {}
 
     public record Response(
@@ -80,6 +87,7 @@ public class DutchPayApiDto {
         Long userRowId,
         String participantName,
         Long amount,
+        boolean isPayer,
         boolean isPaid,
         LocalDateTime paidAt
     ) {
@@ -89,6 +97,7 @@ public class DutchPayApiDto {
                 info.userRowId(),
                 info.participantName(),
                 info.amount(),
+                info.isPayer(),
                 info.isPaid(),
                 info.paidAt()
             );
