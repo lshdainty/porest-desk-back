@@ -308,6 +308,76 @@ class SmsParserTest {
         }
 
         @Test
+        @DisplayName("케이뱅크 앱 알림 — 가맹점이 일시 앞에 오고 뒤에 잔액이 붙는다")
+        void kbankAppFormat() {
+            // 실측(2026-08). 가맹점("씨유")이 일시보다 앞에 있고, 뒤에는 "출금가능액"
+            // 잔액 줄이 붙는다 — 그 잔액을 가맹점으로 잡으면 안 된다.
+            String sms = """
+                케이뱅크
+                승인 4,000원
+                씨유(CU) 샤로수길점
+                카드(6678) | 08/14 19:09
+                출금가능액 19,510원""";
+
+            SmsParsed p = SmsParser.parse(sms, TODAY);
+
+            assertThat(p.amount()).isEqualTo(4_000L);
+            assertThat(p.merchant()).isEqualTo("씨유(CU) 샤로수길점");
+            assertThat(p.issuer()).isEqualTo(SmsCardIssuer.KBANK);
+            assertThat(p.occurredAt()).isEqualTo(LocalDateTime.of(2026, 8, 14, 19, 9));
+        }
+
+        @Test
+        @DisplayName("현대카드 앱 알림 — 승인 문구 줄을 가맹점으로 잡지 않는다")
+        void hyundaiAppFormat() {
+            // 실측(2026-08). 금액·일시가 승인 문구 한 줄에 섞여 있고, 가맹점은 그 다음 줄,
+            // 마지막에 "누적" 잔액이 온다. 승인 문구 줄이 통째로 가맹점으로 들어가면 안 된다.
+            String sms = """
+                현대카드
+                이상혁 님, 네이버 현대카드 승인 2,500원 일시불, 8/17 17:05
+                제로스토어샤로수길점
+                누적333,731원""";
+
+            SmsParsed p = SmsParser.parse(sms, TODAY);
+
+            assertThat(p.amount()).isEqualTo(2_500L);
+            assertThat(p.merchant()).isEqualTo("제로스토어샤로수길점");
+            assertThat(p.issuer()).isEqualTo(SmsCardIssuer.HYUNDAI);
+        }
+
+        @Test
+        @DisplayName("승인 문구가 두 번 겹쳐 와도 가맹점을 옳게 집는다")
+        void duplicatedApprovalLine() {
+            // 안드로이드 알림의 text·bigText 가 겹쳐 승인 문구가 두 줄로 들어오는 경우.
+            String sms = """
+                현대카드
+                이상혁 님, 네이버 현대카드 승인 2,500원 일시불, 8/17 17:05
+                이상혁 님, 네이버 현대카드 승인 2,500원 일시불, 8/17 17:05
+                제로스토어샤로수길점
+                누적333,731원""";
+
+            SmsParsed p = SmsParser.parse(sms, TODAY);
+
+            assertThat(p.amount()).isEqualTo(2_500L);
+            assertThat(p.merchant()).isEqualTo("제로스토어샤로수길점");
+        }
+
+        @Test
+        @DisplayName("토스 앱 알림 — 파이프 뒤가 가맹점(카드 이름은 뗀다)")
+        void tossAppFormat() {
+            String sms = """
+                토스
+                25,760원 결제
+                SHJ 카드 | 요기요_위대한상상""";
+
+            SmsParsed p = SmsParser.parse(sms, TODAY);
+
+            assertThat(p.amount()).isEqualTo(25_760L);
+            assertThat(p.merchant()).isEqualTo("요기요_위대한상상");
+            assertThat(p.issuer()).isEqualTo(SmsCardIssuer.TOSS);
+        }
+
+        @Test
         @DisplayName("모르는 카드사 — 파싱은 되지만 신뢰도가 낮다")
         void unknownIssuer() {
             String sms = """
