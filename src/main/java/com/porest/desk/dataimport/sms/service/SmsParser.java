@@ -71,7 +71,12 @@ public final class SmsParser {
 
     /** 가맹점 자리에서 잘라내야 할 꼬리말. 이 뒤는 가맹점명이 아니다. */
     private static final List<String> MERCHANT_TAIL_MARKERS =
-        List.of("누적", "잔액", "한도", "합계", "사용가능", "가용", "잔여", "총", "http", "www.");
+        List.of("누적", "잔액", "한도", "합계", "사용가능", "가용", "잔여", "총",
+            "출금가능", "출금가능액", "http", "www.");
+
+    /** 줄 안에 시각·카드번호가 있으면 가맹점 줄이 아니다("카드(6678) | 08/14 19:09"). */
+    private static final Pattern TIME_IN_LINE = Pattern.compile("\\d{1,2}[:/]\\d{2}");
+    private static final Pattern CARD_NO_IN_LINE = Pattern.compile("카드\\s*\\(?\\d{4}");
 
     /** 가맹점으로 보면 안 되는 줄 — 카드사·사람 이름·상태어만 있는 줄. */
     private static final List<String> MERCHANT_NOISE_TOKENS =
@@ -299,8 +304,24 @@ public final class SmsParser {
         }
         if (line.isEmpty()) return null;
 
+        // 파이프 뒤가 가맹점인 포맷("SHJ 카드 | 요기요_위대한상상") — 카드 부분을 떼어 낸다.
+        // 케이뱅크 "카드(6678) | 08/14 19:09" 처럼 뒤가 시각이면 아래 시각 체크에서 걸린다.
+        int pipe = line.lastIndexOf('|');
+        if (pipe >= 0 && pipe < line.length() - 1) {
+            String tail = line.substring(pipe + 1).trim();
+            if (!tail.isEmpty()) line = tail;
+        }
+
         // 숫자·기호만 남은 줄은 가맹점이 아니다(금액·시각 잔여물).
         if (!line.matches(".*[가-힣A-Za-z].*")) return null;
+
+        // 금액이 든 줄은 가맹점이 아니다 — 승인 문구("…승인 2,500원 일시불…")나
+        // 잔액 줄("출금가능액 19,510원")이 통째로 가맹점으로 딸려 들어가는 걸 막는다.
+        // 가맹점명과 금액은 카드사 문자에서 늘 다른 줄에 온다.
+        if (AMOUNT.matcher(line).find()) return null;
+        // 시각·카드번호 줄("카드(6678) | 08/14 19:09")도 가맹점이 아니다.
+        if (TIME_IN_LINE.matcher(line).find()) return null;
+        if (CARD_NO_IN_LINE.matcher(line).find()) return null;
 
         String lower = line.toLowerCase(Locale.ROOT);
         boolean onlyNoise = MERCHANT_NOISE_TOKENS.stream().anyMatch(lower::equals);
