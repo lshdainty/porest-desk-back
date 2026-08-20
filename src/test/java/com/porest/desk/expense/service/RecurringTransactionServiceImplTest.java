@@ -67,13 +67,13 @@ class RecurringTransactionServiceImplTest {
     private RecurringTransactionServiceDto.CreateCommand createCmd(long categoryRowId) {
         return new RecurringTransactionServiceDto.CreateCommand(
                 USER_ID, categoryRowId, null, null, ExpenseType.EXPENSE, 10_000L,
-                null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private RecurringTransactionServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new RecurringTransactionServiceDto.UpdateCommand(
                 categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test
@@ -140,7 +140,7 @@ class RecurringTransactionServiceImplTest {
 
         var cmd = new RecurringTransactionServiceDto.UpdateCommand(
                 null, 20L, ExpenseType.EXPENSE, 10_000L,
-                null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> sut.updateRecurring(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -160,7 +160,7 @@ class RecurringTransactionServiceImplTest {
         private RecurringTransactionServiceDto.CreateCommand cmdAmount(Long amount) {
             return new RecurringTransactionServiceDto.CreateCommand(
                 USER_ID, 1L, null, null, ExpenseType.EXPENSE, amount,
-                null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
         }
 
         @Test
@@ -182,7 +182,7 @@ class RecurringTransactionServiceImplTest {
         void rejectsNegativeOnUpdate() {
             var cmd = new RecurringTransactionServiceDto.UpdateCommand(
                 1L, null, ExpenseType.EXPENSE, -5_000L,
-                null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
             assertThatThrownBy(() -> sut.updateRecurring(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
         }

@@ -6,6 +6,7 @@ import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.expense.type.RecurringFrequency;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.LocalDateTime;
 
 public class RecurringTransactionServiceDto {
@@ -24,6 +25,7 @@ public class RecurringTransactionServiceDto {
         Integer intervalValue,
         Integer dayOfWeek,
         Integer dayOfMonth,
+        LocalTime executionTime,
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -43,6 +45,7 @@ public class RecurringTransactionServiceDto {
         Integer intervalValue,
         Integer dayOfWeek,
         Integer dayOfMonth,
+        LocalTime executionTime,
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -67,6 +70,7 @@ public class RecurringTransactionServiceDto {
         Integer intervalValue,
         Integer dayOfWeek,
         Integer dayOfMonth,
+        LocalTime executionTime,
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -97,6 +101,7 @@ public class RecurringTransactionServiceDto {
                 recurring.getIntervalValue(),
                 recurring.getDayOfWeek(),
                 recurring.getDayOfMonth(),
+                recurring.getExecutionTime(),
                 recurring.getStartDate(),
                 recurring.getEndDate(),
                 recurring.getMaxOccurrences(),
