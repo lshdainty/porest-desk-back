@@ -61,7 +61,7 @@ class RecurringTransactionNextDateTest {
             RecurringFrequency freq, Integer dayOfWeek, Integer dayOfMonth, LocalDate startDate) {
         return new RecurringTransactionServiceDto.CreateCommand(
                 USER_ID, null, null, null, ExpenseType.EXPENSE, 10_000L,
-                null, null, null, freq, 1, dayOfWeek, dayOfMonth, startDate, null, null, null, null);
+                null, null, null, freq, 1, dayOfWeek, dayOfMonth, null, startDate, null, null, null, null);
     }
 
     private void givenUser() {
@@ -109,7 +109,7 @@ class RecurringTransactionNextDateTest {
         ReflectionTestUtils.setField(u, "rowId", USER_ID);
         RecurringTransaction r = RecurringTransaction.createRecurring(
                 u, null, null, null, ExpenseType.EXPENSE, 10_000L, null, null, null,
-                freq, interval, null, dayOfMonth, next, null, maxOccurrences, next, true, true);
+                freq, interval, null, dayOfMonth, null, next, null, maxOccurrences, next, true, true);
         ReflectionTestUtils.setField(r, "rowId", 100L);
         return r;
     }

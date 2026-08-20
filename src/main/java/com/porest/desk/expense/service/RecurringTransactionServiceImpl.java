@@ -93,6 +93,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
+            command.executionTime(),
             command.startDate(), command.endDate(), command.maxOccurrences(), nextExecutionDate,
             command.autoLog(), command.notifyDayBefore()
         );
@@ -170,6 +171,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth(),
+            command.executionTime(),
             command.startDate(), command.endDate(), command.maxOccurrences(), nextExecutionDate,
             command.autoLog(), command.notifyDayBefore()
         );
@@ -210,14 +212,19 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     public void executeDueTransactions() {
         // 배치 — 서비스 운영 기준 날짜(JVM 기본 UTC 를 쓰면 하루 어긋난다)
         LocalDate today = serviceClock.today();
-        // 반복 거래 실행 시각은 오전 9시로 고정 (히트맵 시간 집계를 위한 기본값)
-        LocalDateTime executionDateTime = today.atTime(9, 0);
         log.debug("반복 거래 실행 시작: date={}", today);
 
         List<RecurringTransaction> dueTransactions = recurringTransactionRepository.findDueTransactions(today);
 
         for (RecurringTransaction recurring : dueTransactions) {
             try {
+                // 실행 시각은 반복 거래마다 사용자가 정한다. 예전에는 09:00 고정이었고,
+                // 그 값이 컬럼 기본값이라 안 고른 건은 그대로 09:00 이다.
+                LocalDateTime executionDateTime = today.atTime(
+                    recurring.getExecutionTime() != null
+                        ? recurring.getExecutionTime()
+                        : RecurringTransaction.DEFAULT_EXECUTION_TIME);
+
                 Expense expense = Expense.createExpense(
                     recurring.getUser(),
                     recurring.getCategory(),

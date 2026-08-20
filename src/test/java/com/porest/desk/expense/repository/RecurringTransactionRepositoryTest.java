@@ -53,6 +53,7 @@ class RecurringTransactionRepositoryTest {
                 user, cat, null, null,
                 ExpenseType.EXPENSE, 10_000L, desc, "가게", "TRANSFER",
                 RecurringFrequency.MONTHLY, 1, null, 1,
+                null,
                 LocalDate.of(2026, 1, 1), endDate, maxOccurrences,
                 nextExec, true, true);
     }

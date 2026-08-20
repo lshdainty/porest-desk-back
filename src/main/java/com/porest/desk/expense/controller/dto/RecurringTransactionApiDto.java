@@ -6,6 +6,7 @@ import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.expense.type.RecurringFrequency;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -24,6 +25,7 @@ public class RecurringTransactionApiDto {
         Integer intervalValue,
         Integer dayOfWeek,
         Integer dayOfMonth,
+        LocalTime executionTime,
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -43,6 +45,7 @@ public class RecurringTransactionApiDto {
         Integer intervalValue,
         Integer dayOfWeek,
         Integer dayOfMonth,
+        LocalTime executionTime,
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -67,6 +70,7 @@ public class RecurringTransactionApiDto {
         Integer intervalValue,
         Integer dayOfWeek,
         Integer dayOfMonth,
+        LocalTime executionTime,
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -89,6 +93,7 @@ public class RecurringTransactionApiDto {
                 info.merchant(), info.paymentMethod(),
                 info.frequency(), info.intervalValue(),
                 info.dayOfWeek(), info.dayOfMonth(),
+                info.executionTime(),
                 info.startDate(), info.endDate(),
                 info.maxOccurrences(), info.executedCount(),
                 info.nextExecutionDate(), info.lastExecutedAt(),

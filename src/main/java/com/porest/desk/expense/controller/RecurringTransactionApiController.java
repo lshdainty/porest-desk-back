@@ -38,6 +38,7 @@ public class RecurringTransactionApiController {
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
                 request.dayOfWeek(), request.dayOfMonth(),
+                request.executionTime(),
                 request.startDate(), request.endDate(),
                 request.maxOccurrences(),
                 request.autoLog(), request.notifyDayBefore()
@@ -71,6 +72,7 @@ public class RecurringTransactionApiController {
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
                 request.dayOfWeek(), request.dayOfMonth(),
+                request.executionTime(),
                 request.startDate(), request.endDate(),
                 request.maxOccurrences(),
                 request.autoLog(), request.notifyDayBefore()

@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,6 +64,7 @@ class RecurringTransactionApiControllerTest {
                 40L, 1L, 5L, "구독", 2L, "카드", null,
                 ExpenseType.EXPENSE, 9900L, "넷플릭스", "넷플릭스", "CARD",
                 RecurringFrequency.MONTHLY, 1, null, 15,
+                LocalTime.of(9, 0),
                 LocalDate.of(2026, 7, 15), null, null, 3,
                 LocalDate.of(2026, 8, 15), LocalDateTime.of(2026, 7, 15, 0, 0),
                 YNType.Y, true, false,

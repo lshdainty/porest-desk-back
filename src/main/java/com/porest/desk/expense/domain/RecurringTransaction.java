@@ -24,6 +24,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @Entity
 @Table(name = "recurring_transaction")
@@ -92,6 +93,15 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @Column(name = "day_of_month")
     private Integer dayOfMonth;
 
+    /**
+     * [userClock] 실행분을 만들 시각. 사용자가 고른 벽시계라 타임존 변환 금지.
+     *
+     * 예전에는 스케줄러가 09:00 을 하드코딩했다. 기존 행은 DDL 기본값이 '09:00:00' 이라
+     * 동작이 바뀌지 않는다.
+     */
+    @Column(name = "execution_time", nullable = false)
+    private LocalTime executionTime;
+
     /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
@@ -122,12 +132,16 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
+    /** 실행 시각을 주지 않았을 때의 기본값 — 컬럼 DDL 기본값과 같아야 한다. */
+    public static final LocalTime DEFAULT_EXECUTION_TIME = LocalTime.of(9, 0);
+
     public static RecurringTransaction createRecurring(User user, ExpenseCategory category, Asset asset,
                                                         Expense sourceExpense,
                                                         ExpenseType expenseType, Long amount, String description,
                                                         String merchant, String paymentMethod,
                                                         RecurringFrequency frequency, Integer intervalValue,
                                                         Integer dayOfWeek, Integer dayOfMonth,
+                                                        LocalTime executionTime,
                                                         LocalDate startDate, LocalDate endDate,
                                                         Integer maxOccurrences,
                                                         LocalDate nextExecutionDate,
@@ -146,6 +160,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         recurring.intervalValue = intervalValue != null ? intervalValue : 1;
         recurring.dayOfWeek = dayOfWeek;
         recurring.dayOfMonth = dayOfMonth;
+        // 안 주면 예전 고정값(09:00)을 그대로 쓴다 — 기존 클라이언트가 깨지지 않는다.
+        recurring.executionTime = executionTime != null ? executionTime : DEFAULT_EXECUTION_TIME;
         recurring.startDate = startDate;
         recurring.endDate = endDate;
         recurring.maxOccurrences = maxOccurrences;
@@ -167,6 +183,7 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
                                  Long amount, String description, String merchant, String paymentMethod,
                                  RecurringFrequency frequency, Integer intervalValue,
                                  Integer dayOfWeek, Integer dayOfMonth,
+                                 LocalTime executionTime,
                                  LocalDate startDate, LocalDate endDate, Integer maxOccurrences,
                                  LocalDate nextExecutionDate,
                                  Boolean autoLog, Boolean notifyDayBefore) {
@@ -181,6 +198,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         this.intervalValue = intervalValue;
         this.dayOfWeek = dayOfWeek;
         this.dayOfMonth = dayOfMonth;
+        // null 이면 기존 값을 유지한다 — 시간을 안 보내는 클라이언트가 09:00 으로 되돌리지 않게.
+        if (executionTime != null) this.executionTime = executionTime;
         this.startDate = startDate;
         this.endDate = endDate;
         this.maxOccurrences = maxOccurrences;
