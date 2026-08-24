@@ -190,6 +190,23 @@ public class SsoSessionService {
     }
 
     /**
+     * "모든 기기에서 로그아웃" — 이 계정의 살아 있는 세션을 전부 끊는다. 지금 요청을 보낸
+     * 기기도 예외 없이 끊는다.
+     *
+     * <p>access token 자체는 무상태라 즉시 죽지는 않지만, 만료 후 무음 재인증이 막혀 결국
+     * 재로그인하게 된다 — "계정이 이상하다" 싶을 때 쓰는 비상 버튼이라 현재 기기를 예외로
+     * 두지 않는 편이 사용자 기대에 맞는다.
+     *
+     * <p>지금은 desk 세션만 끊는다. SSO·hr 은 아직 안 끊긴다 — SSO 가 로그아웃 이벤트를
+     * 내려 전 서비스가 함께 끊기는 건 다음 단계에서 잇는다.
+     */
+    @Transactional
+    public void revokeAll(Long userRowId) {
+        sessionRepository.findAllByUserRowIdAndIsDeleted(userRowId, YNType.N)
+                .forEach(UserSsoSession::revoke);
+    }
+
+    /**
      * 새 refresh 를 받을 때마다 만료를 미룬다(sliding).
      *
      * <p>SSO 가 rotation 으로 매번 수명을 새로 주므로, 계속 쓰는 사용자는 로그아웃되지 않는다.

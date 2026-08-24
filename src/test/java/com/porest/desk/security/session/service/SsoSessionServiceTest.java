@@ -327,4 +327,29 @@ class SsoSessionServiceTest {
 
         sut.revoke(SESSION_ID); // 예외 없음
     }
+
+    // ── 모든 기기 로그아웃 ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("모든 기기 로그아웃 — 지금 쓰는 기기까지 전부 끊는다")
+    void revokeAll_revokesEverySessionIncludingCurrent() {
+        UserSsoSession current = UserSsoSession.issue(7L, "sid-a", "enc", nowUtc().plusDays(3), "iPhone · Safari");
+        UserSsoSession other = UserSsoSession.issue(7L, "sid-b", "enc", nowUtc().plusDays(3), "Windows · Chrome");
+        given(sessionRepository.findAllByUserRowIdAndIsDeleted(7L, YNType.N))
+                .willReturn(List.of(current, other));
+
+        sut.revokeAll(7L);
+
+        assertThat(current.isActive()).isFalse();
+        assertThat(other.isActive()).isFalse();
+    }
+
+    @Test
+    @DisplayName("세션이 없어도 예외 없이 넘어간다")
+    void revokeAll_noSessions_doesNotThrow() {
+        given(sessionRepository.findAllByUserRowIdAndIsDeleted(7L, YNType.N))
+                .willReturn(List.of());
+
+        sut.revokeAll(7L); // 예외 없음
+    }
 }
