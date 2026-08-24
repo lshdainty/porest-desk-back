@@ -2,9 +2,13 @@ package com.porest.desk.namu.client;
 
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
+import com.porest.desk.namu.client.dto.NamuListEnvelope;
+import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
+import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
 import com.porest.desk.securities.client.BrokerTokenManager;
 import com.porest.desk.securities.client.BrokerTokenManagers;
+import com.porest.desk.securities.config.NamuApiClientConfig;
 import com.porest.desk.securities.config.NamuProperties;
 import com.porest.desk.securities.type.SecuritiesBroker;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,10 +20,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
@@ -27,107 +31,218 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
 
 /**
- * 나무증권 저수준 호출 — <b>HTTP 200 으로도 실패한다</b>는 점을 지킨다.
+ * 나무 저수준 호출 — <b>실제 JSON 을 태워서</b> 본다.
  *
- * <p>토스는 상태코드가 곧 성공 여부지만 나무는 {@code rsp_cd} 를 봐야 한다.
- * 이 검사가 빠지면 실패 응답이 "조회 결과 없음" 으로 둔갑해 화면이 조용히 빈다.
+ * <p>이전 테스트는 RestTemplate 을 목으로 두고 record 를 자바에서 직접 만들어 넣었다.
+ * 그래서 Jackson 이 개입할 자리가 없었고, {@code Output_0} 을 배열로 잘못 선언해 시세·잔고가
+ * 전부 역직렬화 실패하던 것을 <b>한 건도 못 잡았다.</b> 그 사고를 다시 겪지 않으려고
+ * MockRestServiceServer 로 진짜 응답 본문을 흘려 보낸다.
+ *
+ * <p>NH 스펙은 {@code Output_0} 이 API 마다 객체이거나 배열이다. 우리가 쓰는 응답 모양
+ * 세 가지(객체 / 배열 / 요약+목록)를 모두 고정한다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class NamuApiClientTest {
 
-    private static final ParameterizedTypeReference<NamuEnvelope<NamuMarketDto.KrPrice>> TYPE =
+    private static final String BASE = "https://api.nhplug.com:8443";
+
+    private static final ParameterizedTypeReference<NamuEnvelope<NamuMarketDto.KrPrice>> KR_PRICE =
+        new ParameterizedTypeReference<>() {
+        };
+    private static final ParameterizedTypeReference<NamuListEnvelope<NamuAccountDto.Account>> ACCOUNTS =
+        new ParameterizedTypeReference<>() {
+        };
+    private static final ParameterizedTypeReference<
+        NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding>> GB_BALANCE =
         new ParameterizedTypeReference<>() {
         };
 
-    @Mock private RestTemplate namuRestTemplate;
     @Mock private BrokerTokenManagers tokenManagers;
     @Mock private BrokerTokenManager tokenManager;
 
+    private RestTemplate restTemplate;
+    private MockRestServiceServer server;
     private NamuApiClient sut;
 
     @BeforeEach
     void setUp() {
         given(tokenManagers.of(SecuritiesBroker.NAMU)).willReturn(tokenManager);
-        given(tokenManager.authHeaders(1L)).willReturn(new HttpHeaders());
+        HttpHeaders auth = new HttpHeaders();
+        auth.setBearerAuth("tok");
+        auth.set("x-client-id", "KEY");
+        auth.set("x-client-secret", "SECRET");
+        given(tokenManager.authHeaders(1L)).willReturn(auth);
 
         NamuProperties properties = new NamuProperties();
-        properties.setBaseUrl("https://api.nhplug.com:8443");
-        sut = new NamuApiClient(namuRestTemplate, tokenManagers, properties);
+        properties.setBaseUrl(BASE);
+        // 운영과 같은 RestTemplate 을 쓴다 — 컨버터·UriTemplateHandler 설정 차이로
+        // 테스트만 통과하는 일이 없게.
+        restTemplate = new NamuApiClientConfig().namuRestTemplate(properties);
+        server = MockRestServiceServer.createServer(restTemplate);
+        sut = new NamuApiClient(restTemplate, tokenManagers, properties);
     }
 
-    private void respond(NamuEnvelope<NamuMarketDto.KrPrice> body) {
-        given(namuRestTemplate.exchange(any(String.class), eq(HttpMethod.POST), any(HttpEntity.class), eq(TYPE)))
-            .willReturn(ResponseEntity.ok(body));
+    private void expect(String path, String responseJson) {
+        server.expect(requestTo(BASE + path))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andRespond(withSuccess(responseJson, MediaType.APPLICATION_JSON));
     }
 
     @Test
-    @DisplayName("rsp_cd 00000 이면 Output_0 을 꺼내 준다")
-    void unwrapsOutputOnSuccess() {
-        respond(new NamuEnvelope<>("00000", "조회가 완료되었습니다.",
-            List.of(new NamuMarketDto.KrPrice("70000", "2", "500", "0.72"))));
+    @DisplayName("Output_0 이 객체인 시세 응답을 그대로 읽는다 — 배열로 선언했던 탓에 전부 실패하던 자리")
+    void objectOutputIsDeserialized() {
+        expect("/krstock/quote/v1/currentPrice", """
+            {"rsp_cd":"00000","rsp_msg":"조회가 완료되었습니다.",
+             "Output_0":{"iem_cd":"005930","stck_prpr":"70000",
+                         "prdy_vrss_sign":"2","prdy_vrss":"500","prdy_ctrt":"0.72"}}
+            """);
 
-        List<NamuMarketDto.KrPrice> out = sut.post(1L, "/krstock/quote/v1/currentPrice",
-            Map.of("iem_cd", "005930"), TYPE);
+        NamuMarketDto.KrPrice p = sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("market_cd", "KRX", "iem_cd", "005930"), KR_PRICE);
 
-        assertThat(out).singleElement()
-            .extracting(NamuMarketDto.KrPrice::price).isEqualTo("70000");
+        assertThat(p).isNotNull();
+        assertThat(p.price()).isEqualTo("70000");
+        assertThat(p.changeRate()).isEqualTo("0.72");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("Output_0 이 배열인 계좌목록도 읽는다 — 우리가 쓰는 것 중 유일한 배열")
+    void arrayOutputIsDeserialized() {
+        expect("/n2/acctinfo", """
+            {"rsp_cd":"00000","rsp_msg":"ok","cust_no":"1234",
+             "Output_0":[{"acct_no":"12345678-01","acct_type":"01"},
+                         {"acct_no":"12345678-02","acct_type":"22"}]}
+            """);
+
+        List<NamuAccountDto.Account> accounts = sut.postList(1L, "/n2/acctinfo", Map.of(), ACCOUNTS);
+
+        assertThat(accounts).hasSize(2);
+        assertThat(accounts.get(0).accountNo()).isEqualTo("12345678-01");
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("요약(객체) + 목록(배열)이 함께 오는 잔고 응답을 읽는다. 환율은 종목 행에 있다")
+    void pagedOutputIsDeserialized() {
+        expect("/gbstock/inquiry/v1/balance", """
+            {"rsp_cd":"00000","rsp_msg":"ok",
+             "Output_0":{"tot_aet_amt":"2000000","fc_eal_amt":"1500.00",
+                         "fc_eal_pls_amt":"300.00","pft_rt":"25.00"},
+             "Output_1":[{"iem_cd":"AAPL","iem_nm":"애플","oss_iem_eng_nm":"APPLE INC",
+                          "cns_bse_bnc_qty":"5","fc_avg_phs_pr":"180.00",
+                          "fc_sec_end_pr":"185.70","fc_eal_amt":"928.50",
+                          "fc_eal_pls_amt":"28.50","krw_eal_amt":"1284000",
+                          "cur_cd":"USD","tdt_sby_bse_xcg_rt":"1383.50"}]}
+            """);
+
+        NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding> res =
+            sut.exchange(1L, "/gbstock/inquiry/v1/balance", Map.of("act_no", "12345678-01"), GB_BALANCE);
+
+        assertThat(res.summary()).isNotNull();
+        assertThat(res.summary().evalAmountSum()).isEqualTo("1500.00");
+        assertThat(res.items()).singleElement().satisfies(h -> {
+            assertThat(h.symbol()).isEqualTo("AAPL");
+            // 환율·통화는 요약이 아니라 종목 행에 있다 — 종목마다 통화가 달라서다.
+            assertThat(h.currency()).isEqualTo("USD");
+            assertThat(h.baseExchangeRate()).isEqualTo("1383.50");
+        });
+        server.verify();
     }
 
     @Test
     @DisplayName("200 이어도 rsp_cd 가 00000 이 아니면 실패다 — 이 검사가 빠지면 조용히 빈 화면이 된다")
     void failsWhenResponseCodeIsNotSuccess() {
-        respond(new NamuEnvelope<>("40010", "권한이 없습니다.", List.of()));
+        expect("/krstock/quote/v1/currentPrice",
+            "{\"rsp_cd\":\"40010\",\"rsp_msg\":\"권한이 없습니다.\",\"Output_0\":null}");
 
-        assertThatThrownBy(() -> sut.post(1L, "/krstock/quote/v1/currentPrice",
-                Map.of("iem_cd", "005930"), TYPE))
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", "005930"), KR_PRICE))
             .isInstanceOf(ExternalServiceException.class);
     }
 
     @Test
-    @DisplayName("정상인데 결과가 0건인 것은 실패가 아니다 — 조회 결과 없음일 뿐")
-    void emptyOutputOnSuccessIsNotFailure() {
-        respond(new NamuEnvelope<>("00000", "조회가 완료되었습니다.", List.of()));
+    @DisplayName("정상인데 Output_0 이 null 인 것은 실패가 아니다 — 조회 결과 없음일 뿐")
+    void nullOutputOnSuccessIsNotFailure() {
+        expect("/krstock/quote/v1/currentPrice",
+            "{\"rsp_cd\":\"00000\",\"rsp_msg\":\"ok\",\"Output_0\":null}");
 
-        assertThat(sut.post(1L, "/krstock/quote/v1/currentPrice", Map.of("iem_cd", "000000"), TYPE))
-            .isEmpty();
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "000000"), KR_PRICE)).isNull();
     }
 
     @Test
-    @DisplayName("Output_0 이 아예 없어도 NPE 대신 빈 목록")
-    void nullOutputIsEmpty() {
-        respond(new NamuEnvelope<>("00000", "ok", null));
+    @DisplayName("모르는 필드가 늘어도 깨지지 않는다 — 나무가 응답 필드를 추가할 수 있다")
+    void unknownFieldsAreTolerated() {
+        expect("/krstock/quote/v1/currentPrice", """
+            {"rsp_cd":"00000","rsp_msg":"ok","some_new_field":"x",
+             "Output_0":{"iem_cd":"005930","stck_prpr":"70000","brand_new":"y"}}
+            """);
 
-        assertThat(sut.post(1L, "/krstock/quote/v1/currentPrice", Map.of("iem_cd", "005930"), TYPE))
-            .isEmpty();
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "005930"), KR_PRICE).price()).isEqualTo("70000");
+    }
+
+    @Test
+    @DisplayName("요청은 Input_0 봉투에 담겨 POST 로 나가고 인증 헤더가 붙는다")
+    void wrapsRequestInInputEnvelope() {
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(jsonPath("$.Input_0.iem_cd").value("005930"))
+            .andExpect(jsonPath("$.iem_cd").doesNotExist())
+            .andRespond(withSuccess("{\"rsp_cd\":\"00000\",\"rsp_msg\":\"ok\",\"Output_0\":null}",
+                MediaType.APPLICATION_JSON));
+
+        sut.postObject(1L, "/krstock/quote/v1/currentPrice", Map.of("iem_cd", "005930"), KR_PRICE);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("401 이면 토큰을 비우고 1회만 재시도한다 — 무한루프가 되면 안 된다")
+    void retriesOnceOnUnauthorized() {
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andRespond(withUnauthorizedRequest());
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andRespond(withSuccess("{\"rsp_cd\":\"00000\",\"rsp_msg\":\"ok\","
+                + "\"Output_0\":{\"stck_prpr\":\"70000\"}}", MediaType.APPLICATION_JSON));
+
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "005930"), KR_PRICE).price()).isEqualTo("70000");
+
+        org.mockito.Mockito.verify(tokenManager).invalidate(1L);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("서버 오류는 증권사 API 오류로 바뀐다 — 업스트림 본문이 그대로 새지 않는다")
+    void serverErrorIsTranslated() {
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andRespond(withServerError().body("{\"detail\":\"internal\"}"));
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", "005930"), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class)
+            .hasMessageNotContaining("internal");
     }
 
     @Test
     @DisplayName("base URL 이 비면 호출 전에 거절한다")
     void rejectsWhenNotConfigured() {
-        NamuApiClient unconfigured = new NamuApiClient(namuRestTemplate, tokenManagers, new NamuProperties());
+        NamuApiClient unconfigured = new NamuApiClient(restTemplate, tokenManagers, new NamuProperties());
 
-        assertThatThrownBy(() -> unconfigured.post(1L, "/x", Map.of(), TYPE))
+        assertThatThrownBy(() -> unconfigured.postObject(1L, "/x", Map.of(), KR_PRICE))
             .isInstanceOf(ExternalServiceException.class);
-    }
-
-    @Test
-    @DisplayName("요청은 Input_0 봉투에 담겨 POST 로 나간다")
-    void wrapsRequestInInputEnvelope() {
-        respond(new NamuEnvelope<>("00000", "ok", List.of()));
-
-        sut.post(1L, "/krstock/quote/v1/currentPrice", Map.of("iem_cd", "005930"), TYPE);
-
-        org.mockito.ArgumentCaptor<HttpEntity> captor = org.mockito.ArgumentCaptor.forClass(HttpEntity.class);
-        org.mockito.Mockito.verify(namuRestTemplate)
-            .exchange(any(String.class), eq(HttpMethod.POST), captor.capture(), eq(TYPE));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> body = (Map<String, Object>) captor.getValue().getBody();
-        assertThat(body).containsOnlyKeys("Input_0");
     }
 }

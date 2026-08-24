@@ -62,29 +62,34 @@ public final class NamuAccountDto {
     }
 
     /**
-     * 해외 잔고 요약 (Output_0).
+     * 해외 잔고 요약 (Output_0, 객체).
      *
-     * <p>{@code tdt_sby_bse_xcg_rt}(당일매매기준환율)가 여기 있다 — 나무는 환율 전용 조회가
-     * 없고 지수·환율 통합 API 의 코드값이 문서에 없어서, <b>환율을 얻을 수 있는 유일한
-     * 문서화된 경로</b>다.
+     * <p><b>외화 기준 필드를 쓴다.</b> 종목별({@link GbHolding})을 {@code fc_*}(외화)로 읽으므로
+     * 요약도 같은 기준이어야 한다. 원화 합({@code eal_amt_sum})과 섞으면 화면이 원화 금액에
+     * 통화 기호만 USD 로 붙여 보여준다.
      *
-     * @param totalAssetAmount 총자산(원화) {@code tot_aet_amt}
-     * @param evalAmountSum    평가금액 합 {@code eal_amt_sum}
-     * @param profitLossSum    평가손익 합 {@code eal_pls_sum_amt}
-     * @param krwProfitRate    원화 수익률 {@code krw_pft_rt}
-     * @param baseExchangeRate 당일매매기준환율 {@code tdt_sby_bse_xcg_rt}
+     * @param totalAssetAmount 총자산(원화) {@code tot_aet_amt}. 참고용
+     * @param evalAmountSum    평가금액 합(외화) {@code fc_eal_amt}
+     * @param profitLossSum    평가손익 합(외화) {@code fc_eal_pls_amt}
+     * @param profitRate       수익률 {@code pft_rt}
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GbBalanceSummary(
         @JsonProperty("tot_aet_amt") String totalAssetAmount,
-        @JsonProperty("eal_amt_sum") String evalAmountSum,
-        @JsonProperty("eal_pls_sum_amt") String profitLossSum,
-        @JsonProperty("krw_pft_rt") String krwProfitRate,
-        @JsonProperty("tdt_sby_bse_xcg_rt") String baseExchangeRate
+        @JsonProperty("fc_eal_amt") String evalAmountSum,
+        @JsonProperty("fc_eal_pls_amt") String profitLossSum,
+        @JsonProperty("pft_rt") String profitRate
     ) {
     }
 
-    /** 해외 종목별 보유 (Output_1). 금액은 외화 기준(fc_*)을 쓴다 — 통화는 요청의 cur_cd 다. */
+    /**
+     * 해외 종목별 보유 (Output_1, 배열). 금액은 외화 기준({@code fc_*})을 쓴다.
+     *
+     * <p><b>환율이 여기 있다.</b> {@code tdt_sby_bse_xcg_rt}(당일매매기준환율)와
+     * {@code cur_cd}(통화)는 스펙상 {@code Output_1} 에만 있다 — 종목마다 통화가 달라
+     * 계좌 단위 요약이 환율 하나를 들 수 없는 구조다. 나무엔 환율 전용 조회가 없고
+     * 지수·환율 통합 API 의 코드값이 공개 문서에 없어서, 이게 문서화된 유일한 경로다.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GbHolding(
         @JsonProperty("iem_cd") String symbol,
@@ -95,7 +100,9 @@ public final class NamuAccountDto {
         @JsonProperty("fc_sec_end_pr") String currentPrice,
         @JsonProperty("fc_eal_amt") String evalAmount,
         @JsonProperty("fc_eal_pls_amt") String profitLoss,
-        @JsonProperty("krw_eal_amt") String evalAmountKrw
+        @JsonProperty("krw_eal_amt") String evalAmountKrw,
+        @JsonProperty("cur_cd") String currency,
+        @JsonProperty("tdt_sby_bse_xcg_rt") String baseExchangeRate
     ) {
     }
 

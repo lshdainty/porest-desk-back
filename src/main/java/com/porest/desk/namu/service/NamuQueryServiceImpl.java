@@ -2,6 +2,7 @@ package com.porest.desk.namu.service;
 
 import com.porest.desk.namu.client.NamuApiClient;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
+import com.porest.desk.namu.client.dto.NamuListEnvelope;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
@@ -39,7 +40,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     private static final ParameterizedTypeReference<NamuEnvelope<NamuMarketDto.GbPrice>> GB_TYPE =
         new ParameterizedTypeReference<>() {
         };
-    private static final ParameterizedTypeReference<NamuEnvelope<NamuAccountDto.Account>> ACCOUNT_TYPE =
+    private static final ParameterizedTypeReference<NamuListEnvelope<NamuAccountDto.Account>> ACCOUNT_TYPE =
         new ParameterizedTypeReference<>() {
         };
     private static final ParameterizedTypeReference<
@@ -56,22 +57,18 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     @Override
     public PriceQuote getKrPrice(Long userRowId, String symbol, String marketCode) {
-        List<NamuMarketDto.KrPrice> out = namuApiClient.post(userRowId, KR_PRICE_PATH,
+        NamuMarketDto.KrPrice p = namuApiClient.postObject(userRowId, KR_PRICE_PATH,
             Map.of("market_cd", marketCode == null || marketCode.isBlank() ? MARKET_KRX : marketCode,
                    "iem_cd", symbol),
             KR_TYPE);
-        return out.isEmpty() ? null : quote(symbol, out.get(0).price(), KRW);
+        return p == null ? null : quote(symbol, p.price(), KRW);
     }
 
     @Override
     public PriceQuote getGbPrice(Long userRowId, String symbol) {
-        List<NamuMarketDto.GbPrice> out = namuApiClient.post(userRowId, GB_PRICE_PATH,
+        NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
             Map.of("iem_cd", symbol), GB_TYPE);
-        if (out.isEmpty()) {
-            return null;
-        }
-        NamuMarketDto.GbPrice p = out.get(0);
-        return quote(symbol, p.price(), p.currency());
+        return p == null ? null : quote(symbol, p.price(), p.currency());
     }
 
     /**
@@ -114,7 +111,8 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     @Override
     public List<NamuAccountDto.Account> getAccounts(Long userRowId) {
         // 입력 파라미터가 없는 조회지만 봉투는 그대로 지킨다 — 서버가 Input_0 을 요구한다.
-        return namuApiClient.post(userRowId, ACCOUNT_PATH, Map.of(), ACCOUNT_TYPE);
+        // 계좌목록은 우리가 쓰는 것 중 유일하게 Output_0 이 배열이다.
+        return namuApiClient.postList(userRowId, ACCOUNT_PATH, Map.of(), ACCOUNT_TYPE);
     }
 
     @Override
@@ -128,6 +126,14 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             : gbHoldings(userRowId, account, currency);
     }
 
+    /**
+     * 환율은 <b>종목별 행(Output_1)</b>에 실려 온다 — 계좌 요약이 아니다. 종목마다 통화가
+     * 달라 계좌 단위로 환율 하나를 들 수 없는 구조라서다.
+     *
+     * <p>그래서 제약이 하나 붙는다: <b>해당 통화 보유 종목이 하나도 없으면 환율을 못 구한다.</b>
+     * 그때 null 로 접어 외화 평가만 건너뛴다(부분합으로 금액을 왜곡하지 않는 기존 규칙).
+     * 조용히 넘어가지 않게 warn 을 남긴다 — 값이 계속 안 잡히면 이 경로를 다시 봐야 한다.
+     */
     @Override
     public BigDecimal getFxRate(Long userRowId, String currency) {
         String account = firstAccountNo(userRowId);
@@ -135,11 +141,24 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             log.debug("나무 환율 조회 불가 - 계좌 없음 (userRowId={})", userRowId);
             return null;
         }
+        String want = currency == null || currency.isBlank() ? "USD" : currency;
         try {
-            NamuAccountDto.GbBalanceSummary summary = namuApiClient
-                .exchange(userRowId, GB_BALANCE_PATH, gbBalanceInput(account, currency), GB_BALANCE_TYPE)
-                .summary();
-            return summary == null ? null : decimal(summary.baseExchangeRate());
+            List<NamuAccountDto.GbHolding> items = namuApiClient
+                .exchange(userRowId, GB_BALANCE_PATH, gbBalanceInput(account, want), GB_BALANCE_TYPE)
+                .items();
+
+            BigDecimal rate = items.stream()
+                .filter(h -> want.equalsIgnoreCase(h.currency()))
+                .map(h -> decimal(h.baseExchangeRate()))
+                .filter(r -> r != null && r.signum() > 0)
+                .findFirst()
+                .orElse(null);
+
+            if (rate == null) {
+                log.warn("나무 환율 미확보 - {} 보유 종목이 없거나 환율 필드가 비었다 (userRowId={}, 종목={}건)",
+                    want, userRowId, items.size());
+            }
+            return rate;
         } catch (RuntimeException e) {
             log.warn("나무 환율 조회 실패 (userRowId={}): {}", userRowId, e.getMessage());
             return null;
@@ -187,10 +206,11 @@ public class NamuQueryServiceImpl implements NamuQueryService {
                 h.quantity(), h.avgPrice(), h.currentPrice(), h.evalAmount(), h.profitLoss()))
             .toList();
 
+        // 요약도 종목과 같은 외화 기준이다 — 섞으면 원화 금액에 USD 를 붙여 보여주게 된다.
         return new NamuAccountDto.Holdings(account, currency,
             s == null ? "0" : s.evalAmountSum(),
             s == null ? "0" : s.profitLossSum(),
-            s == null ? "0" : s.krwProfitRate(),
+            s == null ? "0" : s.profitRate(),
             items);
     }
 
