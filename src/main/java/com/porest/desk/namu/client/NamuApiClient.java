@@ -3,6 +3,7 @@ package com.porest.desk.namu.client;
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
+import com.porest.desk.namu.client.dto.NamuListEnvelope;
 import com.porest.desk.namu.client.dto.NamuResponse;
 import com.porest.desk.securities.client.BrokerTokenManager;
 import com.porest.desk.securities.client.BrokerTokenManagers;
@@ -56,12 +57,22 @@ public class NamuApiClient {
     }
 
     /**
-     * 조회 1건. {@code input} 이 {@code Input_0} 안에 들어가고 {@code Output_0} 만 꺼내 돌려준다.
+     * {@code Output_0} 이 <b>객체</b>인 조회. 시세 계열이 이쪽이다.
      *
      * @param typeRef {@code NamuEnvelope<페이로드>} 의 타입 참조
      */
-    public <T> java.util.List<T> post(Long userRowId, String path, Map<String, ?> input,
-                                      ParameterizedTypeReference<NamuEnvelope<T>> typeRef) {
+    public <T> T postObject(Long userRowId, String path, Map<String, ?> input,
+                            ParameterizedTypeReference<NamuEnvelope<T>> typeRef) {
+        return exchange(userRowId, path, input, typeRef).output0();
+    }
+
+    /**
+     * {@code Output_0} 이 <b>배열</b>인 조회. 우리가 쓰는 것 중에는 계좌목록 하나뿐이다.
+     *
+     * @param typeRef {@code NamuListEnvelope<페이로드>} 의 타입 참조
+     */
+    public <T> java.util.List<T> postList(Long userRowId, String path, Map<String, ?> input,
+                                          ParameterizedTypeReference<NamuListEnvelope<T>> typeRef) {
         return exchange(userRowId, path, input, typeRef).resultOrEmpty();
     }
 

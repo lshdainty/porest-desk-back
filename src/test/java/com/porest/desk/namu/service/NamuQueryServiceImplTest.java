@@ -47,22 +47,20 @@ class NamuQueryServiceImplTest {
     @InjectMocks private NamuQueryServiceImpl sut;
 
     private void givenAccounts(NamuAccountDto.Account... accounts) {
-        given(namuApiClient.post(eq(USER), eq("/n2/acctinfo"), any(), any()))
+        given(namuApiClient.<NamuAccountDto.Account>postList(eq(USER), eq("/n2/acctinfo"), any(), any()))
             .willReturn(List.of(accounts));
     }
 
     private void givenKrBalance(NamuAccountDto.KrBalanceSummary summary, NamuAccountDto.KrHolding... items) {
         given(namuApiClient.<NamuPagedEnvelope<NamuAccountDto.KrBalanceSummary, NamuAccountDto.KrHolding>>exchange(
                 eq(USER), eq("/krstock/inquiry/v1/balance"), any(), any(ParameterizedTypeReference.class)))
-            .willReturn(new NamuPagedEnvelope<>("00000", "ok",
-                summary == null ? List.of() : List.of(summary), List.of(items)));
+            .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items)));
     }
 
     private void givenGbBalance(NamuAccountDto.GbBalanceSummary summary, NamuAccountDto.GbHolding... items) {
         given(namuApiClient.<NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding>>exchange(
                 eq(USER), eq("/gbstock/inquiry/v1/balance"), any(), any(ParameterizedTypeReference.class)))
-            .willReturn(new NamuPagedEnvelope<>("00000", "ok",
-                summary == null ? List.of() : List.of(summary), List.of(items)));
+            .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items)));
     }
 
     @Nested
@@ -94,14 +92,16 @@ class NamuQueryServiceImplTest {
         void overseasFallsBackToEnglishName() {
             givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
             givenGbBalance(
-                new NamuAccountDto.GbBalanceSummary("2000000", "1500", "300", "20.0", "1383.50"),
-                new NamuAccountDto.GbHolding("AAPL", "", "APPLE INC", "5", "180", "185.7", "928.5", "50", "1284000"));
+                new NamuAccountDto.GbBalanceSummary("2000000", "1500", "300", "20.0"),
+                new NamuAccountDto.GbHolding("AAPL", "", "APPLE INC", "5", "180", "185.7", "928.5", "50", "1284000", "USD", "1383.50"));
 
             NamuAccountDto.Holdings h = sut.getHoldings(USER, ACCT, "USD");
 
             assertThat(h.currency()).isEqualTo("USD");
             assertThat(h.items()).singleElement()
                 .extracting(NamuAccountDto.HoldingItem::name).isEqualTo("APPLE INC");
+            // 요약도 종목과 같은 외화 기준이어야 한다 — 원화 합을 섞으면 USD 를 붙여 보여주게 된다.
+            assertThat(h.totalEvalAmount()).isEqualTo("1500");
         }
 
         @Test
@@ -122,7 +122,7 @@ class NamuQueryServiceImplTest {
 
             sut.getHoldings(USER, ACCT, "KRW");
 
-            verify(namuApiClient, never()).post(anyLong(), eq("/n2/acctinfo"), any(), any());
+            verify(namuApiClient, never()).postList(anyLong(), eq("/n2/acctinfo"), any(), any());
         }
     }
 
@@ -131,12 +131,25 @@ class NamuQueryServiceImplTest {
     class Fx {
 
         @Test
-        @DisplayName("해외 잔고의 당일매매기준환율을 쓴다 — 나무엔 환율 전용 조회가 없다")
-        void fromOverseasBalance() {
+        @DisplayName("환율은 종목 행(Output_1)에서 읽는다 — 계좌 요약엔 없다")
+        void fromHoldingRow() {
             givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
-            givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0", "1383.50"));
+            givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
+                new NamuAccountDto.GbHolding("AAPL", "애플", "APPLE INC", "5", "180", "185.7",
+                    "928.5", "28.5", "1284000", "USD", "1383.50"));
 
             assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1383.50"));
+        }
+
+        @Test
+        @DisplayName("같은 통화 보유가 없으면 null — 종목마다 통화가 달라 계좌 요약이 환율을 못 든다")
+        void nullWhenCurrencyNotHeld() {
+            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
+                new NamuAccountDto.GbHolding("7203", "도요타", "TOYOTA", "10", "2000", "2100",
+                    "21000", "1000", "200000", "JPY", "9.12"));
+
+            assertThat(sut.getFxRate(USER, "USD")).isNull();
         }
 
         @Test
@@ -158,8 +171,8 @@ class NamuQueryServiceImplTest {
         }
 
         @Test
-        @DisplayName("요약이 비면 null")
-        void nullWhenNoSummary() {
+        @DisplayName("보유 종목이 없으면 null")
+        void nullWhenNoHoldings() {
             givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
             givenGbBalance(null);
 
@@ -173,6 +186,6 @@ class NamuQueryServiceImplTest {
         givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
 
         assertThat(sut.getAccounts(USER)).hasSize(1);
-        verify(namuApiClient).post(eq(USER), eq("/n2/acctinfo"), eq(Map.of()), any());
+        verify(namuApiClient).postList(eq(USER), eq("/n2/acctinfo"), eq(Map.of()), any());
     }
 }
