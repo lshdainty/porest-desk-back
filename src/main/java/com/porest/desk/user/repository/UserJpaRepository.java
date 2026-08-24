@@ -34,6 +34,16 @@ public class UserJpaRepository implements UserRepository {
     }
 
     @Override
+    public Optional<User> findBySsoUserRowId(Long ssoUserRowId) {
+        return entityManager.createQuery(
+            "SELECT u FROM User u WHERE u.ssoUserRowId = :ssoUserRowId AND u.isDeleted = :isDeleted", User.class)
+            .setParameter("ssoUserRowId", ssoUserRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultStream()
+            .findFirst();
+    }
+
+    @Override
     public User save(User entity) {
         entityManager.persist(entity);
         return entity;
