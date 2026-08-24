@@ -3,7 +3,8 @@ package com.porest.desk.stock.service;
 import com.porest.core.exception.DuplicateException;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.InvalidValueException;
-import com.porest.desk.stock.client.dto.KisStockRecord;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
+import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.domain.StockWatchGroup;
 import com.porest.desk.stock.domain.StockWatchItem;
@@ -44,8 +45,8 @@ class StockWatchServiceImplTest {
     private static final long USER = 1L;
 
     private StockMaster master(StockMarket market, String symbol, String nameKr) {
-        return StockMaster.create(market,
-            new KisStockRecord(symbol, null, null, nameKr, null, StockSecurityType.STOCK,
+        return StockMaster.create(MasterSource.KIS,
+            InstrumentRecord.kis(market, symbol, null, null, nameKr, null, StockSecurityType.STOCK,
                 market.getCountryCode().equals("KR") ? "KRW" : "USD"));
     }
 

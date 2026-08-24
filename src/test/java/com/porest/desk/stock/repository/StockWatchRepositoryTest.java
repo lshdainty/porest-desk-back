@@ -3,7 +3,8 @@ package com.porest.desk.stock.repository;
 import com.porest.desk.common.config.QueryDslConfig;
 import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
-import com.porest.desk.stock.client.dto.KisStockRecord;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
+import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.domain.StockWatchGroup;
 import com.porest.desk.stock.domain.StockWatchItem;
@@ -42,8 +43,8 @@ class StockWatchRepositoryTest {
     @Autowired private StockMasterRepository stockMasterRepository;
 
     private StockMaster persistStock(StockMarket market, String symbol, String nameKr) {
-        return em.persist(StockMaster.create(market,
-            new KisStockRecord(symbol, null, null, nameKr, null, StockSecurityType.STOCK,
+        return em.persist(StockMaster.create(MasterSource.KIS,
+            InstrumentRecord.kis(market, symbol, null, null, nameKr, null, StockSecurityType.STOCK,
                 market.getCountryCode().equals("KR") ? "KRW" : "USD")));
     }
 

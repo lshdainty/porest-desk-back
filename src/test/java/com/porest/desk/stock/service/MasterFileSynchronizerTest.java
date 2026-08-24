@@ -1,9 +1,11 @@
 package com.porest.desk.stock.service;
 
-import com.porest.desk.stock.client.dto.KisStockRecord;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.repository.StockMasterRepository;
 import com.porest.desk.stock.service.dto.StockMasterSyncResult;
+import com.porest.desk.stock.type.MasterFile;
+import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.type.StockMarket;
 import com.porest.desk.stock.type.StockSecurityType;
 import org.junit.jupiter.api.DisplayName;
@@ -23,24 +25,25 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
- * 시장 동기화 diff 로직 테스트.
+ * 마스터파일 동기화 diff 로직 테스트.
  *
  * <p>전량 삭제 후 재적재하면 자산이 참조할 마스터 행이 순간적으로 사라지고 수정 이력이 매일 갱신되므로,
  * 실제로 달라진 행만 손대야 한다. 파일이 비정상(빈 응답)일 때 전 종목을 비활성화해 버리면
  * 검색이 통째로 비므로 "빈 파일 = 유지"가 보장돼야 한다.
  */
 @ExtendWith(MockitoExtension.class)
-class StockMarketSynchronizerTest {
+class MasterFileSynchronizerTest {
 
     @Mock private StockMasterRepository stockMasterRepository;
-    @InjectMocks private StockMarketSynchronizer synchronizer;
+    @InjectMocks private MasterFileSynchronizer synchronizer;
 
-    private KisStockRecord record(String symbol, String nameKr) {
-        return new KisStockRecord(symbol, null, "NAS" + symbol, nameKr, nameKr + " INC", StockSecurityType.STOCK, "USD");
+    private InstrumentRecord record(String symbol, String nameKr) {
+        return InstrumentRecord.kis(StockMarket.NAS, symbol, null, "NAS" + symbol,
+            nameKr, nameKr + " INC", StockSecurityType.STOCK, "USD");
     }
 
     private StockMaster existing(String symbol, String nameKr) {
-        return StockMaster.create(StockMarket.NAS, record(symbol, nameKr));
+        return StockMaster.create(MasterSource.KIS, record(symbol, nameKr));
     }
 
     @Test
@@ -48,7 +51,7 @@ class StockMarketSynchronizerTest {
     void insertsNewStock() {
         given(stockMasterRepository.findAllByMarketIncludingInactive(StockMarket.NAS)).willReturn(List.of());
 
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of(record("AAPL", "애플")));
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of(record("AAPL", "애플")));
 
         ArgumentCaptor<StockMaster> captor = ArgumentCaptor.forClass(StockMaster.class);
         verify(stockMasterRepository).save(captor.capture());
@@ -65,7 +68,7 @@ class StockMarketSynchronizerTest {
         StockMaster apple = existing("AAPL", "애플");
         given(stockMasterRepository.findAllByMarketIncludingInactive(StockMarket.NAS)).willReturn(List.of(apple));
 
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of(record("AAPL", "애플")));
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of(record("AAPL", "애플")));
 
         verify(stockMasterRepository, never()).save(any());
         assertThat(result.unchanged()).isEqualTo(1);
@@ -79,7 +82,7 @@ class StockMarketSynchronizerTest {
         StockMaster apple = existing("AAPL", "애플컴퓨터");
         given(stockMasterRepository.findAllByMarketIncludingInactive(StockMarket.NAS)).willReturn(List.of(apple));
 
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of(record("AAPL", "애플")));
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of(record("AAPL", "애플")));
 
         assertThat(apple.getNameKr()).isEqualTo("애플");
         assertThat(result.updated()).isEqualTo(1);
@@ -91,7 +94,7 @@ class StockMarketSynchronizerTest {
         StockMaster delisted = existing("GONE", "상장폐지");
         given(stockMasterRepository.findAllByMarketIncludingInactive(StockMarket.NAS)).willReturn(List.of(delisted));
 
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of(record("AAPL", "애플")));
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of(record("AAPL", "애플")));
 
         assertThat(delisted.isActive()).isFalse();
         assertThat(result.deactivated()).isEqualTo(1);
@@ -105,7 +108,7 @@ class StockMarketSynchronizerTest {
         apple.deactivate();
         given(stockMasterRepository.findAllByMarketIncludingInactive(StockMarket.NAS)).willReturn(List.of(apple));
 
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of(record("AAPL", "애플")));
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of(record("AAPL", "애플")));
 
         assertThat(apple.isActive()).isTrue();
         assertThat(result.updated()).isEqualTo(1);
@@ -114,7 +117,7 @@ class StockMarketSynchronizerTest {
     @Test
     @DisplayName("빈 파일이면 기존 데이터를 건드리지 않고 실패로 집계한다")
     void keepsExistingWhenFileEmpty() {
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of());
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of());
 
         verify(stockMasterRepository, never()).findAllByMarketIncludingInactive(any());
         verify(stockMasterRepository, never()).save(any());
@@ -128,7 +131,7 @@ class StockMarketSynchronizerTest {
         org.springframework.test.util.ReflectionTestUtils.setField(deleted, "isDeleted", com.porest.core.type.YNType.Y);
         given(stockMasterRepository.findAllByMarketIncludingInactive(StockMarket.NAS)).willReturn(List.of(deleted));
 
-        StockMasterSyncResult result = synchronizer.sync(StockMarket.NAS, List.of(record("AAPL", "애플")));
+        StockMasterSyncResult result = synchronizer.sync(MasterFile.KIS_NAS, List.of(record("AAPL", "애플")));
 
         verify(stockMasterRepository, never()).save(any());
         assertThat(result.unchanged()).isEqualTo(1);

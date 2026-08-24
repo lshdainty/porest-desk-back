@@ -4,7 +4,8 @@ import com.porest.core.type.YNType;
 import com.porest.desk.common.config.QueryDslConfig;
 import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
-import com.porest.desk.stock.client.dto.KisStockRecord;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
+import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.type.StockMarket;
 import com.porest.desk.stock.type.StockSecurityType;
@@ -40,8 +41,8 @@ class StockMasterRepositoryTest {
 
     private StockMaster persist(StockMarket market, String symbol, String nameKr, String nameEn,
                                 StockSecurityType type, String currency) {
-        StockMaster stock = StockMaster.create(market,
-            new KisStockRecord(symbol, null, market.name() + symbol, nameKr, nameEn, type, currency));
+        StockMaster stock = StockMaster.create(MasterSource.KIS,
+            InstrumentRecord.kis(market, symbol, null, market.name() + symbol, nameKr, nameEn, type, currency));
         return em.persist(stock);
     }
 

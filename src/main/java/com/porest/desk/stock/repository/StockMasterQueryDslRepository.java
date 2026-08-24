@@ -18,6 +18,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -91,6 +92,18 @@ public class StockMasterQueryDslRepository implements StockMasterRepository {
                 stockMaster.isActive.eq(YNType.Y),
                 stockMaster.isDeleted.eq(YNType.N)
             )
+            .fetch();
+    }
+
+    @Override
+    public List<StockMaster> findAllActiveByCountryCodeIn(Collection<String> countryCodes) {
+        if (countryCodes == null || countryCodes.isEmpty()) {
+            return List.of();
+        }
+        return queryFactory.selectFrom(stockMaster)
+            .where(stockMaster.countryCode.in(countryCodes)
+                .and(stockMaster.isDeleted.eq(YNType.N))
+                .and(stockMaster.isActive.eq(YNType.Y)))
             .fetch();
     }
 
