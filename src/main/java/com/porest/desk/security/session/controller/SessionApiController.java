@@ -46,4 +46,15 @@ public class SessionApiController {
         ssoSessionService.revokeOwned(loginUser.getRowId(), sessionId);
         return ApiResponse.success();
     }
+
+    /**
+     * 모든 기기에서 로그아웃 — 지금 이 기기도 포함해서 끊는다.
+     *
+     * <p>아직 desk 세션만 끊는다. SSO·hr 은 다음 단계(SSO 로그아웃 이벤트)에서 이어붙인다.
+     */
+    @DeleteMapping
+    public ApiResponse<Void> revokeAll(@LoginUser UserPrincipal loginUser) {
+        ssoSessionService.revokeAll(loginUser.getRowId());
+        return ApiResponse.success();
+    }
 }
