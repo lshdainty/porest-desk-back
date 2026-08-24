@@ -16,7 +16,7 @@ import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.securities.service.SecuritiesCredentialService;
-import com.porest.desk.toss.service.TossQueryService;
+import com.porest.desk.securities.service.SecuritiesPriceProviders;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,7 +66,7 @@ class InvestmentCashPreservedTest {
     @Mock private UserClock userClock;
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private SecuritiesCredentialService securitiesCredentialService;
-    @Mock private TossQueryService tossQueryService;
+    @Mock private SecuritiesPriceProviders priceProviders;
     @InjectMocks private AssetServiceImpl sut;
 
     private static final long USER_ID = 1L;
