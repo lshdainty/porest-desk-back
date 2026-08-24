@@ -6,6 +6,7 @@ import com.porest.desk.common.crypto.AesGcmCipher;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.session.domain.UserSsoSession;
 import com.porest.desk.security.session.repository.UserSsoSessionRepository;
+import com.porest.desk.security.session.support.UserAgentParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,7 +37,6 @@ public class SsoSessionService {
      */
     private static final long REFRESH_GRACE_SECONDS = 30L;
 
-    private static final int DEVICE_LABEL_MAX = 200;
 
     private final UserSsoSessionRepository sessionRepository;
     private final SsoOAuth2Client ssoOAuth2Client;
@@ -157,10 +157,16 @@ public class SsoSessionService {
         return LocalDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * "로그인된 기기" 목록에 쓸 이름.
+     *
+     * <p>예전에는 UA 원문을 잘라 담았다. 사용자에게
+     * {@code Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) ...} 를 보여주는 셈이라
+     * 내 기기인지 알아볼 수가 없었다. 이제 {@code iPhone · Safari} 로 줄인다.
+     *
+     * <p>못 알아본 UA 는 {@code null} — 화면이 "알 수 없는 기기" 로 표시한다.
+     */
     private String deviceLabel(String userAgent) {
-        if (userAgent == null || userAgent.isBlank()) {
-            return null;
-        }
-        return userAgent.length() > DEVICE_LABEL_MAX ? userAgent.substring(0, DEVICE_LABEL_MAX) : userAgent;
+        return UserAgentParser.parse(userAgent);
     }
 }

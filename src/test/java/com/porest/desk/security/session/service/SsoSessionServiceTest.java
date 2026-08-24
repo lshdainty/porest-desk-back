@@ -78,7 +78,8 @@ class SsoSessionServiceTest {
     @Test
     @DisplayName("로그인 — refresh 를 암호문으로 저장한다(평문 미저장)")
     void create_storesEncrypted() {
-        sut.create(7L, SESSION_ID, "raw-refresh", "iPhone; iOS 27");
+        sut.create(7L, SESSION_ID, "raw-refresh",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1");
 
         ArgumentCaptor<UserSsoSession> captor = ArgumentCaptor.forClass(UserSsoSession.class);
         verify(sessionRepository).save(captor.capture());
@@ -86,7 +87,8 @@ class SsoSessionServiceTest {
         // 평문이 아니라 cipher 를 거친 값이 저장되는지만 본다 — 실제 암호 강도는 AesGcmCipher 몫이다
         assertThat(saved.getRefreshTokenEnc()).isEqualTo("enc(raw-refresh)");
         assertThat(saved.getSessionId()).isEqualTo(SESSION_ID);
-        assertThat(saved.getDeviceLabel()).isEqualTo("iPhone; iOS 27");
+        // UA 원문이 아니라 사람이 읽을 이름이 저장된다(UserAgentParser).
+        assertThat(saved.getDeviceLabel()).isEqualTo("iPhone · Safari");
     }
 
     @Test
@@ -110,13 +112,14 @@ class SsoSessionServiceTest {
     }
 
     @Test
-    @DisplayName("기기명이 길면 컬럼 길이에 맞춰 자른다 — User-Agent 가 200자를 넘길 수 있다")
-    void create_truncatesLongDeviceLabel() {
+    @DisplayName("못 알아본 User-Agent 는 기기명 없이 저장한다 — 화면이 '알 수 없는 기기' 로 그린다")
+    void create_unknownUserAgent_storesNullLabel() {
         sut.create(7L, SESSION_ID, "raw", "U".repeat(500));
 
         ArgumentCaptor<UserSsoSession> captor = ArgumentCaptor.forClass(UserSsoSession.class);
         verify(sessionRepository).save(captor.capture());
-        assertThat(captor.getValue().getDeviceLabel()).hasSize(200);
+        // 예전에는 UA 원문을 200자로 잘라 담았다 — 사용자가 알아볼 수 없는 문자열이었다.
+        assertThat(captor.getValue().getDeviceLabel()).isNull();
     }
 
     // ── refresh: 정상 ────────────────────────────────────────────────────
