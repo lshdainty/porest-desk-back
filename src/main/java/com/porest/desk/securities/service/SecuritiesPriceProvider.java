@@ -1,5 +1,6 @@
 package com.porest.desk.securities.service;
 
+import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.securities.type.SecuritiesBroker;
 
@@ -25,9 +26,11 @@ public interface SecuritiesPriceProvider {
      * 종목 다건 현재가. <b>못 구한 종목은 결과에서 빠진다</b>(예외 아님) —
      * 호출부가 빠진 종목을 보고 평가를 접을지 정한다.
      *
-     * @param symbols stock_master 기준 종목코드. 증권사별 호출 표기 변환은 구현이 맡는다
+     * <p>심볼이 아니라 {@link InstrumentRef}(시장 + 심볼)를 받는다. 같은 티커가 여러 시장에
+     * 걸리는 경우가 많아 심볼만으로는 종목이 안 정해진다 — 자세한 이유는 InstrumentRef 주석.
+     * 돌아오는 {@link PriceQuote#symbol()} 은 요청한 심볼 그대로다.
      */
-    List<PriceQuote> getPrices(Long userRowId, List<String> symbols);
+    List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments);
 
     /** 환율. 못 구하면 null — 외화 자산은 평가를 접는다(부분합으로 금액을 왜곡하지 않는다). */
     BigDecimal getFxRate(Long userRowId, String baseCurrency, String quoteCurrency);

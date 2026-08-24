@@ -22,6 +22,7 @@ import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.securities.service.SecuritiesCredentialService;
 import com.porest.desk.securities.service.SecuritiesPriceProvider;
 import com.porest.desk.securities.service.SecuritiesPriceProviders;
+import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseAggregates;
@@ -453,12 +454,14 @@ public class AssetServiceImpl implements AssetService {
         }
         try {
             SecuritiesPriceProvider provider = priceProviders.forUser(userRowId);
-            List<String> symbols = linked.stream()
+            // 편집 폼이 보낸 값이라 시장코드가 없다 — 해석기 우선순위로 종목을 정한다.
+            List<InstrumentRef> instruments = linked.stream()
                 .map(AssetServiceDto.HoldingCommand::symbol)
                 .distinct()
+                .map(InstrumentRef::of)
                 .toList();
             Map<String, PriceQuote> priceBySymbol = new HashMap<>();
-            for (PriceQuote q : provider.getPrices(userRowId, symbols)) {
+            for (PriceQuote q : provider.getPrices(userRowId, instruments)) {
                 priceBySymbol.put(q.symbol(), q);
             }
 
@@ -635,14 +638,15 @@ public class AssetServiceImpl implements AssetService {
                     continue;
                 }
                 SecuritiesPriceProvider provider = priceProviders.forUser(userRowId);
-                List<String> symbols = userAssets.stream()
+                // 저장된 시장코드를 그대로 태운다 — 같은 티커가 여러 시장에 걸려도 종목이 확정된다.
+                List<InstrumentRef> instruments = userAssets.stream()
                     .flatMap(a -> valuationPairs(a, linkedHoldingsByAsset).stream())
-                    .map(SymbolQty::symbol)
+                    .map(p -> InstrumentRef.of(p.marketCode(), p.symbol()))
                     .distinct()
                     .toList();
                 Map<String, PriceQuote> priceBySymbol = new HashMap<>();
                 boolean hasForeign = false;
-                for (PriceQuote q : provider.getPrices(userRowId, symbols)) {
+                for (PriceQuote q : provider.getPrices(userRowId, instruments)) {
                     priceBySymbol.put(q.symbol(), q);
                     if (!q.isKrw()) {
                         hasForeign = true;
@@ -702,21 +706,23 @@ public class AssetServiceImpl implements AssetService {
         if (holdings != null && !holdings.isEmpty()) {
             return holdings.stream()
                 .filter(h -> h.getSymbol() != null && h.getQuantity() != null)
-                .map(h -> new SymbolQty(h.getSymbol(), h.getQuantity()))
+                .map(h -> new SymbolQty(h.getMarketCode(), h.getSymbol(), h.getQuantity()))
                 .toList();
         }
         if (asset.isSecuritiesLinked() && asset.getQuantity() != null) {
-            return List.of(new SymbolQty(asset.getSymbol(), BigDecimal.valueOf(asset.getQuantity())));
+            return List.of(new SymbolQty(asset.getMarketCode(), asset.getSymbol(),
+                BigDecimal.valueOf(asset.getQuantity())));
         }
         return List.of();
     }
 
-    private record SymbolQty(String symbol, BigDecimal qty) {}
+    /** marketCode 는 없을 수 있다 — 시장코드 컬럼이 생기기 전에 만들어진 연동 행이 그렇다. */
+    private record SymbolQty(String marketCode, String symbol, BigDecimal qty) {}
 
     /** 기본 소스 증권사가 이 종목 시세를 주는지 — 유효 종목 검증(미인식/조회실패 시 false). */
     private boolean isPriceAvailable(Long userRowId, String symbol) {
         try {
-            return priceProviders.forUser(userRowId).getPrices(userRowId, List.of(symbol)).stream()
+            return priceProviders.forUser(userRowId).getPrices(userRowId, List.of(InstrumentRef.of(symbol))).stream()
                 .anyMatch(q -> symbol.equalsIgnoreCase(q.symbol()) && q.price() != null);
         } catch (Exception ex) {
             log.warn("종목 시세 검증 실패 - symbol={}: {}", symbol, ex.getMessage());
@@ -733,7 +739,7 @@ public class AssetServiceImpl implements AssetService {
     private Long computeValuationKrw(Long userRowId, String symbol, BigDecimal quantity) {
         try {
             SecuritiesPriceProvider provider = priceProviders.forUser(userRowId);
-            PriceQuote q = provider.getPrices(userRowId, List.of(symbol)).stream()
+            PriceQuote q = provider.getPrices(userRowId, List.of(InstrumentRef.of(symbol))).stream()
                 .filter(x -> symbol.equalsIgnoreCase(x.symbol()))
                 .findFirst().orElse(null);
             if (q == null || q.price() == null) {
