@@ -14,6 +14,9 @@ import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.securities.service.SecuritiesCredentialService;
+import com.porest.desk.securities.service.SecuritiesPriceProvider;
+import com.porest.desk.securities.service.SecuritiesPriceProviders;
+import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -61,7 +64,8 @@ class AssetServiceImplTest {
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private SecuritiesCredentialService securitiesCredentialService;
-    @Mock private com.porest.desk.toss.service.TossQueryService tossQueryService;
+    @Mock private SecuritiesPriceProviders priceProviders;
+    @Mock private SecuritiesPriceProvider priceProvider;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
@@ -346,8 +350,9 @@ class AssetServiceImplTest {
         Asset asset = assetOwnedBy(USER_ID);
         given(asset.getAssetType()).willReturn(AssetType.INVESTMENT);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        given(tossQueryService.getPrices(USER_ID, "005930")).willReturn(List.of(
-                new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "70000", "KRW")));
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(USER_ID, List.of("005930"))).willReturn(List.of(
+                new PriceQuote("005930", new java.math.BigDecimal("70000"), "KRW")));
 
         sut.linkSymbol(5L, USER_ID, "005930", 10L);
 
@@ -363,7 +368,8 @@ class AssetServiceImplTest {
         Asset asset = assetOwnedBy(USER_ID);
         given(asset.getAssetType()).willReturn(AssetType.INVESTMENT);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        given(tossQueryService.getPrices(USER_ID, "999999")).willReturn(List.of());
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(USER_ID, List.of("999999"))).willReturn(List.of());
 
         assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "999999", 10L))
                 .isInstanceOf(InvalidValueException.class);
@@ -408,8 +414,9 @@ class AssetServiceImplTest {
         given(asset.getSymbol()).willReturn("005930");
         given(asset.getQuantity()).willReturn(10L);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        given(tossQueryService.getPrices(USER_ID, "005930")).willReturn(List.of(
-                new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "70000", "KRW")));
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(USER_ID, List.of("005930"))).willReturn(List.of(
+                new PriceQuote("005930", new java.math.BigDecimal("70000"), "KRW")));
 
         sut.unlinkSymbol(5L, USER_ID);
 
@@ -438,8 +445,9 @@ class AssetServiceImplTest {
                 .willReturn(List.of(linked));
         given(entitlementService.hasFeature(USER_ID, "SECURITIES")).willReturn(true);
         given(securitiesCredentialService.hasAnyConnection(USER_ID)).willReturn(true);
-        given(tossQueryService.getPrices(USER_ID, "005930")).willReturn(List.of(
-                new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "70000", "KRW")));
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(USER_ID, List.of("005930"))).willReturn(List.of(
+                new PriceQuote("005930", new java.math.BigDecimal("70000"), "KRW")));
 
         sut.snapshotSecuritiesValuations();
 

@@ -30,6 +30,7 @@ public class WebConfig implements WebMvcConfigurer {
         if (interceptor != null) {
             registry.addInterceptor(interceptor)
                 .addPathPatterns("/api/v1/toss/**",
+                        "/api/v1/namu/**",
                         "/api/v1/users/me/securities-credentials",
                         "/api/v1/users/me/securities-credentials/**");
         }

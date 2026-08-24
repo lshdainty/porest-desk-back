@@ -41,6 +41,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
+import com.porest.desk.securities.service.SecuritiesPriceProvider;
+import com.porest.desk.securities.service.SecuritiesPriceProviders;
+import com.porest.desk.securities.service.dto.PriceQuote;
 
 /**
  * 투자 자산 다중 보유(holdings) 프로세스 단위 테스트 —
@@ -57,7 +60,8 @@ class AssetHoldingServiceTest {
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private com.porest.desk.subscription.service.SubscriptionEntitlementService entitlementService;
     @Mock private com.porest.desk.securities.service.SecuritiesCredentialService securitiesCredentialService;
-    @Mock private com.porest.desk.toss.service.TossQueryService tossQueryService;
+    @Mock private SecuritiesPriceProviders priceProviders;
+    @Mock private SecuritiesPriceProvider priceProvider;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
@@ -332,8 +336,9 @@ class AssetHoldingServiceTest {
     void serverComputesInvestmentBalance() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         // 시세 72,000 × 30주 = 2,160,000 + 미연동 1,870,000 = 4,030,000 (클라 balance 0 은 무시)
-        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of(
-            new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "72000", "KRW")));
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of(
+            new PriceQuote("005930", new java.math.BigDecimal("72000"), "KRW")));
 
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             linkedHolding("005930", 30L),
@@ -350,11 +355,11 @@ class AssetHoldingServiceTest {
     @DisplayName("소수 수량·외화도 BigDecimal 로 정확히 — 0.1주 × $185.7 × 1383.5원")
     void serverComputesFractionalForeignBalance() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
-        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of(
-            new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("AAPL", null, "185.7", "USD")));
-        given(tossQueryService.getExchangeRate(eq(USER_ID), anyString(), anyString(), any()))
-            .willReturn(new com.porest.desk.toss.dto.TossMarketInfoDto.ExchangeRateResponse(
-                "USD", "KRW", "1383.5", null, null, null, null, null));
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of(
+            new PriceQuote("AAPL", new java.math.BigDecimal("185.7"), "USD")));
+        given(priceProvider.getFxRate(eq(USER_ID), anyString(), anyString()))
+            .willReturn(new java.math.BigDecimal("1383.5"));
 
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             new AssetServiceDto.HoldingCommand(
@@ -370,7 +375,8 @@ class AssetHoldingServiceTest {
     @DisplayName("연동 시세를 못 구하면 생성 시 미연동 합만 잡는다 — 부분합으로 왜곡하지 않는다")
     void fallsBackToManualSumWhenPriceUnavailable() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
-        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of());
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of());
 
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             linkedHolding("005930", 30L),
@@ -430,8 +436,9 @@ class AssetHoldingServiceTest {
     @DisplayName("한 계좌에 주식·금·코인이 섞여도 평가액은 하나의 HOLDING 앵커로 합산된다")
     void mixedHoldingTypesShareOneAnchor() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
-        given(tossQueryService.getPrices(eq(USER_ID), anyString())).willReturn(List.of(
-            new com.porest.desk.toss.dto.TossMarketDto.PriceResponse("005930", null, "72000", "KRW")));
+        given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
+        given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of(
+            new PriceQuote("005930", new java.math.BigDecimal("72000"), "KRW")));
 
         sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             linkedHolding("005930", 10L),                                  // 720,000
