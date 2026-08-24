@@ -31,6 +31,8 @@ public class WebConfig implements WebMvcConfigurer {
             registry.addInterceptor(interceptor)
                 .addPathPatterns("/api/v1/toss/**",
                         "/api/v1/namu/**",
+                        // 증권사 무관 시세 — 기본 소스로 대신 조회한다
+                        "/api/v1/securities/**",
                         // 구버전 앱이 쓰는 옛 경로 — 게이트에서 빠지면 비구독자가 통과한다
                         "/api/v1/users/me/toss-credential",
                         "/api/v1/users/me/securities-credentials",

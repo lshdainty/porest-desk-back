@@ -49,7 +49,9 @@ public class TossPriceProvider implements SecuritiesPriceProvider {
         for (TossMarketDto.PriceResponse p : tossQueryService.getPrices(userRowId, symbols)) {
             BigDecimal price = parse(p.lastPrice());
             if (price != null) {
-                quotes.add(new PriceQuote(p.symbol(), price, p.currency()));
+                // 토스 시세 응답엔 전일 종가가 없다. 캔들을 종목마다 따로 받아야 하는데
+                // 평가액에는 안 쓰이는 값이라(등락 표시 전용) 여기서 N콜을 더 태우지 않는다.
+                quotes.add(PriceQuote.of(p.symbol(), price, p.currency()));
             }
         }
         return quotes;

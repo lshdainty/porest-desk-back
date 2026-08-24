@@ -62,14 +62,14 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             Map.of("market_cd", marketCode == null || marketCode.isBlank() ? MARKET_KRX : marketCode,
                    "iem_cd", symbol),
             KR_TYPE);
-        return p == null ? null : quote(symbol, p.price(), KRW);
+        return p == null ? null : quote(symbol, p.price(), KRW, p.change(), p.changeSign());
     }
 
     @Override
     public PriceQuote getGbPrice(Long userRowId, String symbol) {
         NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
             Map.of("iem_cd", symbol), GB_TYPE);
-        return p == null ? null : quote(symbol, p.price(), p.currency());
+        return p == null ? null : quote(symbol, p.price(), p.currency(), p.change(), p.changeSign());
     }
 
     /**
@@ -247,16 +247,35 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         }
     }
 
-    private static PriceQuote quote(String symbol, String rawPrice, String currency) {
-        if (rawPrice == null || rawPrice.isBlank()) {
-            return null;
-        }
-        try {
-            return new PriceQuote(symbol, new BigDecimal(rawPrice.trim()),
-                currency == null || currency.isBlank() ? KRW : currency);
-        } catch (NumberFormatException e) {
+    /**
+     * 나무는 시세 응답에 전일대비를 함께 준다 — 전일 종가를 공짜로 얻는다(토스는 캔들 별도).
+     *
+     * <p>전일대비는 <b>절대값 + 부호코드</b>로 온다. 부호를 모르는 코드가 오면 방향을 찍지 않고
+     * 전일 종가를 비운다 — 반대로 계산하면 등락이 뒤집혀 보인다.
+     */
+    private static PriceQuote quote(String symbol, String rawPrice, String currency,
+                                    String rawChange, String changeSign) {
+        BigDecimal price = decimal(rawPrice);
+        if (price == null) {
             log.warn("나무 시세 파싱 실패: symbol={}, price={}", symbol, rawPrice);
             return null;
         }
+        String cur = currency == null || currency.isBlank() ? KRW : currency;
+        BigDecimal signedChange = signedChange(rawChange, changeSign);
+        return new PriceQuote(symbol, price, cur,
+            signedChange == null ? null : price.subtract(signedChange));
+    }
+
+    /** 부호코드 — 1 상한 · 2 상승 · 3 보합 · 4 하한 · 5 하락. 모르는 값이면 null. */
+    private static BigDecimal signedChange(String rawChange, String changeSign) {
+        BigDecimal change = decimal(rawChange);
+        if (change == null || changeSign == null) {
+            return null;
+        }
+        return switch (changeSign.trim()) {
+            case "1", "2", "3" -> change.abs();
+            case "4", "5" -> change.abs().negate();
+            default -> null;
+        };
     }
 }
