@@ -35,7 +35,12 @@ public class StockWatchItemQueryDslRepository implements StockWatchItemRepositor
             .where(
                 group.userRowId.eq(userRowId),
                 group.isDeleted.eq(YNType.N),
-                item.isDeleted.eq(YNType.N)
+                item.isDeleted.eq(YNType.N),
+                // 비활성 마스터(상장폐지·심볼 변경으로 파일에서 사라진 종목)는 감춘다.
+                // 조인만 걸어 두면 시세가 안 붙는 행이 정상처럼 남는다 — 검색·시세 조회가
+                // 전부 is_active=Y 로 거르므로 여기만 예외가 되면 화면끼리 어긋난다.
+                // 행 자체는 지우지 않으므로 재상장으로 다시 활성화되면 그대로 돌아온다.
+                stockMaster.isActive.eq(YNType.N).not()
             )
             .orderBy(group.sortOrder.asc(), group.rowId.asc(), item.sortOrder.asc(), item.rowId.asc())
             .fetch();
