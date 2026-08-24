@@ -6,6 +6,7 @@ import com.porest.desk.common.crypto.AesGcmCipher;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.session.domain.UserSsoSession;
 import com.porest.desk.security.session.repository.UserSsoSessionRepository;
+import com.porest.desk.security.session.controller.dto.SessionApiDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -259,6 +261,62 @@ class SsoSessionServiceTest {
         sut.revoke(SESSION_ID);
 
         assertThat(session.isActive()).isFalse();
+    }
+
+    // ── 기기 목록 ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("만료된 세션은 목록에서 뺀다 — 못 쓰는 기기를 두면 로그아웃이 안 된다고 헤맨다")
+    void listDevices_excludesExpired() {
+        UserSsoSession live = UserSsoSession.issue(7L, "live", "enc", nowUtc().plusDays(3), "iPhone · Safari");
+        UserSsoSession dead = UserSsoSession.issue(7L, "dead", "enc", nowUtc().minusDays(1), "Windows · Chrome");
+        given(sessionRepository.findAllByUserRowIdAndIsDeleted(7L, YNType.N))
+                .willReturn(List.of(live, dead));
+
+        var devices = sut.listDevices(7L, "live");
+
+        assertThat(devices).extracting(SessionApiDto.DeviceRes::sessionId).containsExactly("live");
+    }
+
+    @Test
+    @DisplayName("지금 쓰는 기기에 current 를 세운다")
+    void listDevices_marksCurrent() {
+        UserSsoSession a = UserSsoSession.issue(7L, "sid-a", "enc", nowUtc().plusDays(3), "iPhone · Safari");
+        UserSsoSession b = UserSsoSession.issue(7L, "sid-b", "enc", nowUtc().plusDays(3), "Windows · Chrome");
+        given(sessionRepository.findAllByUserRowIdAndIsDeleted(7L, YNType.N))
+                .willReturn(List.of(a, b));
+
+        var devices = sut.listDevices(7L, "sid-b");
+
+        assertThat(devices).filteredOn(SessionApiDto.DeviceRes::current)
+                .extracting(SessionApiDto.DeviceRes::sessionId).containsExactly("sid-b");
+    }
+
+    // ── 기기 하나 로그아웃 ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("남의 세션은 못 끊는다 — 세션 id 만으로 끊게 두면 아무 기기나 끊을 수 있다")
+    void revokeOwned_otherUsersSession_refuses() {
+        UserSsoSession othersSession =
+                UserSsoSession.issue(99L, SESSION_ID, "enc", nowUtc().plusDays(3), "iPhone · Safari");
+        given(sessionRepository.findBySessionIdAndIsDeleted(SESSION_ID, YNType.N))
+                .willReturn(Optional.of(othersSession));
+
+        boolean revoked = sut.revokeOwned(7L, SESSION_ID);
+
+        assertThat(revoked).isFalse();
+        assertThat(othersSession.isActive()).isTrue();
+    }
+
+    @Test
+    @DisplayName("내 세션이면 끊는다")
+    void revokeOwned_ownSession_revokes() {
+        UserSsoSession mine = liveSession();
+        given(sessionRepository.findBySessionIdAndIsDeleted(SESSION_ID, YNType.N))
+                .willReturn(Optional.of(mine));
+
+        assertThat(sut.revokeOwned(7L, SESSION_ID)).isTrue();
+        assertThat(mine.isActive()).isFalse();
     }
 
     @Test
