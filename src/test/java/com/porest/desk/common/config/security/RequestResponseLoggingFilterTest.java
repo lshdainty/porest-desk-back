@@ -6,7 +6,11 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 로그 마스킹 검증 — 토스 클라이언트 키/비밀번호/토큰이 평문으로 남지 않아야 한다.
+ * 로그 마스킹 검증 — 증권사 API 키/비밀번호/토큰이 평문으로 남지 않아야 한다.
+ *
+ * <p>매칭이 키 이름 완전 일치라, 요청 DTO 의 필드명을 바꾸면 마스킹이 조용히 풀린다.
+ * 실제로 clientId/clientSecret → apiKey/apiSecret 리네임 때 그 사고가 났다. 그래서
+ * <b>지금 쓰는 이름</b>과 <b>증권사별 원표기</b>를 둘 다 고정한다.
  */
 class RequestResponseLoggingFilterTest {
 
@@ -24,6 +28,41 @@ class RequestResponseLoggingFilterTest {
         assertThat(masked).doesNotContain("tsck_live_");
         assertThat(masked).contains("\"clientSecret\":\"***\"");
         assertThat(masked).contains("\"clientId\":\"***\"");
+    }
+
+    @Test
+    @DisplayName("증권사 크리덴셜 등록 본문(apiKey·apiSecret)이 마스킹된다 — 리네임으로 뚫렸던 자리")
+    void masks_securities_credentials() {
+        // POST /api/v1/users/me/securities-credentials/NAMU 의 실제 본문 모양.
+        String body = "{\"apiKey\":\"PS8fk2Lm9QwErTyUiOp\",\"apiSecret\":\"Zx9kCvBnMqWeRtYuIoP1234\"}";
+
+        String masked = sut.maskSensitiveData(body);
+
+        assertThat(masked).doesNotContain("PS8fk2Lm9QwErTyUiOp");
+        assertThat(masked).doesNotContain("Zx9kCvBnMqWeRtYuIoP1234");
+        assertThat(masked).contains("\"apiKey\":\"***\"");
+        assertThat(masked).contains("\"apiSecret\":\"***\"");
+    }
+
+    @Test
+    @DisplayName("증권사 원표기(appkey·appsecretkey)도 마스킹된다 — 나무는 이 이름을 쓴다")
+    void masks_broker_native_key_names() {
+        String body = "{\"appkey\":\"NH-APP-KEY-0001\",\"appsecretkey\":\"NH-APP-SECRET-0001\"}";
+
+        String masked = sut.maskSensitiveData(body);
+
+        assertThat(masked).doesNotContain("NH-APP-KEY-0001");
+        assertThat(masked).doesNotContain("NH-APP-SECRET-0001");
+    }
+
+    @Test
+    @DisplayName("스네이크 표기(api_key·api_secret)도 마스킹된다")
+    void masks_snake_case_api_keys() {
+        String body = "{\"api_key\":\"AK-1\",\"api_secret\":\"AS-1\"}";
+
+        String masked = sut.maskSensitiveData(body);
+
+        assertThat(masked).doesNotContain("AK-1").doesNotContain("AS-1");
     }
 
     @Test
