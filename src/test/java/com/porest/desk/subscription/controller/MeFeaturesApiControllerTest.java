@@ -6,7 +6,9 @@ import com.porest.desk.security.filter.JwtAuthenticationFilter;
 import com.porest.desk.security.resolver.LoginUserArgumentResolver;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.support.security.WithLoginUser;
-import com.porest.desk.toss.credential.service.TossCredentialService;
+import com.porest.desk.securities.service.SecuritiesCredentialService;
+import com.porest.desk.securities.service.dto.SecuritiesCredentialServiceDto.BrokerConnection;
+import com.porest.desk.securities.type.SecuritiesBroker;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -32,7 +35,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>보안 필터는 끄고({@code addFilters=false}) {@link WithLoginUser} 로 SecurityContext 를 세팅 →
  * {@code @LoginUser} ArgumentResolver({@link WebConfig} 가 등록)가 UserPrincipal 을 주입한다.
- * 로그인 사용자의 기능권한 + 토스 연결상태를 합쳐 응답하는지 검증한다.
+ * 로그인 사용자의 기능권한 + 증권사 연결상태를 합쳐 응답하는지 검증한다.
+ * tossConnected 는 구버전 클라이언트 호환용 파생값이라 함께 지킨다 — 사라지면 옛 앱이 미연결로 읽는다.
  */
 @WebMvcTest(controllers = MeFeaturesApiController.class,
         excludeFilters = @ComponentScan.Filter(
@@ -45,39 +49,65 @@ class MeFeaturesApiControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private SubscriptionEntitlementService entitlementService;
-    @MockitoBean private TossCredentialService credentialService;
+    @MockitoBean private SecuritiesCredentialService credentialService;
     // porest-core GlobalExceptionHandler(@ControllerAdvice) 의존 — 슬라이스 로드용 mock.
     @MockitoBean private MessageResolver messageResolver;
 
+    private static BrokerConnection connected(SecuritiesBroker broker, boolean primary) {
+        return new BrokerConnection(broker, broker.getDisplayName(), broker.getIssueUrl(),
+                broker.getKeyLabel(), broker.getSecretLabel(), true, true, null, primary);
+    }
+
     @Test
-    @DisplayName("GET /users/me/features — 구독 기능권한 + 토스 연결(연결됨) 응답")
+    @DisplayName("GET /users/me/features — 기능권한 + 연결된 증권사 목록 + 기본 소스")
     void getMyFeatures_connected() throws Exception {
         given(entitlementService.getActiveFeatures(1L)).willReturn(List.of("SECURITIES"));
-        given(credentialService.getStatus(1L))
-                .willReturn(new TossCredentialService.CredentialStatus(true, true, null));
+        given(credentialService.getConnections(1L)).willReturn(List.of(
+                connected(SecuritiesBroker.TOSS, false),
+                connected(SecuritiesBroker.NAMU, true)));
+        given(credentialService.getPrimaryBroker(1L)).willReturn(Optional.of(SecuritiesBroker.NAMU));
 
         mockMvc.perform(get("/api/v1/users/me/features"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.features[0]").value("SECURITIES"))
+                .andExpect(jsonPath("$.data.connectedBrokers[0]").value("TOSS"))
+                .andExpect(jsonPath("$.data.connectedBrokers[1]").value("NAMU"))
+                .andExpect(jsonPath("$.data.primaryBroker").value("NAMU"))
+                // 구버전 앱은 이 필드만 본다. 지우면 증권 화면이 연결 유도로 되돌아간다.
                 .andExpect(jsonPath("$.data.tossConnected").value(true));
 
         verify(entitlementService).getActiveFeatures(1L);
-        verify(credentialService).getStatus(1L);
     }
 
     @Test
-    @DisplayName("GET /users/me/features — 비구독·미연결이면 빈 features + tossConnected=false")
+    @DisplayName("GET /users/me/features — 나무만 연결하면 tossConnected 는 false 다")
+    void getMyFeatures_namuOnly() throws Exception {
+        given(entitlementService.getActiveFeatures(1L)).willReturn(List.of("SECURITIES"));
+        given(credentialService.getConnections(1L))
+                .willReturn(List.of(connected(SecuritiesBroker.NAMU, true)));
+        given(credentialService.getPrimaryBroker(1L)).willReturn(Optional.of(SecuritiesBroker.NAMU));
+
+        mockMvc.perform(get("/api/v1/users/me/features"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.connectedBrokers[0]").value("NAMU"))
+                .andExpect(jsonPath("$.data.tossConnected").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /users/me/features — 비구독·미연결이면 전부 비어 있다")
     void getMyFeatures_notConnected() throws Exception {
         given(entitlementService.getActiveFeatures(1L)).willReturn(List.of());
-        given(credentialService.getStatus(1L))
-                .willReturn(TossCredentialService.CredentialStatus.notConnected());
+        given(credentialService.getConnections(1L))
+                .willReturn(List.of(BrokerConnection.notConnected(SecuritiesBroker.TOSS)));
+        given(credentialService.getPrimaryBroker(1L)).willReturn(Optional.empty());
 
         mockMvc.perform(get("/api/v1/users/me/features"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.features").isEmpty())
+                .andExpect(jsonPath("$.data.connectedBrokers").isEmpty())
+                .andExpect(jsonPath("$.data.primaryBroker").doesNotExist())
                 .andExpect(jsonPath("$.data.tossConnected").value(false));
 
         verify(entitlementService).getActiveFeatures(1L);
-        verify(credentialService).getStatus(1L);
     }
 }

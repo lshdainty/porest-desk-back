@@ -54,8 +54,12 @@ public class AssetHolding extends AuditingFieldsWithIp {
     @Column(name = "linked", nullable = false, length = 1)
     private YNType linked;
 
-    @Column(name = "toss_symbol", length = 30)
-    private String tossSymbol;
+    /** stock_master 기준 시장코드. symbol 과 짝으로 종목을 특정한다(증권사 표기 아님). */
+    @Column(name = "market_code", length = 10)
+    private String marketCode;
+
+    @Column(name = "symbol", length = 30)
+    private String symbol;
 
     @Column(name = "quantity", precision = 28, scale = 8)
     private BigDecimal quantity;
@@ -77,14 +81,14 @@ public class AssetHolding extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static AssetHolding create(Asset asset, HoldingType holdingType, YNType linked, String tossSymbol,
+    public static AssetHolding create(Asset asset, HoldingType holdingType, YNType linked, String symbol,
                                        BigDecimal quantity, String holdingName, Long holdingValue,
                                        Long totalCost, Integer sortOrder) {
         AssetHolding holding = new AssetHolding();
         holding.asset = asset;
         holding.holdingType = holdingType != null ? holdingType : HoldingType.STOCK;
         holding.linked = linked != null ? linked : YNType.N;
-        holding.tossSymbol = tossSymbol;
+        holding.symbol = symbol;
         holding.quantity = quantity;
         holding.holdingName = holdingName;
         holding.holdingValue = holdingValue;
@@ -103,7 +107,7 @@ public class AssetHolding extends AuditingFieldsWithIp {
      * 보유 목록은 편집할 때마다 통째로 재생성돼서 row_id 로는 묶을 수 없다.
      */
     public String holdingKey() {
-        return isLinked() ? tossSymbol : holdingName;
+        return isLinked() ? symbol : holdingName;
     }
 
     /** 평단가 — 총원가 / 수량. 수량이 없으면 없다. 평단가를 직접 들면 부분 매도마다 오차가 쌓인다. */
@@ -175,12 +179,12 @@ public class AssetHolding extends AuditingFieldsWithIp {
      * 편집 폼이 보낸 값으로 제자리 수정 — row_id 가 그대로라 거래(asset_trade) 연결이 끊기지 않는다.
      * 원가는 매수·매도가 쌓은 값이라 안 보내오면(null) 유지한다.
      */
-    public void updateHolding(HoldingType holdingType, YNType linked, String tossSymbol,
+    public void updateHolding(HoldingType holdingType, YNType linked, String symbol,
                               BigDecimal quantity, String holdingName, Long holdingValue,
                               Long totalCost, Integer sortOrder) {
         this.holdingType = holdingType != null ? holdingType : this.holdingType;
         this.linked = linked != null ? linked : this.linked;
-        this.tossSymbol = tossSymbol;
+        this.symbol = symbol;
         this.quantity = quantity;
         this.holdingName = holdingName;
         this.holdingValue = holdingValue;

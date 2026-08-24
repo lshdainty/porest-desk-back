@@ -3,8 +3,9 @@ package com.porest.desk.subscription.controller;
 import com.porest.core.controller.ApiResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import com.porest.desk.securities.service.SecuritiesCredentialService;
+import com.porest.desk.securities.type.SecuritiesBroker;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
-import com.porest.desk.toss.credential.service.TossCredentialService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,16 +23,35 @@ import java.util.List;
 public class MeFeaturesApiController {
 
     private final SubscriptionEntitlementService entitlementService;
-    private final TossCredentialService credentialService;
+    private final SecuritiesCredentialService credentialService;
 
     @GetMapping
     public ApiResponse<MeFeaturesResponse> getMyFeatures(@LoginUser UserPrincipal loginUser) {
         Long userRowId = loginUser.getRowId();
         List<String> features = entitlementService.getActiveFeatures(userRowId);
-        boolean tossConnected = credentialService.getStatus(userRowId).connected();
-        return ApiResponse.success(new MeFeaturesResponse(features, tossConnected));
+        List<String> connectedBrokers = credentialService.getConnections(userRowId).stream()
+            .filter(c -> c.connected())
+            .map(c -> c.broker().name())
+            .toList();
+        String primaryBroker = credentialService.getPrimaryBroker(userRowId)
+            .map(SecuritiesBroker::name)
+            .orElse(null);
+        return ApiResponse.success(new MeFeaturesResponse(
+            features, connectedBrokers, primaryBroker,
+            connectedBrokers.contains(SecuritiesBroker.TOSS.name())));
     }
 
-    public record MeFeaturesResponse(List<String> features, boolean tossConnected) {
+    /**
+     * @param connectedBrokers 연결된 증권사 코드. 증권사가 늘어도 이 배열만 늘어난다
+     * @param primaryBroker    가계부 자산 평가에 쓰는 증권사. 연결이 없으면 null
+     * @param tossConnected    <b>구버전 클라이언트 호환용 파생값.</b> 새 코드는 connectedBrokers 를 봐라.
+     *                         지우면 옛 앱이 "미연결" 로 읽어 증권 화면이 연결 유도로 되돌아간다
+     */
+    public record MeFeaturesResponse(
+        List<String> features,
+        List<String> connectedBrokers,
+        String primaryBroker,
+        boolean tossConnected
+    ) {
     }
 }

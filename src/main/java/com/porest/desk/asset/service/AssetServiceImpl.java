@@ -19,7 +19,7 @@ import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
-import com.porest.desk.toss.credential.service.TossCredentialService;
+import com.porest.desk.securities.service.SecuritiesCredentialService;
 import com.porest.desk.toss.dto.TossMarketDto;
 import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.expense.domain.Expense;
@@ -69,7 +69,7 @@ public class AssetServiceImpl implements AssetService {
     private final AssetBalanceHistoryService balanceHistoryService;
     private final UserClock userClock;
     private final SubscriptionEntitlementService entitlementService;
-    private final TossCredentialService tossCredentialService;
+    private final SecuritiesCredentialService securitiesCredentialService;
     private final TossQueryService tossQueryService;
 
     @Override
@@ -311,16 +311,16 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public AssetServiceDto.AssetInfo linkTossSymbol(Long assetId, Long userRowId, String symbol, Long quantity) {
+    public AssetServiceDto.AssetInfo linkSymbol(Long assetId, Long userRowId, String symbol, Long quantity) {
         log.debug("자산 토스 연결 시작: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
 
-        // 게이트: 프로(SECURITIES) 구독 + 토스 연결 사용자만 연결 가능.
+        // 게이트: 프로(SECURITIES) 구독 + 증권사 1곳 이상 연결한 사용자만 연결 가능.
         entitlementService.requireFeature(userRowId, FEATURE_SECURITIES);
-        if (!tossCredentialService.getStatus(userRowId).connected()) {
-            log.warn("자산 토스 연결 거부 - 토스 미연결: userRowId={}", userRowId);
-            throw new ForbiddenException(DeskErrorCode.TOSS_CREDENTIAL_REQUIRED);
+        if (!securitiesCredentialService.hasAnyConnection(userRowId)) {
+            log.warn("자산 종목 연결 거부 - 증권사 미연결: userRowId={}", userRowId);
+            throw new ForbiddenException(DeskErrorCode.SECURITIES_CREDENTIAL_REQUIRED);
         }
-        // 종목코드 + 보유수량(양수) 필수. 평가액 = 토스 시세 × 수량.
+        // 종목코드 + 보유수량(양수) 필수. 평가액 = 현재가 × 수량.
         if (symbol == null || symbol.isBlank() || quantity == null || quantity <= 0) {
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
@@ -329,16 +329,16 @@ public class AssetServiceImpl implements AssetService {
         validateAssetOwnership(asset, userRowId);
         // 종목 연결은 투자(INVESTMENT) 자산에만 허용.
         if (asset.getAssetType() != AssetType.INVESTMENT) {
-            log.warn("자산 토스 연결 거부 - INVESTMENT 자산 아님: assetId={}, type={}", assetId, asset.getAssetType());
+            log.warn("자산 종목 연결 거부 - INVESTMENT 자산 아님: assetId={}, type={}", assetId, asset.getAssetType());
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
-        // 토스가 시세를 주는 유효 종목인지 검증 — 잘못된 코드 연결 차단(정합성의 최종 판정).
-        if (!isTossPriceAvailable(userRowId, symbol)) {
-            log.warn("자산 토스 연결 거부 - 토스 미인식 종목: symbol={}", symbol);
-            throw new InvalidValueException(DeskErrorCode.TOSS_SYMBOL_INVALID);
+        // 시세가 실제로 나오는 종목인지 검증 — 잘못된 코드 연결 차단(정합성의 최종 판정).
+        if (!isPriceAvailable(userRowId, symbol)) {
+            log.warn("자산 종목 연결 거부 - 시세 미인식 종목: symbol={}", symbol);
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_SYMBOL_INVALID);
         }
 
-        asset.linkToss(symbol, quantity);
+        asset.linkSecurities(symbol, quantity);
         // 연결 즉시 평가액 1회 스냅샷 — 추이 그래프에 바로 반영(환율 미확보 외화면 생략).
         Long valuation = computeTossValuationKrw(userRowId, symbol, BigDecimal.valueOf(quantity));
         if (valuation != null) {
@@ -350,7 +350,7 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public AssetServiceDto.AssetInfo unlinkTossSymbol(Long assetId, Long userRowId) {
+    public AssetServiceDto.AssetInfo unlinkSymbol(Long assetId, Long userRowId) {
         log.debug("자산 토스 연결 해제 시작: assetId={}", assetId);
 
         // 해제는 구독 만료 후에도 가능해야 하므로 소유권만 검증.
@@ -359,9 +359,9 @@ public class AssetServiceImpl implements AssetService {
 
         // 해제 순간의 마지막 평가액(시세×수량)을 자산 금액으로 굳힌다 — 자동 연동만 끄고 마지막 본 금액 유지.
         // 토스 시세 미수신(미연결/조회실패) 시엔 굳히지 않고 기존 잔액을 유지한다.
-        if (asset.isTossLinked() && asset.getTossQuantity() != null) {
+        if (asset.isSecuritiesLinked() && asset.getQuantity() != null) {
             Long valuation = computeTossValuationKrw(
-                userRowId, asset.getTossSymbol(), BigDecimal.valueOf(asset.getTossQuantity()));
+                userRowId, asset.getSymbol(), BigDecimal.valueOf(asset.getQuantity()));
             if (valuation != null) {
                 // 굳히는 값도 '보유 평가금액' 이다 — CASH 로 찍으면 예수금이 평가액만큼 부풀고
                 // 기존 HOLDING 앵커와 이중으로 더해진다.
@@ -369,7 +369,7 @@ public class AssetServiceImpl implements AssetService {
             }
         }
 
-        asset.unlinkToss();
+        asset.unlinkSecurities();
         log.info("자산 토스 연결 해제 완료: assetId={}", assetId);
         return AssetServiceDto.AssetInfo.from(asset);
     }
@@ -408,7 +408,7 @@ public class AssetServiceImpl implements AssetService {
                 if (type != HoldingType.STOCK) {
                     throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
                 }
-                if (hc.tossSymbol() == null || hc.tossSymbol().isBlank() || hc.quantity() == null) {
+                if (hc.symbol() == null || hc.symbol().isBlank() || hc.quantity() == null) {
                     throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
                 }
             } else {
@@ -445,14 +445,14 @@ public class AssetServiceImpl implements AssetService {
     private Long computeInvestmentBalance(Long userRowId, List<AssetServiceDto.HoldingCommand> holdings) {
         long manual = manualHoldingsSum(holdings);
         List<AssetServiceDto.HoldingCommand> linked = holdings.stream()
-            .filter(hc -> Boolean.TRUE.equals(hc.linked()) && hc.tossSymbol() != null && hc.quantity() != null)
+            .filter(hc -> Boolean.TRUE.equals(hc.linked()) && hc.symbol() != null && hc.quantity() != null)
             .toList();
         if (linked.isEmpty()) {
             return manual;
         }
         try {
             String symbols = linked.stream()
-                .map(AssetServiceDto.HoldingCommand::tossSymbol)
+                .map(AssetServiceDto.HoldingCommand::symbol)
                 .distinct()
                 .collect(Collectors.joining(","));
             Map<String, TossMarketDto.PriceResponse> priceBySymbol = new HashMap<>();
@@ -463,7 +463,7 @@ public class AssetServiceImpl implements AssetService {
             BigDecimal fx = null;
             BigDecimal sum = BigDecimal.ZERO;
             for (AssetServiceDto.HoldingCommand hc : linked) {
-                TossMarketDto.PriceResponse p = priceBySymbol.get(hc.tossSymbol());
+                TossMarketDto.PriceResponse p = priceBySymbol.get(hc.symbol());
                 BigDecimal price = p != null ? parsePrice(p.lastPrice()) : null;
                 if (price == null) {
                     return null;
@@ -517,7 +517,7 @@ public class AssetServiceImpl implements AssetService {
                 found.updateHolding(
                     hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                     linked ? YNType.Y : YNType.N,
-                    linked ? hc.tossSymbol() : null,
+                    linked ? hc.symbol() : null,
                     hc.quantity(),
                     linked ? null : hc.holdingName(),
                     linked ? null : hc.holdingValue(),
@@ -531,7 +531,7 @@ public class AssetServiceImpl implements AssetService {
                 asset,
                 hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
-                linked ? hc.tossSymbol() : null,
+                linked ? hc.symbol() : null,
                 hc.quantity(),
                 linked ? null : hc.holdingName(),
                 linked ? null : hc.holdingValue(),
@@ -568,7 +568,7 @@ public class AssetServiceImpl implements AssetService {
                 asset,
                 hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
-                linked ? hc.tossSymbol() : null,
+                linked ? hc.symbol() : null,
                 // 미연동도 수량을 남긴다 — 몇 주·몇 g·몇 개인지는 평가액과 별개로 기록 가치가 있다(선택 입력).
                 hc.quantity(),
                 linked ? null : hc.holdingName(),
@@ -587,7 +587,7 @@ public class AssetServiceImpl implements AssetService {
         if (hc.totalCost() != null) {
             return hc.totalCost();
         }
-        String key = Boolean.TRUE.equals(hc.linked()) ? hc.tossSymbol() : hc.holdingName();
+        String key = Boolean.TRUE.equals(hc.linked()) ? hc.symbol() : hc.holdingName();
         return key != null ? costByKey.get(key) : null;
     }
 
@@ -599,7 +599,7 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public void snapshotTossValuations() {
+    public void snapshotSecuritiesValuations() {
         List<Asset> investments = assetRepository.findAllByType(AssetType.INVESTMENT);
         if (investments.isEmpty()) {
             return;
@@ -613,7 +613,7 @@ public class AssetServiceImpl implements AssetService {
                 .collect(Collectors.groupingBy(h -> h.getAsset().getRowId()));
 
         List<Asset> linked = investments.stream()
-            .filter(a -> linkedHoldingsByAsset.containsKey(a.getRowId()) || a.isTossLinked())
+            .filter(a -> linkedHoldingsByAsset.containsKey(a.getRowId()) || a.isSecuritiesLinked())
             .toList();
         if (linked.isEmpty()) {
             return;
@@ -630,7 +630,7 @@ public class AssetServiceImpl implements AssetService {
                 if (!entitlementService.hasFeature(userRowId, FEATURE_SECURITIES)) {
                     continue;
                 }
-                if (!tossCredentialService.getStatus(userRowId).connected()) {
+                if (!securitiesCredentialService.hasAnyConnection(userRowId)) {
                     continue;
                 }
                 String symbols = userAssets.stream()
@@ -702,12 +702,12 @@ public class AssetServiceImpl implements AssetService {
         List<AssetHolding> holdings = linkedHoldingsByAsset.get(asset.getRowId());
         if (holdings != null && !holdings.isEmpty()) {
             return holdings.stream()
-                .filter(h -> h.getTossSymbol() != null && h.getQuantity() != null)
-                .map(h -> new SymbolQty(h.getTossSymbol(), h.getQuantity()))
+                .filter(h -> h.getSymbol() != null && h.getQuantity() != null)
+                .map(h -> new SymbolQty(h.getSymbol(), h.getQuantity()))
                 .toList();
         }
-        if (asset.isTossLinked() && asset.getTossQuantity() != null) {
-            return List.of(new SymbolQty(asset.getTossSymbol(), BigDecimal.valueOf(asset.getTossQuantity())));
+        if (asset.isSecuritiesLinked() && asset.getQuantity() != null) {
+            return List.of(new SymbolQty(asset.getSymbol(), BigDecimal.valueOf(asset.getQuantity())));
         }
         return List.of();
     }
@@ -715,7 +715,7 @@ public class AssetServiceImpl implements AssetService {
     private record SymbolQty(String symbol, BigDecimal qty) {}
 
     /** 토스가 해당 종목코드의 시세를 제공하는지 — 유효 종목 검증(미인식/조회실패 시 false). */
-    private boolean isTossPriceAvailable(Long userRowId, String symbol) {
+    private boolean isPriceAvailable(Long userRowId, String symbol) {
         try {
             List<TossMarketDto.PriceResponse> prices = tossQueryService.getPrices(userRowId, symbol);
             return prices != null && prices.stream().anyMatch(p ->

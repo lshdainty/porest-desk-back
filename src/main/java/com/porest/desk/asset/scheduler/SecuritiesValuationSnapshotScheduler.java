@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class TossValuationSnapshotScheduler {
+public class SecuritiesValuationSnapshotScheduler {
 
     private final AssetService assetService;
 
@@ -23,7 +23,7 @@ public class TossValuationSnapshotScheduler {
     @Scheduled(cron = "0 0 16 * * *", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void snapshot() {
         log.info("토스 평가액 일일 스냅샷 시작");
-        assetService.snapshotTossValuations();
+        assetService.snapshotSecuritiesValuations();
         log.info("토스 평가액 일일 스냅샷 완료");
     }
 }

@@ -42,6 +42,9 @@ jwt:
   sso-jwks-uri: http://localhost:0/.well-known/jwks.json
 
 app:
+  securities:
+    # 테스트는 Redis 를 띄우지 않는다 — 토큰 캐시를 프로세스 메모리로 고정한다.
+    token-store: memory
   sso:
     base-url: http://localhost:0
   cors:

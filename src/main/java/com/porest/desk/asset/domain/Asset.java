@@ -95,14 +95,22 @@ public class Asset extends AuditingFieldsWithIp {
     @JoinColumn(name = "payment_asset_row_id")
     private Asset paymentAsset;
 
-    // 토스증권 연동 (INVESTMENT 자산 전용) — 종목코드(toss_symbol)와 보유수량(toss_quantity)을 등록하면
-    // 토스 시세(현재가) × 수량으로 평가액을 실시간 계산한다. 타 증권사 보유분도 토스 시세를 빌려 평가.
-    // 프로(SECURITIES) + 토스 연결 사용자만 설정 가능. 미연결이면 둘 다 NULL → 기존 수동 입력 유지.
-    @Column(name = "toss_symbol", length = 30)
-    private String tossSymbol;
+    // 증권사 시세 연동 (INVESTMENT 자산 전용) — 종목코드 + 보유수량을 등록하면
+    // 현재가 × 수량으로 평가액을 실시간 계산한다. 어느 증권사 시세로 계산할지는 사용자가 고른
+    // 기본 소스(user_securities_credential.is_primary)가 정한다.
+    // 프로(SECURITIES) + 증권사 1곳 이상 연결 시에만 설정 가능. 미연결이면 NULL → 수동 입력 유지.
+    //
+    // symbol 은 증권사 표기가 아니라 stock_master 기준이다 — 증권사마다 같은 종목을 다르게
+    // 부르므로, 증권사 표기를 저장하면 사용자가 기본 소스를 바꾸는 순간 연동이 조용히 풀린다.
+    // market_code 와 짝으로 stock_master 를 찾고, 브로커별 호출 심볼은 조회 시점에 변환한다.
+    @Column(name = "market_code", length = 10)
+    private String marketCode;
 
-    @Column(name = "toss_quantity")
-    private Long tossQuantity;
+    @Column(name = "symbol", length = 30)
+    private String symbol;
+
+    @Column(name = "quantity")
+    private Long quantity;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
@@ -185,20 +193,20 @@ public class Asset extends AuditingFieldsWithIp {
     }
 
     /** 토스 종목 1:1 연결 — 종목코드 + 보유수량. 토스 시세 × 수량으로 평가액 실시간 계산. */
-    public void linkToss(String tossSymbol, Long tossQuantity) {
-        this.tossSymbol = tossSymbol;
-        this.tossQuantity = tossQuantity;
+    public void linkSecurities(String symbol, Long quantity) {
+        this.symbol = symbol;
+        this.quantity = quantity;
     }
 
     /** 토스 연결 해제 — 다시 수동 입력 잔액으로 복귀. */
-    public void unlinkToss() {
-        this.tossQuantity = null;
-        this.tossSymbol = null;
+    public void unlinkSecurities() {
+        this.quantity = null;
+        this.symbol = null;
     }
 
     /** 토스 보유종목에 연결된 자산인지. */
-    public boolean isTossLinked() {
-        return tossSymbol != null && !tossSymbol.isBlank();
+    public boolean isSecuritiesLinked() {
+        return symbol != null && !symbol.isBlank();
     }
 
     public void updateSortOrder(Integer sortOrder) {

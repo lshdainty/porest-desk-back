@@ -145,13 +145,16 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CARD_BILLING_NOT_FOUND("CARD_009", "error.card.billing.not.found", HttpStatus.NOT_FOUND),
     CARD_BILLING_NOT_CANCELABLE("CARD_010", "error.card.billing.not.cancelable", HttpStatus.BAD_REQUEST),
 
-    // Toss Securities (토스증권 Open API 연동)
-    TOSS_NOT_CONFIGURED("TOSS_001", "error.toss.not.configured", HttpStatus.SERVICE_UNAVAILABLE),
-    TOSS_AUTH_ERROR("TOSS_002", "error.toss.auth.error", HttpStatus.BAD_GATEWAY),
-    TOSS_API_ERROR("TOSS_003", "error.toss.api.error", HttpStatus.BAD_GATEWAY),
-    TOSS_CREDENTIAL_REQUIRED("TOSS_004", "error.toss.credential.required", HttpStatus.FORBIDDEN),
-    TOSS_CREDENTIAL_INVALID("TOSS_005", "error.toss.credential.invalid", HttpStatus.BAD_GATEWAY),
-    TOSS_SYMBOL_INVALID("TOSS_006", "error.toss.symbol.invalid", HttpStatus.BAD_REQUEST),
+    // Securities (증권사 Open API 연동 — 토스증권 · 나무증권)
+    // 메시지에 증권사 이름을 넣지 않는다: 메시지 리졸버가 인자를 받지 않아 파라미터화가 불가능하고,
+    // 어느 증권사에 요청했는지는 호출한 쪽이 이미 안다.
+    SECURITIES_NOT_CONFIGURED("SEC_001", "error.securities.not.configured", HttpStatus.SERVICE_UNAVAILABLE),
+    SECURITIES_AUTH_ERROR("SEC_002", "error.securities.auth.error", HttpStatus.BAD_GATEWAY),
+    SECURITIES_API_ERROR("SEC_003", "error.securities.api.error", HttpStatus.BAD_GATEWAY),
+    SECURITIES_CREDENTIAL_REQUIRED("SEC_004", "error.securities.credential.required", HttpStatus.FORBIDDEN),
+    SECURITIES_CREDENTIAL_INVALID("SEC_005", "error.securities.credential.invalid", HttpStatus.BAD_GATEWAY),
+    SECURITIES_SYMBOL_INVALID("SEC_006", "error.securities.symbol.invalid", HttpStatus.BAD_REQUEST),
+    SECURITIES_BROKER_UNSUPPORTED("SEC_007", "error.securities.broker.unsupported", HttpStatus.BAD_REQUEST),
 
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),

@@ -15,7 +15,7 @@ import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
-import com.porest.desk.toss.credential.service.TossCredentialService;
+import com.porest.desk.securities.service.SecuritiesCredentialService;
 import com.porest.desk.toss.service.TossQueryService;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -65,7 +65,7 @@ class InvestmentCashPreservedTest {
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private UserClock userClock;
     @Mock private SubscriptionEntitlementService entitlementService;
-    @Mock private TossCredentialService tossCredentialService;
+    @Mock private SecuritiesCredentialService securitiesCredentialService;
     @Mock private TossQueryService tossQueryService;
     @InjectMocks private AssetServiceImpl sut;
 

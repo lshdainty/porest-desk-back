@@ -56,7 +56,7 @@ class AssetHoldingServiceTest {
     @Mock private CardCatalogRepository cardCatalogRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private com.porest.desk.subscription.service.SubscriptionEntitlementService entitlementService;
-    @Mock private com.porest.desk.toss.credential.service.TossCredentialService tossCredentialService;
+    @Mock private com.porest.desk.securities.service.SecuritiesCredentialService securitiesCredentialService;
     @Mock private com.porest.desk.toss.service.TossQueryService tossQueryService;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
@@ -136,7 +136,7 @@ class AssetHoldingServiceTest {
         verify(assetHoldingRepository, org.mockito.Mockito.times(2)).save(captor.capture());
         List<AssetHolding> saved = captor.getAllValues();
         assertThat(saved.get(0).getLinked()).isEqualTo(YNType.Y);
-        assertThat(saved.get(0).getTossSymbol()).isEqualTo("005930");
+        assertThat(saved.get(0).getSymbol()).isEqualTo("005930");
         assertThat(saved.get(0).getQuantity()).isEqualByComparingTo(BigDecimal.valueOf(30));
         assertThat(saved.get(0).getSortOrder()).isEqualTo(0);
         assertThat(saved.get(1).getLinked()).isEqualTo(YNType.N);
@@ -218,7 +218,7 @@ class AssetHoldingServiceTest {
         assertThat(old.getIsDeleted()).isEqualTo(YNType.Y);
         ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
         verify(assetHoldingRepository, org.mockito.Mockito.times(2)).save(captor.capture());
-        assertThat(captor.getAllValues().get(0).getTossSymbol()).isEqualTo("NVDA");
+        assertThat(captor.getAllValues().get(0).getSymbol()).isEqualTo("NVDA");
         assertThat(captor.getAllValues().get(1).getHoldingName()).isEqualTo("채권");
         assertThat(info.holdings()).hasSize(2);
     }
@@ -257,7 +257,7 @@ class AssetHoldingServiceTest {
 
         verify(assetHoldingRepository).findActiveByAssets(List.of(5L, 6L));
         assertThat(infos.get(0).holdings()).hasSize(1);
-        assertThat(infos.get(0).holdings().get(0).tossSymbol()).isEqualTo("005930");
+        assertThat(infos.get(0).holdings().get(0).symbol()).isEqualTo("005930");
         assertThat(infos.get(1).holdings()).hasSize(1);
         assertThat(infos.get(1).holdings().get(0).holdingName()).isEqualTo("ETF");
     }
