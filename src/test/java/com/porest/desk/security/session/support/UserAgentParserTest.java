@@ -7,6 +7,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import com.porest.desk.security.session.support.UserAgentParser.DeviceKind;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -84,5 +86,43 @@ class UserAgentParserTest {
     @DisplayName("한쪽만 알아내면 그것만 쓴다")
     void partial() {
         assertThat(UserAgentParser.parse("Mozilla/5.0 (Windows NT 10.0)")).isEqualTo("Windows");
+    }
+
+    // ── 기기 형태(아이콘용) ──────────────────────────────────────────────
+
+    @ParameterizedTest(name = "{0} → {1}")
+    @CsvSource(delimiter = '|', value = {
+        "iPhone · Safari      | MOBILE",
+        "Android · Chrome     | MOBILE",
+        "iOS · Porest 앱      | MOBILE",
+        "Android · Porest 앱  | MOBILE",
+        "iPad · Safari        | TABLET",
+        "Windows · Chrome     | DESKTOP",
+        "Mac · Safari         | DESKTOP",
+        "ChromeOS · Chrome    | DESKTOP",
+        "Linux · Firefox      | DESKTOP",
+        // 기기 없이 클라이언트만 알아낸 이름 — 형태를 알 수 없다
+        "Chrome               | UNKNOWN",
+        "Porest 앱            | UNKNOWN",
+    })
+    @DisplayName("기기 이름에서 형태를 되짚는다 — 화면이 이름을 다시 뜯지 않게")
+    void kindOf_derivesFromLabel(String label, DeviceKind expected) {
+        assertThat(UserAgentParser.kindOf(label.trim())).isEqualTo(expected);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    @DisplayName("이름이 없으면 UNKNOWN — 못 알아본 UA 로 만들어진 세션")
+    void kindOf_noLabel_isUnknown(String label) {
+        assertThat(UserAgentParser.kindOf(label)).isEqualTo(DeviceKind.UNKNOWN);
+    }
+
+    @Test
+    @DisplayName("parse 가 만든 이름을 kindOf 가 되짚는다 — 두 함수가 같은 구분자를 본다")
+    void kindOf_roundTripsParseOutput() {
+        String ua = "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Safari/604.1";
+        // 이 왕복이 깨지면 아이콘이 전부 '알 수 없음' 으로 바뀐다 — 구분자를 상수로 묶은 이유다.
+        assertThat(UserAgentParser.kindOf(UserAgentParser.parse(ua))).isEqualTo(DeviceKind.TABLET);
     }
 }
