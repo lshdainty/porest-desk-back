@@ -7,6 +7,7 @@ import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.session.domain.UserSsoSession;
 import com.porest.desk.security.session.repository.UserSsoSessionRepository;
 import com.porest.desk.security.session.support.UserAgentParser;
+import com.porest.desk.security.session.controller.dto.SessionApiDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * 기기별 SSO 세션 관리 — 로그인 때 refresh token 을 받아 두었다가, desk access token 이
@@ -140,6 +143,50 @@ public class SsoSessionService {
     public void revoke(String sessionId) {
         sessionRepository.findBySessionIdAndIsDeleted(sessionId, YNType.N)
                 .ifPresent(UserSsoSession::revoke);
+    }
+
+    /**
+     * "로그인된 기기" 목록.
+     *
+     * <p>만료된 세션은 뺀다 — 이미 못 쓰는 기기를 목록에 두면 사용자가 "왜 로그아웃이 안 되지"
+     * 하고 헤맨다. 최근에 쓴 순으로 준다. 한 번도 재발급 안 한 세션은 lastUsedAt 이 null 이라
+     * 로그인 시각으로 대신 정렬한다.
+     */
+    @Transactional(readOnly = true)
+    public List<SessionApiDto.DeviceRes> listDevices(Long userRowId, String currentSessionId) {
+        LocalDateTime now = now();
+        return sessionRepository.findAllByUserRowIdAndIsDeleted(userRowId, YNType.N).stream()
+                .filter(s -> !s.isExpired(now))
+                .sorted(Comparator.comparing(
+                        (UserSsoSession s) -> s.getLastUsedAt() != null ? s.getLastUsedAt() : s.getCreateAt(),
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(s -> new SessionApiDto.DeviceRes(
+                        s.getSessionId(),
+                        s.getDeviceLabel(),
+                        s.getLastUsedAt(),
+                        s.getCreateAt(),
+                        s.getSessionId().equals(currentSessionId)))
+                .toList();
+    }
+
+    /**
+     * 기기 하나 로그아웃 — <b>본인 세션인지 확인하고</b> 끊는다.
+     *
+     * <p>세션 id 만 받고 끊으면 남의 기기도 끊을 수 있다. id 를 알아내기 어렵다는 건 방어가
+     * 아니다. 소유자를 대조한다.
+     *
+     * @return 실제로 끊었으면 true. 없거나 남의 것이면 false — 어느 쪽인지 구분해 주지 않는다
+     *         (있는데 남의 것이라는 사실 자체가 정보다)
+     */
+    @Transactional
+    public boolean revokeOwned(Long userRowId, String sessionId) {
+        return sessionRepository.findBySessionIdAndIsDeleted(sessionId, YNType.N)
+                .filter(s -> s.getUserRowId().equals(userRowId))
+                .map(s -> {
+                    s.revoke();
+                    return true;
+                })
+                .orElse(false);
     }
 
     /**

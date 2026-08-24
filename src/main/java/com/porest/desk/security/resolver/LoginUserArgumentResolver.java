@@ -30,6 +30,7 @@ public class LoginUserArgumentResolver implements HandlerMethodArgumentResolver 
                 .userId(principal.getUserId())
                 .userName(principal.getUserName())
                 .userEmail(principal.getUserEmail())
+                .sessionId(principal.getSessionId())
                 .build();
         }
         return null;
