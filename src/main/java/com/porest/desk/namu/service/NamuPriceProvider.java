@@ -13,10 +13,10 @@ import java.util.List;
 /**
  * 나무증권 시세 제공자.
  *
- * <p><b>환율은 아직 못 준다.</b> 나무의 환율은 해외주식 시세 응답에 딸린 종목지수환율이라
- * 독립 조회가 없다. 그래서 {@code null} 을 돌려주고, 자산 평가는 외화 종목이 섞이면 평가를
- * 접는다(부분합으로 금액을 왜곡하지 않는 기존 규칙 그대로). 나무를 기본 소스로 고른 사용자가
- * 외화 자산을 가지면 여기서 막히므로, 환율 소스를 붙이는 게 다음 과제다.
+ * <p><b>환율은 해외 잔고에서 얻는다.</b> 나무는 환율 전용 조회가 없고 지수·환율 통합 API 의
+ * 코드값이 공개 문서에 없다. 대신 해외 잔고 응답에 당일매매기준환율이 실려 오므로 그걸 쓴다 —
+ * 문서화된 유일한 경로다. 그래서 <b>해외 계좌가 없는 사용자는 환율을 못 구하고</b>, 그때는
+ * 외화 평가를 접는다(부분합으로 금액을 왜곡하지 않는 기존 규칙 그대로).
  */
 @Slf4j
 @Component
@@ -35,9 +35,16 @@ public class NamuPriceProvider implements SecuritiesPriceProvider {
         return symbols.isEmpty() ? List.of() : namuQueryService.getPrices(userRowId, symbols);
     }
 
+    /**
+     * {@code base}→{@code quote} 환율. 나무가 주는 건 <b>외화→원화</b> 기준환율뿐이라
+     * quote 가 KRW 가 아니면 돌려줄 값이 없다.
+     */
     @Override
     public BigDecimal getFxRate(Long userRowId, String baseCurrency, String quoteCurrency) {
-        log.debug("나무증권 환율 미지원 - 외화 평가를 건너뛴다: {}→{}", baseCurrency, quoteCurrency);
-        return null;
+        if (!"KRW".equalsIgnoreCase(quoteCurrency)) {
+            log.debug("나무증권은 원화 환산 환율만 준다 - 건너뛴다: {}→{}", baseCurrency, quoteCurrency);
+            return null;
+        }
+        return namuQueryService.getFxRate(userRowId, baseCurrency);
     }
 }

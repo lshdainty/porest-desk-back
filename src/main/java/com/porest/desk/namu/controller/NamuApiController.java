@@ -1,6 +1,7 @@
 package com.porest.desk.namu.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.service.NamuQueryService;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
@@ -10,6 +11,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 나무증권 Open API 조회 프록시.
@@ -44,5 +47,26 @@ public class NamuApiController {
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbol) {
         return ApiResponse.success(namuQueryService.getGbPrice(loginUser.getRowId(), symbol));
+    }
+
+    /** 본인 계좌 목록. 잔고 조회의 계좌번호를 여기서 얻는다. */
+    @GetMapping("/accounts")
+    public ApiResponse<List<NamuAccountDto.Account>> getAccounts(@LoginUser UserPrincipal loginUser) {
+        return ApiResponse.success(namuQueryService.getAccounts(loginUser.getRowId()));
+    }
+
+    /**
+     * 보유 종목. 국내와 해외는 나무 쪽 엔드포인트·필드명이 다르지만 응답은 한 모양이다.
+     *
+     * @param currency  KRW 면 국내, 그 밖(USD·CNY·HKD·JPY)이면 해외. 기본 KRW
+     * @param accountNo 미지정이면 첫 계좌
+     */
+    @GetMapping("/holdings")
+    public ApiResponse<NamuAccountDto.Holdings> getHoldings(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam(required = false) String accountNo,
+            @RequestParam(defaultValue = "KRW") String currency) {
+        return ApiResponse.success(
+            namuQueryService.getHoldings(loginUser.getRowId(), accountNo, currency));
     }
 }

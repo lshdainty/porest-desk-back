@@ -3,6 +3,7 @@ package com.porest.desk.namu.client;
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
+import com.porest.desk.namu.client.dto.NamuResponse;
 import com.porest.desk.securities.client.BrokerTokenManager;
 import com.porest.desk.securities.client.BrokerTokenManagers;
 import com.porest.desk.securities.config.NamuProperties;
@@ -61,6 +62,15 @@ public class NamuApiClient {
      */
     public <T> java.util.List<T> post(Long userRowId, String path, Map<String, ?> input,
                                       ParameterizedTypeReference<NamuEnvelope<T>> typeRef) {
+        return exchange(userRowId, path, input, typeRef).resultOrEmpty();
+    }
+
+    /**
+     * 조회 1건 — 봉투를 통째로 돌려준다. 요약({@code Output_0}) + 목록({@code Output_1})이
+     * 함께 오는 잔고 계열에 쓴다.
+     */
+    public <R extends NamuResponse> R exchange(Long userRowId, String path, Map<String, ?> input,
+                                               ParameterizedTypeReference<R> typeRef) {
         ensureConfigured();
         return execute(userRowId, path, input, typeRef, true);
     }
@@ -72,18 +82,18 @@ public class NamuApiClient {
         }
     }
 
-    private <T> java.util.List<T> execute(Long userRowId, String path, Map<String, ?> input,
-                                          ParameterizedTypeReference<NamuEnvelope<T>> typeRef,
-                                          boolean retryOnUnauthorized) {
+    private <R extends NamuResponse> R execute(Long userRowId, String path, Map<String, ?> input,
+                                               ParameterizedTypeReference<R> typeRef,
+                                               boolean retryOnUnauthorized) {
         HttpHeaders headers = new HttpHeaders();
         headers.addAll(tokenManager.authHeaders(userRowId));
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         try {
-            ResponseEntity<NamuEnvelope<T>> response = namuRestTemplate.exchange(
+            ResponseEntity<R> response = namuRestTemplate.exchange(
                 path, HttpMethod.POST, new HttpEntity<>(Map.of("Input_0", input), headers), typeRef);
 
-            NamuEnvelope<T> body = response.getBody();
+            R body = response.getBody();
             if (body == null) {
                 log.error("나무증권 응답 본문 없음: path={}", path);
                 throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR);
@@ -93,7 +103,7 @@ public class NamuApiClient {
                 log.error("나무증권 API 오류: path={}, rsp_cd={}, rsp_msg={}", path, body.rspCd(), body.rspMsg());
                 throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR);
             }
-            return body.resultOrEmpty();
+            return body;
         } catch (HttpClientErrorException.Unauthorized e) {
             if (retryOnUnauthorized) {
                 // 토큰이 무효화되었을 수 있으므로 1회 재발급 후 재시도한다.
