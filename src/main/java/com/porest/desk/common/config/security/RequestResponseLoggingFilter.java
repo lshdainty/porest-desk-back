@@ -46,14 +46,25 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
 
     /**
      * 로그에서 값을 마스킹할 민감 필드명(대소문자 무시).
-     * 비밀번호(변경 필드 포함) 외에 토스증권 클라이언트 키, OAuth 토큰류를 포함한다.
+     * 비밀번호(변경 필드 포함) 외에 증권사 API 키, OAuth 토큰류를 포함한다.
+     *
+     * <p><b>키 이름이 바뀌면 여기도 같이 고쳐야 한다.</b> 매칭이 완전 일치라
+     * {@code "apiSecret"} 은 {@code "secret"} 항목에 걸리지 않는다. 실제로 크리덴셜 요청
+     * 필드를 clientId/clientSecret → apiKey/apiSecret 으로 리네임하면서 이 목록을 안 따라
+     * 고쳐 시크릿이 평문으로 찍힌 적이 있다(#252 이후, 커밋 516de21 이 고쳤던 것과 같은 사고).
      */
     private static final List<String> SENSITIVE_KEYS = List.of(
             "password", "user_pw",
             // 비밀번호 변경 필드 — 정확매칭이라 "password" 만으로는 안 걸리므로 명시 추가
             "currentPassword", "newPassword", "confirmPassword", "newPasswordConfirm",
+            // 증권사 크리덴셜 — 우리 API 표기(apiKey/apiSecret)와 증권사별 원표기를 모두 막는다.
+            // 토스 client_id/client_secret, 나무 appkey/appsecretkey.
+            "apiKey", "api_key",
+            "apiSecret", "api_secret",
             "clientSecret", "client_secret",
             "clientId", "client_id",
+            "appkey", "appKey", "app_key",
+            "appsecret", "appSecret", "app_secret", "appsecretkey", "appSecretKey",
             "secret",
             "accessToken", "access_token",
             "refreshToken", "refresh_token"
