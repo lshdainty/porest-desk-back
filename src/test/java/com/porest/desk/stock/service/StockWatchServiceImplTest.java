@@ -14,10 +14,10 @@ import com.porest.desk.stock.repository.StockWatchItemRepository;
 import com.porest.desk.stock.service.dto.StockWatchServiceDto;
 import com.porest.desk.stock.type.StockMarket;
 import com.porest.desk.stock.type.StockSecurityType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -40,7 +40,14 @@ class StockWatchServiceImplTest {
     @Mock private StockWatchGroupRepository groupRepository;
     @Mock private StockWatchItemRepository itemRepository;
     @Mock private StockMasterRepository stockMasterRepository;
-    @InjectMocks private StockWatchServiceImpl service;
+    private StockWatchServiceImpl service;
+
+    // 해석기는 목이 아니라 진짜를 물린다 — 심볼 해석 규칙까지 여기서 함께 지켜진다.
+    @BeforeEach
+    void setUpService() {
+        service = new StockWatchServiceImpl(groupRepository, itemRepository,
+            new StockMasterResolver(stockMasterRepository));
+    }
 
     private static final long USER = 1L;
 

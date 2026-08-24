@@ -1,6 +1,7 @@
 package com.porest.desk.namu.service;
 
 import com.porest.desk.namu.dto.NamuAccountDto;
+import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 
 import java.math.BigDecimal;
@@ -31,7 +32,7 @@ public interface NamuQueryService {
     PriceQuote getGbPrice(Long userRowId, String symbol);
 
     /** 국내·해외를 섞어 다건 조회. 못 구한 종목은 결과에서 빠진다. */
-    List<PriceQuote> getPrices(Long userRowId, List<String> symbols);
+    List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments);
 
     // === 계좌·잔고 ===
 

@@ -1,6 +1,7 @@
 package com.porest.desk.namu.service;
 
 import com.porest.desk.securities.service.SecuritiesPriceProvider;
+import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.securities.type.SecuritiesBroker;
 import lombok.RequiredArgsConstructor;
@@ -31,8 +32,8 @@ public class NamuPriceProvider implements SecuritiesPriceProvider {
     }
 
     @Override
-    public List<PriceQuote> getPrices(Long userRowId, List<String> symbols) {
-        return symbols.isEmpty() ? List.of() : namuQueryService.getPrices(userRowId, symbols);
+    public List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments) {
+        return instruments.isEmpty() ? List.of() : namuQueryService.getPrices(userRowId, instruments);
     }
 
     /**

@@ -6,9 +6,10 @@ import com.porest.desk.namu.client.dto.NamuListEnvelope;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
+import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.stock.domain.StockMaster;
-import com.porest.desk.stock.repository.StockMasterRepository;
+import com.porest.desk.stock.service.StockMasterResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -53,7 +54,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         };
 
     private final NamuApiClient namuApiClient;
-    private final StockMasterRepository stockMasterRepository;
+    private final StockMasterResolver stockMasterResolver;
 
     @Override
     public PriceQuote getKrPrice(Long userRowId, String symbol, String marketCode) {
@@ -78,29 +79,30 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * (토스는 콤마 구분 다건이다). 보유 종목 수만큼 호출이 나가므로 자산 평가 경로에서만 쓰고,
      * 한 종목이 실패해도 나머지는 살린다 — 전체를 접으면 평가가 통째로 멈춘다.
      *
-     * <p>국내인지 해외인지는 {@code stock_master} 가 정한다. 심볼이 여러 시장에 걸치면
-     * (해외 중복 티커) 어느 쪽인지 확정할 수 없어 건너뛴다 — 엉뚱한 시장 시세를 자산에
-     * 반영하느니 그 종목만 빼는 게 낫다.
+     * <p>국내인지 해외인지는 {@code stock_master} 가 정한다. <b>시장을 알면 그걸로 특정하고</b>,
+     * 모르면 {@link StockMasterResolver} 의 우선순위로 하나를 고른다. 예전에는 후보가 둘
+     * 이상이면 통째로 건너뛰었는데, NH 소스가 시장을 6개 늘린 뒤로 SPY·IVV 같은 흔한 종목이
+     * 거기 걸려 평가에서 조용히 빠졌다.
      */
     @Override
-    public List<PriceQuote> getPrices(Long userRowId, List<String> symbols) {
+    public List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments) {
         List<PriceQuote> quotes = new ArrayList<>();
-        for (String symbol : symbols) {
-            List<StockMaster> matches = stockMasterRepository.findAllActiveBySymbol(symbol);
-            if (matches.size() != 1) {
-                log.debug("나무 시세 건너뜀 - 종목 특정 불가: symbol={}, 후보={}건", symbol, matches.size());
+        for (InstrumentRef ref : instruments) {
+            StockMaster stock = stockMasterResolver.resolve(ref.marketCode(), ref.symbol()).orElse(null);
+            if (stock == null) {
+                log.debug("나무 시세 건너뜀 - 마스터에 없는 종목: market={}, symbol={}",
+                    ref.marketCode(), ref.symbol());
                 continue;
             }
-            StockMaster stock = matches.get(0);
             try {
                 PriceQuote quote = "KR".equals(stock.getCountryCode())
-                    ? getKrPrice(userRowId, symbol, MARKET_KRX)
-                    : getGbPrice(userRowId, symbol);
+                    ? getKrPrice(userRowId, stock.getSymbol(), MARKET_KRX)
+                    : getGbPrice(userRowId, stock.getSymbol());
                 if (quote != null) {
                     quotes.add(quote);
                 }
             } catch (RuntimeException e) {
-                log.warn("나무 시세 조회 실패 - symbol={}: {}", symbol, e.getMessage());
+                log.warn("나무 시세 조회 실패 - symbol={}: {}", ref.symbol(), e.getMessage());
             }
         }
         return quotes;

@@ -1,6 +1,7 @@
 package com.porest.desk.toss.service;
 
 import com.porest.desk.securities.service.SecuritiesPriceProvider;
+import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.securities.type.SecuritiesBroker;
 import com.porest.desk.toss.dto.TossMarketDto;
@@ -16,7 +17,8 @@ import java.util.List;
  * 토스증권 시세 제공자. 조회 자체는 기존 {@link TossQueryService} 가 하고 여기서는
  * 증권사 무관 모양으로 옮기기만 한다.
  *
- * <p>토스는 종목 표기가 stock_master 심볼과 같아 변환이 없다.
+ * <p>토스는 종목 표기가 stock_master 심볼과 같아 변환이 없다. 시장코드도 안 쓴다 —
+ * 토스가 다루는 시장(국내·미국)에서는 심볼이 갈리지 않아서다.
  */
 @Slf4j
 @Component
@@ -31,12 +33,20 @@ public class TossPriceProvider implements SecuritiesPriceProvider {
     }
 
     @Override
-    public List<PriceQuote> getPrices(Long userRowId, List<String> symbols) {
+    public List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments) {
+        if (instruments.isEmpty()) {
+            return List.of();
+        }
+        String symbols = instruments.stream()
+            .map(InstrumentRef::symbol)
+            .filter(sym -> sym != null && !sym.isBlank())
+            .distinct()
+            .collect(java.util.stream.Collectors.joining(","));
         if (symbols.isEmpty()) {
             return List.of();
         }
         List<PriceQuote> quotes = new ArrayList<>();
-        for (TossMarketDto.PriceResponse p : tossQueryService.getPrices(userRowId, String.join(",", symbols))) {
+        for (TossMarketDto.PriceResponse p : tossQueryService.getPrices(userRowId, symbols)) {
             BigDecimal price = parse(p.lastPrice());
             if (price != null) {
                 quotes.add(new PriceQuote(p.symbol(), price, p.currency()));

@@ -7,7 +7,6 @@ import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.domain.StockWatchGroup;
 import com.porest.desk.stock.domain.StockWatchItem;
-import com.porest.desk.stock.repository.StockMasterRepository;
 import com.porest.desk.stock.repository.StockWatchGroupRepository;
 import com.porest.desk.stock.repository.StockWatchItemRepository;
 import com.porest.desk.stock.service.dto.StockWatchServiceDto;
@@ -34,11 +33,10 @@ public class StockWatchServiceImpl implements StockWatchService {
     /** 그룹당 종목 상한 — 시세 폴링 비용 방어선 */
     private static final int MAX_ITEMS_PER_GROUP = 100;
     /** 시장 미지정 심볼 해석 시 우선하는 시장 — 토스 시세 대상(KR/US) */
-    private static final Set<String> PREFERRED_COUNTRIES = Set.of("KR", "US");
 
     private final StockWatchGroupRepository groupRepository;
     private final StockWatchItemRepository itemRepository;
-    private final StockMasterRepository stockMasterRepository;
+    private final StockMasterResolver stockMasterResolver;
 
     @Override
     public List<StockWatchServiceDto.GroupInfo> getGroups(Long userRowId) {
@@ -172,25 +170,13 @@ public class StockWatchServiceImpl implements StockWatchService {
     }
 
     /** 심볼 → 마스터 해석. 시장 미지정이면 정확 일치 중 KR/US 를 우선한다 (시장 간 6자리 코드 충돌 대비). */
+    /**
+     * 규칙은 {@link StockMasterResolver} 한 곳에 있다 — 관심목록과 자산 평가가 각자 다른
+     * 규칙으로 풀면 같은 심볼이 서로 다른 종목을 가리킨다.
+     */
     private StockMaster resolveStock(String symbol, StockMarket marketCode) {
-        if (symbol == null || symbol.isBlank()) {
-            throw new EntityNotFoundException(DeskErrorCode.STOCK_NOT_FOUND);
-        }
-        String sym = symbol.trim();
-
-        if (marketCode != null) {
-            return stockMasterRepository.findActiveByMarketAndSymbol(marketCode, sym)
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.STOCK_NOT_FOUND));
-        }
-
-        List<StockMaster> candidates = stockMasterRepository.findAllActiveBySymbol(sym);
-        if (candidates.isEmpty()) {
-            throw new EntityNotFoundException(DeskErrorCode.STOCK_NOT_FOUND);
-        }
-        return candidates.stream()
-            .filter(s -> PREFERRED_COUNTRIES.contains(s.getCountryCode()))
-            .findFirst()
-            .orElse(candidates.get(0));
+        return stockMasterResolver.resolve(marketCode, symbol)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.STOCK_NOT_FOUND));
     }
 
     private String normalizeGroupName(String groupName) {
