@@ -1,0 +1,72 @@
+name: Release-Note
+
+# ── 사용자용 노트가 커밋에 붙어 있는지만 본다. 경고이고, 게이트가 아니다.
+#
+#    `feat`·`fix` 에는 사용자용 한 줄을 `Release-Note:` 트레일러로 단다
+#    (워크스페이스 CLAUDE.md 의 "커밋에 `Release-Note:` 를 단다").
+#
+#    지금 이 트레일러를 읽어 노트를 만드는 건 porest-desk-app 하나다. 그런데도 여기서
+#    경고하는 건 트레일러가 커밋에 남기 때문이다 — 나중에 이 레포에 파이프라인을 붙이는
+#    순간 지난 커밋들이 이미 쓸 만한 노트를 들고 있다. 안 달아 두면 그때 가서 과거를
+#    되살릴 방법이 없다.
+#
+#    막지 않는다. 트레일러가 없어도 릴리스는 나가고, 여기서 빨간불을 켜면 노트와 상관없는
+#    PR 이 발이 묶인다. `Release-Note: skip` 은 "사용자 눈에는 아무 일도 안 일어난다" 는
+#    명시적 결정이라 통과다.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  release-note:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # base 와 비교해야 이 PR 의 커밋만 골라낼 수 있다.
+        with: { fetch-depth: 0 }
+      - env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin "${BASE_REF}"
+
+          MISS=0
+          LIST=""
+          while IFS= read -r sha; do
+            [ -n "${sha}" ] || continue
+            SUBJ=$(git log -1 --format=%s "${sha}")
+            # 타입은 제목에서 읽는다 — release_notes.sh 와 같은 판정이어야 한다.
+            printf '%s' "${SUBJ}" | grep -qE '^(feat|fix)(\([^)]*\))?!?:' || continue
+            NOTE=$(git log -1 --format='%(trailers:key=Release-Note,valueonly)' "${sha}")
+            if [ -n "${NOTE//[[:space:]]/}" ]; then continue; fi
+            echo "::warning::Release-Note 트레일러가 없다 — ${SUBJ}"
+            LIST="${LIST}- \`${sha:0:7}\` ${SUBJ}"$'\n'
+            MISS=$((MISS + 1))
+          done < <(git rev-list --no-merges "origin/${BASE_REF}..HEAD")
+
+          if [ "${MISS}" -eq 0 ]; then
+            echo "Release-Note 확인 — 빠진 커밋 없음"
+            exit 0
+          fi
+
+          {
+            echo "### Release-Note 트레일러가 없는 커밋 ${MISS}건"
+            echo
+            echo "${LIST}"
+            echo "릴리스 노트는 이 트레일러에서 나온다. 없으면 커밋 제목이 그대로 앱"
+            echo "업데이트 화면에 뜨고, 그때 노트를 손으로 쓰는 PR 을 한 번 더 돌아야 한다."
+            echo
+            echo '```'
+            echo 'fix(recurring): 스냅 임계값 단위를 트레이 기준으로 환산한다'
+            echo
+            echo 'Release-Note: 반복 거래 행이 어중간하게 열리던 문제를 고쳤어요'
+            echo '```'
+            echo
+            echo "말투는 제품 문구와 같게(\`~어요\`). 클래스·파일·토큰 이름은 쓰지 않는다."
+            echo "쓰는 사람 눈에 아무 일도 안 일어나는 변경이면 \`Release-Note: skip\`."
+            echo
+            echo "규칙 원문은 워크스페이스 \`CLAUDE.md\` 의 \"커밋에 \`Release-Note:\` 를 단다\"."
+          } >> "${GITHUB_STEP_SUMMARY}"
