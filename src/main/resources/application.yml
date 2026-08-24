@@ -137,9 +137,12 @@ app:
       enabled: ${HOLIDAY_BACKFILL_ENABLED:false}
       start-year: ${HOLIDAY_BACKFILL_START_YEAR:2004}
   # 한국투자증권 종목 마스터파일 동기화. 인증 없는 공개 다운로드라 API 키가 필요 없다.
-  kis:
+  stock:
     master:
-      base-url: ${KIS_MASTER_BASE_URL:https://new.real.download.dws.co.kr/common/master}
+      # 소스별 다운로드 base URL. 소스가 늘면 여기 한 줄만 더한다.
+      base-url:
+        KIS: ${KIS_MASTER_BASE_URL:https://new.real.download.dws.co.kr/common/master}
+        NH: ${NH_MASTER_BASE_URL:https://www.nhplug.com/instruments}
       connect-timeout: ${KIS_MASTER_CONNECT_TIMEOUT:5000}
       read-timeout: ${KIS_MASTER_READ_TIMEOUT:30000}
       sync:

@@ -2,7 +2,8 @@ package com.porest.desk.stock.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
-import com.porest.desk.stock.client.dto.KisStockRecord;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
+import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.type.StockMarket;
 import com.porest.desk.stock.type.StockSecurityType;
 import jakarta.persistence.Column;
@@ -67,6 +68,20 @@ public class StockMaster extends AuditingFieldsWithIp {
     @Column(name = "source", nullable = false, length = 20)
     private String source;
 
+    // ── NH 마스터파일 보강. 전부 nullable — KIS 만 있는 행에는 값이 없다.
+    /** NH 해외종목 통합코드. 나무 해외 조회 키. */
+    @Column(name = "nh_gic", length = 15)
+    private String nhGic;
+
+    /** NXT(넥스트레이드) 거래 가능 여부. 나무 국내시세 market_cd(KRX/NXT/UNT) 판단 근거. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nxt_tradable", length = 1)
+    private YNType nxtTradable;
+
+    /** 가격 소수점 자릿수. 없으면 화면이 반올림을 틀린다(미국 4 / 중국 2 / 일본 0~1). */
+    @Column(name = "price_decimals")
+    private Integer priceDecimals;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_active", nullable = false, length = 1)
     private YNType isActive;
@@ -75,7 +90,8 @@ public class StockMaster extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static StockMaster create(StockMarket market, KisStockRecord record) {
+    public static StockMaster create(MasterSource source, InstrumentRecord record) {
+        StockMarket market = record.market();
         StockMaster stock = new StockMaster();
         stock.countryCode = market.getCountryCode();
         stock.marketCode = market;
@@ -86,7 +102,10 @@ public class StockMaster extends AuditingFieldsWithIp {
         stock.nameEn = record.nameEn();
         stock.securityType = record.securityType();
         stock.currency = record.currency();
-        stock.source = "KIS";
+        stock.source = source.name();
+        stock.nhGic = record.nhGic();
+        stock.nxtTradable = toYn(record.nxtTradable());
+        stock.priceDecimals = record.priceDecimals();
         stock.isActive = YNType.Y;
         stock.isDeleted = YNType.N;
         return stock;
@@ -96,7 +115,7 @@ public class StockMaster extends AuditingFieldsWithIp {
      * 파일 최신값으로 맞춘다. 실제로 달라진 게 있을 때만 true 를 돌려줘
      * 변경 없는 3만여 행의 수정 이력이 매일 갱신되는 것을 막는다.
      */
-    public boolean syncFrom(KisStockRecord record) {
+    public boolean syncFrom(InstrumentRecord record) {
         boolean changed = false;
         if (!Objects.equals(this.standardCode, record.standardCode())) {
             this.standardCode = record.standardCode();
@@ -127,7 +146,36 @@ public class StockMaster extends AuditingFieldsWithIp {
             this.isActive = YNType.Y;
             changed = true;
         }
+        // 소유 소스가 보강 필드도 주면 함께 반영한다(NH 소유 시장이 그렇다).
+        return enrichFrom(record) || changed;
+    }
+
+    /**
+     * 다른 소스가 주는 보강 필드만 채운다. 종목명·시장·유형은 <b>건드리지 않는다</b> —
+     * 소스마다 표기가 달라 서로 덮어쓰면 매일 왔다 갔다 한다.
+     *
+     * <p>값이 실제로 달라졌을 때만 true 를 돌려줘 변경 없는 행의 수정 이력이 매일 갱신되는 걸 막는다.
+     */
+    public boolean enrichFrom(InstrumentRecord record) {
+        boolean changed = false;
+        if (record.nhGic() != null && !Objects.equals(this.nhGic, record.nhGic())) {
+            this.nhGic = record.nhGic();
+            changed = true;
+        }
+        YNType nxt = toYn(record.nxtTradable());
+        if (nxt != null && this.nxtTradable != nxt) {
+            this.nxtTradable = nxt;
+            changed = true;
+        }
+        if (record.priceDecimals() != null && !Objects.equals(this.priceDecimals, record.priceDecimals())) {
+            this.priceDecimals = record.priceDecimals();
+            changed = true;
+        }
         return changed;
+    }
+
+    private static YNType toYn(Boolean value) {
+        return value == null ? null : (value ? YNType.Y : YNType.N);
     }
 
     /** 마스터파일에서 사라진 종목(상장폐지 추정). 자산 연결이 남아 있을 수 있어 행은 지우지 않는다. */

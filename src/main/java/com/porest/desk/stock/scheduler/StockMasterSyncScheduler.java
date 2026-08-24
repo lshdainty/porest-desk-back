@@ -19,25 +19,25 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "app.kis.master.sync", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "app.stock.master.sync", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class StockMasterSyncScheduler {
 
     private final StockMasterSyncService stockMasterSyncService;
 
-    @Scheduled(cron = "${app.kis.master.sync.cron:0 0 7 * * *}", zone = "${app.scheduler.zone:Asia/Seoul}")
+    @Scheduled(cron = "${app.stock.master.sync.cron:0 0 7 * * *}", zone = "${app.scheduler.zone:Asia/Seoul}")
     public void sync() {
         log.debug("종목 마스터 동기화 시작");
         List<StockMasterSyncResult> results = stockMasterSyncService.syncAll();
 
         long failed = results.stream().filter(StockMasterSyncResult::failed).count();
         if (failed > 0) {
-            log.error("종목 마스터 동기화 일부 실패: 전체={}시장, 실패={}시장", results.size(), failed);
+            log.error("종목 마스터 동기화 일부 실패: 전체={}개 파일, 실패={}개", results.size(), failed);
         }
 
         // 변경이 없는 날이 대부분이라 실제 변경이 있을 때만 결과를 남긴다.
         results.stream()
             .filter(StockMasterSyncResult::hasChanges)
-            .forEach(r -> log.info("종목 마스터 동기화 완료: market={}, 추가={}, 수정={}, 비활성={}",
-                r.market(), r.inserted(), r.updated(), r.deactivated()));
+            .forEach(r -> log.info("종목 마스터 동기화 완료: file={}, 추가={}, 수정={}, 비활성={}",
+                r.file(), r.inserted(), r.updated(), r.deactivated()));
     }
 }

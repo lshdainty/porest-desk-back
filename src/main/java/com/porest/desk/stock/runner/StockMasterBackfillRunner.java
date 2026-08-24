@@ -22,7 +22,7 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "app.kis.master.backfill", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "app.stock.master.backfill", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class StockMasterBackfillRunner implements ApplicationRunner {
 
     private final StockMasterRepository stockMasterRepository;

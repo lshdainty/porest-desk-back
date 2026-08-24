@@ -1,6 +1,7 @@
 package com.porest.desk.stock.service;
 
-import com.porest.desk.stock.client.dto.KisStockRecord;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
+import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.repository.StockMasterRepository;
 import com.porest.desk.stock.repository.StockMasterSearchCondition;
@@ -35,8 +36,8 @@ class StockMasterServiceImplTest {
     @Test
     @DisplayName("검색 결과를 StockInfo 로 매핑해 돌려준다")
     void searchMapsEntityToInfo() {
-        StockMaster apple = StockMaster.create(StockMarket.NAS,
-            new KisStockRecord("AAPL", null, "NASAAPL", "애플", "APPLE INC", StockSecurityType.STOCK, "USD"));
+        StockMaster apple = StockMaster.create(MasterSource.KIS,
+            InstrumentRecord.kis(StockMarket.NAS, "AAPL", null, "NASAAPL", "애플", "APPLE INC", StockSecurityType.STOCK, "USD"));
         StockMasterSearchCondition condition = new StockMasterSearchCondition("애플", null, null);
         Pageable pageable = PageRequest.of(0, 20);
         given(stockMasterRepository.search(eq(condition), any(Pageable.class)))
