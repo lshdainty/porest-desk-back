@@ -465,24 +465,16 @@ public class AssetServiceImpl implements AssetService {
                 priceBySymbol.put(q.symbol(), q);
             }
 
-            BigDecimal fx = null;
+            Map<String, BigDecimal> fxByCurrency = new HashMap<>();
             BigDecimal sum = BigDecimal.ZERO;
             for (AssetServiceDto.HoldingCommand hc : linked) {
                 PriceQuote q = priceBySymbol.get(hc.symbol());
                 if (q == null) {
                     return null;
                 }
-                BigDecimal krw;
-                if (q.isKrw()) {
-                    krw = q.price();
-                } else {
-                    if (fx == null) {
-                        fx = provider.getFxRate(userRowId, "USD", "KRW");
-                    }
-                    if (fx == null || fx.signum() <= 0) {
-                        return null; // 외화인데 환율 미확보
-                    }
-                    krw = q.price().multiply(fx);
+                BigDecimal krw = toKrw(userRowId, provider, q, fxByCurrency);
+                if (krw == null) {
+                    return null; // 외화인데 환율 미확보
                 }
                 sum = sum.add(krw.multiply(hc.quantity()));
             }
@@ -645,22 +637,12 @@ public class AssetServiceImpl implements AssetService {
                     .distinct()
                     .toList();
                 Map<String, PriceQuote> priceBySymbol = new HashMap<>();
-                boolean hasForeign = false;
                 for (PriceQuote q : provider.getPrices(userRowId, instruments)) {
                     priceBySymbol.put(q.symbol(), q);
-                    if (!q.isKrw()) {
-                        hasForeign = true;
-                    }
                 }
-                // 해외 종목(외화)이 있으면 환율(USD→KRW) 1회 조회해 원화 환산.
-                BigDecimal fx = null;
-                if (hasForeign) {
-                    try {
-                        fx = provider.getFxRate(userRowId, "USD", "KRW");
-                    } catch (Exception ex) {
-                        log.warn("환율 조회 실패 - userRowId={}: {}", userRowId, ex.getMessage());
-                    }
-                }
+                // 외화가 섞여 있으면 통화마다 환율을 받는다. 예전엔 USD 하나만 받아 곱했는데,
+                // 나무를 붙이며 JPY·HKD·CNY 보유가 가능해져 엔화에 달러 환율을 곱하는 일이 생긴다.
+                Map<String, BigDecimal> fxByCurrency = new HashMap<>();
                 LocalDateTime now = userClock.now(userRowId);
                 for (Asset a : userAssets) {
                     // 보유(linked) 합산 평가 — 한 종목이라도 시세/환율 미확보면 자산 전체 생략(부분합 왜곡 방지).
@@ -677,12 +659,8 @@ public class AssetServiceImpl implements AssetService {
                             complete = false;
                             break;
                         }
-                        BigDecimal krw;
-                        if (q.isKrw()) {
-                            krw = q.price();
-                        } else if (fx != null && fx.signum() > 0) {
-                            krw = q.price().multiply(fx);
-                        } else {
+                        BigDecimal krw = toKrw(userRowId, provider, q, fxByCurrency);
+                        if (krw == null) {
                             complete = false; // 외화인데 환율 미확보
                             break;
                         }
@@ -719,6 +697,42 @@ public class AssetServiceImpl implements AssetService {
     /** marketCode 는 없을 수 있다 — 시장코드 컬럼이 생기기 전에 만들어진 연동 행이 그렇다. */
     private record SymbolQty(String marketCode, String symbol, BigDecimal qty) {}
 
+    /**
+     * 시세를 원화로 환산한다. 환율은 <b>견적의 실제 통화</b>로 받는다.
+     *
+     * <p>예전엔 "KRW 가 아니면 USD" 로 보고 달러 환율을 곱했다. 토스만 있던 시절엔 통화가
+     * KRW·USD 뿐이라 맞았지만, 나무를 붙이며 JPY·HKD·CNY 보유가 가능해졌다 — 엔화 종목에
+     * 달러 환율을 곱하면 평가액이 백 배 넘게 부풀어 오른다.
+     *
+     * <p>{@code fxByCurrency} 는 호출 단위 캐시다. 같은 통화를 여러 번 묻지 않는다.
+     * 못 구한 통화는 null 을 캐시해 재조회도 막는다 — 나무는 환율 조회가 잔고 2콜이라 비싸다.
+     *
+     * @return 원화 환산가. 외화인데 환율을 못 구하면 null(호출부가 그 자산 평가를 접는다)
+     */
+    private BigDecimal toKrw(Long userRowId, SecuritiesPriceProvider provider,
+                             PriceQuote quote, Map<String, BigDecimal> fxByCurrency) {
+        if (quote.price() == null) {
+            return null;
+        }
+        if (quote.isKrw()) {
+            return quote.price();
+        }
+        String currency = quote.currency();
+        // computeIfAbsent 는 null 을 저장하지 않아 실패한 통화를 매번 다시 묻는다 —
+        // 나무는 환율 조회가 잔고 2콜이라 그게 비싸다. containsKey 로 직접 캐시한다.
+        if (!fxByCurrency.containsKey(currency)) {
+            BigDecimal fetched = null;
+            try {
+                fetched = provider.getFxRate(userRowId, currency, "KRW");
+            } catch (Exception ex) {
+                log.warn("환율 조회 실패 - userRowId={}, {}→KRW: {}", userRowId, currency, ex.getMessage());
+            }
+            fxByCurrency.put(currency, fetched);
+        }
+        BigDecimal rate = fxByCurrency.get(currency);
+        return rate == null || rate.signum() <= 0 ? null : quote.price().multiply(rate);
+    }
+
     /** 기본 소스 증권사가 이 종목 시세를 주는지 — 유효 종목 검증(미인식/조회실패 시 false). */
     private boolean isPriceAvailable(Long userRowId, String symbol) {
         try {
@@ -745,15 +759,9 @@ public class AssetServiceImpl implements AssetService {
             if (q == null || q.price() == null) {
                 return null;
             }
-            BigDecimal krw;
-            if (q.isKrw()) {
-                krw = q.price();
-            } else {
-                BigDecimal r = provider.getFxRate(userRowId, "USD", "KRW");
-                if (r == null || r.signum() <= 0) {
-                    return null;
-                }
-                krw = q.price().multiply(r);
+            BigDecimal krw = toKrw(userRowId, provider, q, new HashMap<>());
+            if (krw == null) {
+                return null;
             }
             return toWon(krw.multiply(quantity));
         } catch (Exception ex) {

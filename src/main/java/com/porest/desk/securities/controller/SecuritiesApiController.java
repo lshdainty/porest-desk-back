@@ -8,6 +8,7 @@ import com.porest.desk.securities.service.SecuritiesPriceProviders;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,6 +32,7 @@ import java.util.List;
  *
  * <p>활성 구독(SECURITIES) 필요 — {@code FeatureGateInterceptor} 가 게이트한다.
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/securities")
 @RequiredArgsConstructor
@@ -51,16 +53,23 @@ public class SecuritiesApiController {
     public ApiResponse<List<PriceQuote>> getPrices(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbols) {
-        List<InstrumentRef> instruments = Arrays.stream(symbols.split(","))
+        List<String> requested = Arrays.stream(symbols.split(","))
             .map(String::trim)
             .filter(s -> !s.isEmpty())
             .distinct()
-            .limit(MAX_SYMBOLS)
-            .map(InstrumentRef::of)
             .toList();
-        if (instruments.isEmpty()) {
+        if (requested.isEmpty()) {
             return ApiResponse.success(List.of());
         }
+        // 자르는 걸 분기로 남긴다. 스트림 안에서 조용히 limit 하면 잘렸다는 사실이 응답에도
+        // 로그에도 안 남고, 클라이언트는 "시세 미확보" 로 읽어 그 자산을 평가에서 통째로 뺀다.
+        List<String> capped = requested.size() > MAX_SYMBOLS ? requested.subList(0, MAX_SYMBOLS) : requested;
+        if (capped.size() < requested.size()) {
+            log.warn("시세 조회 상한 초과 - 뒤쪽 종목이 잘린다: userRowId={}, 요청={}, 조회={}, 버림={}",
+                loginUser.getRowId(), requested.size(), capped.size(),
+                requested.subList(MAX_SYMBOLS, requested.size()));
+        }
+        List<InstrumentRef> instruments = capped.stream().map(InstrumentRef::of).toList();
         SecuritiesPriceProvider provider = priceProviders.forUser(loginUser.getRowId());
         return ApiResponse.success(provider.getPrices(loginUser.getRowId(), instruments));
     }

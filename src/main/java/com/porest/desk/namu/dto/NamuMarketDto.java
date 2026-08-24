@@ -18,14 +18,17 @@ public final class NamuMarketDto {
     /**
      * 국내주식 현재가 ({@code POST /krstock/quote/v1/currentPrice}).
      *
-     * @param price        현재가 {@code stck_prpr}
-     * @param changeSign   전일대비 부호 {@code prdy_vrss_sign}
-     * @param change       전일대비 {@code prdy_vrss}
-     * @param changeRate   등락률(%) {@code prdy_ctrt}
+     * @param price         현재가 {@code stck_prpr}
+     * @param previousClose 전일 종가 {@code stck_prdy_clpr}. <b>이걸 그대로 쓴다</b> —
+     *                      전일대비로 역산하지 않는다(부호코드 정의가 공개 문서에 없다)
+     * @param changeSign    전일대비 부호 {@code prdy_vrss_sign}. 전일 종가가 비었을 때만 쓰는 폴백
+     * @param change        전일대비 {@code prdy_vrss}
+     * @param changeRate    등락률(%) {@code prdy_ctrt}
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record KrPrice(
         @JsonProperty("stck_prpr") String price,
+        @JsonProperty("stck_prdy_clpr") String previousClose,
         @JsonProperty("prdy_vrss_sign") String changeSign,
         @JsonProperty("prdy_vrss") String change,
         @JsonProperty("prdy_ctrt") String changeRate
@@ -35,15 +38,18 @@ public final class NamuMarketDto {
     /**
      * 해외주식 현재가 ({@code POST /gbstock/quote/v1/current}).
      *
-     * @param price      현재가 {@code trdprc}
-     * @param changeSign 전일대비 부호 {@code netchng_cls}
-     * @param change     전일대비 {@code netchng}
-     * @param changeRate 등락률(%) {@code pctchng}
-     * @param currency   거래 통화 {@code currency_unit}
+     * @param price         현재가 {@code trdprc}
+     * @param previousClose 전일 종가 {@code base_prc}. <b>이걸 그대로 쓴다</b> — 전일대비로
+     *                      역산하지 않는다(부호코드 {@code netchng_cls} 정의가 공개 문서에 없다)
+     * @param changeSign    전일대비 부호 {@code netchng_cls}. 전일 종가가 비었을 때만 쓰는 폴백
+     * @param change        전일대비 {@code netchng}
+     * @param changeRate    등락률(%) {@code pctchng}
+     * @param currency      거래 통화 {@code currency_unit}
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GbPrice(
         @JsonProperty("trdprc") String price,
+        @JsonProperty("base_prc") String previousClose,
         @JsonProperty("netchng_cls") String changeSign,
         @JsonProperty("netchng") String change,
         @JsonProperty("pctchng") String changeRate,
