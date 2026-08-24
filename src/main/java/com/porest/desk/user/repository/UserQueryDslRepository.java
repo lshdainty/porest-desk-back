@@ -38,6 +38,15 @@ public class UserQueryDslRepository implements UserRepository {
     }
 
     @Override
+    public Optional<User> findBySsoUserRowId(Long ssoUserRowId) {
+        return Optional.ofNullable(
+            queryFactory.selectFrom(user)
+                .where(user.ssoUserRowId.eq(ssoUserRowId), user.isDeleted.eq(YNType.N))
+                .fetchOne()
+        );
+    }
+
+    @Override
     public User save(User entity) {
         entityManager.persist(entity);
         return entity;
