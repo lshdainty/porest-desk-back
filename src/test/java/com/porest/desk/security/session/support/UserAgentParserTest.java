@@ -33,7 +33,10 @@ class UserAgentParserTest {
         "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/25.0 Chrome/121.0 Mobile Safari/537.36 | Android · Samsung Internet",
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36 | Android · Chrome",
 
-        // ── 앱 (dart:io 기본값 — 앱이 UA 를 따로 안 보낸다)
+        // ── 앱이 보내는 형태
+        "Porest/1.2.3 (Android 14) | Android · Porest 앱",
+        "Porest/1.2.3 (iOS 17.5) | iOS · Porest 앱",
+        // 앱이 UA 를 안 보내던 시절의 dart:io 기본값 — 옛 세션이 남아 있다
         "Dart/3.9 (dart:io) | Porest 앱",
     })
     @DisplayName("실제 UA 를 사람이 읽을 이름으로 줄인다")
@@ -68,6 +71,13 @@ class UserAgentParserTest {
     @DisplayName("못 알아보면 null — 화면에서 '알 수 없는 기기' 로 표시한다")
     void unknownIsNull(String ua) {
         assertThat(UserAgentParser.parse(ua)).isNull();
+    }
+
+    @Test
+    @DisplayName("iOS 크롬을 앱으로 보지 않는다 — CriOS 에 'ios' 가 들어간다")
+    void criosIsNotApp() {
+        String crios = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) CriOS/126.0 Mobile Safari/604.1";
+        assertThat(UserAgentParser.parse(crios)).isEqualTo("iPhone · Chrome");
     }
 
     @Test

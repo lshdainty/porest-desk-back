@@ -66,17 +66,22 @@ public final class UserAgentParser {
         if (ua.contains("macintosh") || ua.contains("mac os x")) return "Mac";
         if (ua.contains("cros")) return "ChromeOS";
         if (ua.contains("linux")) return "Linux";
+        // 앱이 보내는 "Porest/1.2.3 (iOS 17.5)" 형태. iPhone·iPad 구분은 못 하므로 iOS 로 둔다.
+        // 괄호까지 함께 본다 — "CriOS"(iOS 크롬)·"FxiOS"(iOS 파이어폭스) 에 걸리지 않게.
+        if (ua.contains("(ios")) return "iOS";
         return null;
     }
 
     /**
      * 브라우저 또는 앱.
      *
-     * <p>Flutter 앱은 User-Agent 를 따로 세팅하지 않아 {@code dart:io} 기본값
-     * ({@code Dart/3.9 (dart:io)})이 나간다. 그래서 앱 세션은 기기를 알 수 없고
-     * "Porest 앱" 으로만 보인다 — 앱이 제대로 된 UA 를 보내면 그때 기기까지 나온다.
+     * <p>앱은 {@code Porest/1.2.3 (Android 14)} 형태로 보낸다. UA 를 안 보내던 시절의
+     * {@code dart:io} 기본값도 계속 본다 — 그때 만들어진 세션이 남아 있다.
      */
     private static String client(String ua) {
+        // 앱이 보내는 형태가 먼저다 — "Porest/1.2.3 (Android 14)".
+        if (ua.contains("porest/")) return "Porest 앱";
+        // 앱이 UA 를 안 보내던 시절의 dart:io 기본값. 옛 세션이 남아 있어 계속 본다.
         if (ua.contains("dart/") || ua.contains("dart:io")) return "Porest 앱";
         if (ua.contains("edg/") || ua.contains("edge/")) return "Edge";
         if (ua.contains("whale/")) return "Whale";
