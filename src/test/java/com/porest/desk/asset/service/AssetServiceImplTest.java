@@ -353,7 +353,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(USER_ID, List.of(InstrumentRef.of("005930")))).willReturn(List.of(
-                new PriceQuote("005930", new java.math.BigDecimal("70000"), "KRW")));
+                PriceQuote.of("005930", new java.math.BigDecimal("70000"), "KRW")));
 
         sut.linkSymbol(5L, USER_ID, "005930", 10L);
 
@@ -417,7 +417,7 @@ class AssetServiceImplTest {
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(USER_ID, List.of(InstrumentRef.of("005930")))).willReturn(List.of(
-                new PriceQuote("005930", new java.math.BigDecimal("70000"), "KRW")));
+                PriceQuote.of("005930", new java.math.BigDecimal("70000"), "KRW")));
 
         sut.unlinkSymbol(5L, USER_ID);
 
@@ -448,7 +448,7 @@ class AssetServiceImplTest {
         given(securitiesCredentialService.hasAnyConnection(USER_ID)).willReturn(true);
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(USER_ID, List.of(InstrumentRef.of("005930")))).willReturn(List.of(
-                new PriceQuote("005930", new java.math.BigDecimal("70000"), "KRW")));
+                PriceQuote.of("005930", new java.math.BigDecimal("70000"), "KRW")));
 
         sut.snapshotSecuritiesValuations();
 

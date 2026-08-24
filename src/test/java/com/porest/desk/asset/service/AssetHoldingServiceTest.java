@@ -338,7 +338,7 @@ class AssetHoldingServiceTest {
         // 시세 72,000 × 30주 = 2,160,000 + 미연동 1,870,000 = 4,030,000 (클라 balance 0 은 무시)
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of(
-            new PriceQuote("005930", new java.math.BigDecimal("72000"), "KRW")));
+            PriceQuote.of("005930", new java.math.BigDecimal("72000"), "KRW")));
 
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             linkedHolding("005930", 30L),
@@ -357,7 +357,7 @@ class AssetHoldingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of(
-            new PriceQuote("AAPL", new java.math.BigDecimal("185.7"), "USD")));
+            PriceQuote.of("AAPL", new java.math.BigDecimal("185.7"), "USD")));
         given(priceProvider.getFxRate(eq(USER_ID), anyString(), anyString()))
             .willReturn(new java.math.BigDecimal("1383.5"));
 
@@ -438,7 +438,7 @@ class AssetHoldingServiceTest {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(eq(USER_ID), anyList())).willReturn(List.of(
-            new PriceQuote("005930", new java.math.BigDecimal("72000"), "KRW")));
+            PriceQuote.of("005930", new java.math.BigDecimal("72000"), "KRW")));
 
         sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             linkedHolding("005930", 10L),                                  // 720,000

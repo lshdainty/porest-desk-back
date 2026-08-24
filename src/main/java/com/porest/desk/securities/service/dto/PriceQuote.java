@@ -9,11 +9,20 @@ import java.math.BigDecimal;
  * 나무 해외 {@code trdprc}). 그 차이는 {@code SecuritiesPriceProvider} 구현이 흡수하고
  * 여기부터는 한 가지 모양으로 흐른다.
  *
- * @param symbol   stock_master 기준 종목코드
- * @param price    현재가 (거래 통화 기준)
- * @param currency 거래 통화. 원화면 KRW
+ * @param symbol        stock_master 기준 종목코드
+ * @param price         현재가 (거래 통화 기준)
+ * @param currency      거래 통화. 원화면 KRW
+ * @param previousClose 전일 종가 (거래 통화 기준). <b>못 주는 증권사가 있어 null 이 될 수 있다</b> —
+ *                      나무는 시세 응답에 전일대비가 딸려 와 공짜로 채우지만, 토스는 캔들을
+ *                      종목마다 따로 받아야 해서 여기서는 채우지 않는다. 등락 표시에만 쓰이므로
+ *                      없으면 등락을 감추면 되고, 평가액에는 영향이 없다
  */
-public record PriceQuote(String symbol, BigDecimal price, String currency) {
+public record PriceQuote(String symbol, BigDecimal price, String currency, BigDecimal previousClose) {
+
+    /** 전일 종가를 모르는 증권사용. */
+    public static PriceQuote of(String symbol, BigDecimal price, String currency) {
+        return new PriceQuote(symbol, price, currency, null);
+    }
 
     public boolean isKrw() {
         return currency == null || "KRW".equals(currency);
