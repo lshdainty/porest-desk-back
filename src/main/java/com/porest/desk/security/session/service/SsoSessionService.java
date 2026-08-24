@@ -163,6 +163,7 @@ public class SsoSessionService {
                 .map(s -> new SessionApiDto.DeviceRes(
                         s.getSessionId(),
                         s.getDeviceLabel(),
+                        UserAgentParser.kindOf(s.getDeviceLabel()),
                         s.getLastUsedAt(),
                         s.getCreateAt(),
                         s.getSessionId().equals(currentSessionId)))
