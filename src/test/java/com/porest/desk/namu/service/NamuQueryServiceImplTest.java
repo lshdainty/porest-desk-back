@@ -3,6 +3,8 @@ package com.porest.desk.namu.service;
 import com.porest.desk.namu.client.NamuApiClient;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
+import com.porest.desk.namu.dto.NamuMarketDto;
+import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.stock.repository.StockMasterRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -61,6 +63,66 @@ class NamuQueryServiceImplTest {
         given(namuApiClient.<NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding>>exchange(
                 eq(USER), eq("/gbstock/inquiry/v1/balance"), any(), any(ParameterizedTypeReference.class)))
             .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items)));
+    }
+
+    @Nested
+    @DisplayName("시세 — 전일 종가")
+    class PreviousClose {
+
+        private void givenKrPrice(NamuMarketDto.KrPrice p) {
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(p);
+        }
+
+        @Test
+        @DisplayName("응답의 전일 종가를 그대로 쓴다 — 전일대비로 역산하지 않는다")
+        void usesDirectField() {
+            // 부호코드를 '하락'(5)으로 줘도 전일 종가 필드가 이기는지 본다.
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", "69500", "5", "500", "0.72"));
+
+            assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose())
+                .isEqualByComparingTo(new BigDecimal("69500"));
+        }
+
+        @Test
+        @DisplayName("전일 종가가 비면 전일대비로 역산한다 — 상승(2)이면 현재가에서 뺀다")
+        void fallsBackToSignedChange() {
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", "", "2", "500", "0.72"));
+
+            assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose())
+                .isEqualByComparingTo(new BigDecimal("69500"));
+        }
+
+        @Test
+        @DisplayName("하락(5)이면 현재가에 더한다")
+        void fallbackHandlesDown() {
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", null, "5", "500", "-0.71"));
+
+            assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose())
+                .isEqualByComparingTo(new BigDecimal("70500"));
+        }
+
+        @Test
+        @DisplayName("모르는 부호코드면 방향을 찍지 않고 비운다 — 찍었다 틀리면 등락이 뒤집힌다")
+        void unknownSignYieldsNull() {
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", null, "9", "500", "0.72"));
+
+            assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose()).isNull();
+        }
+
+        @Test
+        @DisplayName("해외도 base_prc 를 그대로 쓰고 통화를 함께 싣는다")
+        void overseasUsesBasePrice() {
+            given(namuApiClient.<NamuMarketDto.GbPrice>postObject(
+                    eq(USER), eq("/gbstock/quote/v1/current"), any(), any()))
+                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92", "USD"));
+
+            PriceQuote q = sut.getGbPrice(USER, "AAPL");
+
+            assertThat(q.currency()).isEqualTo("USD");
+            assertThat(q.previousClose()).isEqualByComparingTo(new BigDecimal("184.00"));
+        }
     }
 
     @Nested

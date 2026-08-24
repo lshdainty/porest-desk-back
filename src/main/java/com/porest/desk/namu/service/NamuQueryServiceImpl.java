@@ -62,14 +62,14 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             Map.of("market_cd", marketCode == null || marketCode.isBlank() ? MARKET_KRX : marketCode,
                    "iem_cd", symbol),
             KR_TYPE);
-        return p == null ? null : quote(symbol, p.price(), KRW, p.change(), p.changeSign());
+        return p == null ? null : quote(symbol, p.price(), KRW, p.previousClose(), p.change(), p.changeSign());
     }
 
     @Override
     public PriceQuote getGbPrice(Long userRowId, String symbol) {
         NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
             Map.of("iem_cd", symbol), GB_TYPE);
-        return p == null ? null : quote(symbol, p.price(), p.currency(), p.change(), p.changeSign());
+        return p == null ? null : quote(symbol, p.price(), p.currency(), p.previousClose(), p.change(), p.changeSign());
     }
 
     /**
@@ -248,25 +248,43 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     }
 
     /**
-     * 나무는 시세 응답에 전일대비를 함께 준다 — 전일 종가를 공짜로 얻는다(토스는 캔들 별도).
+     * 나무는 시세 응답에 <b>전일 종가를 그대로</b> 준다 — 국내 {@code stck_prdy_clpr},
+     * 해외 {@code base_prc}. 그걸 쓴다(토스는 캔들을 따로 받아야 해서 못 준다).
      *
-     * <p>전일대비는 <b>절대값 + 부호코드</b>로 온다. 부호를 모르는 코드가 오면 방향을 찍지 않고
-     * 전일 종가를 비운다 — 반대로 계산하면 등락이 뒤집혀 보인다.
+     * <p><b>전일대비로 역산하지 않는다.</b> 전일대비는 절대값 + 부호코드로 오는데
+     * 그 코드값 정의가 공개 문서 어디에도 없다. 관례대로 1·2·3 을 상승, 4·5 를 하락으로
+     * 찍었다가 틀리면 <b>등락이 통째로 뒤집혀</b> 보인다. 전일 종가가 비어 있을 때만
+     * 폴백으로 쓰고, 부호를 모르면 방향을 찍지 않고 비운다.
      */
     private static PriceQuote quote(String symbol, String rawPrice, String currency,
-                                    String rawChange, String changeSign) {
+                                    String rawPreviousClose, String rawChange, String changeSign) {
         BigDecimal price = decimal(rawPrice);
         if (price == null) {
             log.warn("나무 시세 파싱 실패: symbol={}, price={}", symbol, rawPrice);
             return null;
         }
         String cur = currency == null || currency.isBlank() ? KRW : currency;
-        BigDecimal signedChange = signedChange(rawChange, changeSign);
-        return new PriceQuote(symbol, price, cur,
-            signedChange == null ? null : price.subtract(signedChange));
+        return new PriceQuote(symbol, price, cur, previousClose(price, rawPreviousClose, rawChange, changeSign));
     }
 
-    /** 부호코드 — 1 상한 · 2 상승 · 3 보합 · 4 하한 · 5 하락. 모르는 값이면 null. */
+    private static BigDecimal previousClose(BigDecimal price, String rawPreviousClose,
+                                            String rawChange, String changeSign) {
+        BigDecimal direct = decimal(rawPreviousClose);
+        if (direct != null && direct.signum() > 0) {
+            return direct;
+        }
+        // 폴백 — 응답에 전일 종가가 비어 있을 때만.
+        BigDecimal signed = signedChange(rawChange, changeSign);
+        return signed == null ? null : price.subtract(signed);
+    }
+
+    /**
+     * 부호코드로 전일대비의 방향을 정한다.
+     *
+     * <p><b>이 코드표는 문서에 없다.</b> 한국투자증권 계열 관례(1 상한 · 2 상승 · 3 보합 ·
+     * 4 하한 · 5 하락)를 옮긴 가정이라, 전일 종가를 직접 못 받았을 때만 쓴다.
+     * 모르는 값이면 null — 방향을 찍느니 등락을 감추는 편이 낫다.
+     */
     private static BigDecimal signedChange(String rawChange, String changeSign) {
         BigDecimal change = decimal(rawChange);
         if (change == null || changeSign == null) {
