@@ -1,0 +1,72 @@
+package com.porest.desk.securities.client;
+
+import com.porest.desk.common.crypto.AesGcmCipher;
+import com.porest.desk.securities.client.dto.OAuth2TokenResponse;
+import com.porest.desk.securities.repository.UserSecuritiesCredentialRepository;
+import com.porest.desk.securities.type.SecuritiesBroker;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpHeaders;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.Map;
+
+/**
+ * 나무증권(NH PLUG) 인증.
+ *
+ * <p>토스와 두 군데가 다르다.
+ *
+ * <ol>
+ *   <li><b>발급</b> — 폼 바디가 아니라 <b>쿼리 파라미터</b>로 보내고, 필드명이
+ *       {@code appkey}/{@code appsecretkey} 이며 {@code scope=oob} 가 필요하다.</li>
+ *   <li><b>헤더</b> — {@code Bearer} 만으로는 안 되고 <b>매 호출마다</b>
+ *       {@code x-client-id}/{@code x-client-secret} 에 평문 키를 함께 실어야 한다.
+ *       그래서 {@code applyAuth} 를 재정의한다.</li>
+ * </ol>
+ *
+ * <p>토큰 수명은 24시간이다. <b>재발급을 남발하면 사용자에게 보안 알림이 쌓이므로</b>
+ * 캐시가 필수다 — 부모가 {@code BrokerTokenStore}(운영 기본값 Redis)로 처리한다.
+ *
+ * <p>쿼리 값은 URI 변수로 바인딩해 RestTemplate 이 정확히 한 번만 인코딩하게 한다.
+ * 키에 {@code +}·{@code &} 가 섞여도 안전하다.
+ */
+@Component
+public class NamuTokenManager extends AbstractBrokerTokenManager {
+
+    private static final String TOKEN_PATH =
+        "/oauth2/token?grant_type=client_credentials&scope=oob&appkey={appkey}&appsecretkey={appsecretkey}";
+
+    private static final String HEADER_CLIENT_ID = "x-client-id";
+    private static final String HEADER_CLIENT_SECRET = "x-client-secret";
+
+    private final RestTemplate namuRestTemplate;
+
+    public NamuTokenManager(UserSecuritiesCredentialRepository credentialRepository,
+                            AesGcmCipher cipher,
+                            BrokerTokenStore tokenStore,
+                            @Qualifier("namuRestTemplate") RestTemplate namuRestTemplate) {
+        super(credentialRepository, cipher, tokenStore);
+        this.namuRestTemplate = namuRestTemplate;
+    }
+
+    @Override
+    public SecuritiesBroker broker() {
+        return SecuritiesBroker.NAMU;
+    }
+
+    @Override
+    protected BrokerToken issueToken(String apiKey, String apiSecret) {
+        OAuth2TokenResponse res = namuRestTemplate.postForObject(
+            TOKEN_PATH, null, OAuth2TokenResponse.class,
+            Map.of("appkey", apiKey, "appsecretkey", apiSecret));
+        return res == null ? null : new BrokerToken(res.accessToken(), res.expiresIn());
+    }
+
+    /** 나무는 Bearer 외에 평문 키/시크릿을 매 호출 요구한다. */
+    @Override
+    protected void applyAuth(HttpHeaders headers, String accessToken, String apiKey, String apiSecret) {
+        super.applyAuth(headers, accessToken, apiKey, apiSecret);
+        headers.set(HEADER_CLIENT_ID, apiKey);
+        headers.set(HEADER_CLIENT_SECRET, apiSecret);
+    }
+}

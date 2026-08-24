@@ -4,6 +4,9 @@ import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.toss.client.dto.TossEnvelope;
 import com.porest.desk.toss.client.dto.TossErrorBody;
+import com.porest.desk.securities.client.BrokerTokenManager;
+import com.porest.desk.securities.client.BrokerTokenManagers;
+import com.porest.desk.securities.type.SecuritiesBroker;
 import com.porest.desk.toss.config.TossProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -40,28 +43,28 @@ public class TossApiClient {
     private static final String ACCOUNT_HEADER = "X-Tossinvest-Account";
 
     private final RestTemplate tossRestTemplate;
-    private final PerUserTossTokenManager perUserTokenManager;
+    private final BrokerTokenManager tokenManager;
     private final TossProperties tossProperties;
 
     public TossApiClient(@Qualifier("tossRestTemplate") RestTemplate tossRestTemplate,
-                         PerUserTossTokenManager perUserTokenManager,
+                         BrokerTokenManagers tokenManagers,
                          TossProperties tossProperties) {
         this.tossRestTemplate = tossRestTemplate;
-        this.perUserTokenManager = perUserTokenManager;
+        this.tokenManager = tokenManagers.of(SecuritiesBroker.TOSS);
         this.tossProperties = tossProperties;
     }
 
     /**
      * 시장 데이터 조회(사용자 개인 토큰). 시세·종목·시장정보 등.
      * 토스 API는 시세도 발급된 access token 으로만 호출하며 권한 scope 구분이 없으므로,
-     * porest-desk 는 사용자가 등록한 본인 키로 대리 조회한다(본인 키 미등록 시 {@code TOSS_CREDENTIAL_REQUIRED}).
+     * porest-desk 는 사용자가 등록한 본인 키로 대리 조회한다(본인 키 미등록 시 {@code SECURITIES_CREDENTIAL_REQUIRED}).
      */
     public <T> T get(Long userRowId, String path, MultiValueMap<String, String> query,
                      ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
         return execute(path, null, query, null, typeRef, true,
-            () -> perUserTokenManager.getAccessToken(userRowId),
-            () -> perUserTokenManager.invalidate(userRowId));
+            () -> tokenManager.authHeaders(userRowId),
+            () -> tokenManager.invalidate(userRowId));
     }
 
     /**
@@ -82,36 +85,37 @@ public class TossApiClient {
                          ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
         return execute(pathTemplate, pathVars, query, null, typeRef, true,
-            () -> perUserTokenManager.getAccessToken(userRowId),
-            () -> perUserTokenManager.invalidate(userRowId));
+            () -> tokenManager.authHeaders(userRowId),
+            () -> tokenManager.invalidate(userRowId));
     }
 
     /**
      * 계좌 데이터 조회(사용자 개인 토큰). 계좌목록·보유주식 등 본인 계좌 데이터.
      * accountSeq 가 있으면 {@code X-Tossinvest-Account} 헤더를 추가한다.
-     * 본인 크리덴셜 미등록 시 {@code TOSS_CREDENTIAL_REQUIRED}.
+     * 본인 크리덴셜 미등록 시 {@code SECURITIES_CREDENTIAL_REQUIRED}.
      */
     public <T> T getForUser(Long userRowId, String path, MultiValueMap<String, String> query, Long accountSeq,
                             ParameterizedTypeReference<TossEnvelope<T>> typeRef) {
         ensureConfigured();
         return execute(path, null, query, accountSeq, typeRef, true,
-            () -> perUserTokenManager.getAccessToken(userRowId),
-            () -> perUserTokenManager.invalidate(userRowId));
+            () -> tokenManager.authHeaders(userRowId),
+            () -> tokenManager.invalidate(userRowId));
     }
 
     private void ensureConfigured() {
         if (!tossProperties.isConfigured()) {
-            log.warn("토스증권 연동 설정(app.toss.base-url/client-id/client-secret)이 비어 있습니다");
-            throw new ExternalServiceException(DeskErrorCode.TOSS_NOT_CONFIGURED);
+            log.warn("토스증권 연동 설정(app.toss.base-url)이 비어 있습니다");
+            throw new ExternalServiceException(DeskErrorCode.SECURITIES_NOT_CONFIGURED);
         }
     }
 
     private <T> T execute(String pathTemplate, Map<String, ?> pathVars, MultiValueMap<String, String> query,
                           Long accountSeq, ParameterizedTypeReference<TossEnvelope<T>> typeRef,
                           boolean retryOnUnauthorized,
-                          java.util.function.Supplier<String> tokenSupplier, Runnable tokenInvalidator) {
+                          java.util.function.Supplier<HttpHeaders> authHeaders, Runnable tokenInvalidator) {
+        // 인증 헤더 구성은 증권사 담당자가 맡는다 — Bearer 하나로 끝나지 않는 곳이 있다.
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(tokenSupplier.get());
+        headers.addAll(authHeaders.get());
         if (accountSeq != null) {
             headers.set(ACCOUNT_HEADER, String.valueOf(accountSeq));
         }
@@ -132,14 +136,14 @@ public class TossApiClient {
                 // 토큰이 무효화되었을 수 있으므로 1회 재발급 후 재시도한다.
                 log.debug("토스증권 401 - 토큰 재발급 후 재시도");
                 tokenInvalidator.run();
-                return execute(pathTemplate, pathVars, query, accountSeq, typeRef, false, tokenSupplier, tokenInvalidator);
+                return execute(pathTemplate, pathVars, query, accountSeq, typeRef, false, authHeaders, tokenInvalidator);
             }
             throw toExternalException(e, pathTemplate);
         } catch (HttpStatusCodeException e) {
             throw toExternalException(e, pathTemplate);
         } catch (RestClientException e) {
             log.error("토스증권 API 호출 실패: {}", pathTemplate, e);
-            throw new ExternalServiceException(DeskErrorCode.TOSS_API_ERROR, e);
+            throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
         }
     }
 
@@ -161,7 +165,7 @@ public class TossApiClient {
         }
         log.error("토스증권 API 오류: path={}, status={}, {}", path, e.getStatusCode().value(),
                 detail != null ? detail : "(본문 파싱 불가)", e);
-        return new ExternalServiceException(DeskErrorCode.TOSS_API_ERROR, e);
+        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
     }
 
     /**

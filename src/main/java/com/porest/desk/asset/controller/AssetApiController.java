@@ -91,7 +91,7 @@ public class AssetApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody AssetApiDto.TossLinkRequest request) {
-        AssetServiceDto.AssetInfo info = assetService.linkTossSymbol(
+        AssetServiceDto.AssetInfo info = assetService.linkSymbol(
             id, loginUser.getRowId(), request.symbol(), request.quantity());
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -100,7 +100,7 @@ public class AssetApiController {
     public ApiResponse<AssetApiDto.AssetResponse> unlinkTossSymbol(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        AssetServiceDto.AssetInfo info = assetService.unlinkTossSymbol(id, loginUser.getRowId());
+        AssetServiceDto.AssetInfo info = assetService.unlinkSymbol(id, loginUser.getRowId());
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
 

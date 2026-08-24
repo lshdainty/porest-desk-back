@@ -58,7 +58,7 @@ public class AssetServiceDto {
     ) {}
 
     /**
-     * 투자 보유 입력 — linked=true: tossSymbol+quantity 필수 / false: holdingName+holdingValue 필수(quantity 선택).
+     * 투자 보유 입력 — linked=true: symbol+quantity 필수 / false: holdingName+holdingValue 필수(quantity 선택).
      * holdingType 미지정은 STOCK 으로 본다(구버전 클라이언트 하위호환).
      */
     public record HoldingCommand(
@@ -72,7 +72,7 @@ public class AssetServiceDto {
         Long rowId,
         HoldingType holdingType,
         Boolean linked,
-        String tossSymbol,
+        String symbol,
         BigDecimal quantity,
         String holdingName,
         Long holdingValue,
@@ -84,7 +84,7 @@ public class AssetServiceDto {
         Long rowId,
         HoldingType holdingType,
         boolean linked,
-        String tossSymbol,
+        String symbol,
         BigDecimal quantity,
         String holdingName,
         Long holdingValue,
@@ -96,7 +96,7 @@ public class AssetServiceDto {
     ) {
         public static HoldingInfo from(AssetHolding h) {
             return new HoldingInfo(
-                h.getRowId(), h.getHoldingType(), h.isLinked(), h.getTossSymbol(), h.getQuantity(),
+                h.getRowId(), h.getHoldingType(), h.isLinked(), h.getSymbol(), h.getQuantity(),
                 h.getHoldingName(), h.getHoldingValue(), h.getTotalCost(), h.avgPrice(),
                 h.getSortOrder());
         }
@@ -144,8 +144,8 @@ public class AssetServiceDto {
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
-        String tossSymbol,
-        Long tossQuantity,
+        String symbol,
+        Long quantity,
         // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 리스트)
         List<HoldingInfo> holdings,
         LocalDateTime createAt,
@@ -198,8 +198,8 @@ public class AssetServiceDto {
                 asset.getCreditLimit(),
                 asset.getPaymentDay(),
                 asset.getPaymentAsset() != null ? asset.getPaymentAsset().getRowId() : null,
-                asset.getTossSymbol(),
-                asset.getTossQuantity(),
+                asset.getSymbol(),
+                asset.getQuantity(),
                 holdings != null ? holdings : List.of(),
                 asset.getCreateAt(),
                 asset.getModifyAt(),
@@ -211,7 +211,7 @@ public class AssetServiceDto {
             return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
-                tossSymbol, tossQuantity, holdings, createAt, modifyAt, monthlyUsed);
+                symbol, quantity, holdings, createAt, modifyAt, monthlyUsed);
         }
     }
 

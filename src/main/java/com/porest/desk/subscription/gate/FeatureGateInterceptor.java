@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * 증권 기능권한 게이트. 등록된 경로(/api/v1/toss/**, 토스 크리덴셜)에 대해 활성 구독(SECURITIES)을 요구한다.
+ * 증권 기능권한 게이트. 등록된 경로(/api/v1/toss/**, 증권사 크리덴셜)에 대해 활성 구독(SECURITIES)을 요구한다.
  * 미보유 시 {@code SUBSCRIPTION_REQUIRED(403)} — preHandle 예외는 GlobalExceptionHandler 가 처리한다.
  * 서버 권위 게이트(프론트/앱 메뉴 숨김은 UX, 우회 시 여기서 차단).
  *

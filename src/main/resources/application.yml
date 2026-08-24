@@ -99,12 +99,22 @@ app:
   # 미설정이면 로그인은 되지만 SSO 세션이 저장되지 않아 무음 재인증만 조용히 꺼진다.
   security:
     encryption-key: ${APP_ENCRYPTION_KEY:}
-  # 토스증권 Open API 연동 (조회 프록시). 인증정보(client_id/secret)는 서버 공용 키가 아니라
-  # 사용자가 등록한 본인 키(암호화 저장)를 사용하므로 base-url·타임아웃만 둔다.
+  # 증권사 연동 공통. 인증정보는 서버 공용 키가 아니라 사용자가 등록한 본인 키(암호화 저장)를 쓴다.
+  securities:
+    # 액세스 토큰 캐시 위치: redis(기본) | memory
+    # 나무는 토큰 수명이 24시간이고 재발급이 사용자 보안 알림으로 쌓인다. memory 로 두면 재시작·
+    # 인스턴스마다 전원 재발급이 나가므로 운영에서는 redis 를 그대로 둔다.
+    token-store: ${SECURITIES_TOKEN_STORE:redis}
+  # 토스증권 Open API 연동 (조회 프록시). base-url·타임아웃만 둔다.
   toss:
     base-url: ${TOSS_API_URL:https://openapi.tossinvest.com}
     connect-timeout: ${TOSS_CONNECT_TIMEOUT:5000}
     read-timeout: ${TOSS_READ_TIMEOUT:10000}
+  # 나무증권(NH PLUG) Open API 연동. 포트(8443)까지 포함해야 한다.
+  namu:
+    base-url: ${NAMU_API_URL:https://api.nhplug.com:8443}
+    connect-timeout: ${NAMU_CONNECT_TIMEOUT:5000}
+    read-timeout: ${NAMU_READ_TIMEOUT:10000}
   # 대한민국 공휴일 자동 동기화. 1차 소스는 한국천문연구원 특일정보 API, 실패 시 월력요항 기반 정적 소스로 폴백.
   holiday:
     kasi:

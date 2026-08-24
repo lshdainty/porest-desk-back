@@ -97,7 +97,7 @@ public class AssetApiDto {
     ) {
         public static HoldingResponse from(AssetServiceDto.HoldingInfo h) {
             return new HoldingResponse(
-                h.rowId(), h.holdingType(), h.linked(), h.tossSymbol(), h.quantity(),
+                h.rowId(), h.holdingType(), h.linked(), h.symbol(), h.quantity(),
                 h.holdingName(), h.holdingValue(), h.totalCost(), h.avgPrice(), h.sortOrder());
         }
     }
@@ -155,7 +155,7 @@ public class AssetApiDto {
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
-                info.tossSymbol(), info.tossQuantity(),
+                info.symbol(), info.quantity(),
                 info.holdings().stream().map(HoldingResponse::from).toList(),
                 info.createAt(), info.modifyAt(),
                 info.monthlyUsedAmount()
