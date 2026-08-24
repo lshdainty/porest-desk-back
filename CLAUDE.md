@@ -13,15 +13,21 @@ Java 25 / **Spring Boot 4.0.4** / JPA(Hibernate 7) + QueryDSL 7.1 / MariaDB(운�
 
 ## 검증
 
+**이 워크스테이션에서 빌드·테스트가 된다.** 아래 세 줄을 깔고 돌려라.
+
 ```bash
-export GITHUB_ACTOR=<github-user> GITHUB_TOKEN=<read:packages PAT>   # 없으면 401 로 죽는다
+export JAVA_HOME=$HOME/.local/lib/jvm/temurin-25          # 툴체인이 Java 25 를 요구한다
+export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # porest-core 를 GitHub Packages 에서 받는다
 ./gradlew test          # 테스트 + JaCoCo 리포트 + 커버리지 게이트가 한 번에 돈다
 ./gradlew compileJava   # 엔티티를 만들거나 필드를 고친 뒤 QueryDSL Q 클래스 재생성
 ```
 
-- **자격증명이 없으면 컴파일 이전(의존성 해석)에서 죽는다.** 이 머신에는 `GITHUB_ACTOR`/`GITHUB_TOKEN` 도
-  `gradle.properties` 의 `gpr.user`/`gpr.key` 도 캐시된 porest-core 사본도 없다 — 401 을 코드 문제로
-  오진하지 말고 못 돌린다는 사실을 그대로 보고하라.
+- **"못 돌린다" 고 넘기지 마라.** 이 문단은 한동안 "자격증명도 캐시된 porest-core 도 없다" 고
+  적혀 있었는데 사실이 아니었다. `~/gitkey` 에 PAT 이 있고, `porest-core` jar 은 gradle 캐시에
+  들어 있고, `~/.local/lib/jvm/temurin-25` 도 있다. 그 문장을 믿고 검증을 건너뛰면 컴파일도 안
+  되는 코드를 PR 로 올리게 된다 — 실제로 증권 연동 작업에서 컴파일 에러 6건·테스트 실패 8건을
+  빌드로 잡았다. 먼저 돌려 보고, 정말 401 이 나면 그때 보고하라.
+- `JAVA_HOME` 을 빼면 temurin-17 을 잡아 toolchain 해석에서 죽는다.
 - Q 클래스는 `build/generated/querydsl` 로만 나오고 커밋되지 않는다. 엔티티를 바꾸고 컴파일을 안 돌리면
   QueryDsl 리포지토리에서 `QXxx` 를 못 찾는다. 커밋되는 생성 산출물은 이것 말고 없다.
 
@@ -43,7 +49,10 @@ export GITHUB_ACTOR=<github-user> GITHUB_TOKEN=<read:packages PAT>   # 없으면
   테스트는 H2 `create-drop` 이라 컬럼을 추가해도 초록불이 뜨고 dev/prod 는 Unknown column 으로 터진다.
   엔티티를 바꾸는 PR 은 필요한 DDL 을 반드시 함께 보고하라.
 - **JaCoCo 게이트가 `test` 를 깬다.** 측정 스코프(= 사실상 service·repository. controller/domain/dto/
-  config/security/type/exception 제외)의 BUNDLE LINE 이 0.50 미만이면 실패. 실측 ~56%, 여유 6%p 뿐이다.
+  config/security/type/exception 제외)의 BUNDLE LINE 이 **0.70** 미만이면 실패. 실측 ~71.8% 라
+  **여유가 2%p 도 안 된다** — 측정 스코프에 테스트 없는 클래스를 200줄쯤 더하면 바로 깨진다.
+  새 서비스·리포지토리를 만들면 테스트를 같은 PR 에 넣어라. 지금 커버리지는
+  `build/reports/jacoco/test/jacocoTestReport.xml` 의 마지막 LINE counter 로 확인한다.
 - **에러 메시지는 `src/main/resources/message/` 의 `messages`·`messages_en`·`messages_ko` 세 개 모두**에
   넣어라. 기본 번들에 키가 없으면 ko 아닌 Locale 요청에서 키가 그대로 새거나 예외가 난다. 지금도 ko 에만
   있는 키가 기본 대비 19개, en 대비 17개다 — 반복되던 사고다.

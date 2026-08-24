@@ -157,7 +157,9 @@ jacocoTestCoverageVerification {
     violationRules {
         // 회귀 방지 floor: 측정 스코프(service·repository 등 — controller/domain/dto/config/security 제외)의
         // 전체 LINE 커버리지가 floor 아래로 떨어지면 빌드 실패시킨다.
-        // 3계층(service/repository/api) 테스트 커버 완료 후 실측 ~56% → floor 0.24→0.50 상향(6%p 버퍼).
+        // 증권 연동 작업으로 테스트가 늘어 실측 ~71.8% → floor 0.50→0.70 상향(2%p 미만 버퍼).
+        // **버퍼가 얇다** — 측정 스코프(service·repository)에 테스트 없는 클래스를 200줄쯤
+        // 더하면 바로 깨진다. 새 서비스를 만들면 테스트를 같은 PR 에 넣어라.
         // 클래스 단위 강제(예전 CLASS 0.60)는 미달 클래스에서 즉시 깨지므로 BUNDLE 집계 기준으로 둔다.
         rule {
             enabled = true
@@ -165,7 +167,7 @@ jacocoTestCoverageVerification {
             limit {
                 counter = 'LINE'
                 value = 'COVEREDRATIO'
-                minimum = 0.50
+                minimum = 0.70
             }
         }
     }
