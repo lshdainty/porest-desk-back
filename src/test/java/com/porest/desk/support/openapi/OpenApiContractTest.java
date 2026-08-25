@@ -96,8 +96,10 @@ class OpenApiContractTest {
         @Test
         @DisplayName("나무 계좌와 토스 계좌가 갈라져 있다")
         void accounts() {
+            // usable — 계좌구분이 도메인을 정하므로 목록만으론 어느 걸 골라야 할지 모른다.
+            // 화면이 고를 수 있게 서버가 표시한다(나무가 주는 필드가 아니다).
             assertThat(props("NamuAccount").fieldNames()).toIterable()
-                .containsExactlyInAnyOrder("accountNo", "accountType");
+                .containsExactlyInAnyOrder("accountNo", "accountType", "usable");
             assertThat(props("TossAccount").has("accountSeq")).isTrue();
         }
     }

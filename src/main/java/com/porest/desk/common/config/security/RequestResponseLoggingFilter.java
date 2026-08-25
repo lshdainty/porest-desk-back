@@ -67,7 +67,11 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
             "appsecret", "appSecret", "app_secret", "appsecretkey", "appSecretKey",
             "secret",
             "accessToken", "access_token",
-            "refreshToken", "refresh_token"
+            "refreshToken", "refresh_token",
+            // 계좌번호 — 우리 API 표기(accountNo)와 증권사 원표기를 모두 막는다.
+            // 나무는 계좌목록 응답이 acct_no, 잔고 요청이 act_no 로 표기가 갈린다.
+            // 로그에서만 가려지고 실제 응답 본문은 그대로 나간다(마스킹은 로그 문자열에만 건다).
+            "accountNo", "acct_no", "act_no"
     );
 
     // 민감 키 alternation. 모든 키가 [A-Za-z_]+ 라 정규식 메타문자가 없어 그대로 결합 가능.

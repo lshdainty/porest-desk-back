@@ -29,6 +29,10 @@ import java.util.Map;
  *
  * <p>쿼리 값은 URI 변수로 바인딩해 RestTemplate 이 정확히 한 번만 인코딩하게 한다.
  * 키에 {@code +}·{@code &} 가 섞여도 안전하다.
+ *
+ * <p><b>조회용 템플릿을 쓰지 않는다.</b> 발급은 스펙상 모의투자 미제공이라 환경과 무관하게
+ * 항상 운영 도메인({@code namuAuthRestTemplate})으로 나가야 한다 — 조회용을 쓰면 모의투자
+ * 환경에서 인증부터 죽는다. 발급받은 토큰 자체는 양쪽 환경에 그대로 쓴다.
  */
 @Component
 public class NamuTokenManager extends AbstractBrokerTokenManager {
@@ -39,14 +43,14 @@ public class NamuTokenManager extends AbstractBrokerTokenManager {
     private static final String HEADER_CLIENT_ID = "x-client-id";
     private static final String HEADER_CLIENT_SECRET = "x-client-secret";
 
-    private final RestTemplate namuRestTemplate;
+    private final RestTemplate namuAuthRestTemplate;
 
     public NamuTokenManager(UserSecuritiesCredentialRepository credentialRepository,
                             AesGcmCipher cipher,
                             BrokerTokenStore tokenStore,
-                            @Qualifier("namuRestTemplate") RestTemplate namuRestTemplate) {
+                            @Qualifier("namuAuthRestTemplate") RestTemplate namuAuthRestTemplate) {
         super(credentialRepository, cipher, tokenStore);
-        this.namuRestTemplate = namuRestTemplate;
+        this.namuAuthRestTemplate = namuAuthRestTemplate;
     }
 
     @Override
@@ -56,7 +60,7 @@ public class NamuTokenManager extends AbstractBrokerTokenManager {
 
     @Override
     protected BrokerToken issueToken(String apiKey, String apiSecret) {
-        OAuth2TokenResponse res = namuRestTemplate.postForObject(
+        OAuth2TokenResponse res = namuAuthRestTemplate.postForObject(
             TOKEN_PATH, null, OAuth2TokenResponse.class,
             Map.of("appkey", apiKey, "appsecretkey", apiSecret));
         return res == null ? null : new BrokerToken(res.accessToken(), res.expiresIn());

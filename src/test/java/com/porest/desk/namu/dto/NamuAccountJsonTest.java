@@ -27,15 +27,27 @@ class NamuAccountJsonTest {
 
         assertThat(account.accountNo()).isEqualTo("12345678-01");
         assertThat(account.accountType()).isEqualTo("01");
+        // usable 은 나무가 주는 값이 아니라 서비스가 환경을 보고 채운다.
+        // 원시 boolean 이면 여기서 "Cannot map null into boolean" 으로 목록 파싱이 통째로 깨진다.
+        assertThat(account.usable()).isNull();
+    }
+
+    @Test
+    @DisplayName("usable 은 나가는 쪽에만 있다 — 화면이 어느 계좌를 고를지 여기서 안다")
+    void usableIsAnOutboundOnlyFlag() throws Exception {
+        JsonNode node = mapper.readTree(mapper.writeValueAsString(
+            NamuAccountDto.Account.of("12345678-01", "01").withUsable(true)));
+
+        assertThat(node.get("usable").asBoolean()).isTrue();
     }
 
     @Test
     @DisplayName("우리 응답은 accountNo 로 나간다 — 클라이언트가 읽는 이름이다")
     void writesOurFieldNames() throws Exception {
         JsonNode node = mapper.readTree(mapper.writeValueAsString(
-            new NamuAccountDto.Account("12345678-01", "01")));
+            NamuAccountDto.Account.of("12345678-01", "01")));
 
         assertThat(node.fieldNames()).toIterable()
-            .containsExactlyInAnyOrder("accountNo", "accountType");
+            .containsExactlyInAnyOrder("accountNo", "accountType", "usable");
     }
 }
