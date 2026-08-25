@@ -115,6 +115,12 @@ app:
     base-url: ${NAMU_API_URL:https://api.nhplug.com:8443}
     connect-timeout: ${NAMU_CONNECT_TIMEOUT:5000}
     read-timeout: ${NAMU_READ_TIMEOUT:10000}
+    # 나무엔 종목 다건 시세 API 가 없어 종목마다 1콜이 나간다. 자산 화면은 10초마다 폴링하므로
+    # 캐시가 없으면 한 사용자가 초당 몇 콜씩 지속적으로 내 유량 제한(429)에 걸린다.
+    quote-cache-ttl-seconds: ${NAMU_QUOTE_CACHE_TTL:20}
+    # 직렬 호출이라 종목이 많고 업스트림이 느리면 요청 하나가 스레드를 분 단위로 물고 있는다.
+    # 예산을 넘기면 받은 것만 돌려주고 나머지는 다음 조회로 미룬다.
+    price-batch-budget-ms: ${NAMU_PRICE_BATCH_BUDGET_MS:4000}
   # 대한민국 공휴일 자동 동기화. 1차 소스는 한국천문연구원 특일정보 API, 실패 시 월력요항 기반 정적 소스로 폴백.
   holiday:
     kasi:
