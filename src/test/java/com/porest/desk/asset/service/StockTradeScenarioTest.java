@@ -74,6 +74,8 @@ class StockTradeScenarioTest {
 
     private final List<Funding> transfers = new ArrayList<>();
     private final List<Long> deletedTransferIds = new ArrayList<>();
+    // 시장코드 확정은 mock 기본값(null) — 확정 못 한 경우와 같다.
+    @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
     @InjectMocks private AssetTradeServiceImpl sut;
 
     private static final long USER_ID = 1L;
@@ -260,6 +262,18 @@ class StockTradeScenarioTest {
             assertThat(samsung().getQuantity()).isEqualByComparingTo("100");
             assertThat(samsung().getTotalCost()).isEqualTo(7_005_000L); // 수수료는 취득원가
             assertThat(samsung().avgPrice()).isEqualByComparingTo("70050"); // 7,005,000 / 100
+        }
+
+        @Test
+        @DisplayName("매수로 새로 생긴 보유에도 시장코드가 붙는다 — 매매는 심볼만 들고 온다")
+        void buyFillsMarketCode() {
+            deposit(10_000_000L);
+            // 매매 화면은 시장을 안 물으므로 서버가 심볼로 해석한다. 모호하면 null 로 남는다.
+            given(stockMasterResolver.confirmMarketCode(null, SAMSUNG)).willReturn("KOSPI");
+
+            sut.createTrade(trade(TradeType.BUY, "100", 7_000_000L, 5_000L, 3));
+
+            assertThat(samsung().getMarketCode()).isEqualTo("KOSPI");
         }
 
         @Test

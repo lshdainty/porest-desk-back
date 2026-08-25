@@ -192,8 +192,14 @@ public class Asset extends AuditingFieldsWithIp {
             .longValueExact();
     }
 
-    /** 토스 종목 1:1 연결 — 종목코드 + 보유수량. 토스 시세 × 수량으로 평가액 실시간 계산. */
-    public void linkSecurities(String symbol, Long quantity) {
+    /**
+     * 증권 종목 1:1 연결 — 종목코드 + 보유수량. 시세 × 수량으로 평가액 실시간 계산.
+     *
+     * @param marketCode stock_master 기준 시장코드. 확정하지 못했으면 null —
+     *                   같은 티커가 여러 시장에 걸릴 때 추측한 값을 눌러 두지 않는다.
+     */
+    public void linkSecurities(String marketCode, String symbol, Long quantity) {
+        this.marketCode = marketCode;
         this.symbol = symbol;
         this.quantity = quantity;
     }
@@ -202,6 +208,7 @@ public class Asset extends AuditingFieldsWithIp {
     public void unlinkSecurities() {
         this.quantity = null;
         this.symbol = null;
+        this.marketCode = null;
     }
 
     /** 토스 보유종목에 연결된 자산인지. */

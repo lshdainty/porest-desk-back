@@ -24,6 +24,7 @@ import com.porest.desk.securities.service.SecuritiesPriceProvider;
 import com.porest.desk.securities.service.SecuritiesPriceProviders;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import com.porest.desk.stock.service.StockMasterResolver;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseAggregates;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -73,6 +74,8 @@ public class AssetServiceImpl implements AssetService {
     private final SubscriptionEntitlementService entitlementService;
     private final SecuritiesCredentialService securitiesCredentialService;
     private final SecuritiesPriceProviders priceProviders;
+    // 저장할 시장코드 확정용 — 조회 규칙과 달리 모호하면 비워 둔다(confirmMarketCode).
+    private final StockMasterResolver stockMasterResolver;
 
     @Override
     @Transactional
@@ -313,7 +316,8 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
-    public AssetServiceDto.AssetInfo linkSymbol(Long assetId, Long userRowId, String symbol, Long quantity) {
+    public AssetServiceDto.AssetInfo linkSymbol(Long assetId, Long userRowId, String marketCode,
+                                                String symbol, Long quantity) {
         log.debug("자산 토스 연결 시작: assetId={}, symbol={}, quantity={}", assetId, symbol, quantity);
 
         // 게이트: 프로(SECURITIES) 구독 + 증권사 1곳 이상 연결한 사용자만 연결 가능.
@@ -334,15 +338,18 @@ public class AssetServiceImpl implements AssetService {
             log.warn("자산 종목 연결 거부 - INVESTMENT 자산 아님: assetId={}, type={}", assetId, asset.getAssetType());
             throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
         }
+        // 검증도 저장도 같은 시장코드로 한다 — 다른 코드로 시세를 확인하고 다른 코드를
+        // 저장하면, 연결될 때 보인 값과 야간 스냅샷이 다른 종목을 가리키게 된다.
+        String confirmedMarket = stockMasterResolver.confirmMarketCode(marketCode, symbol);
         // 시세가 실제로 나오는 종목인지 검증 — 잘못된 코드 연결 차단(정합성의 최종 판정).
-        if (!isPriceAvailable(userRowId, symbol)) {
-            log.warn("자산 종목 연결 거부 - 시세 미인식 종목: symbol={}", symbol);
+        if (!isPriceAvailable(userRowId, confirmedMarket, symbol)) {
+            log.warn("자산 종목 연결 거부 - 시세 미인식 종목: market={}, symbol={}", confirmedMarket, symbol);
             throw new InvalidValueException(DeskErrorCode.SECURITIES_SYMBOL_INVALID);
         }
 
-        asset.linkSecurities(symbol, quantity);
+        asset.linkSecurities(confirmedMarket, symbol, quantity);
         // 연결 즉시 평가액 1회 스냅샷 — 추이 그래프에 바로 반영(환율 미확보 외화면 생략).
-        Long valuation = computeValuationKrw(userRowId, symbol, BigDecimal.valueOf(quantity));
+        Long valuation = computeValuationKrw(userRowId, confirmedMarket, symbol, BigDecimal.valueOf(quantity));
         if (valuation != null) {
             balanceHistoryService.recordValuation(asset, valuation, userClock.now(userRowId));
         }
@@ -363,7 +370,8 @@ public class AssetServiceImpl implements AssetService {
         // 토스 시세 미수신(미연결/조회실패) 시엔 굳히지 않고 기존 잔액을 유지한다.
         if (asset.isSecuritiesLinked() && asset.getQuantity() != null) {
             Long valuation = computeValuationKrw(
-                userRowId, asset.getSymbol(), BigDecimal.valueOf(asset.getQuantity()));
+                userRowId, asset.getMarketCode(), asset.getSymbol(),
+                BigDecimal.valueOf(asset.getQuantity()));
             if (valuation != null) {
                 // 굳히는 값도 '보유 평가금액' 이다 — CASH 로 찍으면 예수금이 평가액만큼 부풀고
                 // 기존 HOLDING 앵커와 이중으로 더해진다.
@@ -513,6 +521,7 @@ public class AssetServiceImpl implements AssetService {
                 found.updateHolding(
                     hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                     linked ? YNType.Y : YNType.N,
+                    confirmMarketCode(hc),
                     linked ? hc.symbol() : null,
                     hc.quantity(),
                     linked ? null : hc.holdingName(),
@@ -527,6 +536,7 @@ public class AssetServiceImpl implements AssetService {
                 asset,
                 hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
+                confirmMarketCode(hc),
                 linked ? hc.symbol() : null,
                 hc.quantity(),
                 linked ? null : hc.holdingName(),
@@ -564,6 +574,7 @@ public class AssetServiceImpl implements AssetService {
                 asset,
                 hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
+                confirmMarketCode(hc),
                 linked ? hc.symbol() : null,
                 // 미연동도 수량을 남긴다 — 몇 주·몇 g·몇 개인지는 평가액과 별개로 기록 가치가 있다(선택 입력).
                 hc.quantity(),
@@ -576,6 +587,17 @@ public class AssetServiceImpl implements AssetService {
             result.add(AssetServiceDto.HoldingInfo.from(holding));
         }
         return result;
+    }
+
+    /**
+     * 저장할 시장코드 — 미연동 보유는 종목이 없으니 null, 연동이면 클라가 보낸 값을 쓰고
+     * 안 보냈으면 심볼로 1회 해석한다. 여러 시장에 걸리는 심볼은 비운 채 남긴다.
+     */
+    private String confirmMarketCode(AssetServiceDto.HoldingCommand hc) {
+        if (!Boolean.TRUE.equals(hc.linked())) {
+            return null;
+        }
+        return stockMasterResolver.confirmMarketCode(hc.marketCode(), hc.symbol());
     }
 
     /** 원가 — 보내왔으면 그 값, 아니면 같은 종목의 기존 원가를 잇는다. */
@@ -631,6 +653,8 @@ public class AssetServiceImpl implements AssetService {
                 }
                 SecuritiesPriceProvider provider = priceProviders.forUser(userRowId);
                 // 저장된 시장코드를 그대로 태운다 — 같은 티커가 여러 시장에 걸려도 종목이 확정된다.
+                // 저장은 연결·편집·매매 세 경로에서 한다(confirmMarketCode). 확정 못 한 행은
+                // null 로 나가고, 그때는 provider 쪽 우선순위 해석에 맡긴다.
                 List<InstrumentRef> instruments = userAssets.stream()
                     .flatMap(a -> valuationPairs(a, linkedHoldingsByAsset).stream())
                     .map(p -> InstrumentRef.of(p.marketCode(), p.symbol()))
@@ -694,7 +718,10 @@ public class AssetServiceImpl implements AssetService {
         return List.of();
     }
 
-    /** marketCode 는 없을 수 있다 — 시장코드 컬럼이 생기기 전에 만들어진 연동 행이 그렇다. */
+    /**
+     * marketCode 는 없을 수 있다 — 시장코드 컬럼이 생기기 전에 만들어진 연동 행,
+     * 그리고 같은 심볼이 여러 시장에 걸려 확정을 보류한 행이 그렇다.
+     */
     private record SymbolQty(String marketCode, String symbol, BigDecimal qty) {}
 
     /**
@@ -734,9 +761,10 @@ public class AssetServiceImpl implements AssetService {
     }
 
     /** 기본 소스 증권사가 이 종목 시세를 주는지 — 유효 종목 검증(미인식/조회실패 시 false). */
-    private boolean isPriceAvailable(Long userRowId, String symbol) {
+    private boolean isPriceAvailable(Long userRowId, String marketCode, String symbol) {
         try {
-            return priceProviders.forUser(userRowId).getPrices(userRowId, List.of(InstrumentRef.of(symbol))).stream()
+            return priceProviders.forUser(userRowId)
+                .getPrices(userRowId, List.of(InstrumentRef.of(marketCode, symbol))).stream()
                 .anyMatch(q -> symbol.equalsIgnoreCase(q.symbol()) && q.price() != null);
         } catch (Exception ex) {
             log.warn("종목 시세 검증 실패 - symbol={}: {}", symbol, ex.getMessage());
@@ -750,10 +778,10 @@ public class AssetServiceImpl implements AssetService {
      * <p>수량이 소수(코인·소수점 주식)일 수 있어 곱셈을 전부 BigDecimal 로 한다 —
      * double 로 넘기면 0.1 같은 값이 이진수로 정확히 떨어지지 않아 평가액이 어긋난다.
      */
-    private Long computeValuationKrw(Long userRowId, String symbol, BigDecimal quantity) {
+    private Long computeValuationKrw(Long userRowId, String marketCode, String symbol, BigDecimal quantity) {
         try {
             SecuritiesPriceProvider provider = priceProviders.forUser(userRowId);
-            PriceQuote q = provider.getPrices(userRowId, List.of(InstrumentRef.of(symbol))).stream()
+            PriceQuote q = provider.getPrices(userRowId, List.of(InstrumentRef.of(marketCode, symbol))).stream()
                 .filter(x -> symbol.equalsIgnoreCase(x.symbol()))
                 .findFirst().orElse(null);
             if (q == null || q.price() == null) {

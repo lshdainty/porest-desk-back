@@ -20,6 +20,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 /**
  * 심볼 → 종목 특정.
@@ -109,6 +111,57 @@ class StockMasterResolverTest {
 
         assertThat(sut.resolve("WHO_KNOWS", "AAPL")).contains(nas);
         assertThat(sut.resolve("", "AAPL")).contains(nas);
+    }
+
+    @Test
+    @DisplayName("저장용 확정 — 클라가 보낸 시장이 이긴다. 사용자가 검색에서 고른 값이라 확실하다")
+    void confirmPrefersClientValue() {
+        assertThat(sut.confirmMarketCode("NAS", "SPY")).isEqualTo("NAS");
+        // 마스터를 다시 뒤지지 않는다 — 검색 응답이 준 값이다.
+        then(stockMasterRepository).should(never()).findAllActiveBySymbol("SPY");
+    }
+
+    @Test
+    @DisplayName("저장용 확정 — 클라가 안 보내도 후보가 하나면 그걸로 채운다")
+    void confirmFallsBackToUniqueCandidate() {
+        given(stockMasterRepository.findAllActiveBySymbol("005930"))
+            .willReturn(List.of(stock(StockMarket.KOSPI, "005930")));
+
+        assertThat(sut.confirmMarketCode(null, "005930")).isEqualTo("KOSPI");
+    }
+
+    @Test
+    @DisplayName("저장용 확정 — 여러 시장에 걸리면 비워 둔다. 조회용 resolve 와 여기서 갈린다")
+    void confirmLeavesAmbiguousNull() {
+        given(stockMasterRepository.findAllActiveBySymbol("SPY"))
+            .willReturn(List.of(stock(StockMarket.NYS, "SPY"), stock(StockMarket.LSE, "SPY")));
+
+        // 조회는 답을 하나 내야 하므로 고른다.
+        assertThat(sut.resolve((StockMarket) null, "SPY"))
+            .map(StockMaster::getMarketCode).contains(StockMarket.NYS);
+        // 저장은 고르지 않는다 — 추측한 값이 컬럼에 앉으면 다시 물을 기회가 사라진다.
+        assertThat(sut.confirmMarketCode(null, "SPY")).isNull();
+        assertThat(sut.resolveUnique("SPY")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("저장용 확정 — 마스터에 없는 심볼·빈 심볼은 null")
+    void confirmNullWhenUnknown() {
+        given(stockMasterRepository.findAllActiveBySymbol("NOPE")).willReturn(List.of());
+
+        assertThat(sut.confirmMarketCode(null, "NOPE")).isNull();
+        assertThat(sut.confirmMarketCode("NAS", "  ")).isNull();
+        assertThat(sut.confirmMarketCode(null, null)).isNull();
+        assertThat(sut.resolveUnique(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("저장용 확정 — 모르는 시장코드는 안 보낸 것으로 본다. 앱이 앞서 나갈 수 있다")
+    void confirmIgnoresUnknownMarketString() {
+        given(stockMasterRepository.findAllActiveBySymbol("AAPL"))
+            .willReturn(List.of(stock(StockMarket.NAS, "AAPL")));
+
+        assertThat(sut.confirmMarketCode("WHO_KNOWS", "AAPL")).isEqualTo("NAS");
     }
 
     @Test

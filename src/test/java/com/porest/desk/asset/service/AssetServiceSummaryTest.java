@@ -44,6 +44,10 @@ class AssetServiceSummaryTest {
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
+    // 시장코드 확정은 mock 기본값(null) — 확정 못 한 경우와 같다.
+
+    @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
+
     @InjectMocks private AssetServiceImpl sut;
 
     private static final long USER_ID = 1L;

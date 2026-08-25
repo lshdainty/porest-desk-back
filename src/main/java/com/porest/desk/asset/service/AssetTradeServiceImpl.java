@@ -19,6 +19,7 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.stock.service.StockMasterResolver;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +60,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
     private final UserClock userClock;
     /** 예수금 충당 이체를 만들고 지운다 — 매수 한 건이 이체+매수 두 기록이 된다. */
     private final AssetService assetService;
+    /** 매매로 새로 생기는 보유에 시장코드를 채운다 — 모호한 심볼은 비워 둔다. */
+    private final StockMasterResolver stockMasterResolver;
 
     /** 자동 생성 이체의 메모 — 사용자가 직접 만든 이체와 구분된다. */
     private static final String SETTLEMENT_TRANSFER_DESC = "예수금 입금 (매수)";
@@ -202,6 +205,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             // 전량 매도로 사라졌던 보유를 되살린다.
             AssetHolding revived = AssetHolding.create(asset, trade.getHoldingType(),
                 trade.getLinked(),
+                trade.getLinked() == YNType.Y
+                    ? stockMasterResolver.confirmMarketCode(null, trade.getHoldingKey()) : null,
                 trade.getLinked() == YNType.Y ? trade.getHoldingKey() : null,
                 trade.getQuantityDelta().negate(),
                 trade.getLinked() == YNType.Y ? null : trade.getHoldingKey(),
@@ -473,6 +478,7 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             AssetHolding created = AssetHolding.create(asset,
                 command.holdingType() != null ? command.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
+                linked ? stockMasterResolver.confirmMarketCode(null, command.holdingKey()) : null,
                 linked ? command.holdingKey() : null,
                 quantityDelta,
                 linked ? null : command.holdingKey(),
