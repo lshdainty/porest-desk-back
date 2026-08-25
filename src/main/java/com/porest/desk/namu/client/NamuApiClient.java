@@ -32,8 +32,8 @@ import java.util.Map;
  *
  * <ol>
  *   <li><b>전부 POST + JSON</b> — 조회도 GET 이 아니다. 요청 본문은 {@code {"Input_0": {...}}} 봉투.</li>
- *   <li><b>HTTP 200 으로도 실패한다</b> — {@code rsp_cd} 가 {@code "00000"} 이 아니면 실패다.
- *       상태코드만 보면 조용히 빈 화면이 된다.</li>
+ *   <li><b>HTTP 200 으로도 실패한다</b> — 성공 여부는 {@code rsp_cd} 로만 안다
+ *       ({@link NamuResponse#isSuccess()}). 상태코드만 보면 조용히 빈 화면이 된다.</li>
  *   <li><b>인증 헤더가 Bearer 하나가 아니다</b> — 매 호출에 평문 키/시크릿이 함께 간다.
  *       그 구성은 {@code BrokerTokenManager} 가 맡는다.</li>
  * </ol>
@@ -116,16 +116,19 @@ public class NamuApiClient {
             }
             return body;
         } catch (HttpClientErrorException.Unauthorized e) {
-            if (retryOnUnauthorized) {
-                // 토큰이 무효화되었을 수 있으므로 1회 재발급 후 재시도한다.
-                log.debug("나무증권 401 - 토큰 재발급 후 재시도");
-                tokenManager.invalidate(userRowId);
+            // 토큰이 무효라고 증권사가 말한 유일한 신호가 401 이다. 버릴지 말지는
+            // 토큰 담당자가 정한다 — 방금 발급한 토큰이면 버려도 같은 401 이 오고
+            // 알림톡만 쌓인다(시세는 종목마다 한 콜이라 폴링 한 바퀴에 종목 수만큼).
+            if (retryOnUnauthorized && tokenManager.invalidateOnUnauthorized(userRowId)) {
+                log.info("나무증권 401 - 토큰 재발급 후 1회 재시도: path={}, userRowId={}", path, userRowId);
                 return execute(userRowId, path, input, typeRef, false);
             }
             throw toExternalException(e, path);
         } catch (HttpStatusCodeException e) {
+            // 429(한도 초과)·5xx·기타 4xx 는 토큰 문제가 아니다. 캐시를 그대로 둔다.
             throw toExternalException(e, path);
         } catch (RestClientException e) {
+            // 타임아웃·연결 실패도 토큰 문제가 아니다 — 여기서 무효화하면 멀쩡한 토큰을 버린다.
             log.error("나무증권 API 호출 실패: {}", path, e);
             throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
         }

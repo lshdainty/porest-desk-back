@@ -34,7 +34,9 @@ public class SecuritiesCredentialServiceImpl implements SecuritiesCredentialServ
     @Transactional
     public void register(Long userRowId, SecuritiesBroker broker, String apiKey, String apiSecret) {
         // 1) 해당 증권사 토큰발급으로 즉시 검증 — 저장한 뒤에 틀린 키였다고 알면 늦다.
-        tokenManagers.of(broker).verify(apiKey, apiSecret);
+        //    검증에 쓴 토큰은 그대로 캐시에 들어간다(커밋 이후). 예전에는 버리고 아래에서
+        //    캐시까지 비워 등록 1회당 발급이 2회 나갔다 = 나무 알림톡 2건.
+        tokenManagers.of(broker).verifyAndCache(userRowId, apiKey, apiSecret);
 
         // 2) 암호화 저장(UPSERT)
         String keyEnc = cipher.encrypt(apiKey);
@@ -55,8 +57,8 @@ public class SecuritiesCredentialServiceImpl implements SecuritiesCredentialServ
             cred.markPrimary(true);
         }
 
-        // 4) 기존 토큰 캐시 무효화 — 다른 키였을 수 있다.
-        tokenManagers.of(broker).invalidate(userRowId);
+        // 4) 캐시 무효화는 없다 — 1) 이 커밋 후 새 토큰으로 덮어쓴다. 여기서 비우면
+        //    방금 받은 토큰까지 날아가 다음 호출이 또 발급을 부른다.
         log.info("{} 크리덴셜 등록 완료 (userRowId={})", broker, userRowId);
     }
 
