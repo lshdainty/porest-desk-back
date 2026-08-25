@@ -2,6 +2,7 @@ package com.porest.desk.dataimport.sms.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
@@ -58,10 +59,12 @@ public class SmsImportServiceImpl implements SmsImportService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final AssetRepository assetRepository;
     private final SmsCardMappingRepository cardMappingRepository;
+    private final UserClock userClock;
 
     @Override
     public SmsImportServiceDto.ParseResult parse(String text, Long userRowId) {
-        SmsParsed parsed = SmsParser.parse(text);
+        // 연도 유추 기준일 — JVM 기본(UTC)의 오늘을 쓰면 KST 새벽·연말연시에 하루/한 해가 어긋난다.
+        SmsParsed parsed = SmsParser.parse(text, userClock.today(userRowId));
         if (!parsed.matched()) {
             return SmsImportServiceDto.ParseResult.noMatch();
         }
@@ -94,7 +97,7 @@ public class SmsImportServiceImpl implements SmsImportService {
     @Override
     @Transactional
     public SmsImportServiceDto.CommitResult commit(SmsImportServiceDto.CommitCommand command) {
-        SmsParsed parsed = SmsParser.parse(command.text());
+        SmsParsed parsed = SmsParser.parse(command.text(), userClock.today(command.userRowId()));
         if (!parsed.matched()) {
             throw new InvalidValueException(DeskErrorCode.SMS_NOT_RECOGNIZED);
         }

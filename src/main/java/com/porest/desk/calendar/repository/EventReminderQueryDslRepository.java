@@ -4,7 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.calendar.domain.EventReminder;
 import com.porest.desk.calendar.domain.QCalendarEvent;
 import com.porest.desk.calendar.domain.QEventReminder;
-import com.querydsl.core.types.dsl.Expressions;
+import com.porest.desk.user.domain.QUser;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -52,19 +52,21 @@ public class EventReminderQueryDslRepository implements EventReminderRepository 
     }
 
     @Override
-    public List<EventReminder> findUnsentDueReminders(LocalDateTime now) {
+    public List<EventReminder> findUnsentRemindersStartingBefore(LocalDateTime startBound) {
         QCalendarEvent calendarEvent = QCalendarEvent.calendarEvent;
+        QUser user = QUser.user;
 
-        // startDate - minutesBefore <= now  →  startDate <= now + minutesBefore
+        // startDate 는 [userClock] 벽시계라 SQL 에서 UTC now 와 직접 비교하면 KST 사용자의
+        // 리마인더가 9시간 늦게 잡힌다. 여기서는 후보(시작이 bound 이전인 미발송분)만 추리고,
+        // 도래 판정(벽시계 due vs 소유자 타임존의 지금)은 스케줄러가 한다. user 를 fetchJoin
+        // 하는 것도 그 판정에 소유자 timezone 이 필요해서다.
         return queryFactory.selectFrom(eventReminder)
-            .leftJoin(eventReminder.event, calendarEvent).fetchJoin()
+            .join(eventReminder.event, calendarEvent).fetchJoin()
+            .join(calendarEvent.user, user).fetchJoin()
             .where(
                 eventReminder.isSent.eq(YNType.N),
                 calendarEvent.isDeleted.eq(YNType.N),
-                calendarEvent.startDate.loe(
-                    Expressions.dateTimeTemplate(LocalDateTime.class,
-                        "timestampadd(minute, {0}, {1})",
-                        eventReminder.minutesBefore, Expressions.constant(now)))
+                calendarEvent.startDate.loe(startBound)
             )
             .fetch();
     }

@@ -26,7 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * EventReminder QueryDsl 리포 슬라이스 테스트.
  * 커스텀 조건: 이벤트별 조회(minutesBefore 오름차순), 다중 이벤트 IN + 빈목록 가드,
- * 미발송 도래 리마인더(isSent=N & event.isDeleted=N & startDate <= now+minutesBefore), bulk delete.
+ * 미발송 후보 리마인더(isSent=N & event.isDeleted=N & startDate <= bound — 도래 판정은
+ * 스케줄러가 소유자 타임존으로), bulk delete.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -100,34 +101,37 @@ class EventReminderRepositoryTest {
     }
 
     @Test
-    @DisplayName("findUnsentDueReminders — 미발송 & 이벤트 미삭제 & startDate<=now+minutesBefore 만 반환(경계 포함)")
-    void findUnsentDueReminders() {
+    @DisplayName("findUnsentRemindersStartingBefore — 미발송 & 이벤트 미삭제 & startDate<=bound 만 반환(경계 포함)")
+    void findUnsentRemindersStartingBefore() {
         User user = persistUser("u1");
         UserCalendar cal = persistCalendar(user);
+        LocalDateTime bound = NOW.plusDays(2);
 
-        // 도래: startDate(12:10) <= now(12:00)+15m=12:15 → 포함
+        // bound 안 → 포함 (도래 판정은 스케줄러가 소유자 타임존으로 한다)
         CalendarEvent due = persistEvent(user, cal, NOW.plusMinutes(10));
         persistReminder(due, "DUE", 15);
+        CalendarEvent near = persistEvent(user, cal, NOW.plusHours(2));
+        persistReminder(near, "NEAR", 15);
         // 이미 발송됨 → 제외
         EventReminder sent = persistReminder(due, "SENT", 30);
         sent.markSent();
-        // 아직 도래 안함: startDate(14:00) > 12:15 → 제외
-        CalendarEvent future = persistEvent(user, cal, NOW.plusHours(2));
-        persistReminder(future, "FUTURE", 15);
+        // bound 밖 → 제외
+        CalendarEvent far = persistEvent(user, cal, NOW.plusDays(3));
+        persistReminder(far, "FAR", 15);
         // 이벤트 soft-delete → 제외
         CalendarEvent deleted = persistEvent(user, cal, NOW.plusMinutes(10));
         deleted.deleteEvent();
         persistReminder(deleted, "DELETED", 15);
-        // 경계: startDate(12:15) == now+15m=12:15 → loe 로 포함
-        CalendarEvent boundary = persistEvent(user, cal, NOW.plusMinutes(15));
+        // 경계: startDate == bound → loe 로 포함
+        CalendarEvent boundary = persistEvent(user, cal, bound);
         persistReminder(boundary, "BOUNDARY", 15);
         em.flush();
         em.clear();
 
-        List<EventReminder> result = repository.findUnsentDueReminders(NOW);
+        List<EventReminder> result = repository.findUnsentRemindersStartingBefore(bound);
 
         assertThat(result).extracting(EventReminder::getReminderType)
-                .containsExactlyInAnyOrder("DUE", "BOUNDARY");
+                .containsExactlyInAnyOrder("DUE", "NEAR", "BOUNDARY");
     }
 
     @Test

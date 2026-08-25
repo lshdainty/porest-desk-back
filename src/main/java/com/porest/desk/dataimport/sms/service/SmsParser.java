@@ -24,7 +24,11 @@ public final class SmsParser {
         return PaymentTextParsers.looksLikePayment(text);
     }
 
-    /** 오늘 기준으로 파싱 — 운영 경로. */
+    /**
+     * JVM 기본 타임존의 오늘로 파싱. 컨테이너(UTC)에서는 KST 새벽·연말연시에 연도 유추가
+     * 어긋나므로, 사용자 맥락에서는 {@link #parse(String, LocalDate)} 에 사용자 기준 오늘
+     * (UserClock)을 넘겨라.
+     */
     public static SmsParsed parse(String text) {
         return PaymentTextParsers.parse(text);
     }
