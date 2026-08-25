@@ -71,7 +71,7 @@ class SecuritiesCredentialServiceImplTest {
     class Register {
 
         @Test
-        @DisplayName("검증 통과하면 암호문으로 저장하고 토큰캐시를 비운다")
+        @DisplayName("검증 통과하면 암호문으로 저장한다. 검증 토큰은 캐시로 들어가고 무효화는 없다")
         void success() {
             given(credentialRepository.findByUserRowIdAndBroker(USER, SecuritiesBroker.NAMU))
                 .willReturn(Optional.empty());
@@ -82,9 +82,11 @@ class SecuritiesCredentialServiceImplTest {
 
             sut.register(USER, SecuritiesBroker.NAMU, "key", "secret");
 
-            verify(namuManager).verify("key", "secret");
+            verify(namuManager).verifyAndCache(USER, "key", "secret");
             verify(credentialRepository).save(any(UserSecuritiesCredential.class));
-            verify(namuManager).invalidate(USER);
+            // 등록 1회 = 발급 1회. 예전에는 검증 토큰을 버리고 여기서 캐시까지 비워
+            // 발급이 2회(= 나무 알림톡 2건) 나갔다.
+            verify(namuManager, never()).invalidate(USER);
         }
 
         @Test
@@ -92,7 +94,7 @@ class SecuritiesCredentialServiceImplTest {
         void invalidCredentialIsNotStored() {
             willThrow(new ExternalServiceException(
                     com.porest.desk.common.exception.DeskErrorCode.SECURITIES_CREDENTIAL_INVALID))
-                .given(namuManager).verify("key", "secret");
+                .given(namuManager).verifyAndCache(USER, "key", "secret");
 
             assertThatThrownBy(() -> sut.register(USER, SecuritiesBroker.NAMU, "key", "secret"))
                 .isInstanceOf(ExternalServiceException.class);

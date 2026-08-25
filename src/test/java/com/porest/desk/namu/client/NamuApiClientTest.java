@@ -22,6 +22,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
@@ -37,6 +38,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
 
@@ -83,6 +85,7 @@ class NamuApiClientTest {
         auth.set("x-client-id", "KEY");
         auth.set("x-client-secret", "SECRET");
         given(tokenManager.authHeaders(1L)).willReturn(auth);
+        given(tokenManager.invalidateOnUnauthorized(1L)).willReturn(true);
 
         NamuProperties properties = new NamuProperties();
         properties.setBaseUrl(BASE);
@@ -221,8 +224,124 @@ class NamuApiClientTest {
         assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
             Map.of("iem_cd", "005930"), KR_PRICE).price()).isEqualTo("70000");
 
-        org.mockito.Mockito.verify(tokenManager).invalidate(1L);
+        org.mockito.Mockito.verify(tokenManager).invalidateOnUnauthorized(1L);
         server.verify();
+    }
+
+    @Test
+    @DisplayName("토큰 담당자가 재발급을 거절하면 재시도하지 않는다 — 방금 발급한 토큰이면 또 401 일 뿐이다")
+    void doesNotRetryWhenReissueRefused() {
+        given(tokenManager.invalidateOnUnauthorized(1L)).willReturn(false);
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andRespond(withUnauthorizedRequest());
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", "005930"), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class);
+
+        // 호출은 한 번뿐 — 재시도가 나갔으면 남은 기대가 없어 여기서 터진다.
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("429(호출 한도 초과)에는 토큰을 건드리지 않는다 — 한도는 토큰 문제가 아니다")
+    void rateLimitDoesNotTouchToken() {
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                .body("{\"rsp_cd\":\"IGW42902\",\"rsp_msg\":\"유량 제한\"}")
+                .contentType(MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", "005930"), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class);
+
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidateOnUnauthorized(1L);
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidate(1L);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("업무 오류(rsp_cd)에도 토큰을 건드리지 않는다 — 200 으로 온 실패는 토큰 문제가 아니다")
+    void businessErrorDoesNotTouchToken() {
+        expect("/krstock/inquiry/v1/balance",
+            "{\"rsp_cd\":\"11165\",\"rsp_msg\":\"계좌번호를 잘못 입력하셨습니다.\",\"Output_0\":null}");
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/inquiry/v1/balance",
+                Map.of("act_no", "12345678-01"), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class);
+
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidateOnUnauthorized(1L);
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidate(1L);
+    }
+
+    @Test
+    @DisplayName("네트워크 오류에도 토큰을 건드리지 않는다 — 타임아웃은 토큰 문제가 아니다")
+    void networkErrorDoesNotTouchToken() {
+        server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))
+            .andRespond(request -> {
+                throw new java.net.SocketTimeoutException("Read timed out");
+            });
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", "005930"), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class);
+
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidateOnUnauthorized(1L);
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidate(1L);
+    }
+
+    @Test
+    @DisplayName("00166(잔고·자산현황)은 성공이다 — 공식 SDK 가 성공으로 두는 코드")
+    void balanceSuccessCodeIsAccepted() {
+        expect("/gbstock/inquiry/v1/balance", """
+            {"rsp_cd":"00166","rsp_msg":"정상적으로 조회되었습니다.",
+             "Output_0":{"tot_aet_amt":"2000000","fc_eal_amt":"1500.00",
+                         "fc_eal_pls_amt":"300.00","pft_rt":"25.00"},
+             "Output_1":[{"iem_cd":"AAPL","cns_bse_bnc_qty":"5","cur_cd":"USD",
+                          "tdt_sby_bse_xcg_rt":"1383.50"}]}
+            """);
+
+        NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding> res =
+            sut.exchange(1L, "/gbstock/inquiry/v1/balance", Map.of("act_no", "12345678-01"), GB_BALANCE);
+
+        assertThat(res.summary().evalAmountSum()).isEqualTo("1500.00");
+        assertThat(res.items()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("13578(조회 내역 없음)은 성공이다 — 보유 종목이 없는 정상 상태가 에러로 뜨면 안 된다")
+    void emptyResultCodeIsAccepted() {
+        expect("/gbstock/inquiry/v1/balance",
+            "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"조회할 내역이 없습니다.\",\"Output_0\":null,\"Output_1\":null}");
+
+        NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding> res =
+            sut.exchange(1L, "/gbstock/inquiry/v1/balance", Map.of("act_no", "12345678-01"), GB_BALANCE);
+
+        // 페이로드가 비어도 파싱이 안전해야 한다 — 요약 null, 목록은 빈 리스트.
+        assertThat(res.summary()).isNull();
+        assertThat(res.items()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("목록에 없는 코드라도 rsp_msg 가 완료면 성공이다 — OR 조건(AND 아님)")
+    void unknownCodeWithCompletedMessageIsAccepted() {
+        expect("/krstock/quote/v1/currentPrice",
+            "{\"rsp_cd\":\"00999\",\"rsp_msg\":\"조회가 완료되었습니다.\","
+                + "\"Output_0\":{\"stck_prpr\":\"70000\"}}");
+
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "005930"), KR_PRICE).price()).isEqualTo("70000");
+    }
+
+    @Test
+    @DisplayName("성공 코드도 아니고 완료도 아니면 실패다 — 넓힌 판정이 실패를 성공으로 읽으면 안 된다")
+    void unknownCodeWithoutCompletedMessageFails() {
+        expect("/krstock/quote/v1/currentPrice",
+            "{\"rsp_cd\":\"00165\",\"rsp_msg\":\"조회가 계속됩니다.\",\"Output_0\":null}");
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", "005930"), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class);
     }
 
     @Test
