@@ -1,7 +1,10 @@
 package com.porest.desk.securities.config;
 
+import com.porest.desk.securities.type.NamuEnvironment;
+import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -9,21 +12,43 @@ import org.springframework.stereotype.Component;
  * 나무증권(NH PLUG) Open API 연동 설정. {@code app.namu.*} 를 바인딩한다.
  *
  * <p>인증정보는 서버 공용 키가 아니라 사용자가 등록한 본인 키(암호화 저장)를 쓰므로
- * 여기엔 base URL·타임아웃만 둔다.
+ * 여기엔 환경·URL·타임아웃만 둔다.
  *
- * <p>모의투자 도메인({@code moapi.nhplug.com})은 두지 않았다 — 토큰 발급 자체가 운영
- * 도메인 전용이고, porest 는 주문 없이 조회만 하므로 모의로 갈 이유가 없다.
+ * <p><b>URL 이 둘인 이유.</b> 예전 주석은 "모의투자 도메인은 두지 않았다 — 토큰 발급이 운영
+ * 전용이고 조회만 하니 모의로 갈 이유가 없다" 였는데, 뒤 절반이 틀렸다. <b>잔고 조회는 계좌를
+ * 타고, 계좌는 구분({@code acct_type})에 맞는 도메인에서만 유효하다</b> — 개발에서 실계좌
+ * 잔고를 긁지 않으려면 모의투자 도메인이 필요하다. 반면 {@code /oauth2/token} 은 스펙상
+ * 모의투자 미제공이라 <b>환경과 무관하게 항상 운영</b>에서 받는다(받은 토큰은 양쪽 공용).
+ * 그래서 조회용({@link #getBaseUrl()})과 토큰용({@link #getAuthBaseUrl()})을 나눠 둔다.
+ * 하나로 합치면 환경을 모의로 돌리는 순간 인증부터 죽는다.
  *
+ * @see NamuEnvironment
  * @see <a href="https://www.nhplug.com/llms.txt">NH PLUG OpenAPI 요약</a>
  */
+@Slf4j
 @Getter
 @Setter
 @Component
 @ConfigurationProperties(prefix = "app.namu")
 public class NamuProperties {
 
-    /** NH PLUG Open API base URL. 포트(8443)까지 포함해야 한다. */
+    /**
+     * 연동 환경. <b>도메인과 계좌구분을 함께 결정하는 단일 출처다</b> — 계좌구분을 따로
+     * 설정하지 않는 이유는 {@link NamuEnvironment} 참고.
+     */
+    private NamuEnvironment environment = NamuEnvironment.LIVE;
+
+    /**
+     * 조회 base URL 오버라이드. 비우면 {@link #environment} 의 기본 도메인을 쓴다 —
+     * 평소엔 비워 두고 환경만 바꾼다. 스텁·프록시를 물릴 때만 채운다.
+     */
     private String baseUrl;
+
+    /**
+     * 토큰 발급 base URL. <b>항상 운영이다</b> — 모의투자는 발급을 제공하지 않는다.
+     * 환경변수로 뚫지 않는 이유: 누군가 환경을 모의로 맞추면서 이것까지 같이 바꿔 인증을 깬다.
+     */
+    private String authBaseUrl = NamuEnvironment.LIVE.getDefaultBaseUrl();
 
     /** 연결 타임아웃 (ms) */
     private int connectTimeout = 5000;
@@ -49,8 +74,63 @@ public class NamuProperties {
      */
     private long priceBatchBudgetMs = 4000;
 
+    /**
+     * 조회에 실제로 쓸 base URL. 오버라이드가 비면 환경 기본값.
+     *
+     * <p>환경까지 비면 null 이다 — {@code NAMU_ENVIRONMENT=} 를 빈 값으로 주면 enum 이 null 로
+     * 바인딩되므로 실제로 생길 수 있는 상태다. 기동 검사가 먼저 막지만, 그걸 안 거친 객체
+     * (단위 테스트 등)를 위해 여기서도 터지지 않게 둔다.
+     */
+    public String getBaseUrl() {
+        if (baseUrl != null && !baseUrl.isBlank()) {
+            return baseUrl;
+        }
+        return environment == null ? null : environment.getDefaultBaseUrl();
+    }
+
     /** 연동에 필요한 필수 설정이 주입되었는지. 미설정 시 호출 전에 명확히 거절하기 위한 가드. */
     public boolean isConfigured() {
-        return baseUrl != null && !baseUrl.isBlank();
+        String url = getBaseUrl();
+        return url != null && !url.isBlank();
+    }
+
+    /**
+     * 환경과 도메인이 어긋나면 기동을 막는다.
+     *
+     * <p>어긋난 조합({@code LIVE} + moapi, {@code MOCK} + api)은 <b>기동에서는 아무 티가 안 나고</b>
+     * 잔고 조회에서만 계좌번호 오류로 터진다. 그 사고를 한 번 겪어서 여기서 잡는다 —
+     * 이 레포에 이미 있는 기동 완결성 검사({@code SchemaConsistencyCheck} ·
+     * {@code SecuritiesPriceProviders})와 같은 자리다.
+     *
+     * <p>나무 호스트가 아니면(로컬 스텁·프록시) 판정할 근거가 없으므로 경고만 남기고 통과시킨다.
+     */
+    @PostConstruct
+    void verifyEnvironmentMatchesBaseUrl() {
+        if (environment == null) {
+            throw new IllegalStateException(
+                "나무증권 연동 환경(app.namu.environment)이 비었다 - LIVE 또는 MOCK 을 지정해야 한다. "
+                    + "빈 값으로 두면 도메인도 유효 계좌구분도 정할 수 없다.");
+        }
+        String url = getBaseUrl();
+        NamuEnvironment fromUrl = NamuEnvironment.ofBaseUrl(url);
+        if (fromUrl == null) {
+            log.warn("나무증권 base-url 이 나무 도메인이 아니다 - 환경 정합성을 확인할 수 없다: environment={}, baseUrl={}",
+                environment, url);
+        } else if (fromUrl != environment) {
+            throw new IllegalStateException(
+                "나무증권 환경과 base-url 이 어긋났다 - environment=" + environment
+                    + " 인데 base-url 은 " + fromUrl + " 도메인(" + NamuEnvironment.host(url) + ")이다. "
+                    + "잔고 조회가 계좌번호 오류로 실패한다. app.namu.base-url 을 비우고 "
+                    + "app.namu.environment 만 지정하는 것을 권한다.");
+        }
+
+        if (NamuEnvironment.ofBaseUrl(authBaseUrl) != NamuEnvironment.LIVE) {
+            log.warn("나무증권 토큰 발급 URL 이 운영 도메인이 아니다 - 모의투자는 발급을 제공하지 않는다: authBaseUrl={}",
+                authBaseUrl);
+        }
+
+        log.info("나무증권 연동 환경 {} - 조회 {}, 토큰 {}, 계좌구분 {}",
+            environment, NamuEnvironment.host(url), NamuEnvironment.host(authBaseUrl),
+            environment.getAccountTypes());
     }
 }

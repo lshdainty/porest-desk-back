@@ -116,9 +116,19 @@ app:
     base-url: ${TOSS_API_URL:https://openapi.tossinvest.com}
     connect-timeout: ${TOSS_CONNECT_TIMEOUT:5000}
     read-timeout: ${TOSS_READ_TIMEOUT:10000}
-  # 나무증권(NH PLUG) Open API 연동. 포트(8443)까지 포함해야 한다.
+  # 나무증권(NH PLUG) Open API 연동.
   namu:
-    base-url: ${NAMU_API_URL:https://api.nhplug.com:8443}
+    # 연동 환경 — LIVE(운영) | MOCK(모의투자). 도메인과 유효 계좌구분(acct_type)을 함께 결정하는
+    # 단일 출처다. 나무는 계좌구분이 그 계좌를 쓸 수 있는 도메인을 정하므로(01·02 운영 / 03 모의투자)
+    # 둘을 따로 설정하면 한쪽만 바꾼 순간 잔고 조회가 계좌번호 오류로 조용히 터진다.
+    # 개발은 MOCK, 운영은 LIVE(기본값).
+    environment: ${NAMU_ENVIRONMENT:LIVE}
+    # 조회 base URL 오버라이드. 비우면 environment 의 기본 도메인(포트 8443 포함)을 쓴다.
+    # 환경과 어긋난 나무 도메인을 넣으면 기동이 막힌다. 평소엔 비워 두고 environment 만 바꾼다.
+    base-url: ${NAMU_API_URL:}
+    # 토큰 발급 전용 — 모의투자는 발급을 제공하지 않아 환경과 무관하게 항상 운영이다.
+    # 발급받은 토큰은 운영·모의투자 호출에 그대로 쓴다. 일부러 env 로 뚫지 않았다.
+    auth-base-url: https://api.nhplug.com:8443
     connect-timeout: ${NAMU_CONNECT_TIMEOUT:5000}
     read-timeout: ${NAMU_READ_TIMEOUT:10000}
     # 나무엔 종목 다건 시세 API 가 없어 종목마다 1콜이 나간다. 자산 화면은 10초마다 폴링하므로

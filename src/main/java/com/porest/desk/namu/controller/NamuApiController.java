@@ -23,7 +23,7 @@ import java.util.List;
  * 증권사별 하위 페이지로 나뉜다.
  *
  * <p>활성 구독(SECURITIES) 필요 — {@code FeatureGateInterceptor} 가 게이트한다.
- * 1차 범위는 읽기 전용 시세뿐이다. 나무는 실제 체결이 나가는 운영 도메인 하나뿐이라
+ * 1차 범위는 읽기 전용이다. 운영 환경에서는 실제 체결이 나가는 도메인을 그대로 쓰므로
  * 주문 계열은 붙이지 않는다.
  */
 @RestController
@@ -59,7 +59,13 @@ public class NamuApiController {
         return ApiResponse.success(namuQueryService.getGbPrice(loginUser.getRowId(), symbol));
     }
 
-    /** 본인 계좌 목록. 잔고 조회의 계좌번호를 여기서 얻는다. */
+    /**
+     * 본인 계좌 목록. 잔고 조회의 계좌번호를 여기서 얻는다.
+     *
+     * <p><b>거르지 않고 전부 준다.</b> 다만 계좌구분(운영 01·02 / 모의투자 03)이 그 계좌를 쓸 수
+     * 있는 도메인을 정하므로, 현재 연동 환경에서 잔고 조회에 쓸 수 있는 계좌만 {@code usable=true}
+     * 로 표시된다. 화면은 그걸로 고르면 된다.
+     */
     @GetMapping("/accounts")
     public ApiResponse<List<NamuAccountDto.Account>> getAccounts(@LoginUser UserPrincipal loginUser) {
         return ApiResponse.success(namuQueryService.getAccounts(loginUser.getRowId()));
@@ -69,7 +75,10 @@ public class NamuApiController {
      * 보유 종목. 국내와 해외는 나무 쪽 엔드포인트·필드명이 다르지만 응답은 한 모양이다.
      *
      * @param currency  KRW 면 국내, 그 밖(USD·CNY·HKD·JPY)이면 해외. 기본 KRW
-     * @param accountNo 미지정이면 첫 계좌
+     * @param accountNo 미지정이면 현재 환경에서 쓸 수 있는 첫 계좌를 자동으로 고른다.
+     *                  지정하면 본인 계좌인지 + 현재 환경에서 쓸 수 있는 구분인지 검증한다
+     *                  ({@code usable=false} 인 계좌를 넘기면 400) — 그냥 태우면 업스트림이
+     *                  계좌번호 오류로 거절해 502 만 남고 원인을 알 수 없다
      */
     @GetMapping("/holdings")
     public ApiResponse<NamuAccountDto.Holdings> getHoldings(

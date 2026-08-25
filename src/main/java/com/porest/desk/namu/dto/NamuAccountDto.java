@@ -32,13 +32,39 @@ public final class NamuAccountDto {
      * {@code accountNo}·{@code accountType} 을 읽으므로 계좌번호가 빈 문자열이 됐다(앱키가 아직
      * 없어 드러나지 않았을 뿐이다). 별칭은 역직렬화에만 걸리므로 나무 응답은 그대로 읽고
      * 나가는 이름만 우리 어휘가 된다.
+     *
+     * <p>{@code usable} 은 <b>나무가 주는 값이 아니라 우리가 채우는 값</b>이다. 계좌구분이
+     * 그 계좌를 쓸 수 있는 도메인을 정하므로(운영 01·02 / 모의투자 03), 목록만 보고는 어느 것을
+     * 골라야 하는지 알 수 없다. 화면이 고를 수 있게 서버가 미리 표시한다 — 목록 자체는 거르지
+     * 않는다(사용자가 자기 계좌를 다 보는 건 맞다).
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @Schema(name = "NamuAccount")
     public record Account(
         @JsonAlias("acct_no") String accountNo,
-        @JsonAlias("acct_type") String accountType
+        @JsonAlias("acct_type") String accountType,
+        @Schema(description = "현재 연동 환경에서 잔고 조회에 쓸 수 있는 계좌인지. 나무 응답이 아니라 서버가 채운다")
+        Boolean usable
     ) {
+
+        /**
+         * 나무 응답 모양 그대로 만든다({@code usable} 미정).
+         *
+         * <p>생성자가 아니라 정적 팩토리인 이유 — 레코드에 <b>정규 생성자 말고 다른 생성자</b>를
+         * 두면 Jackson 이 어느 쪽으로 역직렬화할지 못 정해 계좌목록 파싱이 통째로 깨진다.
+         */
+        public static Account of(String accountNo, String accountType) {
+            return new Account(accountNo, accountType, null);
+        }
+
+        /**
+         * {@code Boolean} 인 이유 — 나무 응답에 이 필드가 없다. {@code boolean} 으로 두면
+         * 역직렬화가 {@code null} 을 원시타입에 못 넣어 <b>계좌목록 파싱이 통째로 깨진다</b>.
+         * 나가는 응답에서는 서비스가 항상 채우므로 null 이 새지 않는다.
+         */
+        public Account withUsable(boolean usable) {
+            return new Account(accountNo, accountType, usable);
+        }
     }
 
     /**

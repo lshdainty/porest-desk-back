@@ -1,6 +1,11 @@
 package com.porest.desk.namu.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.NamuApiClient;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
@@ -13,6 +18,7 @@ import com.porest.desk.stock.type.MasterSource;
 import com.porest.desk.stock.type.StockMarket;
 import com.porest.desk.stock.type.StockSecurityType;
 import com.porest.desk.securities.config.NamuProperties;
+import com.porest.desk.securities.type.NamuEnvironment;
 import com.porest.desk.stock.repository.StockMasterRepository;
 import com.porest.desk.stock.service.StockMasterResolver;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +31,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 
 import java.math.BigDecimal;
@@ -55,6 +62,8 @@ class NamuQueryServiceImplTest {
 
     private static final long USER = 3L;
     private static final String ACCT = "12345678-01";
+    /** 실계좌(acct_type=01). 나무 계좌번호는 11자리다. */
+    private static final String LIVE_ACCT = "33333333301";
 
     @Mock private NamuApiClient namuApiClient;
     @Mock private StockMasterRepository stockMasterRepository;
@@ -63,9 +72,13 @@ class NamuQueryServiceImplTest {
     // 설정은 목이 아니라 진짜를 쓴다 — 목이면 TTL·예산이 0 이라 캐시가 죽은 채로 통과한다.
     @BeforeEach
     void setUpService() {
+        sut = serviceFor(NamuEnvironment.LIVE);
+    }
+
+    private NamuQueryServiceImpl serviceFor(NamuEnvironment environment) {
         NamuProperties properties = new NamuProperties();
-        properties.setBaseUrl("https://api.nhplug.com:8443");
-        sut = new NamuQueryServiceImpl(namuApiClient,
+        properties.setEnvironment(environment);
+        return new NamuQueryServiceImpl(namuApiClient,
             new StockMasterResolver(stockMasterRepository), properties);
     }
 
@@ -269,7 +282,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("국내 — 잔고 요약과 종목별을 한 모양으로 합친다")
         void domestic() {
-            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenKrBalance(
                 new NamuAccountDto.KrBalanceSummary("1000000", "900000", "1000000", "100000", "11.1", "50000"),
                 new NamuAccountDto.KrHolding("005930", "삼성전자", "10", "65000", "70000", "700000", "50000"));
@@ -289,7 +302,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("해외 — 한글명이 비면 영문명으로 채운다. 목록에 빈 칸이 남으면 안 된다")
         void overseasFallsBackToEnglishName() {
-            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(
                 new NamuAccountDto.GbBalanceSummary("2000000", "1500", "300", "20.0"),
                 new NamuAccountDto.GbHolding("AAPL", "", "APPLE INC", "5", "180", "185.7", "928.5", "50", "1284000", "USD", "1383.50"));
@@ -314,14 +327,167 @@ class NamuQueryServiceImplTest {
             assertThat(h.totalEvalAmount()).isEqualTo("0");
         }
 
+    }
+
+    /**
+     * <b>이 버그가 난 자리다.</b> 예전 코드는 {@code accounts.get(0)} 으로 첫 계좌를 집었는데,
+     * 나무는 계좌구분({@code acct_type})이 그 계좌를 쓸 수 있는 도메인을 정한다
+     * (운영 01·02 / 모의투자 03). 실제 사용자 목록이 {@code 03·03·01·03} 순으로 와서
+     * 운영 도메인에 모의투자 계좌가 나갔고 {@code rsp_cd=11165} 로 거절당했다.
+     * 목록 순서는 우리가 정하는 게 아니므로 순서에 기대지 않는지를 그 실제 순서로 고정한다.
+     */
+    @Nested
+    @DisplayName("계좌 선택 — 환경과 계좌구분")
+    class AccountSelection {
+
+        /** 사용자 실측 순서. 모의투자(03)가 앞에 셋, 운영(01)이 세 번째. */
+        private void givenRealWorldAccounts() {
+            givenAccounts(
+                NamuAccountDto.Account.of("11111111103", "03"),
+                NamuAccountDto.Account.of("22222222203", "03"),
+                NamuAccountDto.Account.of(LIVE_ACCT, "01"),
+                NamuAccountDto.Account.of("44444444403", "03"));
+        }
+
         @Test
-        @DisplayName("계좌를 넘겨받으면 목록을 다시 부르지 않는다")
-        void explicitAccountSkipsLookup() {
+        @DisplayName("운영 환경 — 목록 앞이 모의투자(03)여도 운영 계좌(01)를 고른다")
+        void liveSkipsMockAccountsEvenWhenTheyComeFirst() {
+            givenRealWorldAccounts();
             givenKrBalance(null);
 
-            sut.getHoldings(USER, ACCT, "KRW");
+            assertThat(sut.getHoldings(USER, null, "KRW").accountNo()).isEqualTo(LIVE_ACCT);
+            assertThat(capturedKrBalanceInput()).containsEntry("act_no", LIVE_ACCT);
+        }
 
-            verify(namuApiClient, never()).postList(anyLong(), eq("/n2/acctinfo"), any(), any());
+        @Test
+        @DisplayName("모의투자 환경 — 같은 목록에서 모의투자 계좌(03)를 고른다")
+        void mockPicksMockAccount() {
+            givenRealWorldAccounts();
+            givenKrBalance(null);
+
+            assertThat(serviceFor(NamuEnvironment.MOCK).getHoldings(USER, null, "KRW").accountNo())
+                .isEqualTo("11111111103");
+        }
+
+        @Test
+        @DisplayName("운영 환경에 모의투자 계좌만 있으면 원인을 말한다 — 502 로 뭉뚱그리지 않는다")
+        void liveWithOnlyMockAccountsFailsWithReason() {
+            givenAccounts(NamuAccountDto.Account.of("11111111103", "03"),
+                NamuAccountDto.Account.of("22222222203", "03"));
+
+            assertThatThrownBy(() -> sut.getHoldings(USER, null, "KRW"))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.SECURITIES_ACCOUNT_ENVIRONMENT_UNAVAILABLE);
+
+            verify(namuApiClient, never()).exchange(anyLong(), eq("/krstock/inquiry/v1/balance"), any(), any());
+        }
+
+        @Test
+        @DisplayName("모의투자 환경에 운영 계좌만 있어도 같은 이유로 막는다 — 반대 방향도 사고다")
+        void mockWithOnlyLiveAccountsFails() {
+            givenAccounts(NamuAccountDto.Account.of(LIVE_ACCT, "01"));
+
+            assertThatThrownBy(() -> serviceFor(NamuEnvironment.MOCK).getHoldings(USER, null, "KRW"))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("다른 환경의 계좌를 넘기면 거절한다 — 그냥 태우면 업스트림이 계좌오류로 거절한다")
+        void rejectsAccountFromAnotherEnvironment() {
+            givenRealWorldAccounts();
+
+            assertThatThrownBy(() -> sut.getHoldings(USER, "11111111103", "KRW"))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.SECURITIES_ACCOUNT_ENVIRONMENT_MISMATCH);
+
+            verify(namuApiClient, never()).exchange(anyLong(), eq("/krstock/inquiry/v1/balance"), any(), any());
+        }
+
+        @Test
+        @DisplayName("내 계좌가 아닌 번호를 넘기면 거절한다")
+        void rejectsUnknownAccount() {
+            givenRealWorldAccounts();
+
+            assertThatThrownBy(() -> sut.getHoldings(USER, "99999999999", "KRW"))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.SECURITIES_ACCOUNT_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("같은 환경의 계좌를 넘기면 그대로 쓴다")
+        void acceptsAccountOfCurrentEnvironment() {
+            givenRealWorldAccounts();
+            givenKrBalance(null);
+
+            assertThat(sut.getHoldings(USER, LIVE_ACCT, "KRW").accountNo()).isEqualTo(LIVE_ACCT);
+        }
+
+        @Test
+        @DisplayName("계좌 목록은 거르지 않고 전부 준다 — 쓸 수 있는지만 usable 로 표시한다")
+        void accountListIsNotFiltered() {
+            givenRealWorldAccounts();
+
+            assertThat(sut.getAccounts(USER)).hasSize(4)
+                .filteredOn(a -> Boolean.TRUE.equals(a.usable()))
+                .extracting(NamuAccountDto.Account::accountNo)
+                .containsExactly(LIVE_ACCT);
+
+            assertThat(serviceFor(NamuEnvironment.MOCK).getAccounts(USER))
+                .filteredOn(a -> Boolean.TRUE.equals(a.usable())).hasSize(3);
+        }
+
+        @Test
+        @DisplayName("계좌번호는 로그에 전체가 남지 않는다 — 뒤 4자리만")
+        void accountNumberNeverReachesLogsInFull() {
+            ListAppender<ILoggingEvent> appender = attachAppender();
+            try {
+                givenRealWorldAccounts();
+                givenKrBalance(null);
+                sut.getHoldings(USER, null, "KRW");
+
+                assertThatThrownBy(() -> serviceFor(NamuEnvironment.MOCK).getHoldings(USER, LIVE_ACCT, "KRW"))
+                    .isInstanceOf(InvalidValueException.class);
+
+                assertThat(appender.list).isNotEmpty();
+                assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage)
+                    .noneMatch(m -> m.contains(LIVE_ACCT))
+                    .noneMatch(m -> m.contains("11111111103"));
+            } finally {
+                detachAppender(appender);
+            }
+        }
+
+        @Test
+        @DisplayName("마스킹은 뒤 4자리만 남기고, 짧은 값은 통째로 가린다")
+        void maskKeepsOnlyLastFour() {
+            assertThat(NamuQueryServiceImpl.maskAccountNo("12345678901")).isEqualTo("****8901");
+            assertThat(NamuQueryServiceImpl.maskAccountNo("123")).isEqualTo("****");
+            assertThat(NamuQueryServiceImpl.maskAccountNo(null)).isEqualTo("(없음)");
+            assertThat(NamuQueryServiceImpl.maskAccountNo("  ")).isEqualTo("(없음)");
+        }
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> capturedKrBalanceInput() {
+            ArgumentCaptor<Map<String, Object>> body = ArgumentCaptor.forClass(Map.class);
+            verify(namuApiClient).exchange(eq(USER), eq("/krstock/inquiry/v1/balance"),
+                body.capture(), any(ParameterizedTypeReference.class));
+            return body.getValue();
+        }
+
+        private ListAppender<ILoggingEvent> attachAppender() {
+            Logger logger = (Logger) LoggerFactory.getLogger(NamuQueryServiceImpl.class);
+            logger.setLevel(Level.DEBUG);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            return appender;
+        }
+
+        private void detachAppender(ListAppender<ILoggingEvent> appender) {
+            ((Logger) LoggerFactory.getLogger(NamuQueryServiceImpl.class)).detachAppender(appender);
         }
     }
 
@@ -332,7 +498,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("환율은 종목 행(Output_1)에서 읽는다 — 계좌 요약엔 없다")
         void fromHoldingRow() {
-            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
                 new NamuAccountDto.GbHolding("AAPL", "애플", "APPLE INC", "5", "180", "185.7",
                     "928.5", "28.5", "1284000", "USD", "1383.50"));
@@ -343,7 +509,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("같은 통화 보유가 없으면 null — 종목마다 통화가 달라 계좌 요약이 환율을 못 든다")
         void nullWhenCurrencyNotHeld() {
-            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
                 new NamuAccountDto.GbHolding("7203", "도요타", "TOYOTA", "10", "2000", "2100",
                     "21000", "1000", "200000", "JPY", "9.12"));
@@ -362,7 +528,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("잔고 조회가 실패해도 null 로 접힌다 — 환율 하나 때문에 평가 전체가 죽으면 안 된다")
         void nullWhenBalanceFails() {
-            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             willThrow(new IllegalStateException("boom"))
                 .given(namuApiClient).exchange(eq(USER), eq("/gbstock/inquiry/v1/balance"), any(), any());
 
@@ -372,7 +538,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("보유 종목이 없으면 null")
         void nullWhenNoHoldings() {
-            givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(null);
 
             assertThat(sut.getFxRate(USER, "USD")).isNull();
@@ -382,7 +548,7 @@ class NamuQueryServiceImplTest {
     @Test
     @DisplayName("계좌목록조회는 입력이 없어도 Input_0 봉투를 지킨다")
     void accountsKeepEnvelope() {
-        givenAccounts(new NamuAccountDto.Account(ACCT, "01"));
+        givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
 
         assertThat(sut.getAccounts(USER)).hasSize(1);
         verify(namuApiClient).postList(eq(USER), eq("/n2/acctinfo"), eq(Map.of()), any());

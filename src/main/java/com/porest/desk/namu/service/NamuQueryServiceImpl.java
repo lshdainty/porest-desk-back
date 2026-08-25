@@ -9,6 +9,7 @@ import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
 import com.porest.desk.securities.config.NamuProperties;
+import com.porest.desk.securities.type.NamuEnvironment;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.stock.domain.StockMaster;
@@ -191,16 +192,24 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     // === 계좌·잔고 ===
 
+    /**
+     * 계좌 목록. <b>거르지 않는다</b> — 사용자가 자기 계좌를 다 보는 건 맞다. 대신 현재 환경에서
+     * 쓸 수 있는지를 {@code usable} 로 표시해 화면이 고를 수 있게 한다. 거르는 건 잔고 조회에
+     * 쓸 계좌를 <b>자동으로</b> 고를 때다({@link #resolveAccountNo}).
+     */
     @Override
     public List<NamuAccountDto.Account> getAccounts(Long userRowId) {
         // 입력 파라미터가 없는 조회지만 봉투는 그대로 지킨다 — 서버가 Input_0 을 요구한다.
         // 계좌목록은 우리가 쓰는 것 중 유일하게 Output_0 이 배열이다.
-        return namuApiClient.postList(userRowId, ACCOUNT_PATH, Map.of(), ACCOUNT_TYPE);
+        NamuEnvironment env = namuProperties.getEnvironment();
+        return namuApiClient.postList(userRowId, ACCOUNT_PATH, Map.of(), ACCOUNT_TYPE).stream()
+            .map(a -> a.withUsable(env.accepts(a.accountType())))
+            .toList();
     }
 
     @Override
     public NamuAccountDto.Holdings getHoldings(Long userRowId, String accountNo, String currency) {
-        String account = accountNo != null && !accountNo.isBlank() ? accountNo : firstAccountNo(userRowId);
+        String account = resolveAccountNo(userRowId, accountNo);
         if (account == null) {
             return NamuAccountDto.Holdings.empty("", currency);
         }
@@ -219,13 +228,16 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      */
     @Override
     public BigDecimal getFxRate(Long userRowId, String currency) {
-        String account = firstAccountNo(userRowId);
-        if (account == null) {
-            log.debug("나무 환율 조회 불가 - 계좌 없음 (userRowId={})", userRowId);
-            return null;
-        }
         String want = currency == null || currency.isBlank() ? "USD" : currency;
         try {
+            // 계좌 해석도 try 안이다 — 환경에 맞는 계좌가 없으면 예외가 나는데, 그게 자산 평가
+            // 전체를 무너뜨리면 안 된다. 잔고 화면에서는 그대로 던져 원인을 보여주고,
+            // 여기서는 외화 평가만 접는다(부분합으로 금액을 왜곡하지 않는 기존 규칙).
+            String account = resolveAccountNo(userRowId, null);
+            if (account == null) {
+                log.debug("나무 환율 조회 불가 - 계좌 없음 (userRowId={})", userRowId);
+                return null;
+            }
             List<NamuAccountDto.GbHolding> items = namuApiClient
                 .exchange(userRowId, GB_BALANCE_PATH, gbBalanceInput(account, want), GB_BALANCE_TYPE)
                 .items();
@@ -248,10 +260,76 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         }
     }
 
-    /** 계좌를 안 넘겨받으면 첫 계좌를 쓴다. 계좌가 없으면 null — 호출부가 빈 잔고로 본다. */
-    private String firstAccountNo(Long userRowId) {
+    /**
+     * 잔고 조회에 쓸 계좌를 정한다.
+     *
+     * <p><b>계좌구분을 반드시 본다.</b> 나무는 {@code acct_type} 이 그 계좌를 쓸 수 있는 도메인을
+     * 정한다(운영 01·02 / 모의투자 03). 예전에는 {@code accounts.get(0)} 으로 첫 계좌를 집었는데,
+     * 실제 사용자 목록이 {@code 03·03·01·03} 순으로 와서 운영 도메인에 모의투자 계좌가 나갔다 —
+     * {@code rsp_cd=11165} "계좌번호를 잘못 입력하셨습니다". 목록 순서는 우리가 정하는 게 아니다.
+     *
+     * <p>넘겨받은 계좌도 그냥 믿지 않는다. 남의 환경 계좌를 그대로 태우면 같은 자리에서 다시
+     * 업스트림 오류로 터지고, 502 + "API 호출에 실패했습니다" 만 남아 원인을 알 수 없다.
+     *
+     * @return 쓸 계좌번호. 계좌가 <b>한 건도 없으면</b> null — 호출부가 빈 잔고로 본다
+     *         (연동은 됐는데 계좌가 없는 상태는 오류가 아니다)
+     * @throws InvalidValueException 넘겨받은 계좌가 목록에 없거나 다른 환경 계좌일 때,
+     *         또는 계좌는 있는데 현재 환경에 맞는 게 하나도 없을 때
+     */
+    private String resolveAccountNo(Long userRowId, String requested) {
+        NamuEnvironment env = namuProperties.getEnvironment();
         List<NamuAccountDto.Account> accounts = getAccounts(userRowId);
-        return accounts.isEmpty() ? null : accounts.get(0).accountNo();
+
+        if (requested != null && !requested.isBlank()) {
+            String want = requested.trim();
+            NamuAccountDto.Account matched = accounts.stream()
+                .filter(a -> want.equals(a.accountNo() == null ? null : a.accountNo().trim()))
+                .findFirst()
+                .orElseThrow(() -> {
+                    log.warn("나무 잔고 - 목록에 없는 계좌 지정: userRowId={}, account={}",
+                        userRowId, maskAccountNo(want));
+                    return new InvalidValueException(DeskErrorCode.SECURITIES_ACCOUNT_NOT_FOUND);
+                });
+            if (!env.accepts(matched.accountType())) {
+                log.warn("나무 잔고 - 환경과 다른 구분의 계좌 지정: env={}, acctType={}, account={}",
+                    env, matched.accountType(), maskAccountNo(want));
+                throw new InvalidValueException(DeskErrorCode.SECURITIES_ACCOUNT_ENVIRONMENT_MISMATCH);
+            }
+            return want;
+        }
+
+        if (accounts.isEmpty()) {
+            return null;
+        }
+
+        NamuAccountDto.Account picked = accounts.stream()
+            .filter(a -> env.accepts(a.accountType()))
+            .findFirst()
+            .orElseThrow(() -> {
+                log.warn("나무 잔고 - {} 환경에 맞는 계좌가 없다: userRowId={}, 보유 구분={}, 유효 구분={}",
+                    env, userRowId, accounts.stream().map(NamuAccountDto.Account::accountType).toList(),
+                    env.getAccountTypes());
+                return new InvalidValueException(DeskErrorCode.SECURITIES_ACCOUNT_ENVIRONMENT_UNAVAILABLE);
+            });
+
+        log.debug("나무 잔고 계좌 선택 - env={}, acctType={}, account={} ({}건 중)",
+            env, picked.accountType(), maskAccountNo(picked.accountNo()), accounts.size());
+        return picked.accountNo();
+    }
+
+    /**
+     * 로그용 계좌번호 마스킹 — <b>뒤 4자리만</b> 남긴다.
+     *
+     * <p>이 레포는 평문 시크릿이 로그로 샌 적이 있다(커밋 {@code 516de21}, 재발 {@code #253}).
+     * 계좌번호도 같은 부류다. {@code RequestResponseLoggingFilter} 가 HTTP 본문·쿼리를 막지만
+     * 서비스가 직접 찍는 로그는 거기 안 걸리므로 여기서 막는다.
+     */
+    static String maskAccountNo(String accountNo) {
+        if (accountNo == null || accountNo.isBlank()) {
+            return "(없음)";
+        }
+        String trimmed = accountNo.trim();
+        return trimmed.length() <= 4 ? "****" : "****" + trimmed.substring(trimmed.length() - 4);
     }
 
     private NamuAccountDto.Holdings krHoldings(Long userRowId, String account) {

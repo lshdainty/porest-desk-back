@@ -240,7 +240,12 @@ class NamuApiClientTest {
     @Test
     @DisplayName("base URL 이 비면 호출 전에 거절한다")
     void rejectsWhenNotConfigured() {
-        NamuApiClient unconfigured = new NamuApiClient(restTemplate, tokenManagers, new NamuProperties());
+        // base URL 은 이제 환경(LIVE·MOCK)에서 나오므로 URL 만 비워서는 미설정이 안 된다.
+        // 진짜 미설정은 환경까지 빈 상태다 — NAMU_ENVIRONMENT 를 빈 값으로 주면 enum 이 null 로
+        // 바인딩돼 실제로 생길 수 있다(기동 검사가 먼저 막지만 클라이언트도 스스로 지킨다).
+        NamuProperties blank = new NamuProperties();
+        blank.setEnvironment(null);
+        NamuApiClient unconfigured = new NamuApiClient(restTemplate, tokenManagers, blank);
 
         assertThatThrownBy(() -> unconfigured.postObject(1L, "/x", Map.of(), KR_PRICE))
             .isInstanceOf(ExternalServiceException.class);

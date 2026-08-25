@@ -156,6 +156,11 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     SECURITIES_SYMBOL_INVALID("SEC_006", "error.securities.symbol.invalid", HttpStatus.BAD_REQUEST),
     SECURITIES_BROKER_UNSUPPORTED("SEC_007", "error.securities.broker.unsupported", HttpStatus.BAD_REQUEST),
     SECURITIES_MARKET_UNSUPPORTED("SEC_008", "error.securities.market.unsupported", HttpStatus.BAD_REQUEST),
+    // 계좌구분(운영/모의투자)과 연동 환경이 어긋나는 자리. 업스트림 장애가 아니라 요청·설정 문제라
+    // 502 로 뭉뚱그리지 않는다 — 502 + "API 호출에 실패했습니다" 로는 무엇을 해야 할지 알 수 없다.
+    SECURITIES_ACCOUNT_NOT_FOUND("SEC_009", "error.securities.account.not.found", HttpStatus.BAD_REQUEST),
+    SECURITIES_ACCOUNT_ENVIRONMENT_MISMATCH("SEC_010", "error.securities.account.environment.mismatch", HttpStatus.BAD_REQUEST),
+    SECURITIES_ACCOUNT_ENVIRONMENT_UNAVAILABLE("SEC_011", "error.securities.account.environment.unavailable", HttpStatus.CONFLICT),
 
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),
