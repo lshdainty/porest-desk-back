@@ -70,6 +70,50 @@ public class StockMasterResolver {
         return resolve(toMarket(marketCode), symbol);
     }
 
+    /**
+     * <b>저장할</b> 시장코드를 확정한다. 조회용 {@link #resolve}와 규칙이 다르다.
+     *
+     * <p>조회는 답을 하나 내야 하므로 후보가 여럿이면 우선순위로 고른다. 하지만 저장은
+     * 그렇게 하면 안 된다 — 추측한 값이 컬럼에 눌러앉아 다음부터 확정값 행세를 하고,
+     * 사용자에게 다시 물을 기회가 영영 사라진다. 마이그레이션
+     * ({@code V2026.08.24_04})도 같은 이유로 심볼이 여러 시장에 걸린 행은
+     * {@code HAVING COUNT(DISTINCT m.market_code) = 1}로 걸러 NULL 로 남겼다.
+     *
+     * @param marketCode 클라이언트가 보낸 시장코드. 알아들을 수 있으면 이게 이긴다 —
+     *                   사용자가 종목 검색에서 고른 값이라 유일하게 확실한 정보다.
+     * @param symbol     종목 심볼
+     * @return 확정된 시장코드. 심볼이 없거나 · 마스터에 없거나 · 여러 시장에 걸리면 null
+     */
+    public String confirmMarketCode(String marketCode, String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return null;
+        }
+        StockMarket given = toMarket(marketCode);
+        if (given != null) {
+            return given.name();
+        }
+        return resolveUnique(symbol).map(s -> s.getMarketCode().name()).orElse(null);
+    }
+
+    /**
+     * 심볼만으로 종목이 <b>하나로 확정될 때만</b> 답한다. 후보가 여럿이면 비어 있다.
+     *
+     * <p>{@link #resolve}와 달리 우선순위로 고르지 않는다. 고르는 쪽이 맞는 자리
+     * (관심목록·평가)와 비워 두는 쪽이 맞는 자리(저장)가 따로 있어서 메서드를 나눴다.
+     */
+    public Optional<StockMaster> resolveUnique(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return Optional.empty();
+        }
+        String sym = symbol.trim();
+        List<StockMaster> candidates = stockMasterRepository.findAllActiveBySymbol(sym);
+        if (candidates.size() != 1) {
+            log.debug("시장코드 확정 보류 - symbol={}, 후보={}", sym, candidates.size());
+            return Optional.empty();
+        }
+        return Optional.of(candidates.get(0));
+    }
+
     private static StockMarket toMarket(String marketCode) {
         if (marketCode == null || marketCode.isBlank()) {
             return null;

@@ -72,6 +72,11 @@ public class AssetServiceDto {
         Long rowId,
         HoldingType holdingType,
         Boolean linked,
+        /**
+         * stock_master 기준 시장코드 — 선택. 안 보내오면 서버가 심볼로 1회 해석하고,
+         * 여러 시장에 걸리면 비워 둔다(구버전 클라이언트는 안 보낸다).
+         */
+        String marketCode,
         String symbol,
         BigDecimal quantity,
         String holdingName,
@@ -84,6 +89,8 @@ public class AssetServiceDto {
         Long rowId,
         HoldingType holdingType,
         boolean linked,
+        /** 저장된 시장코드. 확정하지 못한 행은 null 이다. */
+        String marketCode,
         String symbol,
         BigDecimal quantity,
         String holdingName,
@@ -96,7 +103,8 @@ public class AssetServiceDto {
     ) {
         public static HoldingInfo from(AssetHolding h) {
             return new HoldingInfo(
-                h.getRowId(), h.getHoldingType(), h.isLinked(), h.getSymbol(), h.getQuantity(),
+                h.getRowId(), h.getHoldingType(), h.isLinked(), h.getMarketCode(), h.getSymbol(),
+                h.getQuantity(),
                 h.getHoldingName(), h.getHoldingValue(), h.getTotalCost(), h.avgPrice(),
                 h.getSortOrder());
         }
@@ -144,6 +152,8 @@ public class AssetServiceDto {
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
+        /** 레거시 단일 연동의 시장코드. 확정하지 못했으면 null. */
+        String marketCode,
         String symbol,
         Long quantity,
         // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 리스트)
@@ -198,6 +208,7 @@ public class AssetServiceDto {
                 asset.getCreditLimit(),
                 asset.getPaymentDay(),
                 asset.getPaymentAsset() != null ? asset.getPaymentAsset().getRowId() : null,
+                asset.getMarketCode(),
                 asset.getSymbol(),
                 asset.getQuantity(),
                 holdings != null ? holdings : List.of(),
@@ -211,7 +222,7 @@ public class AssetServiceDto {
             return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
-                symbol, quantity, holdings, createAt, modifyAt, monthlyUsed);
+                marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsed);
         }
     }
 

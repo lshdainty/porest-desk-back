@@ -66,6 +66,10 @@ class AssetHoldingServiceTest {
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
+    // 시장코드 확정은 mock 기본값(null) — 확정 못 한 경우와 같다.
+
+    @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
+
     @InjectMocks private AssetServiceImpl sut;
 
     @org.junit.jupiter.api.BeforeEach
@@ -110,12 +114,12 @@ class AssetHoldingServiceTest {
     private static AssetServiceDto.HoldingCommand linkedHolding(String symbol, Long qty) {
         return new AssetServiceDto.HoldingCommand(
             null,
-            HoldingType.STOCK, true, symbol, qty == null ? null : BigDecimal.valueOf(qty), null, null, null);
+            HoldingType.STOCK, true, null, symbol, qty == null ? null : BigDecimal.valueOf(qty), null, null, null);
     }
 
     private static AssetServiceDto.HoldingCommand manualHolding(String name, Long value) {
         return new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, false, null, null, name, value, null);
+            null,HoldingType.STOCK, false, null, null, null, name, value, null);
     }
 
     /** 미연동 보유 + 수량(선택) — 금·코인처럼 시세가 없어도 몇 g·몇 개인지 기록한다. */
@@ -123,7 +127,7 @@ class AssetHoldingServiceTest {
             HoldingType type, String name, String qty, Long value) {
         return new AssetServiceDto.HoldingCommand(
             null,
-            type, false, null, qty == null ? null : new BigDecimal(qty), name, value, null);
+            type, false, null, null, qty == null ? null : new BigDecimal(qty), name, value, null);
     }
 
     @Test
@@ -157,11 +161,11 @@ class AssetHoldingServiceTest {
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, true, null, BigDecimal.valueOf(30), null, null, null)))))
+            null,HoldingType.STOCK, true, null, null, BigDecimal.valueOf(30), null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, true, "005930", null, null, null, null)))))
+            null,HoldingType.STOCK, true, null, "005930", null, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -173,11 +177,11 @@ class AssetHoldingServiceTest {
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, false, null, null, null, 1_000L, null)))))
+            null,HoldingType.STOCK, false, null, null, null, null, 1_000L, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, false, null, null, "ETF", null, null)))))
+            null,HoldingType.STOCK, false, null, null, null, "ETF", null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -210,7 +214,7 @@ class AssetHoldingServiceTest {
     void updateReplacesHoldings() {
         Asset asset = investment(5L, USER_ID);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.Y, "005930", BigDecimal.TEN, null, null, 0L, 0);
+        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.Y, null, "005930", BigDecimal.TEN, null, null, 0L, 0);
         given(assetHoldingRepository.findActiveByAsset(5L)).willReturn(List.of(old));
 
         AssetServiceDto.AssetInfo info = sut.updateAsset(5L, USER_ID, updateCommand(List.of(
@@ -232,7 +236,7 @@ class AssetHoldingServiceTest {
     void updateEmptyClearsHoldings() {
         Asset asset = investment(5L, USER_ID);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
-        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0L, 0);
+        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.N, null, null, null, "ETF", 1_000L, 0L, 0);
         given(assetHoldingRepository.findActiveByAsset(5L)).willReturn(List.of(old));
 
         AssetServiceDto.AssetInfo info = sut.updateAsset(5L, USER_ID, updateCommand(List.of()));
@@ -249,9 +253,9 @@ class AssetHoldingServiceTest {
         Asset a2 = investment(6L, USER_ID);
         given(assetRepository.findByUser(USER_ID)).willReturn(List.of(a1, a2));
         AssetHolding h1 = AssetHolding.create(
-            a1, HoldingType.STOCK, YNType.Y, "005930", BigDecimal.valueOf(30), null, null, 0L, 0);
+            a1, HoldingType.STOCK, YNType.Y, null, "005930", BigDecimal.valueOf(30), null, null, 0L, 0);
         AssetHolding h2 = AssetHolding.create(
-            a2, HoldingType.STOCK, YNType.N, null, null, "ETF", 1_000L, 0L, 0);
+            a2, HoldingType.STOCK, YNType.N, null, null, null, "ETF", 1_000L, 0L, 0);
         given(assetHoldingRepository.findActiveByAssets(anyList())).willReturn(List.of(h1, h2));
         // 목록 잔액은 DB 집계로 온다 — 자산 전체 1쿼리다(N+1 금지).
         given(balanceHistoryService.balancesAt(anyCollection(), any()))
@@ -310,12 +314,12 @@ class AssetHoldingServiceTest {
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
                 new AssetServiceDto.HoldingCommand(
             null,
-                    HoldingType.GOLD, true, "04020000", BigDecimal.ONE, null, null, null)))))
+                    HoldingType.GOLD, true, null, "04020000", BigDecimal.ONE, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
                 new AssetServiceDto.HoldingCommand(
             null,
-                    HoldingType.CRYPTO, true, "BTC", BigDecimal.ONE, null, null, null)))))
+                    HoldingType.CRYPTO, true, null, "BTC", BigDecimal.ONE, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -364,7 +368,7 @@ class AssetHoldingServiceTest {
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             new AssetServiceDto.HoldingCommand(
             null,
-                HoldingType.STOCK, true, "AAPL", new BigDecimal("0.1"), null, null, null)
+                HoldingType.STOCK, true, null, "AAPL", new BigDecimal("0.1"), null, null, null)
         )));
 
         // 185.7 × 1383.5 × 0.1 = 25,691.595 → 25,692 (HALF_UP). double 이면 끝자리가 흔들린다.
@@ -393,7 +397,7 @@ class AssetHoldingServiceTest {
 
         sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             new AssetServiceDto.HoldingCommand(
-            null,null, false, null, null, "예전 항목", 1_000L, null)
+            null,null, false, null, null, null, "예전 항목", 1_000L, null)
         )));
 
         ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
@@ -473,9 +477,104 @@ class AssetHoldingServiceTest {
 
         var holding = new AssetServiceDto.HoldingCommand(
             null,
-            HoldingType.STOCK, false, null, new BigDecimal("10"), "삼성전자", 700_000L, -500_000L);
+            HoldingType.STOCK, false, null, null, new BigDecimal("10"), "삼성전자", 700_000L, -500_000L);
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(holding))))
             .isInstanceOf(InvalidValueException.class);
+    }
+
+    // === 시장코드 저장 ===
+    // 컬럼은 V2026.08.24_04 로 생겼는데 한동안 쓰는 코드가 없었다 — 백필이 유일한 기록자였고
+    // 그 뒤에 만들어진 보유는 전부 NULL 이었다. 그래서 "저장한다" 를 여기에 못 박는다.
+
+    private static AssetServiceDto.HoldingCommand linkedHolding(String marketCode, String symbol, Long qty) {
+        return new AssetServiceDto.HoldingCommand(
+            null, HoldingType.STOCK, true, marketCode, symbol, BigDecimal.valueOf(qty), null, null, null);
+    }
+
+    /** 새로 저장된 보유 n 번째. */
+    private AssetHolding savedHolding(int index, int times) {
+        ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
+        verify(assetHoldingRepository, org.mockito.Mockito.times(times)).save(captor.capture());
+        return captor.getAllValues().get(index);
+    }
+
+    @Test
+    @DisplayName("보유 저장 — 클라가 보낸 시장코드가 그대로 실린다")
+    void savesClientMarketCode() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(stockMasterResolver.confirmMarketCode("NAS", "SPY")).willReturn("NAS");
+
+        sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(linkedHolding("NAS", "SPY", 3L))));
+
+        assertThat(savedHolding(0, 1).getMarketCode()).isEqualTo("NAS");
+    }
+
+    @Test
+    @DisplayName("보유 저장 — 구버전 앱이 시장코드를 안 보내면 서버가 심볼로 해석해 채운다")
+    void fallsBackToServerResolution() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(stockMasterResolver.confirmMarketCode(null, "005930")).willReturn("KOSPI");
+
+        sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(linkedHolding("005930", 10L))));
+
+        assertThat(savedHolding(0, 1).getMarketCode()).isEqualTo("KOSPI");
+    }
+
+    @Test
+    @DisplayName("보유 저장 — 심볼이 여러 시장에 걸리면 NULL 로 남긴다. 저장은 계속된다")
+    void ambiguousSymbolStaysNullAndStillSaves() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        // 확정 못 함 — 마이그레이션이 모호한 심볼을 비워 둔 것과 같은 상태다.
+        given(stockMasterResolver.confirmMarketCode(null, "SPY")).willReturn(null);
+
+        AssetServiceDto.AssetInfo info =
+            sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(linkedHolding("SPY", 3L))));
+
+        AssetHolding saved = savedHolding(0, 1);
+        assertThat(saved.getMarketCode()).isNull();
+        assertThat(saved.getSymbol()).isEqualTo("SPY");
+        assertThat(info.holdings()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("미연동 보유는 시장코드를 묻지도 않는다 — 종목이 아니다")
+    void manualHoldingSkipsResolution() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(manualHolding("금괴", 1_000L))));
+
+        assertThat(savedHolding(0, 1).getMarketCode()).isNull();
+        then(stockMasterResolver).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("제자리 수정 — 시장코드도 함께 갱신된다")
+    void updateRewritesMarketCode() {
+        Asset asset = investment(5L, USER_ID);
+        given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
+        AssetHolding old = AssetHolding.create(asset, HoldingType.STOCK, YNType.Y, "AMS", "SPY",
+            BigDecimal.TEN, null, null, 0L, 0);
+        ReflectionTestUtils.setField(old, "rowId", 77L);
+        given(assetHoldingRepository.findActiveByAsset(5L)).willReturn(List.of(old));
+        given(stockMasterResolver.confirmMarketCode("NAS", "SPY")).willReturn("NAS");
+
+        sut.updateAsset(5L, USER_ID, updateCommand(List.of(new AssetServiceDto.HoldingCommand(
+            77L, HoldingType.STOCK, true, "NAS", "SPY", BigDecimal.TEN, null, null, null))));
+
+        assertThat(old.getMarketCode()).isEqualTo("NAS");
+        assertThat(old.getIsDeleted()).isEqualTo(YNType.N);
+    }
+
+    @Test
+    @DisplayName("응답에 시장코드가 실린다 — 편집 폼이 그대로 돌려보낼 수 있어야 한다")
+    void marketCodeRoundTripsInResponse() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(stockMasterResolver.confirmMarketCode("NAS", "SPY")).willReturn("NAS");
+
+        AssetServiceDto.AssetInfo info =
+            sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(linkedHolding("NAS", "SPY", 3L))));
+
+        assertThat(info.holdings().get(0).marketCode()).isEqualTo("NAS");
     }
 }

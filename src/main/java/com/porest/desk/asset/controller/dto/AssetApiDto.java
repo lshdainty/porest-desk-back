@@ -62,6 +62,14 @@ public class AssetApiDto {
         Long rowId,
         HoldingType holdingType,
         Boolean linked,
+        /**
+         * stock_master 기준 시장코드 — <b>선택</b>. 종목 검색 응답이 준 값을 그대로 돌려주면 된다.
+         *
+         * <p>안 보내도 저장은 된다(구버전 클라이언트가 그렇다). 그때는 서버가 심볼로 한 번
+         * 해석하고, 같은 심볼이 여러 시장에 걸리면 비워 둔 채 남긴다 — 추측한 값을 눌러 두면
+         * 다시 물을 기회가 사라진다.
+         */
+        String marketCode,
         String tossSymbol,
         BigDecimal quantity,
         String holdingName,
@@ -71,7 +79,8 @@ public class AssetApiDto {
     ) {
         public AssetServiceDto.HoldingCommand toCommand() {
             return new AssetServiceDto.HoldingCommand(
-                rowId, holdingType, linked, tossSymbol, quantity, holdingName, holdingValue, totalCost);
+                rowId, holdingType, linked, marketCode, tossSymbol, quantity,
+                holdingName, holdingValue, totalCost);
         }
 
         public static List<AssetServiceDto.HoldingCommand> toCommands(List<HoldingRequest> requests) {
@@ -83,6 +92,8 @@ public class AssetApiDto {
         Long rowId,
         HoldingType holdingType,
         boolean linked,
+        /** 저장된 시장코드. 확정 못 한 행은 null — 편집 폼은 그대로 돌려보내면 된다. */
+        String marketCode,
         String tossSymbol,
         /** 소수 정밀도 보존 — JS number 로 내려가면 코인 0.00012345 같은 값이 흔들린다. */
         @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
@@ -100,7 +111,7 @@ public class AssetApiDto {
     ) {
         public static HoldingResponse from(AssetServiceDto.HoldingInfo h) {
             return new HoldingResponse(
-                h.rowId(), h.holdingType(), h.linked(), h.symbol(), h.quantity(),
+                h.rowId(), h.holdingType(), h.linked(), h.marketCode(), h.symbol(), h.quantity(),
                 h.holdingName(), h.holdingValue(), h.totalCost(), h.avgPrice(), h.sortOrder());
         }
     }
@@ -141,6 +152,8 @@ public class AssetApiDto {
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
+        /** 레거시 단일 연동의 시장코드. 확정 못 했으면 null. */
+        String marketCode,
         String tossSymbol,
         Long tossQuantity,
         // 투자 보유 목록 (INVESTMENT 외/보유 없음 = 빈 배열)
@@ -158,7 +171,7 @@ public class AssetApiDto {
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
-                info.symbol(), info.quantity(),
+                info.marketCode(), info.symbol(), info.quantity(),
                 info.holdings().stream().map(HoldingResponse::from).toList(),
                 info.createAt(), info.modifyAt(),
                 info.monthlyUsedAmount()
@@ -166,8 +179,10 @@ public class AssetApiDto {
         }
     }
 
-    /** 투자 자산 ↔ 토스 종목 연결 요청 (종목코드 + 보유수량). 평가액 = 토스 시세 × 수량. */
+    /** 투자 자산 ↔ 증권 종목 연결 요청 (종목코드 + 보유수량). 평가액 = 시세 × 수량. */
     public record TossLinkRequest(
+        /** stock_master 기준 시장코드 — 선택. 안 보내면 서버가 심볼로 해석하고 모호하면 비워 둔다. */
+        String marketCode,
         String symbol,
         Long quantity
     ) {}

@@ -28,7 +28,7 @@ class HoldingDecimalSerializationTest {
     @DisplayName("보유 응답 — 수량과 평단가가 문자열로 나간다")
     void holdingQuantityAndAvgPriceAreStrings() throws Exception {
         var res = new AssetApiDto.HoldingResponse(
-            1L, HoldingType.CRYPTO, false, null,
+            1L, HoldingType.CRYPTO, false, null, null,
             new BigDecimal("0.00012345"), "비트코인", 1_000_000L,
             900_000L, new BigDecimal("7290000000.00000000"), 0);
 

@@ -92,7 +92,7 @@ public class AssetApiController {
             @PathVariable Long id,
             @RequestBody AssetApiDto.TossLinkRequest request) {
         AssetServiceDto.AssetInfo info = assetService.linkSymbol(
-            id, loginUser.getRowId(), request.symbol(), request.quantity());
+            id, loginUser.getRowId(), request.marketCode(), request.symbol(), request.quantity());
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
 

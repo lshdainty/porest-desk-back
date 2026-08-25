@@ -49,6 +49,8 @@ class CheckCardMonthlyUsedTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
     @Mock private UserClock userClock;
+    // 시장코드 확정은 mock 기본값(null) — 확정 못 한 경우와 같다.
+    @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
     @InjectMocks private AssetServiceImpl sut;
 
     private static final long USER_ID = 1L;

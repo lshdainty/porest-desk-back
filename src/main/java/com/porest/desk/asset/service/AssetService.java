@@ -12,8 +12,13 @@ public interface AssetService {
     AssetServiceDto.AssetInfo updateAsset(Long assetId, Long userRowId, AssetServiceDto.UpdateAssetCommand command);
     void deleteAsset(Long assetId, Long userRowId);
 
-    /** 투자 자산을 토스 종목에 연결 (종목코드+보유수량, 프로+토스 연결 사용자 전용, INVESTMENT 자산만). */
-    AssetServiceDto.AssetInfo linkSymbol(Long assetId, Long userRowId, String symbol, Long quantity);
+    /**
+     * 투자 자산을 증권 종목에 연결 (종목코드+보유수량, 프로+증권사 연결 사용자 전용, INVESTMENT 자산만).
+     *
+     * @param marketCode stock_master 기준 시장코드 — 선택. 안 주면 심볼로 해석하고 모호하면 비워 둔다.
+     */
+    AssetServiceDto.AssetInfo linkSymbol(Long assetId, Long userRowId, String marketCode,
+                                         String symbol, Long quantity);
 
     /** 토스 연결 해제 — 다시 수동 입력 잔액으로 복귀. */
     AssetServiceDto.AssetInfo unlinkSymbol(Long assetId, Long userRowId);

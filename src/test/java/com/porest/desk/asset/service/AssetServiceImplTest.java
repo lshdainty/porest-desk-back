@@ -71,6 +71,10 @@ class AssetServiceImplTest {
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
+    // 시장코드 확정은 mock 기본값(null) — 확정 못 한 경우와 같다.
+
+    @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
+
     @InjectMocks private AssetServiceImpl sut;
 
     private static final long USER_ID = 1L;
@@ -299,7 +303,7 @@ class AssetServiceImplTest {
         willThrow(new ForbiddenException(DeskErrorCode.SUBSCRIPTION_REQUIRED))
                 .given(entitlementService).requireFeature(USER_ID, "SECURITIES");
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "005930", 10L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "005930", 10L))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -308,7 +312,7 @@ class AssetServiceImplTest {
     void linkRejectsTossNotConnected() {
         given(securitiesCredentialService.hasAnyConnection(USER_ID)).willReturn(false);
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "005930", 10L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "005930", 10L))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -317,7 +321,7 @@ class AssetServiceImplTest {
     void linkRejectsBlankSymbol() {
         given(securitiesCredentialService.hasAnyConnection(USER_ID)).willReturn(true);
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "  ", 10L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "  ", 10L))
                 .isInstanceOf(InvalidValueException.class);
     }
 
@@ -329,7 +333,7 @@ class AssetServiceImplTest {
         given(asset.getAssetType()).willReturn(AssetType.BANK_ACCOUNT);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "005930", 10L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "005930", 10L))
                 .isInstanceOf(InvalidValueException.class);
     }
 
@@ -340,7 +344,7 @@ class AssetServiceImplTest {
         Asset asset = assetOwnedBy(999L);
         given(assetRepository.findById(5L)).willReturn(Optional.of(asset));
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "005930", 10L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "005930", 10L))
                 .isInstanceOf(ForbiddenException.class);
     }
 
@@ -355,9 +359,9 @@ class AssetServiceImplTest {
         given(priceProvider.getPrices(USER_ID, List.of(InstrumentRef.of("005930")))).willReturn(List.of(
                 PriceQuote.of("005930", new java.math.BigDecimal("70000"), "KRW")));
 
-        sut.linkSymbol(5L, USER_ID, "005930", 10L);
+        sut.linkSymbol(5L, USER_ID, null, "005930", 10L);
 
-        verify(asset).linkSecurities("005930", 10L);
+        verify(asset).linkSecurities(null, "005930", 10L);
         // 연결 즉시 평가액 스냅샷 (70000 × 10).
         verify(balanceHistoryService).recordValuation(eq(asset), eq(700_000L), any());
     }
@@ -372,7 +376,7 @@ class AssetServiceImplTest {
         given(priceProviders.forUser(USER_ID)).willReturn(priceProvider);
         given(priceProvider.getPrices(USER_ID, List.of(InstrumentRef.of("999999")))).willReturn(List.of());
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "999999", 10L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "999999", 10L))
                 .isInstanceOf(InvalidValueException.class);
     }
 
@@ -381,7 +385,7 @@ class AssetServiceImplTest {
     void linkRejectsNonPositiveQuantity() {
         given(securitiesCredentialService.hasAnyConnection(USER_ID)).willReturn(true);
 
-        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, "005930", 0L))
+        assertThatThrownBy(() -> sut.linkSymbol(5L, USER_ID, null, "005930", 0L))
                 .isInstanceOf(InvalidValueException.class);
     }
 

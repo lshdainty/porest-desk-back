@@ -67,6 +67,8 @@ class InvestmentCashPreservedTest {
     @Mock private SubscriptionEntitlementService entitlementService;
     @Mock private SecuritiesCredentialService securitiesCredentialService;
     @Mock private SecuritiesPriceProviders priceProviders;
+    // 시장코드 확정은 mock 기본값(null) — 확정 못 한 경우와 같다.
+    @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
     @InjectMocks private AssetServiceImpl sut;
 
     private static final long USER_ID = 1L;
@@ -131,7 +133,7 @@ class InvestmentCashPreservedTest {
         Asset invest = brokerageWithHoldings();
         var holding = new AssetServiceDto.HoldingCommand(
             null,
-            null, false, null, null, "삼성전자", 48_000_000L, null);
+            null, false, null, null, null, "삼성전자", 48_000_000L, null);
 
         sut.updateAsset(ASSET_ID, USER_ID, command(48_000_000L, List.of(holding)));
 
@@ -144,13 +146,13 @@ class InvestmentCashPreservedTest {
     void editKeepsCostBasis() {
         Asset invest = brokerageWithHoldings();
         // 매수로 원가 700만이 쌓여 있는 보유. 편집 폼은 원가를 입력받지 않아 안 보낸다.
-        var existing = AssetHolding.create(invest, HoldingType.STOCK, YNType.N, null,
+        var existing = AssetHolding.create(invest, HoldingType.STOCK, YNType.N, null, null,
             new java.math.BigDecimal("100"), "삼성전자", 8_000_000L, 7_000_000L, 0);
         given(assetHoldingRepository.findActiveByAsset(ASSET_ID)).willReturn(List.of(existing));
 
         var sent = new AssetServiceDto.HoldingCommand(
             null,
-            HoldingType.STOCK, false, null, new java.math.BigDecimal("100"),
+            HoldingType.STOCK, false, null, null, new java.math.BigDecimal("100"),
             "삼성전자", 8_500_000L, null); // totalCost 미전송
 
         sut.updateAsset(ASSET_ID, USER_ID, command(null, List.of(sent)));
