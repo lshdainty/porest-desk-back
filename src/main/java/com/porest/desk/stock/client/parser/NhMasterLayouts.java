@@ -64,7 +64,7 @@ final class NhMasterLayouts {
 
     /** {@code m_gtsstock.mst} — 해외주식. {@code @record 164}, 21필드. */
     static final FixedWidthLayout OVERSEAS = FixedWidthLayout.of(164,
-        "sGIC", 15,          // 해외종목 통합코드 — 나무 해외 조회 키
+        "sGIC", 15,          // 해외종목 통합코드 — 나무 WebSocket tr_key 용. REST 시세는 티커로 문다
         "sKorName", 40,
         "sEngName", 40,
         "sNationCode", 3,

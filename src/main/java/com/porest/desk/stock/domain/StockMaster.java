@@ -69,7 +69,15 @@ public class StockMaster extends AuditingFieldsWithIp {
     private String source;
 
     // ── NH 마스터파일 보강. 전부 nullable — KIS 만 있는 행에는 값이 없다.
-    /** NH 해외종목 통합코드. 나무 해외 조회 키. */
+    /**
+     * NH 해외종목 통합코드(예: {@code USAAAPL}).
+     *
+     * <p><b>REST 시세 키가 아니다.</b> 나무 REST 해외 시세({@code /gbstock/quote/v1/current})의
+     * {@code iem_cd} 는 티커를 받으므로 조회는 {@code symbol} 로 나간다. GIC 는 나무
+     * <b>WebSocket 실시간 채널</b>(RH/rh/RC/rc)의 {@code tr_key}({@code gicz15}) 자리 값이고,
+     * 이 서버는 나무 WebSocket 을 구현하지 않았다 — 그래서 지금은 적재만 하고 읽지 않는다
+     * ({@code realtimeSymbol} 과 같은 상태다).
+     */
     @Column(name = "nh_gic", length = 15)
     private String nhGic;
 

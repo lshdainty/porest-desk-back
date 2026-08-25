@@ -14,7 +14,12 @@ import com.porest.desk.stock.type.StockSecurityType;
  * @param nameEn         영문 종목명. 해외만 존재
  * @param securityType   정규화된 종목 유형
  * @param currency       거래 통화
- * @param nhGic          NH 해외종목 통합코드. 나무 해외 조회 키 — NH 해외만 존재
+ * @param nhGic          NH 해외종목 통합코드(예: {@code USAAAPL}) — NH 해외만 존재.
+ *                       <b>REST 시세 키가 아니다.</b> 나무 REST 해외 시세
+ *                       ({@code /gbstock/quote/v1/current})의 {@code iem_cd} 는 티커를 받는다.
+ *                       GIC 는 나무 <b>WebSocket 실시간 채널</b>(RH/rh/RC/rc)의 {@code tr_key}
+ *                       ({@code gicz15}) 자리에 쓰는 값이고, 이 서버는 나무 WebSocket 을
+ *                       구현하지 않아 지금은 저장만 한다
  * @param nxtTradable    NXT(넥스트레이드) 거래 가능 여부. 나무 국내시세 market_cd 판단 근거 — NH 국내만 존재
  * @param priceDecimals  가격 소수점 자릿수. 표시에 필요 — NH 해외만 존재
  */
