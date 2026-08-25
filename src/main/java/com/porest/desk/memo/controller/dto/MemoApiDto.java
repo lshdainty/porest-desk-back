@@ -2,12 +2,14 @@ package com.porest.desk.memo.controller.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class MemoApiDto {
 
+    @Schema(name = "MemoCreateRequest")
     public record CreateRequest(
         Long folderId,
         String title,
@@ -16,6 +18,7 @@ public class MemoApiDto {
         String color
     ) {}
 
+    @Schema(name = "MemoUpdateRequest")
     public record UpdateRequest(
         Long folderId,
         String title,
@@ -24,6 +27,7 @@ public class MemoApiDto {
         String color
     ) {}
 
+    @Schema(name = "MemoResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -52,6 +56,7 @@ public class MemoApiDto {
         }
     }
 
+    @Schema(name = "MemoListResponse")
     public record ListResponse(
         List<Response> memos
     ) {

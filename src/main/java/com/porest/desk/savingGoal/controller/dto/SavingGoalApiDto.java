@@ -2,6 +2,7 @@ package com.porest.desk.savingGoal.controller.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -36,8 +37,10 @@ public class SavingGoalApiDto {
         String note
     ) {}
 
+    @Schema(name = "SavingGoalReorderRequest")
     public record ReorderRequest(List<ReorderItem> items) {}
 
+    @Schema(name = "SavingGoalReorderItem")
     public record ReorderItem(Long id, Integer sortOrder) {}
 
     public record SavingGoalResponse(

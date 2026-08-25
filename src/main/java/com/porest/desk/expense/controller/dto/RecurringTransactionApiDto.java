@@ -4,6 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.expense.type.RecurringFrequency;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -12,6 +13,7 @@ import java.util.List;
 
 public class RecurringTransactionApiDto {
 
+    @Schema(name = "RecurringTransactionCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
         Long assetRowId,
@@ -33,6 +35,7 @@ public class RecurringTransactionApiDto {
         Boolean notifyDayBefore
     ) {}
 
+    @Schema(name = "RecurringTransactionUpdateRequest")
     public record UpdateRequest(
         Long categoryRowId,
         Long assetRowId,
@@ -53,6 +56,7 @@ public class RecurringTransactionApiDto {
         Boolean notifyDayBefore
     ) {}
 
+    @Schema(name = "RecurringTransactionResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -104,6 +108,7 @@ public class RecurringTransactionApiDto {
         }
     }
 
+    @Schema(name = "RecurringTransactionListResponse")
     public record ListResponse(List<Response> recurringTransactions) {
         public static ListResponse from(List<RecurringTransactionServiceDto.RecurringInfo> infos) {
             return new ListResponse(infos.stream().map(Response::from).toList());

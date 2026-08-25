@@ -2,6 +2,7 @@ package com.porest.desk.calendar.controller.dto;
 
 import com.porest.desk.calendar.service.dto.HolidayServiceDto;
 import com.porest.desk.calendar.type.HolidayType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,6 +10,7 @@ import java.util.List;
 
 public class HolidayApiDto {
 
+    @Schema(name = "HolidayResponse")
     public record Response(
         Long rowId,
         LocalDate holidayDate,
@@ -29,6 +31,7 @@ public class HolidayApiDto {
         }
     }
 
+    @Schema(name = "HolidayListResponse")
     public record ListResponse(
         List<Response> holidays
     ) {

@@ -1,5 +1,6 @@
 package com.porest.desk.namu.service;
 
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.namu.client.NamuApiClient;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -149,6 +152,53 @@ class NamuQueryServiceImplTest {
 
             assertThat(sut.getPrices(USER, List.of(InstrumentRef.of("NOPE")))).isEmpty();
             verify(namuApiClient, never()).postObject(any(Long.class), any(), any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("국내 시세 — 거래소 코드")
+    class KrMarketCode {
+
+        @BeforeEach
+        void givenPrice() {
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "5", "500", "0.72"));
+        }
+
+        @Test
+        @DisplayName("미지정이면 KRX 로 나간다")
+        void defaultsToKrx() {
+            sut.getKrPrice(USER, "005930", null);
+
+            assertThat(capturedBody()).containsEntry("market_cd", "KRX");
+        }
+
+        @Test
+        @DisplayName("소문자도 대문자로 맞춰 보낸다 — 나무는 KRX 만 안다")
+        void normalizesCase() {
+            sut.getKrPrice(USER, "005930", "nxt");
+
+            assertThat(capturedBody()).containsEntry("market_cd", "NXT");
+        }
+
+        @Test
+        @DisplayName("StockMarket 어휘(KOSPI)를 태우면 400 으로 거절한다 — 예전엔 그 종목만 조용히 비었다")
+        void rejectsStockMarketVocabulary() {
+            // 이름이 같아서(marketCode) 다음 사람이 실제로 헷갈리는 값이다. 나무는 모르는 값을
+            // 받으면 빈 응답을 주고, 화면에는 예외 없이 '—' 만 남는다.
+            assertThatThrownBy(() -> sut.getKrPrice(USER, "005930", "KOSPI"))
+                .isInstanceOf(InvalidValueException.class);
+
+            verify(namuApiClient, never()).postObject(anyLong(), any(), any(), any());
+        }
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> capturedBody() {
+            ArgumentCaptor<Map<String, Object>> body = ArgumentCaptor.forClass(Map.class);
+            verify(namuApiClient).postObject(eq(USER), eq("/krstock/quote/v1/currentPrice"),
+                body.capture(), any());
+            return body.getValue();
         }
     }
 

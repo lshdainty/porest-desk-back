@@ -2,6 +2,7 @@ package com.porest.desk.expense.controller.dto;
 
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,6 +10,7 @@ import java.util.List;
 
 public class ExpenseApiDto {
 
+    @Schema(name = "ExpenseCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
         Long assetRowId,
@@ -33,6 +35,7 @@ public class ExpenseApiDto {
         Long todoRowId
     ) {}
 
+    @Schema(name = "ExpenseUpdateRequest")
     public record UpdateRequest(
         Long categoryRowId,
         Long assetRowId,
@@ -59,6 +62,7 @@ public class ExpenseApiDto {
         List<ExpenseSplitApiDto.SplitRequest> splits
     ) {}
 
+    @Schema(name = "ExpenseResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -132,6 +136,7 @@ public class ExpenseApiDto {
         }
     }
 
+    @Schema(name = "ExpenseListResponse")
     public record ListResponse(
         List<Response> expenses
     ) {
@@ -256,6 +261,7 @@ public class ExpenseApiDto {
         }
     }
 
+    @Schema(name = "ExpenseAssetSummaryResponse")
     public record AssetSummaryResponse(Long assetRowId, String assetName, Long totalAmount, Integer count) {
         public static AssetSummaryResponse from(ExpenseServiceDto.AssetSummary s) {
             return new AssetSummaryResponse(s.assetRowId(), s.assetName(), s.totalAmount(), s.count());

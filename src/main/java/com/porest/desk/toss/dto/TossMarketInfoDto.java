@@ -1,5 +1,7 @@
 package com.porest.desk.toss.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * 토스증권 Market Info(환율·장 운영 일정) 응답 DTO 모음.<br>
  * 휴장 세션은 모두 null 로 내려오므로 nested 필드는 nullable 로 둔다.
@@ -10,6 +12,7 @@ public final class TossMarketInfoDto {
     }
 
     /** 환율 조회 응답 (KRW↔USD, 참고용 표시 환율) */
+    @Schema(name = "TossExchangeRateResponse")
     public record ExchangeRateResponse(
             String baseCurrency,
             String quoteCurrency,

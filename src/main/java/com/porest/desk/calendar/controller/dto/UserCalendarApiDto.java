@@ -2,17 +2,20 @@ package com.porest.desk.calendar.controller.dto;
 
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.calendar.type.CalendarRole;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class UserCalendarApiDto {
 
+    @Schema(name = "UserCalendarCreateRequest")
     public record CreateRequest(
         String calendarName,
         String color
     ) {}
 
+    @Schema(name = "UserCalendarUpdateRequest")
     public record UpdateRequest(
         String calendarName,
         String color
@@ -26,6 +29,7 @@ public class UserCalendarApiDto {
         CalendarRole permission
     ) {}
 
+    @Schema(name = "UserCalendarResponse")
     public record Response(
         Long rowId,
         Long ownerRowId,
@@ -60,6 +64,7 @@ public class UserCalendarApiDto {
         }
     }
 
+    @Schema(name = "UserCalendarListResponse")
     public record ListResponse(
         List<Response> calendars
     ) {

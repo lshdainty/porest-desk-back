@@ -1,12 +1,14 @@
 package com.porest.desk.expense.controller.dto;
 
 import com.porest.desk.expense.service.dto.ExpenseBudgetServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class ExpenseBudgetApiDto {
 
+    @Schema(name = "ExpenseBudgetCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
         Long budgetAmount,
@@ -14,10 +16,12 @@ public class ExpenseBudgetApiDto {
         Integer budgetMonth
     ) {}
 
+    @Schema(name = "ExpenseBudgetUpdateRequest")
     public record UpdateRequest(
         Long budgetAmount
     ) {}
 
+    @Schema(name = "ExpenseBudgetResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -44,6 +48,7 @@ public class ExpenseBudgetApiDto {
         }
     }
 
+    @Schema(name = "ExpenseBudgetListResponse")
     public record ListResponse(
         List<Response> budgets
     ) {

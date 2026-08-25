@@ -5,6 +5,7 @@ import com.porest.desk.asset.type.HoldingType;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -85,6 +86,7 @@ public class AssetApiDto {
         String tossSymbol,
         /** 소수 정밀도 보존 — JS number 로 내려가면 코인 0.00012345 같은 값이 흔들린다. */
         @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+        @Schema(type = "string", format = "decimal", example = "0.00012345")
         BigDecimal quantity,
         String holdingName,
         Long holdingValue,
@@ -92,6 +94,7 @@ public class AssetApiDto {
         Long totalCost,
         /** 평단가 — 총원가 / 수량. */
         @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+        @Schema(type = "string", format = "decimal", example = "72150.5")
         BigDecimal avgPrice,
         Integer sortOrder
     ) {
@@ -175,10 +178,13 @@ public class AssetApiDto {
         }
     }
 
+    @Schema(name = "AssetReorderRequest")
     public record ReorderRequest(List<ReorderItem> items) {}
 
+    @Schema(name = "AssetReorderItem")
     public record ReorderItem(Long assetId, Integer sortOrder) {}
 
+    @Schema(name = "AssetSummaryResponse")
     public record AssetSummaryResponse(
         Long totalBalance,
         Long totalAssets,

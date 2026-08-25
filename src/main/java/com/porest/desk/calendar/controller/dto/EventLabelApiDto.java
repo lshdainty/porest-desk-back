@@ -1,21 +1,25 @@
 package com.porest.desk.calendar.controller.dto;
 
 import com.porest.desk.calendar.service.dto.EventLabelServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
 
 public class EventLabelApiDto {
 
+    @Schema(name = "EventLabelCreateRequest")
     public record CreateRequest(
         String labelName,
         String color
     ) {}
 
+    @Schema(name = "EventLabelUpdateRequest")
     public record UpdateRequest(
         String labelName,
         String color
     ) {}
 
+    @Schema(name = "EventLabelResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -36,6 +40,7 @@ public class EventLabelApiDto {
         }
     }
 
+    @Schema(name = "EventLabelListResponse")
     public record ListResponse(
         List<Response> labels
     ) {

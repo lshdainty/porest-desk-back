@@ -1,6 +1,7 @@
 package com.porest.desk.expense.controller.dto;
 
 import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -20,6 +21,7 @@ public class ExpenseSplitApiDto {
         List<SplitRequest> splits
     ) {}
 
+    @Schema(name = "ExpenseSplitResponse")
     public record Response(
         Long rowId,
         Long expenseRowId,
@@ -46,6 +48,7 @@ public class ExpenseSplitApiDto {
         }
     }
 
+    @Schema(name = "ExpenseSplitListResponse")
     public record ListResponse(List<Response> splits) {
         public static ListResponse from(List<ExpenseSplitServiceDto.SplitInfo> infos) {
             return new ListResponse(infos.stream().map(Response::from).toList());

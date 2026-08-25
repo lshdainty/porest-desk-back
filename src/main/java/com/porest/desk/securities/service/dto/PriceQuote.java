@@ -1,5 +1,7 @@
 package com.porest.desk.securities.service.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.math.BigDecimal;
 
 /**
@@ -24,6 +26,15 @@ public record PriceQuote(String symbol, BigDecimal price, String currency, BigDe
         return new PriceQuote(symbol, price, currency, null);
     }
 
+    /**
+     * 원화 종목인지 — 환산이 필요한지 가르는 내부 판별.
+     *
+     * <p>{@code @JsonIgnore} 가 붙은 이유 — Jackson 은 {@code isXxx()} 를 getter 로 잡는다.
+     * 이 레코드가 {@code /api/v1/securities/prices} · {@code /api/v1/namu/**} 응답에 그대로
+     * 실리므로, 빼 두지 않으면 내부 판별용 불리언이 {@code krw} 필드로 응답과 스펙에 새어 나가고
+     * 클라이언트가 그걸 계약으로 읽는다.
+     */
+    @JsonIgnore
     public boolean isKrw() {
         return currency == null || "KRW".equals(currency);
     }

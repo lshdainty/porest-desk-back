@@ -1,7 +1,9 @@
 package com.porest.desk.namu.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
 
@@ -19,11 +21,23 @@ public final class NamuAccountDto {
     private NamuAccountDto() {
     }
 
-    /** 계좌 1건 ({@code POST /n2/acctinfo} 의 Output_0). */
+    /**
+     * 계좌 1건 ({@code POST /n2/acctinfo} 의 Output_0).
+     *
+     * <p><b>이 레코드만 응답에도 그대로 실린다</b>({@code GET /api/v1/namu/accounts}). 나머지
+     * 나무 응답은 {@link Holdings} 로 한 번 옮겨 담는데 계좌는 그럴 게 없어서 그대로 흐른다.
+     *
+     * <p>그래서 읽기 전용 별칭({@code @JsonAlias})을 쓴다. {@code @JsonProperty} 는 양방향이라
+     * <b>우리 API 도 {@code acct_no}·{@code acct_type} 로 내보냈다</b> — front·app 은 둘 다
+     * {@code accountNo}·{@code accountType} 을 읽으므로 계좌번호가 빈 문자열이 됐다(앱키가 아직
+     * 없어 드러나지 않았을 뿐이다). 별칭은 역직렬화에만 걸리므로 나무 응답은 그대로 읽고
+     * 나가는 이름만 우리 어휘가 된다.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
+    @Schema(name = "NamuAccount")
     public record Account(
-        @JsonProperty("acct_no") String accountNo,
-        @JsonProperty("acct_type") String accountType
+        @JsonAlias("acct_no") String accountNo,
+        @JsonAlias("acct_type") String accountType
     ) {
     }
 

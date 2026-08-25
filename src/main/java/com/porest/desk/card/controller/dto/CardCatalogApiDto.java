@@ -4,12 +4,14 @@ import com.porest.core.type.YNType;
 import com.porest.desk.card.service.dto.CardCatalogServiceDto;
 import com.porest.desk.card.type.CardBenefitType;
 import com.porest.desk.card.type.CardType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.util.List;
 
 public class CardCatalogApiDto {
 
+    @Schema(name = "CardCatalogSummaryResponse")
     public record SummaryResponse(
         Long rowId,
         Long externalCardId,
@@ -51,6 +53,7 @@ public class CardCatalogApiDto {
         }
     }
 
+    @Schema(name = "CardCatalogPerformanceResponse")
     public record PerformanceResponse(Integer requiredAmount, String requiredText, YNType isRequired) {
         public static PerformanceResponse from(CardCatalogServiceDto.PerformanceInfo p) {
             if (p == null) return null;

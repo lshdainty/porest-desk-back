@@ -3,6 +3,7 @@ package com.porest.desk.asset.controller.dto;
 import com.porest.desk.asset.service.dto.AssetTradeServiceDto;
 import com.porest.desk.asset.type.HoldingType;
 import com.porest.desk.asset.type.TradeType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -47,6 +48,7 @@ public final class AssetTradeApiDto {
         boolean linked,
         /** 소수 정밀도 보존 — 금 3.75g·코인 0.05 개가 숫자로 나가면 자릿수가 흔들린다. */
         @com.fasterxml.jackson.databind.annotation.JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+        @Schema(type = "string", format = "decimal", example = "3.75")
         BigDecimal quantity,
         Long amount,
         Long fee,

@@ -1,21 +1,25 @@
 package com.porest.desk.calendar.controller.dto;
 
 import com.porest.desk.calendar.service.dto.EventCommentServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class EventCommentApiDto {
 
+    @Schema(name = "EventCommentCreateRequest")
     public record CreateRequest(
         Long parentRowId,
         String content
     ) {}
 
+    @Schema(name = "EventCommentUpdateRequest")
     public record UpdateRequest(
         String content
     ) {}
 
+    @Schema(name = "EventCommentResponse")
     public record Response(
         Long rowId,
         Long eventRowId,
@@ -40,6 +44,7 @@ public class EventCommentApiDto {
         }
     }
 
+    @Schema(name = "EventCommentListResponse")
     public record ListResponse(
         List<Response> comments
     ) {

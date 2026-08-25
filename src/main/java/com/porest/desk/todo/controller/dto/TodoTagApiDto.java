@@ -1,22 +1,26 @@
 package com.porest.desk.todo.controller.dto;
 
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class TodoTagApiDto {
 
+    @Schema(name = "TodoTagCreateRequest")
     public record CreateRequest(
         String tagName,
         String color
     ) {}
 
+    @Schema(name = "TodoTagUpdateRequest")
     public record UpdateRequest(
         String tagName,
         String color
     ) {}
 
+    @Schema(name = "TodoTagResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -39,6 +43,7 @@ public class TodoTagApiDto {
         }
     }
 
+    @Schema(name = "TodoTagListResponse")
     public record ListResponse(
         List<Response> tags
     ) {
