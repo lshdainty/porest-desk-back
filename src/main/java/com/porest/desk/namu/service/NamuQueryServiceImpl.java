@@ -1,5 +1,7 @@
 package com.porest.desk.namu.service;
 
+import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.NamuApiClient;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
 import com.porest.desk.namu.client.dto.NamuListEnvelope;
@@ -20,6 +22,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -35,6 +38,21 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     /** 국내 거래소 기본값. NXT 거래 종목도 KRX 로 물으면 정규시장 시세가 온다. */
     private static final String MARKET_KRX = "KRX";
+
+    /**
+     * 나무 국내 시세의 {@code market_cd} 허용값 — <b>나무 어휘다.</b>
+     *
+     * <p>같은 이름의 {@code StockMarket.marketCode} 는 {@code KOSPI}·{@code NAS} 같은
+     * <b>다른 어휘</b>다. 두 어휘가 이 클래스 안에서 나란히 쓰인다 —
+     * {@link #getKrPrice} 의 파라미터는 여기 값이고, {@link #getPrices} 의
+     * {@code ref.marketCode()} 는 저쪽 값이다.
+     *
+     * <p>그래서 화이트리스트를 둔다. 검증이 없으면 {@code KOSPI} 를 태웠을 때 나무가
+     * 모르는 값이라 그 종목만 응답이 비고, 화면에는 예외 없이 '—' 만 뜬다. 조용히 틀리느니
+     * 400 으로 시끄럽게 틀리는 게 낫다.
+     */
+    private static final Set<String> KR_MARKETS = Set.of(MARKET_KRX, "NXT", "UNT");
+
     private static final String KRW = "KRW";
 
     private static final ParameterizedTypeReference<NamuEnvelope<NamuMarketDto.KrPrice>> KR_TYPE =
@@ -75,10 +93,22 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     @Override
     public PriceQuote getKrPrice(Long userRowId, String symbol, String marketCode) {
         NamuMarketDto.KrPrice p = namuApiClient.postObject(userRowId, KR_PRICE_PATH,
-            Map.of("market_cd", marketCode == null || marketCode.isBlank() ? MARKET_KRX : marketCode,
+            Map.of("market_cd", krMarket(marketCode),
                    "iem_cd", symbol),
             KR_TYPE);
         return p == null ? null : quote(symbol, p.price(), KRW, p.previousClose(), p.change(), p.changeSign());
+    }
+
+    /** 미지정이면 KRX. 그 밖의 값은 나무 어휘가 아니면 거절한다 — 위 {@link #KR_MARKETS} 참고. */
+    private String krMarket(String marketCode) {
+        if (marketCode == null || marketCode.isBlank()) {
+            return MARKET_KRX;
+        }
+        String normalized = marketCode.trim().toUpperCase();
+        if (!KR_MARKETS.contains(normalized)) {
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_MARKET_UNSUPPORTED);
+        }
+        return normalized;
     }
 
     @Override

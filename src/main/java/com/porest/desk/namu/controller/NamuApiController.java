@@ -6,6 +6,7 @@ import com.porest.desk.namu.service.NamuQueryService;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,12 +33,21 @@ public class NamuApiController {
 
     private final NamuQueryService namuQueryService;
 
-    /** 국내주식 현재가. marketCode: KRX(기본) · NXT · UNT */
+    /**
+     * 국내주식 현재가.
+     *
+     * @param marketCode 나무 <b>거래소</b> 코드 — {@code KRX}(기본) · {@code NXT} · {@code UNT}.
+     *                   <b>{@code StockMarket.marketCode}({@code KOSPI}·{@code NAS} …)와 이름은 같지만
+     *                   다른 어휘다.</b> 여기에 {@code KOSPI} 를 태우면 나무가 모르는 값이라
+     *                   400 으로 거절한다 — 예전에는 그 종목만 조용히 빈 응답이 됐다.
+     *                   이름을 안 바꾼 이유는 이미 나간 클라이언트가 이 파라미터로 부르고 있어서다
+     */
     @GetMapping("/kr/price")
     public ApiResponse<PriceQuote> getKrPrice(
             @LoginUser UserPrincipal loginUser,
             @RequestParam String symbol,
-            @RequestParam(required = false) String marketCode) {
+            @RequestParam(required = false)
+            @Schema(allowableValues = {"KRX", "NXT", "UNT"}, defaultValue = "KRX") String marketCode) {
         return ApiResponse.success(namuQueryService.getKrPrice(loginUser.getRowId(), symbol, marketCode));
     }
 

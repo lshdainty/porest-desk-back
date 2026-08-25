@@ -155,6 +155,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     SECURITIES_CREDENTIAL_INVALID("SEC_005", "error.securities.credential.invalid", HttpStatus.BAD_GATEWAY),
     SECURITIES_SYMBOL_INVALID("SEC_006", "error.securities.symbol.invalid", HttpStatus.BAD_REQUEST),
     SECURITIES_BROKER_UNSUPPORTED("SEC_007", "error.securities.broker.unsupported", HttpStatus.BAD_REQUEST),
+    SECURITIES_MARKET_UNSUPPORTED("SEC_008", "error.securities.market.unsupported", HttpStatus.BAD_REQUEST),
 
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),
