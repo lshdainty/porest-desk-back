@@ -4,12 +4,14 @@ import com.porest.core.type.YNType;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.type.CalendarEventType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class CalendarEventApiDto {
 
+    @Schema(name = "CalendarEventCreateRequest")
     public record CreateRequest(
         String title,
         String description,
@@ -25,6 +27,7 @@ public class CalendarEventApiDto {
         Long calendarRowId
     ) {}
 
+    @Schema(name = "CalendarEventUpdateRequest")
     public record UpdateRequest(
         String title,
         String description,
@@ -58,6 +61,7 @@ public class CalendarEventApiDto {
         }
     }
 
+    @Schema(name = "CalendarEventResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -113,6 +117,7 @@ public class CalendarEventApiDto {
         }
     }
 
+    @Schema(name = "CalendarEventListResponse")
     public record ListResponse(
         List<Response> events
     ) {

@@ -2,6 +2,7 @@ package com.porest.desk.dutchpay.controller.dto;
 
 import com.porest.desk.dutchpay.service.dto.DutchPayServiceDto;
 import com.porest.desk.dutchpay.type.SplitMethod;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,6 +10,7 @@ import java.util.List;
 
 public class DutchPayApiDto {
 
+    @Schema(name = "DutchPayCreateRequest")
     public record CreateRequest(
         Long sourceExpenseRowId,
         String title,
@@ -20,6 +22,7 @@ public class DutchPayApiDto {
         List<ParticipantRequest> participants
     ) {}
 
+    @Schema(name = "DutchPayUpdateRequest")
     public record UpdateRequest(
         String title,
         String description,
@@ -45,6 +48,7 @@ public class DutchPayApiDto {
         Boolean isPayer
     ) {}
 
+    @Schema(name = "DutchPayResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -104,6 +108,7 @@ public class DutchPayApiDto {
         }
     }
 
+    @Schema(name = "DutchPayListResponse")
     public record ListResponse(
         List<Response> dutchPays
     ) {

@@ -7,6 +7,7 @@ import com.porest.desk.securities.service.SecuritiesPriceProvider;
 import com.porest.desk.securities.service.SecuritiesPriceProviders;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -89,6 +90,7 @@ public class SecuritiesApiController {
     }
 
     /** @param rate 못 구하면 null */
+    @Schema(name = "SecuritiesExchangeRateResponse")
     public record ExchangeRateResponse(String base, String quote, BigDecimal rate) {
     }
 }

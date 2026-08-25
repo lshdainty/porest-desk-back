@@ -6,6 +6,7 @@ import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.securities.service.SecuritiesCredentialService;
 import com.porest.desk.securities.service.dto.SecuritiesCredentialServiceDto.BrokerConnection;
 import com.porest.desk.securities.type.SecuritiesBroker;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -64,7 +65,16 @@ public class LegacyTossCredentialApiController {
         return ApiResponse.success();
     }
 
-    /** 옛 요청 본문. 필드명이 새 API(apiKey/apiSecret)와 다르므로 그대로 둔다. */
+    /**
+     * 옛 요청 본문. 필드명이 새 API(apiKey/apiSecret)와 다르므로 그대로 둔다.
+     *
+     * <p>{@code @Schema(name)} 이 붙은 이유 — springdoc 은 스키마를 단순 클래스명으로 등록해서
+     * 새 API 의 {@code RegisterRequest} 와 한 칸을 두고 다퉜고, 여기가 이겨 <b>나무 크리덴셜
+     * 등록이 {@code clientId/clientSecret} 으로 문서화됐다.</b> 스펙대로 부르면 서버에서
+     * apiKey/apiSecret 이 null 이 되어 {@code verify(null, null)} 이 나간다.
+     * {@code OpenApiSchemaNameTest} 가 이름 충돌을 전수로 지킨다.
+     */
+    @Schema(name = "TossCredentialRegisterRequest")
     public record RegisterRequest(String clientId, String clientSecret) {
     }
 

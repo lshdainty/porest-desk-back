@@ -1,12 +1,14 @@
 package com.porest.desk.dashboard.controller.dto;
 
 import com.porest.desk.dashboard.service.dto.DashboardServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class DashboardApiDto {
+    @Schema(name = "DashboardSummaryResponse")
     public record SummaryResponse(
         TodoSummary todoSummary,
         CalendarSummary calendarSummary,

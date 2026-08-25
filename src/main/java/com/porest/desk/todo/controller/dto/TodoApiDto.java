@@ -5,6 +5,7 @@ import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -12,6 +13,7 @@ import java.util.List;
 
 public class TodoApiDto {
 
+    @Schema(name = "TodoCreateRequest")
     public record CreateRequest(
         String title,
         String content,
@@ -23,6 +25,7 @@ public class TodoApiDto {
         TodoType type
     ) {}
 
+    @Schema(name = "TodoUpdateRequest")
     public record UpdateRequest(
         String title,
         String content,
@@ -32,9 +35,11 @@ public class TodoApiDto {
         List<Long> tagIds
     ) {}
 
+    @Schema(name = "TodoReorderRequest")
     public record ReorderRequest(
         List<ReorderItem> items
     ) {
+        @Schema(name = "TodoReorderItem")
         public record ReorderItem(
             Long todoId,
             int sortOrder
@@ -45,6 +50,7 @@ public class TodoApiDto {
         List<Long> tagIds
     ) {}
 
+    @Schema(name = "TodoResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -102,6 +108,7 @@ public class TodoApiDto {
         }
     }
 
+    @Schema(name = "TodoListResponse")
     public record ListResponse(
         List<Response> todos
     ) {

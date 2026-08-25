@@ -1,6 +1,7 @@
 package com.porest.desk.toss.dto;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 토스증권 Account(계좌) · Asset(보유 자산) 응답 DTO 모음.<br>
@@ -12,6 +13,7 @@ public final class TossAccountDto {
     }
 
     /** 계좌 정보. accountSeq 는 보유주식/주문 등 계좌 귀속 API 호출 시 식별 키로 사용 */
+    @Schema(name = "TossAccount")
     public record Account(
             String accountNo,
             Long accountSeq,

@@ -2,12 +2,14 @@ package com.porest.desk.expense.controller.dto;
 
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class ExpenseCategoryApiDto {
 
+    @Schema(name = "ExpenseCategoryCreateRequest")
     public record CreateRequest(
         String categoryName,
         String icon,
@@ -16,6 +18,7 @@ public class ExpenseCategoryApiDto {
         Long parentRowId
     ) {}
 
+    @Schema(name = "ExpenseCategoryUpdateRequest")
     public record UpdateRequest(
         String categoryName,
         String icon,
@@ -27,6 +30,7 @@ public class ExpenseCategoryApiDto {
         Long parentRowId
     ) {}
 
+    @Schema(name = "ExpenseCategoryResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -57,6 +61,7 @@ public class ExpenseCategoryApiDto {
         }
     }
 
+    @Schema(name = "ExpenseCategoryListResponse")
     public record ListResponse(
         List<Response> categories
     ) {
@@ -68,12 +73,14 @@ public class ExpenseCategoryApiDto {
         }
     }
 
+    @Schema(name = "ExpenseCategoryReorderItem")
     public record ReorderItem(
         Long categoryRowId,
         Integer sortOrder,
         Long parentRowId
     ) {}
 
+    @Schema(name = "ExpenseCategoryReorderRequest")
     public record ReorderRequest(List<ReorderItem> items) {}
 
     /** 일괄 이동 요청 — 옮길 대상 카테고리. */

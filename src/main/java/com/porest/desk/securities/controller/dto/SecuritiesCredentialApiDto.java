@@ -1,6 +1,7 @@
 package com.porest.desk.securities.controller.dto;
 
 import com.porest.desk.securities.service.dto.SecuritiesCredentialServiceDto.BrokerConnection;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 
@@ -10,6 +11,7 @@ public final class SecuritiesCredentialApiDto {
     }
 
     /** 키 등록 요청. 라벨은 증권사마다 다르지만(Client ID / App Key) 자리는 둘로 같다. */
+    @Schema(name = "SecuritiesCredentialRegisterRequest")
     public record RegisterRequest(String apiKey, String apiSecret) {
     }
 

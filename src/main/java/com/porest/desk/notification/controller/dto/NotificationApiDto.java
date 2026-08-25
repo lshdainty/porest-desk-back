@@ -3,12 +3,14 @@ package com.porest.desk.notification.controller.dto;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
 import com.porest.desk.notification.type.NotificationType;
 import com.porest.desk.notification.type.ReferenceType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class NotificationApiDto {
 
+    @Schema(name = "NotificationResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -37,6 +39,7 @@ public class NotificationApiDto {
         }
     }
 
+    @Schema(name = "NotificationListResponse")
     public record ListResponse(
         List<Response> notifications
     ) {

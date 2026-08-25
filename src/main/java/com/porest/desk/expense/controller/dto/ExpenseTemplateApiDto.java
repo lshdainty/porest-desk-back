@@ -3,6 +3,7 @@ package com.porest.desk.expense.controller.dto;
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -10,6 +11,7 @@ import java.util.List;
 
 public class ExpenseTemplateApiDto {
 
+    @Schema(name = "ExpenseTemplateCreateRequest")
     public record CreateRequest(
         String templateName,
         Long categoryRowId,
@@ -23,6 +25,7 @@ public class ExpenseTemplateApiDto {
         YNType lockAmount
     ) {}
 
+    @Schema(name = "ExpenseTemplateUpdateRequest")
     public record UpdateRequest(
         String templateName,
         Long categoryRowId,
@@ -39,6 +42,7 @@ public class ExpenseTemplateApiDto {
         LocalDate expenseDate
     ) {}
 
+    @Schema(name = "ExpenseTemplateResponse")
     public record Response(
         Long rowId,
         Long userRowId,
@@ -73,6 +77,7 @@ public class ExpenseTemplateApiDto {
         }
     }
 
+    @Schema(name = "ExpenseTemplateListResponse")
     public record ListResponse(List<Response> templates) {
         public static ListResponse from(List<ExpenseTemplateServiceDto.TemplateInfo> infos) {
             return new ListResponse(infos.stream().map(Response::from).toList());

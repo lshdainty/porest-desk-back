@@ -1,11 +1,13 @@
 package com.porest.desk.file.controller.dto;
 
 import com.porest.desk.file.service.dto.FileServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
 
 public class FileApiDto {
 
+    @Schema(name = "FileResponse")
     public record Response(
         Long rowId,
         String originalName,
@@ -28,6 +30,7 @@ public class FileApiDto {
         }
     }
 
+    @Schema(name = "FileListResponse")
     public record ListResponse(List<Response> files) {
         public static ListResponse from(List<FileServiceDto.FileInfo> infos) {
             return new ListResponse(

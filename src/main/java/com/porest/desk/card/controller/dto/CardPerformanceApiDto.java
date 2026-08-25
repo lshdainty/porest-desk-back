@@ -1,9 +1,11 @@
 package com.porest.desk.card.controller.dto;
 
 import com.porest.desk.card.service.dto.CardPerformanceServiceDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 public class CardPerformanceApiDto {
 
+    @Schema(name = "CardPerformanceResponse")
     public record PerformanceResponse(
         Long assetRowId,
         String yearMonth,
