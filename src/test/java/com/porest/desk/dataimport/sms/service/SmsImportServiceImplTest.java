@@ -2,6 +2,7 @@ package com.porest.desk.dataimport.sms.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
@@ -16,6 +17,7 @@ import com.porest.desk.expense.service.ExpenseService;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -28,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -63,7 +66,14 @@ class SmsImportServiceImplTest {
     @Mock private ExpenseCategoryRepository expenseCategoryRepository;
     @Mock private AssetRepository assetRepository;
     @Mock private SmsCardMappingRepository cardMappingRepository;
+    @Mock private UserClock userClock;
     @InjectMocks private SmsImportServiceImpl sut;
+
+    @BeforeEach
+    void stubUserToday() {
+        // 연도 유추 기준일 — 종전 구현(LocalDate.now())과 같은 값으로 고정해 기존 단언을 유지한다.
+        given(userClock.today(any())).willReturn(LocalDate.now());
+    }
 
     // ── 픽스처 헬퍼 ────────────────────────────────────────────
 

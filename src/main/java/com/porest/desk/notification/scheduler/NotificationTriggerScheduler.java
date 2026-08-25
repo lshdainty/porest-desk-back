@@ -1,5 +1,6 @@
 package com.porest.desk.notification.scheduler;
 
+import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.EventReminder;
 import com.porest.desk.calendar.repository.EventReminderRepository;
 import com.porest.desk.expense.domain.Expense;
@@ -17,6 +18,8 @@ import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.service.UserService;
 import com.porest.core.time.ServiceClock;
+import com.porest.core.time.UserClock;
+import com.porest.core.util.TimeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -40,16 +43,28 @@ public class NotificationTriggerScheduler {
     private final ExpenseRepository expenseRepository;
     private final ExpenseService expenseService;
     private final ServiceClock serviceClock;
+    private final UserClock userClock;
     private final TodoRepository todoRepository;
     private final UserService userService;
 
     @Scheduled(fixedRate = 60000)
     @Transactional
     public void checkEventReminders() {
-        List<EventReminder> reminders = eventReminderRepository.findUnsentDueReminders(LocalDateTime.now());
+        // startDate 는 사용자가 쓴 벽시계([userClock])다. UTC 인 LocalDateTime.now() 와 SQL 에서
+        // 직접 비교하면 KST 사용자의 리마인더가 9시간 늦게 나간다 — 후보만 넓게 가져와
+        // 소유자 타임존의 "지금"으로 도래를 판정한다.
+        List<EventReminder> reminders =
+            eventReminderRepository.findUnsentRemindersStartingBefore(serviceClock.now().plusDays(2));
 
         for (EventReminder reminder : reminders) {
             try {
+                CalendarEvent event = reminder.getEvent();
+                LocalDateTime nowWall = LocalDateTime.now(
+                    userClock.zoneOfTimezone(event.getUser().getTimezone()));
+                int minutesBefore = reminder.getMinutesBefore() != null ? reminder.getMinutesBefore() : 0;
+                if (event.getStartDate().minusMinutes(minutesBefore).isAfter(nowWall)) {
+                    continue;
+                }
                 NotificationServiceDto.CreateCommand command = new NotificationServiceDto.CreateCommand(
                     reminder.getEvent().getUser().getRowId(),
                     NotificationType.EVENT_REMINDER,
@@ -116,9 +131,11 @@ public class NotificationTriggerScheduler {
                 // 85% 같은 임계를 double 로 만들면(85/100.0) 이진 오차 때문에 경계에서 한 발 빨리·늦게 터진다.
                 // 양변에 100 을 곱해 정수만으로 비교한다 — 금액도 임계도 정수라 이걸로 충분하다.
                 if (totalSpending * 100L >= (long) budget.getBudgetAmount() * thresholdPct) {
+                    // create_at 은 [UTC] — 서비스 기준 자정(벽시계)을 UTC 로 옮겨 비교한다.
+                    // naive 하게 넘기면 경계가 9시간 밀려, 크론 시각이 바뀌면 중복 알림이 샌다.
                     boolean alreadyNotified = notificationRepository.existsByUserAndReferenceAndCreatedAfter(
                         userRowId, ReferenceType.EXPENSE_BUDGET, budget.getRowId(),
-                        startDate.atStartOfDay());
+                        TimeUtils.toUtc(startDate.atStartOfDay(), serviceClock.zone().getId()));
 
                     if (!alreadyNotified) {
                         long percentage = (totalSpending * 100) / budget.getBudgetAmount();
@@ -158,9 +175,10 @@ public class NotificationTriggerScheduler {
             try {
                 Long userRowId = todo.getUser().getRowId();
 
+                // create_at 은 [UTC] — 서비스 기준 자정(벽시계)을 UTC 로 옮겨 비교한다.
                 boolean alreadyNotified = notificationRepository.existsByUserAndReferenceAndCreatedAfter(
                     userRowId, ReferenceType.TODO, todo.getRowId(),
-                    today.atStartOfDay());
+                    TimeUtils.toUtc(today.atStartOfDay(), serviceClock.zone().getId()));
 
                 if (!alreadyNotified) {
                     String message = todo.getDueDate().equals(today)
