@@ -5,12 +5,20 @@ import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import com.porest.desk.securities.service.dto.InstrumentRef;
+import com.porest.desk.stock.client.dto.InstrumentRecord;
+import com.porest.desk.stock.domain.StockMaster;
+import com.porest.desk.stock.type.MasterSource;
+import com.porest.desk.stock.type.StockMarket;
+import com.porest.desk.stock.type.StockSecurityType;
+import com.porest.desk.securities.config.NamuProperties;
 import com.porest.desk.stock.repository.StockMasterRepository;
+import com.porest.desk.stock.service.StockMasterResolver;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -28,6 +36,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -46,7 +55,16 @@ class NamuQueryServiceImplTest {
 
     @Mock private NamuApiClient namuApiClient;
     @Mock private StockMasterRepository stockMasterRepository;
-    @InjectMocks private NamuQueryServiceImpl sut;
+    private NamuQueryServiceImpl sut;
+
+    // 설정은 목이 아니라 진짜를 쓴다 — 목이면 TTL·예산이 0 이라 캐시가 죽은 채로 통과한다.
+    @BeforeEach
+    void setUpService() {
+        NamuProperties properties = new NamuProperties();
+        properties.setBaseUrl("https://api.nhplug.com:8443");
+        sut = new NamuQueryServiceImpl(namuApiClient,
+            new StockMasterResolver(stockMasterRepository), properties);
+    }
 
     private void givenAccounts(NamuAccountDto.Account... accounts) {
         given(namuApiClient.<NamuAccountDto.Account>postList(eq(USER), eq("/n2/acctinfo"), any(), any()))
@@ -63,6 +81,75 @@ class NamuQueryServiceImplTest {
         given(namuApiClient.<NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding>>exchange(
                 eq(USER), eq("/gbstock/inquiry/v1/balance"), any(), any(ParameterizedTypeReference.class)))
             .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items)));
+    }
+
+    @Nested
+    @DisplayName("시세 다건 — 캐시와 시간 예산")
+    class Batch {
+
+        private void givenMaster(String symbol, String country) {
+            StockMaster stock = StockMaster.create(MasterSource.KIS, InstrumentRecord.kis(
+                "KR".equals(country) ? StockMarket.KOSPI : StockMarket.NAS,
+                symbol, null, null, symbol, symbol, StockSecurityType.STOCK,
+                "KR".equals(country) ? "KRW" : "USD"));
+            given(stockMasterRepository.findAllActiveBySymbol(symbol)).willReturn(List.of(stock));
+        }
+
+        @Test
+        @DisplayName("같은 종목을 다시 물으면 캐시로 답한다 — 자산 화면이 10초마다 폴링한다")
+        void secondCallHitsCache() {
+            givenMaster("005930", "KR");
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72"));
+
+            List<InstrumentRef> refs = List.of(InstrumentRef.of("005930"));
+            assertThat(sut.getPrices(USER, refs)).hasSize(1);
+            assertThat(sut.getPrices(USER, refs)).hasSize(1);
+
+            // 업스트림은 한 번만 갔다 — 나무엔 다건 시세 API 가 없어 이게 중요하다.
+            verify(namuApiClient, times(1)).postObject(
+                eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any());
+        }
+
+        @Test
+        @DisplayName("사용자가 다르면 캐시를 공유하지 않는다 — 남의 키로 받은 시세다")
+        void cacheIsPerUser() {
+            givenMaster("005930", "KR");
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    any(Long.class), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72"));
+
+            List<InstrumentRef> refs = List.of(InstrumentRef.of("005930"));
+            sut.getPrices(USER, refs);
+            sut.getPrices(USER + 1, refs);
+
+            verify(namuApiClient, times(2)).postObject(
+                any(Long.class), eq("/krstock/quote/v1/currentPrice"), any(), any());
+        }
+
+        @Test
+        @DisplayName("한 종목이 실패해도 나머지는 살린다 — 전체를 접으면 평가가 통째로 멈춘다")
+        void oneFailureDoesNotSinkTheBatch() {
+            givenMaster("005930", "KR");
+            givenMaster("000660", "KR");
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willThrow(new IllegalStateException("boom"))
+                .willReturn(new NamuMarketDto.KrPrice("120000", "119000", "2", "1000", "0.84"));
+
+            assertThat(sut.getPrices(USER,
+                List.of(InstrumentRef.of("005930"), InstrumentRef.of("000660")))).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("마스터에 없는 종목은 건너뛰고 업스트림을 부르지 않는다")
+        void unknownSymbolIsSkipped() {
+            given(stockMasterRepository.findAllActiveBySymbol("NOPE")).willReturn(List.of());
+
+            assertThat(sut.getPrices(USER, List.of(InstrumentRef.of("NOPE")))).isEmpty();
+            verify(namuApiClient, never()).postObject(any(Long.class), any(), any(), any());
+        }
     }
 
     @Nested

@@ -6,6 +6,7 @@ import com.porest.desk.namu.client.dto.NamuListEnvelope;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
+import com.porest.desk.securities.config.NamuProperties;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 import com.porest.desk.stock.domain.StockMaster;
@@ -19,6 +20,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
@@ -55,6 +57,20 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     private final NamuApiClient namuApiClient;
     private final StockMasterResolver stockMasterResolver;
+    private final NamuProperties namuProperties;
+
+    /**
+     * 시세 캐시. 나무엔 다건 시세 API 가 없어 종목마다 1콜이 나가는데, 자산 화면은 10초마다
+     * 폴링하고 목록·상세가 각각 조회한다 — 캐시가 없으면 한 사용자가 초당 몇 콜씩 지속적으로
+     * 낸다. 인스턴스별 메모리 캐시로 충분하다(읽기 전용이고 TTL 이 짧다).
+     */
+    private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
+
+    private record CachedQuote(PriceQuote quote, long expiresAtMillis) {
+        boolean isFresh(long now) {
+            return now < expiresAtMillis;
+        }
+    }
 
     @Override
     public PriceQuote getKrPrice(Long userRowId, String symbol, String marketCode) {
@@ -86,7 +102,13 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      */
     @Override
     public List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments) {
+        long now = System.currentTimeMillis();
+        long deadline = now + namuProperties.getPriceBatchBudgetMs();
         List<PriceQuote> quotes = new ArrayList<>();
+        int fetched = 0;
+        int cached = 0;
+        int skipped = 0;
+
         for (InstrumentRef ref : instruments) {
             StockMaster stock = stockMasterResolver.resolve(ref.marketCode(), ref.symbol()).orElse(null);
             if (stock == null) {
@@ -94,18 +116,47 @@ public class NamuQueryServiceImpl implements NamuQueryService {
                     ref.marketCode(), ref.symbol());
                 continue;
             }
+
+            String key = cacheKey(userRowId, stock);
+            CachedQuote hit = quoteCache.get(key);
+            if (hit != null && hit.isFresh(System.currentTimeMillis())) {
+                quotes.add(hit.quote());
+                cached++;
+                continue;
+            }
+
+            // 예산을 넘기면 여기서 멈춘다. 지금까지 받은 건 캐시에 남으므로 다음 폴링이
+            // 나머지를 이어 받아 몇 번 안에 다 찬다 — 매번 처음부터 다시 긁지 않는다.
+            if (System.currentTimeMillis() >= deadline) {
+                skipped++;
+                continue;
+            }
+
             try {
                 PriceQuote quote = "KR".equals(stock.getCountryCode())
                     ? getKrPrice(userRowId, stock.getSymbol(), MARKET_KRX)
                     : getGbPrice(userRowId, stock.getSymbol());
+                fetched++;
                 if (quote != null) {
                     quotes.add(quote);
+                    quoteCache.put(key, new CachedQuote(quote,
+                        System.currentTimeMillis() + namuProperties.getQuoteCacheTtlSeconds() * 1000L));
                 }
             } catch (RuntimeException e) {
                 log.warn("나무 시세 조회 실패 - symbol={}: {}", ref.symbol(), e.getMessage());
             }
         }
+
+        if (skipped > 0) {
+            log.warn("나무 시세 시간 예산 초과 - 나머지는 다음 조회로 미룬다: userRowId={}, 요청={}, "
+                    + "캐시={}, 조회={}, 미룸={}",
+                userRowId, instruments.size(), cached, fetched, skipped);
+        }
         return quotes;
+    }
+
+    private static String cacheKey(Long userRowId, StockMaster stock) {
+        return userRowId + ":" + stock.getMarketCode().name() + ":" + stock.getSymbol();
     }
 
     // === 계좌·잔고 ===
