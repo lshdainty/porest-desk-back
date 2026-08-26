@@ -13,6 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>운영 기본값은 Redis 다({@link RedisBrokerTokenStore}) — 여기 저장한 토큰은 재시작하면
  * 사라지고 인스턴스끼리 공유되지 않아, 증권사에 재발급 요청이 인스턴스 수만큼 나간다.
+ *
+ * <p><b>여기는 평문으로 둔다.</b> {@link RedisBrokerTokenStore} 는 값을 AES-GCM 으로 넣는데
+ * 이쪽은 안 하는 게 일관성이 없어 보이지만, 가르는 기준은 "어느 저장소냐" 가 아니라
+ * <b>값이 우리 프로세스 밖으로 나가느냐</b>다. Redis 는 별도 프로세스이고 공유되며 디스크에
+ * 남지만, 이 맵은 우리 힙 안이고 암호화 키도 같은 힙에 있다 — 힙을 읽을 수 있는 상대에게는
+ * 암호문과 키가 함께 보이므로 암호화가 아무것도 막지 못한다. 얻는 것 없이 복호화 실패라는
+ * 실패 경로만 늘어난다.
  */
 @Component
 @ConditionalOnProperty(name = "app.securities.token-store", havingValue = "memory")
