@@ -2,14 +2,22 @@ FROM eclipse-temurin:25-jdk-alpine AS builder
 
 WORKDIR /app
 
+# GitHub Packages(porest-core) 자격증명.
+#
+# 토큰은 ENV 로도 ARG 로도 두지 않는다. ENV 는 빌더 스테이지 이미지 설정(Config.Env)에
+# 평문으로 박히고, ARG 는 빌드 캐시 스텝 메타데이터에 남는다. 멀티스테이지라 최종 런타임
+# 이미지에는 안 남지만 빌드 호스트(Jenkins)의 이미지·캐시에는 남는다 — 데몬을 읽을 수
+# 있으면 그대로 새어 나간다. BuildKit 도 옛 형태에 SecretsUsedInArgOrEnv 경고를 낸다.
+#
+# secret 마운트는 RUN 이 도는 동안에만 tmpfs 로 붙고 어떤 레이어에도 남지 않는다.
+# 계정명(GITHUB_ACTOR)은 비밀이 아니므로 ARG 로 두고 RUN 환경으로 그대로 넘긴다.
 ARG GITHUB_ACTOR
-ARG GITHUB_TOKEN
-ENV GITHUB_ACTOR=${GITHUB_ACTOR}
-ENV GITHUB_TOKEN=${GITHUB_TOKEN}
 
 COPY . .
 
-RUN chmod +x gradlew && ./gradlew clean build -x test
+RUN --mount=type=secret,id=github_token \
+    chmod +x gradlew \
+    && GITHUB_TOKEN="$(cat /run/secrets/github_token)" ./gradlew clean build -x test
 
 FROM eclipse-temurin:25-jre-alpine AS runtime
 

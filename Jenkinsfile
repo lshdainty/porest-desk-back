@@ -79,7 +79,17 @@ pipeline {
             steps {
                 dir("${SRC_DIR}") {
                     withCredentials([usernamePassword(credentialsId: 'github-credentials', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
-                        sh 'docker build --build-arg GITHUB_ACTOR=$GH_USER --build-arg GITHUB_TOKEN=$GH_TOKEN --build-arg APP_UID=' + APP_UID + ' --build-arg APP_GID=' + APP_GID + ' -t ' + IMAGE_NAME + ':latest -t ' + IMAGE_NAME + ':' + env.APP_VERSION + ' .'
+                        // 토큰은 --secret 으로 넘긴다 — BuildKit 이 RUN 동안에만 tmpfs 로
+                        // 붙여 주고 레이어·이미지 설정에 남기지 않는다(Dockerfile 주석 참고).
+                        //
+                        // --build-arg GITHUB_TOKEN 은 일부러 남긴다. Jenkins 는 이 Jenkinsfile 을
+                        // 항상 main 에서 읽지만(job 설정이 CpsScmFlowDefinition · */main ·
+                        // lightweight 이다) Dockerfile 은 선택한 GIT_REF 에서 온다. 이 변경
+                        // 이전에 딴 릴리스 태그의 Dockerfile 은 아직 ARG GITHUB_TOKEN 을 쓰므로,
+                        // 여기서 빼면 그 태그를 다시 배포(롤백)할 때 GitHub Packages 인증이
+                        // 깨진다. 새 Dockerfile 은 이 build-arg 를 안 쓰고 경고만 낸다.
+                        // 옛 태그를 다시 배포할 일이 없어지면 이 --build-arg 를 지운다.
+                        sh 'docker build --secret id=github_token,env=GH_TOKEN --build-arg GITHUB_ACTOR=$GH_USER --build-arg GITHUB_TOKEN=$GH_TOKEN --build-arg APP_UID=' + APP_UID + ' --build-arg APP_GID=' + APP_GID + ' -t ' + IMAGE_NAME + ':latest -t ' + IMAGE_NAME + ':' + env.APP_VERSION + ' .'
                     }
                 }
             }
