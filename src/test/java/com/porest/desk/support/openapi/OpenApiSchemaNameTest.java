@@ -48,7 +48,7 @@ class OpenApiSchemaNameTest {
     void schemaNamesAreUnique() throws Exception {
         JsonNode schemas = new ObjectMapper()
             .readTree(RestClient.create().get()
-                .uri("http://localhost:" + port + "/api-docs")
+                .uri("http://localhost:" + port + "/v3/api-docs")
                 .retrieve().body(String.class))
             .path("components").path("schemas");
 

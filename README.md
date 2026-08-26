@@ -131,7 +131,7 @@ SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
 ## API 문서
 
 - Swagger UI: `http://localhost:8002/swagger-ui/index.html`
-- OpenAPI: `http://localhost:8002/api-docs`
+- OpenAPI: `http://localhost:8002/v3/api-docs`
 - Actuator: `http://localhost:8002/actuator` (prometheus, health, info, metrics)
 
 모든 API는 `/api/v1` 프리픽스를 사용하며, 응답/에러 메시지는 `src/main/resources/message/messages_ko.properties`·`messages_en.properties`로 한국어/영어를 지원합니다.
