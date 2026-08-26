@@ -16,7 +16,13 @@ public interface BrokerTokenStore {
 
     Optional<String> get(SecuritiesBroker broker, Long userRowId);
 
-    /** ttlSeconds 이하로만 보관한다. 0 이하면 저장하지 않는다(이미 만료된 토큰). */
+    /**
+     * ttlSeconds 이하로만 보관한다. 0 이하면 저장하지 않는다(이미 만료된 토큰).
+     *
+     * <p>넘기는 값은 평문 토큰이다. <b>프로세스 밖으로 나가는 구현은 암호문으로 바꿔 넣는다</b>
+     * — {@link RedisBrokerTokenStore} 참고. {@link #get} 이 평문으로 되돌려 주므로 호출부는
+     * 저장 형식을 몰라도 된다.
+     */
     void put(SecuritiesBroker broker, Long userRowId, String accessToken, long ttlSeconds);
 
     void evict(SecuritiesBroker broker, Long userRowId);

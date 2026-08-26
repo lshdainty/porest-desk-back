@@ -125,7 +125,8 @@ app:
   # **끄지 마라** — 꺼진 순간 "기동 성공 = 스키마 일치" 가 다시 성립하지 않는다.
   schema-check:
     enabled: ${SCHEMA_CHECK_ENABLED:true}
-  # DB 보관 비밀값 공용 암호화 키 (토스 크리덴셜 + SSO refresh token). Base64 32바이트, env 로만 주입.
+  # 비밀값 공용 암호화 키 — 증권사 크리덴셜·SSO refresh token(DB) + 증권사 액세스 토큰 캐시(Redis).
+  # Base64 32바이트, env 로만 주입.
   # 미설정이면 로그인은 되지만 SSO 세션이 저장되지 않아 무음 재인증만 조용히 꺼진다.
   security:
     encryption-key: ${APP_ENCRYPTION_KEY:}
