@@ -74,7 +74,10 @@ public class NamuApiController {
     /**
      * 보유 종목. 국내와 해외는 나무 쪽 엔드포인트·필드명이 다르지만 응답은 한 모양이다.
      *
-     * @param currency  KRW 면 국내, 그 밖(USD·CNY·HKD·JPY)이면 해외. 기본 KRW
+     * @param currency  KRW 면 국내, USD 면 해외. 기본 KRW.
+     *                  <b>해외는 미국만 지원한다</b> — 나무 잔고 조회가 거래국가를 하나만 받는데
+     *                  우리는 미국으로 고정했다. JPY·HKD·CNY 를 넘기면 400 이다(미국 계좌에서
+     *                  엔화 종목을 찾는 셈이라, 그냥 태우면 업스트림이 조용히 0건을 준다)
      * @param accountNo 미지정이면 현재 환경에서 쓸 수 있는 첫 계좌를 자동으로 고른다.
      *                  지정하면 본인 계좌인지 + 현재 환경에서 쓸 수 있는 구분인지 검증한다
      *                  ({@code usable=false} 인 계좌를 넘기면 400) — 그냥 태우면 업스트림이
