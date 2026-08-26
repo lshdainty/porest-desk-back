@@ -70,6 +70,14 @@ export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # porest-core 를 Git
   JaCoCo 제외 목록이 이 이름들에 물려 있어 로직을 엉뚱한 패키지에 두면 커버리지 측정이 통째로 어긋난다.
 - **`APP_ENCRYPTION_KEY` 가 비면 에러 없이 조용히 꺼진다** — 로그인은 되는데 SSO 세션이 저장되지 않아 무음
   재인증만 죽는다. 인증 쪽을 고칠 때 "로그인 되니까 괜찮다" 로 판단하지 마라(이 함정으로 커밋이 두 번 났다).
+- **SQL 을 보고 싶으면 `LOG_LEVEL_HIBERNATE=debug` 다.** p6spy 는 기본으로 꺼져 있다
+  (`P6SPY_LOG_SQL_VALUES=false`) — 켜면 `?` 에 값을 끼워 넣은 완성 SQL 이 남고, 거기엔 증권사
+  API 키 암호문·SSO refresh token·이메일·계좌 식별자가 그대로 들어간다. `RequestResponseLoggingFilter`
+  의 마스킹은 **SQL 에 닿지 않는다**(마스커는 JSON `"키":값` 과 쿼리스트링 `키=값` 을 보는데 INSERT 는
+  값 옆에 컬럼명이 없다). 값까지 봐야 하는 디버깅만 **로컬에서** `P6SPY_LOG_SQL_VALUES=true` 로 켜라.
+  설정은 `spring.datasource.p6spy` 가 아니라 **`decorator.datasource.p6spy`** 아래에 둔다 — 앞의 것은
+  읽는 `@ConfigurationProperties` 가 없어 조용히 무시되고, 그래서 예전 `P6SPY_ENABLED` 는 무슨 값을
+  넣어도 효과가 없었다(`P6SpyLoggingConfigTest` 가 이 자리를 고정한다).
 
 ## 머지·태그가 촉발하는 것
 
