@@ -161,6 +161,9 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     SECURITIES_ACCOUNT_NOT_FOUND("SEC_009", "error.securities.account.not.found", HttpStatus.BAD_REQUEST),
     SECURITIES_ACCOUNT_ENVIRONMENT_MISMATCH("SEC_010", "error.securities.account.environment.mismatch", HttpStatus.BAD_REQUEST),
     SECURITIES_ACCOUNT_ENVIRONMENT_UNAVAILABLE("SEC_011", "error.securities.account.environment.unavailable", HttpStatus.CONFLICT),
+    // 해외 잔고는 거래국가가 미국 고정이라 통화도 USD 만 뜻이 통한다. 안 맞는 조합을 그냥 태우면
+    // 나무가 에러 대신 0건을 줘 "보유 종목 없음" 으로 둔갑한다 — 그래서 400 으로 먼저 막는다.
+    SECURITIES_CURRENCY_UNSUPPORTED("SEC_012", "error.securities.currency.unsupported", HttpStatus.BAD_REQUEST),
 
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),

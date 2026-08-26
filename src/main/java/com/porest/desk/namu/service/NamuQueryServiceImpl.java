@@ -56,6 +56,35 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     private static final String KRW = "KRW";
 
+    /**
+     * 해외 잔고의 거래국가 — <b>미국 고정</b>이다.
+     *
+     * <p><b>여기 빈 문자열을 넣으면 안 된다.</b> 예전 값이 {@code ""} 였다. "전체" 를 노린
+     * 것이었는데 나무 스펙에 그런 코드값이 없다 — {@code /gbstock/inquiry/v1/balance} 의
+     * {@code fc_sec_trd_nat_cd} 는 <b>필수</b>이고 개별 국가(200 미국 · 070 일본 · 120 홍콩 ·
+     * 160 상해 · 170 심천)만 받는다. 나무는 이걸 <b>에러로 거절하지 않고 0건을 돌려줬다.</b>
+     * 그래서 화면에는 "보유 중인 종목이 없어요" 가 떴고, 실제로는 미국 주식을 들고 있었다
+     * (dev 실측 2026-08-26: {@code currency=USD} → {@code items:[] totalEvalAmount:"0.000"}).
+     * 국내 잔고({@code /krstock/inquiry/v1/balance})에는 이 파라미터가 없어 멀쩡했다.
+     *
+     * <p><b>왜 미국만인가</b> — 사용자가 미국만 쓴다고 정했다(2026-08-26). 국가를 하나로
+     * 박으면 호출도 한 번으로 끝난다.
+     *
+     * <p><b>다른 국가를 붙이려면</b> 국가별로 <b>나눠 호출해 병합</b>해야 한다. 나무엔 여러
+     * 국가를 한 번에 주는 잔고 API 가 없고, 호출 수가 국가 수만큼 늘어 <b>429(한도 초과)</b> 를
+     * 건드린다({@code NamuApiClient} 는 429 를 재시도하지 않는다). 합칠 때 요약({@code Output_0})은
+     * 통화가 섞여 그대로 더할 수 없다는 것도 같이 풀어야 한다.
+     * 참고로 형제 API {@code /gbstock/inquiry/v1/periodPnl} 에는 {@code 000.전체} 가 있다 —
+     * 잔고에도 먹는지는 <b>확인되지 않았다.</b> 실계좌로 찍어 보고 0건이면 이 방식이 맞다.
+     */
+    private static final String NATION_US = "200";
+
+    /**
+     * 미국 거래국가에서 유효한 통화. {@link #NATION_US} 가 고정이므로 통화도 하나로 묶인다 —
+     * 둘이 어긋나면 나무는 또 조용히 0건을 준다.
+     */
+    private static final String USD = "USD";
+
     private static final ParameterizedTypeReference<NamuEnvelope<NamuMarketDto.KrPrice>> KR_TYPE =
         new ParameterizedTypeReference<>() {
         };
@@ -222,13 +251,22 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * 환율은 <b>종목별 행(Output_1)</b>에 실려 온다 — 계좌 요약이 아니다. 종목마다 통화가
      * 달라 계좌 단위로 환율 하나를 들 수 없는 구조라서다.
      *
-     * <p>그래서 제약이 하나 붙는다: <b>해당 통화 보유 종목이 하나도 없으면 환율을 못 구한다.</b>
-     * 그때 null 로 접어 외화 평가만 건너뛴다(부분합으로 금액을 왜곡하지 않는 기존 규칙).
-     * 조용히 넘어가지 않게 warn 을 남긴다 — 값이 계속 안 잡히면 이 경로를 다시 봐야 한다.
+     * <p>그래서 제약이 둘 붙는다. 하나, <b>USD 만 구할 수 있다</b> — 잔고 조회의 거래국가가
+     * 미국 고정이라({@link #NATION_US}) 다른 통화는 물어볼 곳이 없다. 둘, <b>USD 보유 종목이
+     * 하나도 없으면 못 구한다.</b> 어느 쪽이든 null 로 접어 외화 평가만 건너뛴다
+     * (부분합으로 금액을 왜곡하지 않는 기존 규칙).
+     *
+     * <p><b>여기서는 던지지 않는다</b> — 잔고 화면은 미지원 통화를 400 으로 거절하지만
+     * ({@link #requireUsCompatible}), 이 경로는 자산 평가가 부르는 자리라 예외가 나가면
+     * 환율 하나 때문에 평가 전체가 멈춘다.
      */
     @Override
     public BigDecimal getFxRate(Long userRowId, String currency) {
-        String want = currency == null || currency.isBlank() ? "USD" : currency;
+        String want = currency == null || currency.isBlank() ? USD : currency.trim().toUpperCase();
+        if (!USD.equals(want)) {
+            log.debug("나무 환율 조회 불가 - 미국(USD)만 지원한다: 요청={} (userRowId={})", want, userRowId);
+            return null;
+        }
         try {
             // 계좌 해석도 try 안이다 — 환경에 맞는 계좌가 없으면 예외가 나는데, 그게 자산 평가
             // 전체를 무너뜨리면 안 된다. 잔고 화면에서는 그대로 던져 원인을 보여주고,
@@ -376,23 +414,53 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     }
 
     /**
-     * 해외 잔고 요청.
+     * 해외 잔고 요청. 거래국가는 {@link #NATION_US} 로 고정이다.
      *
      * <p>{@code cur_cd} 는 문서상 {@code KRW}=전체(원화 환산) · {@code USD}/{@code CNY}/
-     * {@code HKD}/{@code JPY}=해당 통화다. 기본을 KRW 로 둬 <b>보유 전체</b>를 한 번에 받는다.
+     * {@code HKD}/{@code JPY}=해당 통화다. <b>미지정이면 USD</b> — 국가가 미국으로 고정이라
+     * 이 경로에서 뜻이 통하는 통화가 그것뿐이다.
      *
-     * <p>{@code fc_sec_trd_nat_cd}(거래국가)는 문서에 개별 코드(200 미국 · 070 일본 · 120 홍콩 ·
-     * 160 상해 · 170 심천)만 있고 <b>"전체" 표기가 없다.</b> 빈 값으로 보내 전체를 노리되,
-     * 실제 키로 확인이 필요한 자리다 — 안 먹으면 국가별로 나눠 부르면 된다.
+     * @throws InvalidValueException 미국에서 거래되지 않는 통화를 물었을 때
+     *         — {@link #requireUsCompatible} 참고
      */
     private static Map<String, String> gbBalanceInput(String account, String currency) {
+        String cur = currency == null || currency.isBlank() ? USD : currency.trim().toUpperCase();
+        requireUsCompatible(cur);
         return Map.of(
             "act_no", account,
-            "qut_iqr_dit_cd", "1",   // 정규장
-            "fc_sec_trd_nat_cd", "", // 전체 (문서 미표기 — 실키 확인 필요)
-            "cur_cd", currency == null || currency.isBlank() ? KRW : currency,
-            "xns_dit_cd", "1"        // 비용 포함 — 실제 손익에 가깝다
+            "qut_iqr_dit_cd", "1",          // 정규장
+            "fc_sec_trd_nat_cd", NATION_US, // 미국 — "" 는 0건을 부른다. 위 상수 주석 참고
+            "cur_cd", cur,
+            "xns_dit_cd", "1"               // 비용 포함 — 실제 손익에 가깝다
         );
+    }
+
+    /**
+     * 통화가 미국 거래국가와 맞는지 본다. <b>안 맞으면 400 으로 거절한다.</b>
+     *
+     * <p>거래국가를 {@code 200}(미국)으로 박은 순간 {@code cur_cd} 는 자유 파라미터가 아니게
+     * 됐다. {@code JPY} 를 물으면 "미국 계좌에서 엔화 종목을 찾아 달라" 는 모순된 요청이고,
+     * 나무는 그걸 <b>에러 없이 0건</b>으로 답한다 — 이 클래스가 방금 고친 버그와 정확히 같은
+     * 모양이다.
+     *
+     * <p><b>왜 통화를 USD 로 슬쩍 바꾸지 않는가.</b> 그러면 JPY 를 물은 화면에 달러 금액이
+     * {@code JPY} 라벨을 달고 나간다. 빈 화면보다 나쁘다 — 틀린 걸 눈치챌 방법이 없다.
+     * <b>왜 빈 결과 + warn 이 아닌가.</b> warn 은 로그에만 남고 화면에는 "보유 중인 종목이
+     * 없어요" 가 뜬다. 화면이 정상으로 보이니 아무도 신고하지 않는다 — 이번 버그가
+     * 실측하러 가기 전까지 안 잡힌 이유가 그것이다.
+     *
+     * <p>같은 판단을 {@link #KR_MARKETS} 에서 이미 했다 — 조용히 틀리느니 400 으로 시끄럽게
+     * 틀리는 게 낫다. 지금 화면이 보내는 값은 {@code KRW}(국내 탭)와 {@code USD}(해외 탭)
+     * 둘뿐이라 실제로 막히는 요청도 없다.
+     *
+     * <p>{@code KRW} 도 여기서는 거절이다. 원화 조회는 국내 엔드포인트로 가야 하고
+     * ({@link #getHoldings} 가 갈라 준다), 이 경로의 {@code KRW}=전체는 우리가 지원하지 않는
+     * 국가까지 포함하는 뜻이라 반쪽짜리 답이 된다.
+     */
+    private static void requireUsCompatible(String currency) {
+        if (!USD.equals(currency)) {
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_CURRENCY_UNSUPPORTED);
+        }
     }
 
     private static BigDecimal decimal(String raw) {
