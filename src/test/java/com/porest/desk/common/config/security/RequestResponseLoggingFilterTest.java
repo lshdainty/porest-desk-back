@@ -8,9 +8,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 로그 마스킹 검증 — 증권사 API 키/비밀번호/토큰이 평문으로 남지 않아야 한다.
  *
- * <p>매칭이 키 이름 완전 일치라, 요청 DTO 의 필드명을 바꾸면 마스킹이 조용히 풀린다.
- * 실제로 clientId/clientSecret → apiKey/apiSecret 리네임 때 그 사고가 났다. 그래서
- * <b>지금 쓰는 이름</b>과 <b>증권사별 원표기</b>를 둘 다 고정한다.
+ * <p>규칙 자체는 core {@code SensitiveDataMasker} 에 있고 거기서 따로 검증된다.
+ * 여기서 고정하는 것은 <b>desk 가 실제로 주고받는 본문 모양</b>이다 — 증권사별 원표기,
+ * 비밀번호 변경 필드, 그리고 desk 가 추가로 켠 {@code clientId}(토스 크리덴셜).
+ * core 를 올리다가 이 중 하나가 빠지면 여기서 걸린다.
+ *
+ * <p>키 이름이 바뀌어도 마스킹이 조용히 풀리지 않게 하는 것은 core 의 이름 정규화
+ * ({@code apiKey}≡{@code api_key}≡{@code API-KEY})와 이름 무관 JWT 규칙이다.
+ * 실제로 clientId/clientSecret → apiKey/apiSecret 리네임 때 그 사고가 났었다.
+ *
+ * <p><b>이 파일만으로는 부족하다.</b> 요청 본문이 컨트롤러에 도달하는지, 응답 본문이
+ * 클라이언트로 나가는지는 문자열 함수로 확인할 수 없다
+ * — {@link RequestResponseLoggingFilterRoundTripTest} 가 실제 요청을 태워 본다.
  */
 class RequestResponseLoggingFilterTest {
 

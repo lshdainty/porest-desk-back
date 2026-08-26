@@ -40,7 +40,7 @@ repositories {
 
 dependencies {
     // ==================== Private Codes (GitHub Packages) ====================
-    implementation 'com.porest:porest-core:2.3.1'
+    implementation 'com.porest:porest-core:2.4.0'
 
     // ==================== Spring Boot Starters ====================
     implementation 'org.springframework.boot:spring-boot-starter-web'

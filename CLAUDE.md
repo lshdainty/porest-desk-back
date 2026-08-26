@@ -9,7 +9,7 @@
 POREST Desk 의 Spring Boot 백엔드. 할 일·캘린더·가계부·자산·카드·구독·더치페이·토스증권 연동을
 `/api/v1` REST API 로 제공하고, SSO(porest-sso-back) 토큰을 desk 토큰으로 교환해 인증한다.
 Java 25 / **Spring Boot 4.0.4** / JPA(Hibernate 7) + QueryDSL 7.1 / MariaDB(운영)·H2(테스트) / Redis.
-공통 라이브러리 `com.porest:porest-core:2.3.1` 을 **GitHub Packages(private)** 에서 받는다.
+공통 라이브러리 `com.porest:porest-core:2.4.0` 을 **GitHub Packages(private)** 에서 받는다.
 
 ## 검증
 
