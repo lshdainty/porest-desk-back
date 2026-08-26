@@ -2,6 +2,7 @@ package com.porest.desk.toss.client;
 
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.logging.UpstreamErrorLog;
 import com.porest.desk.toss.client.dto.TossEnvelope;
 import com.porest.desk.toss.client.dto.TossErrorBody;
 import com.porest.desk.securities.client.BrokerTokenManager;
@@ -142,8 +143,9 @@ public class TossApiClient {
         } catch (HttpStatusCodeException e) {
             throw toExternalException(e, pathTemplate);
         } catch (RestClientException e) {
-            log.error("토스증권 API 호출 실패: {}", pathTemplate, e);
-            throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
+            RestClientException safe = UpstreamErrorLog.redact(e);
+            log.error("토스증권 API 호출 실패: path={}, 원인={}", pathTemplate, safe.getMessage());
+            throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
         }
     }
 
@@ -151,6 +153,11 @@ public class TossApiClient {
      * 에러 응답 본문({@code { "error": {...} }})에서 상세를 추출해 <b>로그에만</b> 남기고,
      * 클라이언트에는 i18n 메시지(error.toss.api.error)만 내려가는 예외로 변환한다.
      * 업스트림 토스 에러 본문(code/message)을 그대로 응답에 릴레이하지 않는다.
+     *
+     * <p>로그로 가는 것도 {@link UpstreamErrorLog} 를 지난다. 예전에는 예외 객체를 로그에도
+     * cause 에도 그대로 넘겼는데, Spring 은 응답 본문을 예외 메시지에 통째로 싣고 core 의 예외
+     * 핸들러는 {@code ExternalServiceException} 을 객체째 찍는다 — 파싱한 {@code detail} 만
+     * 가려 봐야 {@code Caused by:} 줄에 본문 전문이 다시 나온다.
      */
     private ExternalServiceException toExternalException(HttpStatusCodeException e, String path) {
         String detail = null;
@@ -163,9 +170,10 @@ public class TossApiClient {
         } catch (Exception ignore) {
             // 에러 본문 파싱 실패는 무시하고 상태코드 기반으로만 로깅한다.
         }
-        log.error("토스증권 API 오류: path={}, status={}, {}", path, e.getStatusCode().value(),
-                detail != null ? detail : "(본문 파싱 불가)", e);
-        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
+        RestClientException safe = UpstreamErrorLog.redact(e);
+        log.error("토스증권 API 오류: path={}, status={}, {}, 원인={}", path, e.getStatusCode().value(),
+                detail != null ? UpstreamErrorLog.safe(detail) : "(본문 파싱 불가)", safe.getMessage());
+        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
     }
 
     /**

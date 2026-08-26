@@ -2,6 +2,7 @@ package com.porest.desk.namu.client;
 
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.logging.UpstreamErrorLog;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
 import com.porest.desk.namu.client.dto.NamuListEnvelope;
 import com.porest.desk.namu.client.dto.NamuResponse;
@@ -39,6 +40,8 @@ import java.util.Map;
  * </ol>
  *
  * <p>업스트림 에러 본문({@code rsp_msg})은 <b>로그에만</b> 남긴다. 사용자에게는 i18n 메시지만 나간다.
+ * 그 로그도 {@link UpstreamErrorLog} 를 지나야 한다 — 나무 응답에는 {@code cust_no}·{@code acct_no} 가
+ * 섞이고, 이 자리는 {@code RequestResponseLoggingFilter} 의 마스킹을 안 거친다.
  */
 @Slf4j
 @Component
@@ -111,7 +114,9 @@ public class NamuApiClient {
             }
             // 200 이어도 rsp_cd 를 봐야 한다. 이 검사가 빠지면 실패가 '결과 없음' 으로 둔갑한다.
             if (!body.isSuccess()) {
-                log.error("나무증권 API 오류: path={}, rsp_cd={}, rsp_msg={}", path, body.rspCd(), body.rspMsg());
+                // rsp_msg 는 나무가 만든 자유 문장이라 계좌번호가 섞여 온다. rsp_cd 는 코드라 그대로 둔다.
+                log.error("나무증권 API 오류: path={}, rsp_cd={}, rsp_msg={}",
+                    path, body.rspCd(), UpstreamErrorLog.safe(body.rspMsg()));
                 throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR);
             }
             return body;
@@ -129,13 +134,25 @@ public class NamuApiClient {
             throw toExternalException(e, path);
         } catch (RestClientException e) {
             // 타임아웃·연결 실패도 토큰 문제가 아니다 — 여기서 무효화하면 멀쩡한 토큰을 버린다.
-            log.error("나무증권 API 호출 실패: {}", path, e);
-            throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
+            RestClientException safe = UpstreamErrorLog.redact(e);
+            log.error("나무증권 API 호출 실패: path={}, 원인={}", path, safe.getMessage());
+            throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
         }
     }
 
+    /**
+     * 상태코드로 실패한 호출을 우리 예외로 바꾼다.
+     *
+     * <p><b>예외 객체를 로그에도 cause 에도 그대로 넘기지 않는다.</b> Spring 은 응답 본문을
+     * 예외 메시지에 통째로 싣고({@code 400 Bad Request: "{...}"}), core 의 예외 핸들러는
+     * {@code ExternalServiceException} 을 객체째 찍는다 — 둘이 겹치면 나무가 돌려준
+     * {@code cust_no}·{@code acct_no} 가 {@code Caused by:} 줄에 그대로 남는다.
+     * 진단에 필요한 것(원본 예외 이름 · 상태코드 · path)은 가린 뒤에도 남는다.
+     */
     private ExternalServiceException toExternalException(HttpStatusCodeException e, String path) {
-        log.error("나무증권 API 오류: path={}, status={}", path, e.getStatusCode().value(), e);
-        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, e);
+        RestClientException safe = UpstreamErrorLog.redact(e);
+        log.error("나무증권 API 오류: path={}, status={}, 원인={}",
+            path, e.getStatusCode().value(), safe.getMessage());
+        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
     }
 }
