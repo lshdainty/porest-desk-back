@@ -1,5 +1,9 @@
 package com.porest.desk.namu.client;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
 import com.porest.desk.namu.client.dto.NamuListEnvelope;
@@ -13,12 +17,14 @@ import com.porest.desk.securities.config.NamuProperties;
 import com.porest.desk.securities.type.SecuritiesBroker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -27,17 +33,21 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
@@ -368,5 +378,85 @@ class NamuApiClientTest {
 
         assertThatThrownBy(() -> unconfigured.postObject(1L, "/x", Map.of(), KR_PRICE))
             .isInstanceOf(ExternalServiceException.class);
+    }
+
+    @Nested
+    @DisplayName("오류 로그 — 나무 응답 본문이 그대로 남지 않는다")
+    class ErrorRedaction {
+
+        /** 나무가 실패 응답에 실어 보내는 식별번호. 이게 로그·예외 어디에도 있으면 안 된다. */
+        private static final String ACCT_NO = "11111111103";
+        private static final String CUST_NO = "9876543210";
+
+        @Test
+        @DisplayName("4xx 응답 본문은 로그에도 예외 사슬에도 남지 않는다")
+        void httpErrorBodyNeverReachesLogs() {
+            ListAppender<ILoggingEvent> appender = attachAppender();
+            try {
+                server.expect(requestTo(BASE + "/n2/acctinfo"))
+                    .andRespond(withBadRequest()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"rsp_cd\":\"40010\",\"cust_no\":\"" + CUST_NO
+                            + "\",\"acct_no\":\"" + ACCT_NO + "\"}"));
+
+                Throwable thrown = catchThrowable(
+                    () -> sut.postList(1L, "/n2/acctinfo", Map.of(), ACCOUNTS));
+
+                assertThat(thrown).isInstanceOf(ExternalServiceException.class);
+                // core 의 GlobalExceptionHandler 는 이 예외를 객체째 찍는다 — cause 사슬까지 봐야 한다.
+                assertThat(stackTraceOf(thrown)).doesNotContain(ACCT_NO).doesNotContain(CUST_NO);
+                assertThat(messagesOf(appender))
+                    .isNotEmpty()
+                    .noneMatch(m -> m.contains(ACCT_NO))
+                    .noneMatch(m -> m.contains(CUST_NO));
+                // 진단에 필요한 것은 남는다
+                assertThat(messagesOf(appender)).anyMatch(m -> m.contains("/n2/acctinfo") && m.contains("400"));
+            } finally {
+                detachAppender(appender);
+            }
+        }
+
+        @Test
+        @DisplayName("업무 오류 메시지(rsp_msg)에 섞여 온 계좌번호도 뒤 4자리만 남는다")
+        void businessErrorMessageIsMasked() {
+            ListAppender<ILoggingEvent> appender = attachAppender();
+            try {
+                expect("/n2/acctinfo", "{\"rsp_cd\":\"40010\",\"rsp_msg\":\"계좌번호 "
+                    + ACCT_NO + " 를 확인하세요\",\"Output_0\":[]}");
+
+                assertThatThrownBy(() -> sut.postList(1L, "/n2/acctinfo", Map.of(), ACCOUNTS))
+                    .isInstanceOf(ExternalServiceException.class);
+
+                assertThat(messagesOf(appender))
+                    .isNotEmpty()
+                    .noneMatch(m -> m.contains(ACCT_NO))
+                    .anyMatch(m -> m.contains("****1103") && m.contains("40010"));
+            } finally {
+                detachAppender(appender);
+            }
+        }
+
+        private ListAppender<ILoggingEvent> attachAppender() {
+            Logger logger = (Logger) LoggerFactory.getLogger(NamuApiClient.class);
+            logger.setLevel(Level.DEBUG);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            return appender;
+        }
+
+        private void detachAppender(ListAppender<ILoggingEvent> appender) {
+            ((Logger) LoggerFactory.getLogger(NamuApiClient.class)).detachAppender(appender);
+        }
+
+        private List<String> messagesOf(ListAppender<ILoggingEvent> appender) {
+            return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        }
+
+        private String stackTraceOf(Throwable t) {
+            StringWriter out = new StringWriter();
+            t.printStackTrace(new PrintWriter(out));
+            return out.toString();
+        }
     }
 }
