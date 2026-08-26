@@ -21,6 +21,9 @@ spring:
       host: localhost
       port: 6379
       password:
+      # application.yml 의 ${REDIS_DATABASE} 는 기본값이 없다(값이 빠지면 기동에서 죽는 게 맞다).
+      # 테스트는 환경변수를 받지 않으므로 여기서 못 박는다 — 접속하지 않으니 번호는 아무 뜻이 없다.
+      database: 0
 
   # JPA — 테스트마다 스키마 create-drop, H2 dialect.
   jpa:

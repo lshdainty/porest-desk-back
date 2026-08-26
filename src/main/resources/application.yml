@@ -50,7 +50,11 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
-      database: ${REDIS_DATABASE:3}
+      # 기본값을 두지 않는다. 값이 빠지면 기동에서 죽는 게 맞다 — 조용히 다른 DB 로 뜨면
+      # 증권사 토큰 캐시가 통째로 안 보이고, 사용자마다 토큰을 새로 발급받는다.
+      # 나무는 발급마다 알림톡을 보내므로 사용자에게 문자가 쏟아지는데 기동은 정상이라 아무도 모른다.
+      # sso·hr 도 같은 이유로 기본값이 없다(sso=0, hr=1, desk=2).
+      database: ${REDIS_DATABASE}
 
   # Graceful Shutdown
   lifecycle:
