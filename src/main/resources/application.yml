@@ -26,12 +26,6 @@ spring:
       idle-timeout: ${HIKARI_IDLE_TIMEOUT:600000}
       max-lifetime: ${HIKARI_MAX_LIFETIME:1800000}
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION:60000}
-    p6spy:
-      enable-logging: ${P6SPY_ENABLED:true}
-      multiline: true
-      logging: slf4j
-      tracing:
-        include-parameter-values: true
 
   # JPA 설정
   jpa:
@@ -80,6 +74,32 @@ logging:
     org.hibernate.type.descriptor.sql.BasicBinder: ${LOG_LEVEL_HIBERNATE_BINDER:info}
     p6spy: ${LOG_LEVEL_P6SPY:info}
     root: ${LOG_LEVEL_ROOT:info}
+
+# p6spy SQL 로깅 — 기본은 꺼짐이다.
+#
+# p6spy 는 `?` 자리에 바인딩 값을 끼워 넣은 **완성 SQL** 을 한 줄 더 남긴다. 켜 두면
+# user_securities_credential 의 api_key_enc·api_secret_enc, 암호화된 SSO refresh token,
+# 이메일, 계좌 식별자가 INSERT/UPDATE 문에 통째로 찍힌다.
+#
+# **RequestResponseLoggingFilter 의 마스킹은 여기에 닿지 않는다.** core 마스커가 보는 건
+# JSON 의 `"키":값` 과 쿼리스트링의 `키=값` 인데, SQL 의 INSERT 는 값이 자리로만 온다
+# (`insert into t (a,b) values ('...','...')`) — 값 옆에 컬럼명이 없어 무엇을 가릴지 알 수 없다.
+# 그래서 이건 마스킹으로 못 막고 끄는 것으로 막는다.
+#
+# 쿼리 **모양**만 보면 될 때는 이걸 켜지 말고 LOG_LEVEL_HIBERNATE=debug 를 써라 — `?` 가
+# 그대로 남는다. 값까지 봐야 하는 디버깅은 로컬에서만 P6SPY_LOG_SQL_VALUES=true 로 켠다.
+#
+# 이름이 P6SPY_ENABLED 에서 바뀐 이유 — 예전 설정은 `spring.datasource.p6spy` 아래에 있었고
+# 그 prefix 를 읽는 @ConfigurationProperties 가 없다(라이브러리는 `decorator.datasource` 를
+# 읽는다). 그래서 P6SPY_ENABLED 는 어떤 값이어도 효과가 없었고 p6spy 는 라이브러리 기본값
+# true 로 돌고 있었다. 자리만 고치고 이름을 그대로 뒀다면, 서버 .env 에 남아 있는
+# P6SPY_ENABLED=true 가 이 커밋부터 **진짜로** 켜진다 — 그래서 이름을 갈았다.
+decorator:
+  datasource:
+    p6spy:
+      enable-logging: ${P6SPY_LOG_SQL_VALUES:false}
+      multiline: true
+      logging: slf4j
 
 # JWT 설정
 jwt:
