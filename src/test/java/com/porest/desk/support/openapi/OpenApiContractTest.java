@@ -14,7 +14,7 @@ import org.springframework.web.client.RestClient;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 공개 스펙(<code>/api-docs</code>)이 <b>실제로 나가는 것</b>과 같은 말을 하는지.
+ * 공개 스펙(<code>/v3/api-docs</code>)이 <b>실제로 나가는 것</b>과 같은 말을 하는지.
  *
  * <p>이 레포엔 코드젠도 공유 타입도 없어서 front·app 은 이 문서를 읽고 손으로 짠다. 문서가
  * 틀리면 컴파일도 테스트도 안 깨지고 <b>클라이언트만 조용히 틀린다</b> — 그래서 문서 쪽을
@@ -31,7 +31,7 @@ class OpenApiContractTest {
     @BeforeEach
     void fetch() throws Exception {
         doc = new ObjectMapper().readTree(RestClient.create().get()
-            .uri("http://localhost:" + port + "/api-docs")
+            .uri("http://localhost:" + port + "/v3/api-docs")
             .retrieve().body(String.class));
     }
 

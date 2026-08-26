@@ -209,8 +209,12 @@ desk:
 
 # Swagger 설정
 springdoc:
+  # 스펙 경로는 /api 네임스페이스 밖에 둔다(springdoc 기본값이자 sso·hr 이 쓰는 경로).
+  # 리버스 프록시는 백엔드를 접두사로 고른다 — nginx 의 `location ~ ^/(api|...)` 는
+  # 경계가 없어 /api-docs 도 함께 잡아 백엔드로 넘긴다. 그래서 /api-docs 에 두면
+  # 전체 API 스펙(엔드포인트·파라미터·DTO 필드명)이 미인증으로 밖에 나간다.
   api-docs:
-    path: /api-docs
+    path: /v3/api-docs
     enabled: ${SWAGGER_ENABLED:true}
   swagger-ui:
     path: /swagger-ui/index.html
