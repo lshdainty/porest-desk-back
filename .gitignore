@@ -10,7 +10,13 @@ gradle-app.setting
 /src/main/generated/
 
 ### Security & Local Config ###
-.env.*
+# 접두사(.env*)와 접미사(*.env) 를 모두 막는다.
+# 배포가 실제로 쓰는 파일명은 dev.env · prod.env 다(Jenkinsfile 의 --env-file).
+# `.env.*` 는 이걸 못 잡을 뿐 아니라 확장자 없는 `.env` 도 못 잡는다 — 둘 다
+# 레포에 두면 경고 없이 커밋된다. 그 안엔 DB_PASSWORD · JWT_SECRET ·
+# APP_ENCRYPTION_KEY · SSO_CLIENT_SECRET · REDIS_PASSWORD 가 들어간다.
+.env*
+*.env
 !.env.example
 **/application-local.yml
 **/application-secret.properties
