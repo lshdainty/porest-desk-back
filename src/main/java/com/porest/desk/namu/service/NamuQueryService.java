@@ -1,6 +1,8 @@
 package com.porest.desk.namu.service;
 
 import com.porest.desk.namu.dto.NamuAccountDto;
+import com.porest.desk.securities.service.dto.CandlePage;
+import com.porest.desk.securities.service.dto.CandleQuery;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
 
@@ -33,6 +35,24 @@ public interface NamuQueryService {
 
     /** 국내·해외를 섞어 다건 조회. 못 구한 종목은 결과에서 빠진다. */
     List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments);
+
+    // === 캔들(기간별시세) ===
+
+    /**
+     * 캔들 한 페이지. 시간 오름차순.
+     *
+     * <p>국내({@code /krstock/quote/v1/period})와 해외({@code /gbstock/quote/v1/period})는
+     * 엔드포인트도, 파라미터 이름도, <b>같은 주기를 가리키는 숫자도</b> 다르다. 어느 쪽으로
+     * 갈지는 {@code stock_master} 의 국가코드가 정한다 — 시세({@link #getPrices})와 같은 규칙이다.
+     *
+     * <p><b>종목당 1콜이다.</b> 나무엔 다건 캔들 API 가 없고 429 한도가 있어, 구현이 짧은
+     * 메모리 캐시를 둔다(기간 탭을 빠르게 눌러도 상류로는 한 번만 나간다).
+     *
+     * @throws com.porest.core.exception.InvalidValueException 종목 마스터에 없는 심볼일 때
+     *         ({@code SECURITIES_SYMBOL_INVALID}). 시세는 조용히 건너뛰지만 여기는 <b>한 종목을
+     *         보러 온 자리</b>라 빈 차트로 얼버무리지 않는다
+     */
+    CandlePage getCandles(Long userRowId, CandleQuery query);
 
     // === 계좌·잔고 ===
 

@@ -165,6 +165,16 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // 나무가 에러 대신 0건을 줘 "보유 종목 없음" 으로 둔갑한다 — 그래서 400 으로 먼저 막는다.
     SECURITIES_CURRENCY_UNSUPPORTED("SEC_012", "error.securities.currency.unsupported", HttpStatus.BAD_REQUEST),
 
+    /**
+     * 연결한 증권사 중 캔들(기간별시세)을 주는 곳이 없다.
+     * <b>{@code SECURITIES_CREDENTIAL_REQUIRED}(연결이 없다)와 뜻이 다르다</b> — 이쪽은 이미
+     * 연결한 사용자라, "연결하세요" 를 띄우면 고칠 방법 없는 안내가 된다.
+     */
+    SECURITIES_CANDLE_UNSUPPORTED("SEC_013", "error.securities.candle.unsupported", HttpStatus.CONFLICT),
+
+    /** 모르는 캔들 주기. 지금은 {@code 1m}·{@code 1d} 만 있다. */
+    SECURITIES_INTERVAL_UNSUPPORTED("SEC_014", "error.securities.interval.unsupported", HttpStatus.BAD_REQUEST),
+
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),
     SUBSCRIPTION_NOT_FOUND("SUBS_002", "error.notfound.subscription", HttpStatus.NOT_FOUND),

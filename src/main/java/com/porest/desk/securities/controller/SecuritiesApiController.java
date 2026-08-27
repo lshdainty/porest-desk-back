@@ -1,12 +1,20 @@
 package com.porest.desk.securities.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.core.controller.dto.CursorResponse;
+import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import com.porest.desk.securities.service.SecuritiesCandleProviders;
 import com.porest.desk.securities.service.SecuritiesPriceProvider;
 import com.porest.desk.securities.service.SecuritiesPriceProviders;
+import com.porest.desk.securities.service.dto.CandlePage;
+import com.porest.desk.securities.service.dto.CandleQuery;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import com.porest.desk.securities.service.dto.SecuritiesCandle;
+import com.porest.desk.securities.type.CandleInterval;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +50,15 @@ public class SecuritiesApiController {
     /** 한 번에 물을 수 있는 종목 수. 나무는 종목마다 1콜이라 상한이 없으면 유량 제한에 걸린다. */
     private static final int MAX_SYMBOLS = 50;
 
+    /**
+     * 캔들 한 페이지의 봉 수 상한. <b>토스 상한(200)과 같은 값으로 맞춘다</b> —
+     * 여기만 키우면 토스 경로에서 조용히 잘려 페이지 크기가 증권사마다 달라지고,
+     * 화면의 커서 루프가 "더 있는데 안 온다" 로 헛돈다.
+     */
+    private static final int MAX_CANDLE_SIZE = 200;
+
     private final SecuritiesPriceProviders priceProviders;
+    private final SecuritiesCandleProviders candleProviders;
 
     /**
      * 종목 다건 현재가. 못 구한 종목은 결과에서 빠진다 — 호출부가 빠진 것을 보고 판단한다.
@@ -87,6 +103,48 @@ public class SecuritiesApiController {
         BigDecimal rate = priceProviders.forUser(loginUser.getRowId())
             .getFxRate(loginUser.getRowId(), base, quote);
         return ApiResponse.success(new ExchangeRateResponse(base, quote, rate));
+    }
+
+    /**
+     * 종목 캔들 한 페이지. <b>증권사는 서버가 고른다.</b>
+     *
+     * <p><b>왜 필요한가</b> — 캔들 경로가 {@code /api/v1/toss/candles} 하나뿐이라
+     * <b>나무만 연결한 사용자는 차트를 아예 못 봤다.</b> 토스 키가 없으면 그 뒤의
+     * {@code TossApiClient} 가 {@code SECURITIES_CREDENTIAL_REQUIRED} 를 던지기 때문이다.
+     * 나무에도 기간별시세가 있었고 연동을 안 했을 뿐이다.
+     *
+     * <p>{@code /api/v1/toss/candles} 는 <b>그대로 둔다</b> — 옛 앱이 아직 부른다.
+     * 응답 모양도 그쪽과 같게 맞췄다(같은 {@code CursorResponse}, 같은 필드명).
+     *
+     * <p>고르는 규칙은 시세와 다르다 — 기본 소스가 캔들을 못 주면 연결된 다른 증권사로
+     * 넘어간다. 이유는 {@link SecuritiesCandleProviders} 주석 참고.
+     *
+     * @param interval {@code 1m}(분봉) · {@code 1d}(일봉)
+     * @param size     이 페이지의 봉 수. 미지정이면 {@value #MAX_CANDLE_SIZE}, 초과하면 잘린다
+     * @param cursor   직전 응답의 {@code meta.nextCursor}. 첫 페이지면 생략.
+     *                 <b>값의 뜻은 증권사가 정한다</b> — 클라이언트는 받은 것을 그대로 돌려주면 된다
+     * @param adjusted 수정주가 여부. 토스만 받는다(나무 기간별시세엔 대응 파라미터가 없다)
+     */
+    @GetMapping("/candles")
+    public ApiResponse<CursorResponse<SecuritiesCandle>> getCandles(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam String symbol,
+            @RequestParam String interval,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Boolean adjusted) {
+        String requested = symbol == null ? "" : symbol.trim();
+        if (requested.isEmpty()) {
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_SYMBOL_INVALID);
+        }
+        int pageSize = (size == null || size <= 0) ? MAX_CANDLE_SIZE : Math.min(size, MAX_CANDLE_SIZE);
+        CandleQuery query = new CandleQuery(requested, CandleInterval.from(interval), pageSize,
+            cursor == null || cursor.isBlank() ? null : cursor.trim(), adjusted);
+
+        CandlePage page = candleProviders.forUser(loginUser.getRowId())
+            .getCandles(loginUser.getRowId(), query);
+        return ApiResponse.success(
+            CursorResponse.of(page.candles(), pageSize, page.hasNext(), page.nextCursor()));
     }
 
     /** @param rate 못 구하면 null */
