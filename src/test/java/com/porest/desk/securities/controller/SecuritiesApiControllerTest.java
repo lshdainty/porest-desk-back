@@ -1,13 +1,22 @@
 package com.porest.desk.securities.controller;
 
+import com.porest.core.controller.dto.CursorResponse;
+import com.porest.core.exception.ExternalServiceException;
 import com.porest.core.util.MessageResolver;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.common.config.web.WebConfig;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
 import com.porest.desk.security.resolver.LoginUserArgumentResolver;
+import com.porest.desk.securities.service.SecuritiesCandleProvider;
+import com.porest.desk.securities.service.SecuritiesCandleProviders;
 import com.porest.desk.securities.service.SecuritiesPriceProvider;
 import com.porest.desk.securities.service.SecuritiesPriceProviders;
+import com.porest.desk.securities.service.dto.CandlePage;
+import com.porest.desk.securities.service.dto.CandleQuery;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import com.porest.desk.securities.service.dto.SecuritiesCandle;
+import com.porest.desk.securities.type.CandleInterval;
 import com.porest.desk.support.security.WithLoginUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,12 +63,15 @@ class SecuritiesApiControllerTest {
     @Autowired private MockMvc mockMvc;
     @MockitoBean private SecuritiesPriceProviders priceProviders;
     @MockitoBean private SecuritiesPriceProvider provider;
+    @MockitoBean private SecuritiesCandleProviders candleProviders;
+    @MockitoBean private SecuritiesCandleProvider candleProvider;
     // porest-core GlobalExceptionHandler(@ControllerAdvice) 의존 — 슬라이스 로드용 mock.
     @MockitoBean private MessageResolver messageResolver;
 
     @BeforeEach
     void setUp() {
         given(priceProviders.forUser(1L)).willReturn(provider);
+        given(candleProviders.forUser(1L)).willReturn(candleProvider);
     }
 
     @Test
@@ -142,5 +154,108 @@ class SecuritiesApiControllerTest {
         mockMvc.perform(get("/api/v1/securities/exchange-rate"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rate").doesNotExist());
+    }
+
+    // === 캔들 ===
+    //
+    // 이게 없던 동안 캔들 경로가 /api/v1/toss/candles 하나뿐이라 **나무만 연결한 사용자는
+    // 차트를 아예 못 봤다.** 여기서 지키는 것은 두 가지다.
+    //  ① 응답 모양이 /api/v1/toss/candles 와 같다 — 프론트가 URL 만 바꾸면 되게
+    //  ② 상한·주기·커서를 서버가 정규화한다 — 증권사마다 달라지면 화면 커서 루프가 헛돈다
+
+    private static CandlePage onePage(String nextCursor) {
+        return new CandlePage(List.of(new SecuritiesCandle(
+                "2026-08-26T00:00:00+09:00", "69000", "70500", "68800", "70000", "12345678", "KRW")),
+                nextCursor);
+    }
+
+    @Test
+    @DisplayName("GET /candles — 응답이 CursorResponse 다. 토스 경로와 같은 모양이라 프론트는 URL 만 바꾼다")
+    void getCandles() throws Exception {
+        given(candleProvider.getCandles(anyLong(), any())).willReturn(onePage("20260824"));
+
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "1d"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].timestamp").value("2026-08-26T00:00:00+09:00"))
+                .andExpect(jsonPath("$.data.content[0].openPrice").value("69000"))
+                .andExpect(jsonPath("$.data.content[0].closePrice").value("70000"))
+                .andExpect(jsonPath("$.data.content[0].volume").value("12345678"))
+                .andExpect(jsonPath("$.data.meta.hasNext").value(true))
+                .andExpect(jsonPath("$.data.meta.nextCursor").value("20260824"));
+    }
+
+    @Test
+    @DisplayName("GET /candles — 커서가 없으면 여기가 끝이다")
+    void getCandlesLastPage() throws Exception {
+        given(candleProvider.getCandles(anyLong(), any())).willReturn(onePage(null));
+
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "1d"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.meta.hasNext").value(false))
+                .andExpect(jsonPath("$.data.meta.nextCursor").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /candles — size 미지정은 200, 초과는 200 으로 자른다(토스 상한과 같은 값)")
+    void getCandlesCapsSize() throws Exception {
+        given(candleProvider.getCandles(anyLong(), any())).willReturn(onePage(null));
+
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "1d").param("size", "1000"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "1d"))
+                .andExpect(status().isOk());
+
+        var captor = forClass(CandleQuery.class);
+        verify(candleProvider, org.mockito.Mockito.times(2)).getCandles(anyLong(), captor.capture());
+        assertThat(captor.getAllValues()).extracting(CandleQuery::size).containsExactly(200, 200);
+    }
+
+    @Test
+    @DisplayName("GET /candles — 주기·커서·수정주가를 그대로 넘긴다. 커서 뜻은 증권사가 정한다")
+    void getCandlesPassesQuery() throws Exception {
+        given(candleProvider.getCandles(anyLong(), any())).willReturn(onePage(null));
+
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", " 005930 ").param("interval", "1m")
+                        .param("size", "50").param("cursor", "20260824").param("adjusted", "true"))
+                .andExpect(status().isOk());
+
+        var captor = forClass(CandleQuery.class);
+        verify(candleProvider).getCandles(anyLong(), captor.capture());
+        assertThat(captor.getValue()).isEqualTo(
+                new CandleQuery("005930", CandleInterval.MINUTE_1, 50, "20260824", true));
+    }
+
+    @Test
+    @DisplayName("GET /candles — 모르는 주기는 400. 조용히 일봉으로 떨어뜨리면 차트가 멈춘 것처럼 보인다")
+    void getCandlesRejectsUnknownInterval() throws Exception {
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "5m"))
+                .andExpect(status().isBadRequest());
+
+        verify(candleProvider, org.mockito.Mockito.never()).getCandles(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("GET /candles — 종목이 비면 400")
+    void getCandlesRejectsBlankSymbol() throws Exception {
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "  ").param("interval", "1d"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("GET /candles — 연결이 없으면 403. 캔들 미지원(409)과 뜻이 다르다")
+    void getCandlesRequiresConnection() throws Exception {
+        given(candleProviders.forUser(1L))
+                .willThrow(new ExternalServiceException(DeskErrorCode.SECURITIES_CREDENTIAL_REQUIRED));
+
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "1d"))
+                .andExpect(status().isForbidden());
     }
 }

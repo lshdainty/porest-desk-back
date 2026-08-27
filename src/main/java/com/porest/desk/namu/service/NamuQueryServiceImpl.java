@@ -3,26 +3,42 @@ package com.porest.desk.namu.service;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.NamuApiClient;
+import com.porest.desk.namu.client.dto.NamuCandleEnvelope;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
 import com.porest.desk.namu.client.dto.NamuListEnvelope;
 import com.porest.desk.namu.client.dto.NamuPagedEnvelope;
 import com.porest.desk.namu.dto.NamuAccountDto;
+import com.porest.desk.namu.dto.NamuCandleDto;
 import com.porest.desk.namu.dto.NamuMarketDto;
 import com.porest.desk.securities.config.NamuProperties;
+import com.porest.desk.securities.type.CandleInterval;
 import com.porest.desk.securities.type.NamuEnvironment;
+import com.porest.desk.securities.service.dto.CandlePage;
+import com.porest.desk.securities.service.dto.CandleQuery;
 import com.porest.desk.securities.service.dto.InstrumentRef;
 import com.porest.desk.securities.service.dto.PriceQuote;
+import com.porest.desk.securities.service.dto.SecuritiesCandle;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.service.StockMasterResolver;
+import com.porest.desk.stock.type.StockMarket;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.DateTimeException;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -36,6 +52,89 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     private static final String ACCOUNT_PATH = "/n2/acctinfo";
     private static final String KR_BALANCE_PATH = "/krstock/inquiry/v1/balance";
     private static final String GB_BALANCE_PATH = "/gbstock/inquiry/v1/balance";
+    private static final String KR_PERIOD_PATH = "/krstock/quote/v1/period";
+    private static final String GB_PERIOD_PATH = "/gbstock/quote/v1/period";
+
+    /**
+     * 주기구분({@code gubun}) — <b>국내와 해외가 같은 주기에 다른 숫자를 쓴다.</b>
+     *
+     * <pre>
+     *   국내 /krstock/quote/v1/period : 1.일 2.주 3.월 4.년 5.분 6.초 7.틱
+     *   해외 /gbstock/quote/v1/period : 1.틱 2.분 3.일 4.주 5.월
+     * </pre>
+     *
+     * <p>겹치는 숫자가 뜻이 다르다는 게 함정이다 — 해외에 {@code 1} 을 보내면 <b>에러가 아니라
+     * 틱 데이터</b>가 오고, 국내에 {@code 3} 을 보내면 월봉이 온다. 둘 다 "차트가 이상하다" 로만
+     * 보이고 예외가 안 난다. 그래서 숫자를 코드에 직접 쓰지 않고 이름을 붙여 둔다.
+     */
+    private static final String KR_GUBUN_DAY = "1";
+    private static final String KR_GUBUN_MINUTE = "5";
+    private static final String GB_GUBUN_DAY = "3";
+    private static final String GB_GUBUN_MINUTE = "2";
+
+    /**
+     * 조회단위({@code xtick}) — 스펙이 <b>선언 길이만큼 0 을 채우라</b>고 본다.
+     *
+     * <p>해외 개별종목은 "주기구분 일인경우 0001"(길이 4), 형제 API 인 지수·환율은
+     * "일인경우 001"(길이 3)이라고 명시한다. 국내는 길이 3 만 적혀 있고 예시가 없어
+     * 같은 규칙으로 맞춘다({@code 001} = 1분).
+     *
+     * <p>국내는 "분/초/틱시 입력" 이라 일봉에는 아예 넣지 않는다. 해외는 필수라 항상 넣는다.
+     */
+    private static final String KR_XTICK_1MIN = "001";
+    private static final String GB_XTICK_1UNIT = "0001";
+
+    /** 해외 필수값 {@code maxavg}(최대이평, 길이 3). 이동평균은 화면이 직접 계산하므로 뜻은 없다. */
+    private static final String GB_MAXAVG = "020";
+
+    /**
+     * 당일조회 구분 — <b>이름이 비슷한데 뜻이 반대다.</b>
+     *
+     * <pre>
+     *   국내 today_cls_code : 0.전체조회      1.당일만조회
+     *   해외 today_cls      : 0.종료일조회    1.당일조회
+     * </pre>
+     *
+     * <p>양쪽 다 {@code 0} 을 쓴다 — 우리는 항상 종료일까지 거슬러 읽고 싶기 때문이다.
+     * {@code 1} 을 쓰면 주말·휴장일에 "당일" 데이터가 없어 <b>0건이 온다</b>. 한국 사용자가
+     * 토요일에 미국 주식 차트를 열면 빈 차트를 보게 되는 자리라, 값을 고정한다.
+     */
+    private static final String TODAY_CLS_ALL = "0";
+
+    /** 해외 장시간구분 {@code market_cls} — 1.정규장. 프리·애프터를 섞으면 봉이 튄다. */
+    private static final String GB_MARKET_REGULAR = "1";
+
+    /** {@code edate}/{@code end_dt} 와 커서에 쓰는 {@code YYYYMMDD}. */
+    private static final DateTimeFormatter YMD = DateTimeFormatter.BASIC_ISO_DATE;
+
+    /** 캔들 {@code timestamp} 형식. 오프셋을 반드시 실어 보낸다 — {@link SecuritiesCandle} 참고. */
+    private static final DateTimeFormatter CANDLE_TIMESTAMP =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
+
+    /**
+     * 거래소 현지 타임존. 캔들 시각은 <b>거래소 시계</b>로 오므로 여기서 오프셋을 붙여야
+     * 받는 쪽이 자기 타임존으로 옳게 환산한다.
+     *
+     * <p>{@code StockMarket} 이 드는 국가코드 전부를 덮는다. 모르는 국가는 미국으로 본다 —
+     * 나무 해외 연동이 미국 고정({@link #NATION_US})이라 실제로 들어올 수 있는 건 그쪽뿐이다.
+     */
+    private static final Map<String, ZoneId> MARKET_ZONES = Map.of(
+        "KR", ZoneId.of("Asia/Seoul"),
+        "US", ZoneId.of("America/New_York"),
+        "JP", ZoneId.of("Asia/Tokyo"),
+        "HK", ZoneId.of("Asia/Hong_Kong"),
+        "CN", ZoneId.of("Asia/Shanghai"),
+        "VN", ZoneId.of("Asia/Ho_Chi_Minh"),
+        "AU", ZoneId.of("Australia/Sydney"),
+        "DE", ZoneId.of("Europe/Berlin"),
+        "GB", ZoneId.of("Europe/London"),
+        "ID", ZoneId.of("Asia/Jakarta"));
+
+    private static final ZoneId DEFAULT_ZONE = MARKET_ZONES.get("US");
+
+    /** 국가코드 {@code KR} 이면 국내 엔드포인트. 그 밖은 전부 해외다. */
+    private static final String COUNTRY_KR = "KR";
+
 
     /** 국내 거래소 기본값. NXT 거래 종목도 KRX 로 물으면 정규시장 시세가 온다. */
     private static final String MARKET_KRX = "KRX";
@@ -103,6 +202,19 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         new ParameterizedTypeReference<>() {
         };
 
+    /**
+     * 캔들 봉투 — <b>{@code Output_0} 을 아예 선언하지 않는다.</b> NH 가 ⚠️ 를 단 자리라
+     * 모양을 맞히는 대신 읽지 않기로 했다. 자세한 이유는 {@link NamuCandleEnvelope} 참고.
+     */
+    private static final ParameterizedTypeReference<
+        NamuCandleEnvelope<NamuCandleDto.KrCandle>> KR_CANDLE_TYPE =
+        new ParameterizedTypeReference<>() {
+        };
+    private static final ParameterizedTypeReference<
+        NamuCandleEnvelope<NamuCandleDto.GbCandle>> GB_CANDLE_TYPE =
+        new ParameterizedTypeReference<>() {
+        };
+
     private final NamuApiClient namuApiClient;
     private final StockMasterResolver stockMasterResolver;
     private final NamuProperties namuProperties;
@@ -118,6 +230,33 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         boolean isFresh(long now) {
             return now < expiresAtMillis;
         }
+    }
+
+    /**
+     * 캔들 캐시. 시세 캐시와 사정이 다르다.
+     *
+     * <p><b>왜 필요한가</b> — 차트는 한 종목을 열 때만 부르니 시세보다 덜 위험해 보이지만,
+     * 기간 탭(1주·1개월·3개월·1년)은 <b>전부 같은 일봉 첫 페이지</b>를 요청한다. 탭을 빠르게
+     * 누르면 같은 요청이 연속으로 나가고, 여기에 화면의 실시간 폴링(분봉 15초·일봉 60초)이
+     * 겹친다. 나무는 종목당 1콜이고 429 한도가 있다.
+     *
+     * <p><b>왜 상한을 두는가</b> — 시세 캐시는 키가 (사용자 × 종목)이라 저절로 유계지만,
+     * 캔들 키에는 <b>커서가 들어간다.</b> 사용자가 과거로 팬할수록 키가 계속 생겨 그냥 두면
+     * 무한히 는다. 넘치면 만료분을 먼저 걷고, 그래도 넘치면 통째로 비운다 —
+     * 비워도 다음 요청이 상류에서 다시 받아 오므로 정확성에는 영향이 없다.
+     */
+    private final Map<String, CachedCandles> candleCache = new ConcurrentHashMap<>();
+
+    private static final int CANDLE_CACHE_MAX_ENTRIES = 500;
+
+    private record CachedCandles(CandlePage page, long expiresAtMillis) {
+        boolean isFresh(long now) {
+            return now < expiresAtMillis;
+        }
+    }
+
+    /** 정렬·커서 계산에 쓰는 중간 표현. 문자열 timestamp 로 정렬하면 서머타임 경계에서 어긋난다. */
+    private record TimedCandle(OffsetDateTime at, SecuritiesCandle candle) {
     }
 
     @Override
@@ -217,6 +356,216 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     private static String cacheKey(Long userRowId, StockMaster stock) {
         return userRowId + ":" + stock.getMarketCode().name() + ":" + stock.getSymbol();
+    }
+
+    // === 캔들(기간별시세) ===
+
+    @Override
+    public CandlePage getCandles(Long userRowId, CandleQuery query) {
+        StockMaster stock = stockMasterResolver.resolve((StockMarket) null, query.symbol())
+            .orElseThrow(() -> {
+                log.warn("나무 캔들 - 마스터에 없는 종목: symbol={}", query.symbol());
+                return new InvalidValueException(DeskErrorCode.SECURITIES_SYMBOL_INVALID);
+            });
+
+        String key = candleCacheKey(userRowId, stock, query);
+        CachedCandles hit = candleCache.get(key);
+        if (hit != null && hit.isFresh(System.currentTimeMillis())) {
+            return hit.page();
+        }
+
+        CandlePage page = COUNTRY_KR.equals(stock.getCountryCode())
+            ? krCandles(userRowId, stock, query)
+            : gbCandles(userRowId, stock, query);
+        cacheCandles(key, page);
+        return page;
+    }
+
+    private CandlePage krCandles(Long userRowId, StockMaster stock, CandleQuery query) {
+        boolean minute = query.interval() == CandleInterval.MINUTE_1;
+        ZoneId zone = zoneOf(stock);
+
+        Map<String, String> input = new LinkedHashMap<>();
+        input.put("market_cd", MARKET_KRX);
+        input.put("iem_cd", stock.getSymbol());
+        input.put("gubun", minute ? KR_GUBUN_MINUTE : KR_GUBUN_DAY);
+        input.put("edate", endDate(query.cursor(), zone));
+        input.put("array_cnt", String.valueOf(query.size()));
+        input.put("today_cls_code", TODAY_CLS_ALL);
+        if (minute) {
+            // 국내는 "분/초/틱시 입력" 이라 일봉에는 넣지 않는다.
+            input.put("xtick", KR_XTICK_1MIN);
+        }
+
+        List<NamuCandleDto.KrCandle> rows = namuApiClient
+            .exchange(userRowId, KR_PERIOD_PATH, input, KR_CANDLE_TYPE)
+            .items();
+
+        List<TimedCandle> bars = rows.stream()
+            .map(r -> timed(r.date(), r.time(), r.open(), r.high(), r.low(), r.close(), r.volume(),
+                zone, KRW, stock.getSymbol()))
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(TimedCandle::at))
+            .toList();
+        return page(bars, rows.size(), query);
+    }
+
+    private CandlePage gbCandles(Long userRowId, StockMaster stock, CandleQuery query) {
+        boolean minute = query.interval() == CandleInterval.MINUTE_1;
+        ZoneId zone = zoneOf(stock);
+
+        // 해외는 8개가 전부 필수다 — 하나만 빠져도 나무가 거절한다.
+        Map<String, String> input = new LinkedHashMap<>();
+        input.put("iem_cd", stock.getSymbol());
+        input.put("end_dt", endDate(query.cursor(), zone));
+        input.put("count", String.valueOf(query.size()));
+        input.put("maxavg", GB_MAXAVG);
+        input.put("gubun", minute ? GB_GUBUN_MINUTE : GB_GUBUN_DAY);
+        input.put("xtick", GB_XTICK_1UNIT);
+        input.put("today_cls", TODAY_CLS_ALL);
+        input.put("market_cls", GB_MARKET_REGULAR);
+
+        List<NamuCandleDto.GbCandle> rows = namuApiClient
+            .exchange(userRowId, GB_PERIOD_PATH, input, GB_CANDLE_TYPE)
+            .items();
+
+        String currency = stock.getCurrency() == null || stock.getCurrency().isBlank()
+            ? USD : stock.getCurrency();
+        List<TimedCandle> bars = rows.stream()
+            .map(r -> timed(r.date(), r.time(), r.open(), r.high(), r.low(), r.close(), r.volume(),
+                zone, currency, stock.getSymbol()))
+            .filter(Objects::nonNull)
+            .sorted(Comparator.comparing(TimedCandle::at))
+            .toList();
+        return page(bars, rows.size(), query);
+    }
+
+    /**
+     * 다음 페이지 커서를 정한다.
+     *
+     * <p><b>나무엔 불투명 커서가 없다.</b> 페이지를 거슬러 올라가는 수단은 종료일
+     * ({@code edate}/{@code end_dt})뿐이라, 커서로 <b>이번 페이지에서 가장 오래된 봉의
+     * 하루 전</b>을 돌려준다. 다음 요청이 그 날짜까지 다시 읽어 내려간다.
+     *
+     * <p><b>분봉은 커서를 주지 않는다(null).</b> 종료일이 날짜 단위라 하루 안에서 더 과거로
+     * 갈 방법이 없다 — 같은 날짜를 다시 주면 방금 받은 봉이 그대로 오고, 하루를 빼면 그날
+     * 오전이 통째로 날아간다. 어느 쪽도 "이어서 읽기" 가 아니다. 화면의 {@code 1D} 탭은
+     * 첫 페이지(200봉)로 채우도록 되어 있어 실제로 부족하지 않다.
+     *
+     * <p>요청한 수보다 적게 왔으면 상장 이전까지 다 읽은 것으로 보고 끝낸다.
+     */
+    private static CandlePage page(List<TimedCandle> bars, int rawRowCount, CandleQuery query) {
+        List<SecuritiesCandle> candles = bars.stream().map(TimedCandle::candle).toList();
+        if (query.interval() == CandleInterval.MINUTE_1 || bars.isEmpty() || rawRowCount < query.size()) {
+            return new CandlePage(candles, null);
+        }
+        LocalDate oldest = bars.get(0).at().toLocalDate();
+        return new CandlePage(candles, YMD.format(oldest.minusDays(1)));
+    }
+
+    /**
+     * 조회 종료일. 첫 페이지면 거래소 현지 오늘.
+     *
+     * <p><b>알아볼 수 없는 커서는 첫 페이지로 되돌린다.</b> 우리가 만드는 커서는
+     * {@code YYYYMMDD} 지만, 사용자가 차트를 열어 둔 채 기본 증권사를 바꾸면 화면이 들고 있던
+     * <b>토스 커서</b>(불투명 문자열)가 여기로 넘어온다. 400 으로 거절하면 그때까지 잘 보던
+     * 차트가 에러로 바뀐다 — 첫 페이지를 다시 주면 화면은 이미 가진 봉과 겹치는 것을 보고
+     * 스스로 로딩을 멈춘다.
+     */
+    private static String endDate(String cursor, ZoneId zone) {
+        LocalDate today = LocalDate.now(zone);
+        if (cursor == null || cursor.isBlank()) {
+            return YMD.format(today);
+        }
+        try {
+            return YMD.format(LocalDate.parse(cursor.trim(), YMD));
+        } catch (DateTimeException e) {
+            log.debug("나무 캔들 - 나무 커서가 아니다. 첫 페이지로 되돌린다: cursor={}", cursor);
+            return YMD.format(today);
+        }
+    }
+
+    /**
+     * 봉 한 줄을 공통 모양으로 옮긴다. 날짜나 종가가 없으면 <b>그 봉만</b> 버린다 —
+     * 한 줄 때문에 차트 전체를 접지 않는다.
+     *
+     * <p>시가·고가·저가가 비면 종가로 채운다. 그대로 두면 화면이 {@code NaN} 을 받아
+     * 캔들 시리즈가 통째로 그려지지 않는다(값 하나가 아니라 차트가 사라진다).
+     */
+    private static TimedCandle timed(String rawDate, String rawTime, String open, String high,
+                                     String low, String close, String volume,
+                                     ZoneId zone, String currency, String symbol) {
+        LocalDate date = candleDate(rawDate);
+        String closeText = text(close, null);
+        if (date == null || closeText == null) {
+            log.debug("나무 캔들 봉 버림 - symbol={}, date={}, close={}", symbol, rawDate, close);
+            return null;
+        }
+        OffsetDateTime at = date.atTime(candleTime(rawTime)).atZone(zone).toOffsetDateTime();
+        return new TimedCandle(at, new SecuritiesCandle(
+            CANDLE_TIMESTAMP.format(at),
+            text(open, closeText), text(high, closeText), text(low, closeText), closeText,
+            text(volume, "0"), currency));
+    }
+
+    private static String text(String raw, String fallback) {
+        return raw == null || raw.isBlank() ? fallback : raw.trim();
+    }
+
+    private static LocalDate candleDate(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(raw.trim(), YMD);
+        } catch (DateTimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * {@code HHmmss}. <b>일봉은 시각이 비어 온다</b> — 그때는 자정으로 둔다(날짜 라벨만 맞으면 된다).
+     * 자릿수가 모자란 값({@code HHmm})도 0 으로 채워 받는다.
+     */
+    private static LocalTime candleTime(String raw) {
+        String digits = raw == null ? "" : raw.trim();
+        if (digits.isEmpty() || !digits.chars().allMatch(Character::isDigit)) {
+            return LocalTime.MIDNIGHT;
+        }
+        String padded = (digits + "000000").substring(0, 6);
+        try {
+            return LocalTime.of(Integer.parseInt(padded.substring(0, 2)),
+                Integer.parseInt(padded.substring(2, 4)),
+                Integer.parseInt(padded.substring(4, 6)));
+        } catch (DateTimeException | NumberFormatException e) {
+            return LocalTime.MIDNIGHT;
+        }
+    }
+
+    private static ZoneId zoneOf(StockMaster stock) {
+        return MARKET_ZONES.getOrDefault(stock.getCountryCode(), DEFAULT_ZONE);
+    }
+
+    private static String candleCacheKey(Long userRowId, StockMaster stock, CandleQuery query) {
+        return userRowId + ":" + stock.getMarketCode().name() + ":" + stock.getSymbol()
+            + ":" + query.interval().getCode() + ":" + query.size()
+            + ":" + (query.cursor() == null ? "" : query.cursor());
+    }
+
+    private void cacheCandles(String key, CandlePage page) {
+        long ttlMillis = namuProperties.getCandleCacheTtlSeconds() * 1000L;
+        if (ttlMillis <= 0) {
+            return;
+        }
+        if (candleCache.size() >= CANDLE_CACHE_MAX_ENTRIES) {
+            long now = System.currentTimeMillis();
+            candleCache.entrySet().removeIf(e -> !e.getValue().isFresh(now));
+            if (candleCache.size() >= CANDLE_CACHE_MAX_ENTRIES) {
+                log.warn("나무 캔들 캐시 상한 초과 - 비운다: {}건", candleCache.size());
+                candleCache.clear();
+            }
+        }
+        candleCache.put(key, new CachedCandles(page, System.currentTimeMillis() + ttlMillis));
     }
 
     // === 계좌·잔고 ===
