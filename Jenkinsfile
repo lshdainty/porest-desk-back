@@ -117,6 +117,9 @@ pipeline {
                         -e LOKI_URL=${env.LOKI_URL} \
                         -e APP_VERSION=${env.APP_VERSION} \
                         ${IMAGE_NAME}:${env.APP_VERSION}
+
+                    # 모니터링 망 추가 연결 — prometheus 스크레이프·loki 로그 (DB 망과 분리)
+                    docker network connect monitoring-network ${CONTAINER_NAME}-dev || true
                 """
             }
         }
@@ -155,6 +158,9 @@ pipeline {
                         -e LOKI_URL=${env.LOKI_URL} \
                         -e APP_VERSION=${env.APP_VERSION} \
                         ${IMAGE_NAME}:${env.APP_VERSION}
+
+                    # 모니터링 망 추가 연결 — prometheus 스크레이프·loki 로그 (DB 망과 분리)
+                    docker network connect monitoring-network ${CONTAINER_NAME}-prod || true
                 """
             }
         }
