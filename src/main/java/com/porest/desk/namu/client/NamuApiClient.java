@@ -16,6 +16,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -148,11 +149,17 @@ public class NamuApiClient {
      * {@code ExternalServiceException} 을 객체째 찍는다 — 둘이 겹치면 나무가 돌려준
      * {@code cust_no}·{@code acct_no} 가 {@code Caused by:} 줄에 그대로 남는다.
      * 진단에 필요한 것(원본 예외 이름 · 상태코드 · path)은 가린 뒤에도 남는다.
+     *
+     * <p><b>429 만 타입을 나눈다</b>({@link NamuRateLimitException}). 다른 실패는 "이번
+     * 호출이 실패했다" 지만 429 는 "지금 너무 많이 부르고 있다" 라, 호출부가 <b>다시 치지
+     * 않기로</b> 결정할 수 있어야 한다. 에러코드는 같으므로 클라이언트에 나가는 응답은 그대로다.
      */
     private ExternalServiceException toExternalException(HttpStatusCodeException e, String path) {
         RestClientException safe = UpstreamErrorLog.redact(e);
         log.error("나무증권 API 오류: path={}, status={}, 원인={}",
             path, e.getStatusCode().value(), safe.getMessage());
-        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
+        return e.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value()
+            ? new NamuRateLimitException(safe)
+            : new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
     }
 }
