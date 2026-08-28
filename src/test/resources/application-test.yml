@@ -56,6 +56,14 @@ app:
   cors:
     allowed-origins: http://localhost:3000
 
+# springdoc — 운영 기본값은 false 다(SWAGGER_ENABLED 미설정 시 꺼짐). OpenApi*Test 는
+# /v3/api-docs 를 실제로 받아 스펙을 검증하므로 테스트 프로파일에서만 켠다.
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
 logging:
   level:
     com.porest.desk: warn

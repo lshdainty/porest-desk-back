@@ -215,10 +215,10 @@ springdoc:
   # 전체 API 스펙(엔드포인트·파라미터·DTO 필드명)이 미인증으로 밖에 나간다.
   api-docs:
     path: /v3/api-docs
-    enabled: ${SWAGGER_ENABLED:true}
+    enabled: ${SWAGGER_ENABLED:false}
   swagger-ui:
     path: /swagger-ui/index.html
-    enabled: ${SWAGGER_ENABLED:true}
+    enabled: ${SWAGGER_ENABLED:false}
     tags-sorter: alpha
     operations-sorter: alpha
 

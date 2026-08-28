@@ -1,4 +1,5 @@
-FROM eclipse-temurin:25-jdk-alpine AS builder
+# 베이스는 버전을 고정한다 — 움직이는 태그는 빌드 시점 따라 내용물이 바뀐다. 업데이트는 태그를 올려서.
+FROM eclipse-temurin:25.0.4_7-jdk-alpine AS builder
 
 WORKDIR /app
 
@@ -19,7 +20,7 @@ RUN --mount=type=secret,id=github_token \
     chmod +x gradlew \
     && GITHUB_TOKEN="$(cat /run/secrets/github_token)" ./gradlew clean build -x test
 
-FROM eclipse-temurin:25-jre-alpine AS runtime
+FROM eclipse-temurin:25.0.4_7-jre-alpine AS runtime
 
 WORKDIR /app
 
@@ -37,5 +38,9 @@ COPY --from=builder --chown=porest:porest /app/build/libs/*.jar app.jar
 USER porest
 
 EXPOSE 8002
+
+# 프로세스 생존이 아니라 앱 응답(actuator/health)을 본다 — Jenkins 헬스 게이트가 이 상태를 기다린다
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD wget -qO- "http://localhost:${SERVER_PORT:-8002}/actuator/health" | grep -q '"status":"UP"' || exit 1
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
