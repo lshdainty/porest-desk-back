@@ -127,8 +127,11 @@ public final class NamuAccountDto {
      *
      * <p><b>환율이 여기 있다.</b> {@code tdt_sby_bse_xcg_rt}(당일매매기준환율)와
      * {@code cur_cd}(통화)는 스펙상 {@code Output_1} 에만 있다 — 종목마다 통화가 달라
-     * 계좌 단위 요약이 환율 하나를 들 수 없는 구조다. 나무엔 환율 전용 조회가 없고
-     * 지수·환율 통합 API 의 코드값이 공개 문서에 없어서, 이게 문서화된 유일한 경로다.
+     * 계좌 단위 요약이 환율 하나를 들 수 없는 구조다.
+     *
+     * <p>이 값이 <b>환율 1순위</b>다 — 계좌 평가에 실제 적용된 환율이라 화면 금액과 일치한다.
+     * 다만 <b>유일한 경로는 아니다</b>: 보유 종목이 없으면 여기서 못 얻으므로 해외 현재가의
+     * {@code currency_prc} 로 넘어간다({@code NamuQueryService#getFxRate}).
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GbHolding(
