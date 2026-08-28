@@ -3,6 +3,7 @@ package com.porest.desk.namu.service;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.NamuApiClient;
+import com.porest.desk.namu.client.NamuRateLimitException;
 import com.porest.desk.namu.client.dto.NamuCandleEnvelope;
 import com.porest.desk.namu.client.dto.NamuEnvelope;
 import com.porest.desk.namu.client.dto.NamuListEnvelope;
@@ -257,6 +258,62 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     /** 정렬·커서 계산에 쓰는 중간 표현. 문자열 timestamp 로 정렬하면 서머타임 경계에서 어긋난다. */
     private record TimedCandle(OffsetDateTime at, SecuritiesCandle candle) {
+    }
+
+    /**
+     * 환율 캐시 — <b>사용자별</b>. 키는 {@code userRowId:통화}.
+     *
+     * <p><b>왜 사용자별인가</b> — 어느 경로가 이겼느냐가 사용자마다 다르고, 그 값의 뜻도 다르다.
+     * 1순위(해외 잔고 {@code tdt_sby_bse_xcg_rt})는 <b>그 사용자 계좌의 외화 평가에 실제로
+     * 적용된</b> 환율이라 계좌가 있는 사용자에게만 나오고, 2순위(해외 현재가
+     * {@code currency_prc})는 계좌와 무관한 시장 기준환율이다. 둘은 소수점이 다를 수 있으므로
+     * 한 통에 담으면 계좌가 있는 사용자에게 남의 시장환율이 나가 잔고 화면의 평가금액과
+     * 어긋난다. 그래서 <b>최종 결과는 사용자별로만 캐시한다.</b>
+     *
+     * <p><b>왜 상한이 없나</b> — 캔들 캐시와 달리 키가 저절로 유계다. 통화는 USD 하나뿐이고
+     * (미국 외는 상류에 나가기도 전에 접힌다) 나머지 축은 사용자라, 항목 수가 나무를 연동한
+     * 사용자 수를 못 넘는다. 커서가 키에 들어가는 캔들 쪽만 상한이 필요하다.
+     *
+     * <p><b>실패도 캐시한다</b>(negative caching) — {@link CachedFx#rate()} 가 null 이면
+     * "못 구했다" 를 기억하는 항목이다. 실패를 안 담으면 환율이 안 나오는 사용자가 매 요청마다
+     * 3콜을 다시 내는데, 그게 정확히 429 를 부르는 모양이다.
+     */
+    private final Map<String, CachedFx> fxCache = new ConcurrentHashMap<>();
+
+    /**
+     * 환율 캐시 — <b>사용자 무관</b>. 키는 {@code 통화:폴백종목}.
+     *
+     * <p>2순위(해외 현재가)가 주는 {@code currency_prc} 는 계좌를 안 타는 <b>시장 시세</b>라
+     * 누가 물어도 같은 값이다. 나무의 429 는 사용자가 아니라 <b>앱 단위</b> 한도를 말하므로
+     * ({@code rsp_cd=IGW42902} "APP 호출 거래건수를 초과하였습니다", dev 실측 2026-08-28),
+     * 여기서 사용자끼리 값을 나눠 쓰면 초과되는 그 한도가 직접 줄어든다.
+     *
+     * <p><b>성공한 값만 담는다.</b> 실패까지 나누면 한 사용자의 429·설정 오류가 다른 사용자의
+     * 조회를 막는다 — 인증정보는 사용자별 키라 한도가 정말 앱 단위인지 확인되지 않았고,
+     * 확인 전에는 남을 대신 벌주지 않는 쪽이 안전하다. 실패는 위 {@link #fxCache} 에만 남는다.
+     */
+    private final Map<String, CachedFx> fxQuoteCache = new ConcurrentHashMap<>();
+
+    /** {@code rate} 가 null 일 수 있다 — "못 구했다" 는 사실도 캐시하기 때문이다. */
+    private record CachedFx(BigDecimal rate, long expiresAtMillis) {
+        boolean isFresh(long now) {
+            return now < expiresAtMillis;
+        }
+    }
+
+    /**
+     * 환율 조회 한 경로의 결과. <b>"못 구했다" 와 "유량 제한에 걸렸다" 를 나눈다</b> —
+     * 앞은 다음 경로로 넘어가라는 뜻이고, 뒤는 <b>넘어가지 말라</b>는 뜻이라 정반대다.
+     * null 하나로는 그 차이를 실어 나를 수 없어 기록으로 만들었다.
+     */
+    private record FxLookup(BigDecimal rate, boolean rateLimited) {
+
+        static final FxLookup MISSING = new FxLookup(null, false);
+        static final FxLookup RATE_LIMITED = new FxLookup(null, true);
+
+        static FxLookup of(BigDecimal rate) {
+            return rate == null ? MISSING : new FxLookup(rate, false);
+        }
     }
 
     @Override
@@ -627,6 +684,23 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * ({@link #requireUsCompatible}), 이 경로는 자산 평가가 부르는 자리라 예외가 나가면
      * 환율 하나 때문에 평가 전체가 멈춘다.
      *
+     * <h2>캐시와 429</h2>
+     * <b>한 번 물으면 최대 3콜이 100ms 안에 몰려 나간다</b> — 계좌목록 + 해외잔고
+     * (+ 폴백 시 해외현재가). 캐시가 없던 동안 그게 화면이 부를 때마다 그대로 나갔고,
+     * 나무는 그중 뒤 두 개를 <b>429 로 거절했다</b>({@code IGW42902} "APP 호출 거래건수를
+     * 초과하였습니다", dev 실측 2026-08-28 · 두 경로가 30~40ms 간격으로 짝지어 8건).
+     * 그래서 둘을 넣는다.
+     *
+     * <ol>
+     *   <li><b>결과를 캐시한다</b> — 성공은 {@code app.namu.fx-cache-ttl-seconds}(기본 10분),
+     *       실패도 {@code app.namu.fx-failure-cache-ttl-seconds}(기본 1분) 동안 기억한다.
+     *       기준환율은 하루짜리 고정값이라 시세(20초)보다 훨씬 길게 잡아도 안전하다.</li>
+     *   <li><b>429 면 폴백을 타지 않는다</b> — 429 는 "지금 너무 많이 부르고 있다" 는 신호라
+     *       곧바로 2순위를 치면 <b>같은 초에 429 를 한 번 더</b> 맞고 상류 부담만 키운다.
+     *       {@code app.namu.fx-rate-limit-backoff-seconds}(기본 5분) 쉬었다 다음 기회에
+     *       다시 시도한다.</li>
+     * </ol>
+     *
      * @see <a href="https://www.nhplug.com/llms-full.txt">NH PLUG OpenAPI 전체 스펙</a>
      */
     @Override
@@ -636,11 +710,45 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             log.debug("나무 환율 조회 불가 - 미국(USD)만 지원한다: 요청={} (userRowId={})", want, userRowId);
             return null;
         }
-        BigDecimal fromBalance = fxRateFromBalance(userRowId, want);
-        if (fromBalance != null) {
-            return fromBalance;
+
+        String key = userRowId + ":" + want;
+        CachedFx hit = fxCache.get(key);
+        if (hit != null && hit.isFresh(System.currentTimeMillis())) {
+            return hit.rate();
         }
-        return fxRateFromQuote(userRowId, want);
+
+        FxLookup fromBalance = fxRateFromBalance(userRowId, want);
+        if (fromBalance.rate() != null) {
+            return cacheFxRate(key, fromBalance.rate(), namuProperties.getFxCacheTtlSeconds());
+        }
+        if (fromBalance.rateLimited()) {
+            // 여기서 폴백을 타면 같은 429 를 한 번 더 맞는다. 원인이 "호출이 많다" 인데
+            // 호출을 더 내는 셈이라, 유일하게 맞는 행동은 지금 안 부르는 것이다.
+            log.warn("나무 환율 - 유량 제한(429). 시세 폴백을 건너뛰고 {}초 쉰다 (userRowId={})",
+                namuProperties.getFxRateLimitBackoffSeconds(), userRowId);
+            return cacheFxRate(key, null, namuProperties.getFxRateLimitBackoffSeconds());
+        }
+
+        FxLookup fromQuote = fxRateFromQuote(userRowId, want);
+        if (fromQuote.rate() != null) {
+            return cacheFxRate(key, fromQuote.rate(), namuProperties.getFxCacheTtlSeconds());
+        }
+        return cacheFxRate(key, null, fromQuote.rateLimited()
+            ? namuProperties.getFxRateLimitBackoffSeconds()
+            : namuProperties.getFxFailureCacheTtlSeconds());
+    }
+
+    /**
+     * 환율 결과를 사용자별 캐시에 담고 그대로 돌려준다. {@code rate} 가 null 이어도 담는다 —
+     * 못 구했다는 사실을 안 담으면 실패한 사용자가 매 요청마다 상류를 다시 친다.
+     *
+     * @param ttlSeconds 0 이하면 담지 않는다(캐시를 끈 것)
+     */
+    private BigDecimal cacheFxRate(String key, BigDecimal rate, int ttlSeconds) {
+        if (ttlSeconds > 0) {
+            fxCache.put(key, new CachedFx(rate, System.currentTimeMillis() + ttlSeconds * 1000L));
+        }
+        return rate;
     }
 
     /**
@@ -648,8 +756,11 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      *
      * <p>환율은 <b>종목별 행(Output_1)</b>에 실려 온다 — 계좌 요약이 아니다. 종목마다 통화가
      * 달라 계좌 단위로 환율 하나를 들 수 없는 구조라서다.
+     *
+     * @return 값 · 또는 {@link FxLookup#MISSING}(2순위로 넘어가라) ·
+     *         또는 {@link FxLookup#RATE_LIMITED}(넘어가지 마라)
      */
-    private BigDecimal fxRateFromBalance(Long userRowId, String want) {
+    private FxLookup fxRateFromBalance(Long userRowId, String want) {
         try {
             // 계좌 해석도 try 안이다 — 환경에 맞는 계좌가 없으면 예외가 나는데, 그게 자산 평가
             // 전체를 무너뜨리면 안 된다. 잔고 화면에서는 그대로 던져 원인을 보여주고,
@@ -657,7 +768,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             String account = resolveAccountNo(userRowId, null);
             if (account == null) {
                 log.debug("나무 환율 - 계좌가 없어 잔고 경로를 건너뛴다 (userRowId={})", userRowId);
-                return null;
+                return FxLookup.MISSING;
             }
             List<NamuAccountDto.GbHolding> items = namuApiClient
                 .exchange(userRowId, GB_BALANCE_PATH, gbBalanceInput(account, want), GB_BALANCE_TYPE)
@@ -674,10 +785,15 @@ public class NamuQueryServiceImpl implements NamuQueryService {
                 log.debug("나무 환율 - 잔고에 {} 보유 종목이 없어 시세 경로로 넘어간다 (userRowId={}, 종목={}건)",
                     want, userRowId, items.size());
             }
-            return rate;
+            return FxLookup.of(rate);
+        } catch (NamuRateLimitException e) {
+            // 이 catch 가 RuntimeException 보다 먼저 와야 한다. 아래로 흘리면 429 가
+            // 일반 실패로 뭉개져 곧바로 폴백이 나가고, 그게 지금 고치는 회귀 그 자체다.
+            log.debug("나무 환율 - 잔고 경로가 유량 제한에 걸렸다 (userRowId={})", userRowId);
+            return FxLookup.RATE_LIMITED;
         } catch (RuntimeException e) {
             log.debug("나무 환율 - 잔고 경로 실패, 시세 경로로 넘어간다 (userRowId={}): {}", userRowId, e.getMessage());
-            return null;
+            return FxLookup.MISSING;
         }
     }
 
@@ -690,37 +806,58 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * {@code currency_unit} 1단위 원화 가격이다. 설정된 종목이 미국 상장이 아니게 되면
      * (티커 재사용·거래소 이전) 엉뚱한 통화의 환율을 USD 환율로 쓰게 되는데, 그건 화면에
      * 그럴듯한 숫자로 나가 아무도 못 알아챈다. 그래서 다르면 쓰지 않고 접는다.
+     *
+     * <p>얻은 값은 계좌를 안 타는 시장 기준환율이라 <b>사용자끼리 나눠 쓴다</b>
+     * ({@link #fxQuoteCache}). 실패는 안 나눈다 — 이유는 그 필드 주석 참고.
+     *
+     * @return 값 · 또는 {@link FxLookup#MISSING} · 또는 {@link FxLookup#RATE_LIMITED}
      */
-    private BigDecimal fxRateFromQuote(Long userRowId, String want) {
+    private FxLookup fxRateFromQuote(Long userRowId, String want) {
         String probe = namuProperties.getFxProbeSymbol();
         if (probe == null || probe.isBlank()) {
             log.debug("나무 환율 - 시세 폴백이 꺼져 있다(app.namu.fx-probe-symbol 비어 있음) (userRowId={})", userRowId);
-            return null;
+            return FxLookup.MISSING;
         }
+        String symbol = probe.trim();
+
+        // 폴백 종목을 키에 넣는다 — 설정이 바뀌면 옛 종목으로 받아 둔 값이 살아 있으면 안 된다.
+        String key = want + ":" + symbol;
+        CachedFx hit = fxQuoteCache.get(key);
+        if (hit != null && hit.isFresh(System.currentTimeMillis())) {
+            return FxLookup.of(hit.rate());
+        }
+
         try {
             NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
-                Map.of("iem_cd", probe.trim()), GB_TYPE);
+                Map.of("iem_cd", symbol), GB_TYPE);
             if (p == null) {
-                log.warn("나무 환율 미확보 - 시세 응답이 비었다 (userRowId={}, 종목={})", userRowId, probe);
-                return null;
+                log.warn("나무 환율 미확보 - 시세 응답이 비었다 (userRowId={}, 종목={})", userRowId, symbol);
+                return FxLookup.MISSING;
             }
             if (!want.equalsIgnoreCase(p.currency())) {
                 log.warn("나무 환율 미확보 - 폴백 종목의 통화가 다르다: 기대={} 실제={} (userRowId={}, 종목={}). "
                         + "app.namu.fx-probe-symbol 을 미국 상장 종목으로 바꿔라",
-                    want, p.currency(), userRowId, probe);
-                return null;
+                    want, p.currency(), userRowId, symbol);
+                return FxLookup.MISSING;
             }
             BigDecimal rate = decimal(p.exchangeRate());
             if (rate == null || rate.signum() <= 0) {
                 log.warn("나무 환율 미확보 - 시세의 환율 필드가 비었다 (userRowId={}, 종목={}, currency_prc={})",
-                    userRowId, probe, p.exchangeRate());
-                return null;
+                    userRowId, symbol, p.exchangeRate());
+                return FxLookup.MISSING;
             }
-            log.debug("나무 환율 - 시세 폴백으로 확보 (userRowId={}, 종목={}, 환율={})", userRowId, probe, rate);
-            return rate;
+            log.debug("나무 환율 - 시세 폴백으로 확보 (userRowId={}, 종목={}, 환율={})", userRowId, symbol, rate);
+            long ttlMillis = namuProperties.getFxCacheTtlSeconds() * 1000L;
+            if (ttlMillis > 0) {
+                fxQuoteCache.put(key, new CachedFx(rate, System.currentTimeMillis() + ttlMillis));
+            }
+            return FxLookup.of(rate);
+        } catch (NamuRateLimitException e) {
+            log.warn("나무 환율 조회 실패 - 시세 폴백이 유량 제한에 걸렸다 (userRowId={}, 종목={})", userRowId, symbol);
+            return FxLookup.RATE_LIMITED;
         } catch (RuntimeException e) {
-            log.warn("나무 환율 조회 실패 - 시세 폴백 (userRowId={}, 종목={}): {}", userRowId, probe, e.getMessage());
-            return null;
+            log.warn("나무 환율 조회 실패 - 시세 폴백 (userRowId={}, 종목={}): {}", userRowId, symbol, e.getMessage());
+            return FxLookup.MISSING;
         }
     }
 
