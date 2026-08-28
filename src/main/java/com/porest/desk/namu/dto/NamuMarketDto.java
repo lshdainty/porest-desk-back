@@ -45,6 +45,9 @@ public final class NamuMarketDto {
      * @param change        전일대비 {@code netchng}
      * @param changeRate    등락률(%) {@code pctchng}
      * @param currency      거래 통화 {@code currency_unit}
+     * @param exchangeRate  <b>원화 환산 환율</b> {@code currency_prc} — {@code currency} 1단위의
+     *                      원화 가격. 시세 응답에 딸려 오므로 <b>계좌도 보유 종목도 없이</b>
+     *                      환율을 얻는 유일한 경로다({@code NamuQueryService#getFxRate} 폴백)
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GbPrice(
@@ -53,7 +56,8 @@ public final class NamuMarketDto {
         @JsonProperty("netchng_cls") String changeSign,
         @JsonProperty("netchng") String change,
         @JsonProperty("pctchng") String changeRate,
-        @JsonProperty("currency_unit") String currency
+        @JsonProperty("currency_unit") String currency,
+        @JsonProperty("currency_prc") String exchangeRate
     ) {
     }
 }

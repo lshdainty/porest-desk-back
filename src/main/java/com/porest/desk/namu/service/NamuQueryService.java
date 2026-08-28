@@ -68,13 +68,23 @@ public interface NamuQueryService {
     NamuAccountDto.Holdings getHoldings(Long userRowId, String accountNo, String currency);
 
     /**
-     * 원화 환산 환율.
+     * 원화 환산 환율. <b>USD 만 지원한다</b>(나무 해외 연동이 미국 고정).
      *
      * <p><b>나무는 환율 전용 조회가 없다.</b> 지수·환율 통합 API 는 있지만 {@code iem_cd} 에
-     * 넣을 환율 코드가 공개 문서 어디에도 없다. 대신 해외 잔고 응답에 당일매매기준환율
-     * ({@code tdt_sby_bse_xcg_rt})이 실려 오므로 그걸 쓴다 — 문서화된 유일한 경로다.
+     * 넣을 환율 코드가 공개 문서 어디에도 없다. 대신 <b>두 군데에 환율이 딸려 온다</b>.
      *
-     * <p>그래서 <b>해외 계좌가 없으면 환율도 못 구한다</b>(null). 호출부는 외화 평가를 접는다.
+     * <ol>
+     *   <li>해외 잔고의 당일매매기준환율({@code tdt_sby_bse_xcg_rt}) — 계좌 평가에 실제
+     *       적용된 값이라 화면과 일치한다. 단 <b>계좌 + 보유 종목</b>이 있어야 한다</li>
+     *   <li>해외 현재가의 {@code currency_prc} — 종목코드 하나만 있으면 되므로
+     *       <b>계좌가 없어도</b> 얻는다</li>
+     * </ol>
+     *
+     * <p>1번을 먼저 쓰고 없으면 2번으로 넘어간다. 둘 다 실패해야 null 이고, 그때 호출부는
+     * 외화 평가를 접는다.
+     *
+     * <p><b>예전 주석은 잔고가 "문서화된 유일한 경로" 라고 했는데 틀렸다</b> — 그래서 해외
+     * 계좌가 없는 사용자가 환율을 영영 못 구했다. 근거는 구현부 주석 참고.
      */
     BigDecimal getFxRate(Long userRowId, String currency);
 }

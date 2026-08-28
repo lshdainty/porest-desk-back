@@ -45,6 +45,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -266,7 +267,7 @@ class NamuQueryServiceImplTest {
         void overseasUsesBasePrice() {
             given(namuApiClient.<NamuMarketDto.GbPrice>postObject(
                     eq(USER), eq("/gbstock/quote/v1/current"), any(), any()))
-                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92", "USD"));
+                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92", "USD", "1383.50"));
 
             PriceQuote q = sut.getGbPrice(USER, "AAPL");
 
@@ -495,8 +496,16 @@ class NamuQueryServiceImplTest {
     @DisplayName("환율")
     class Fx {
 
+        /** 시세 폴백 스텁 — 해외 현재가의 {@code currency_prc} 가 2순위 환율이다. */
+        private void givenGbQuote(String currencyUnit, String currencyPrc) {
+            given(namuApiClient.<NamuMarketDto.GbPrice>postObject(
+                    eq(USER), eq("/gbstock/quote/v1/current"), any(), any()))
+                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92",
+                    currencyUnit, currencyPrc));
+        }
+
         @Test
-        @DisplayName("환율은 종목 행(Output_1)에서 읽는다 — 계좌 요약엔 없다")
+        @DisplayName("1순위 — 환율은 종목 행(Output_1)에서 읽는다. 계좌 요약엔 없다")
         void fromHoldingRow() {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
@@ -504,42 +513,68 @@ class NamuQueryServiceImplTest {
                     "928.5", "28.5", "1284000", "USD", "1383.50"));
 
             assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1383.50"));
+
+            // 잔고가 줬으면 시세는 안 부른다 — 계좌 평가에 실제 적용된 값이 이긴다.
+            then(namuApiClient).should(never())
+                .postObject(eq(USER), eq("/gbstock/quote/v1/current"), any(), any());
         }
 
         @Test
-        @DisplayName("같은 통화 보유가 없으면 null — 종목마다 통화가 달라 계좌 요약이 환율을 못 든다")
-        void nullWhenCurrencyNotHeld() {
+        @DisplayName("2순위 — 같은 통화 보유가 없으면 시세의 currency_prc 로 넘어간다")
+        void fallsBackWhenCurrencyNotHeld() {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
                 new NamuAccountDto.GbHolding("7203", "도요타", "TOYOTA", "10", "2000", "2100",
                     "21000", "1000", "200000", "JPY", "9.12"));
+            givenGbQuote("USD", "1381.20");
 
-            assertThat(sut.getFxRate(USER, "USD")).isNull();
+            assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.20"));
         }
 
         @Test
-        @DisplayName("계좌가 없으면 null — 호출부가 외화 평가를 접는다")
-        void nullWhenNoAccount() {
+        @DisplayName("2순위 — 계좌가 없어도 환율을 구한다. 시세는 계좌를 안 탄다")
+        void fallsBackWhenNoAccount() {
             givenAccounts();
+            givenGbQuote("USD", "1379.00");
 
-            assertThat(sut.getFxRate(USER, "USD")).isNull();
+            assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1379.00"));
         }
 
         @Test
-        @DisplayName("잔고 조회가 실패해도 null 로 접힌다 — 환율 하나 때문에 평가 전체가 죽으면 안 된다")
-        void nullWhenBalanceFails() {
+        @DisplayName("2순위 — 잔고 조회가 실패해도 시세로 넘어간다")
+        void fallsBackWhenBalanceFails() {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             willThrow(new IllegalStateException("boom"))
                 .given(namuApiClient).exchange(eq(USER), eq("/gbstock/inquiry/v1/balance"), any(), any());
+            givenGbQuote("USD", "1385.75");
+
+            assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1385.75"));
+        }
+
+        @Test
+        @DisplayName("2순위 — 보유 종목이 없어도 시세로 구한다")
+        void fallsBackWhenNoHoldings() {
+            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
+            givenGbBalance(null);
+            givenGbQuote("USD", "1380.10");
+
+            assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1380.10"));
+        }
+
+        @Test
+        @DisplayName("둘 다 못 구하면 null — 그때만 호출부가 외화 평가를 접는다")
+        void nullWhenBothPathsFail() {
+            givenAccounts();
+            // 시세 응답 없음(목 기본값 null).
 
             assertThat(sut.getFxRate(USER, "USD")).isNull();
         }
 
         @Test
-        @DisplayName("보유 종목이 없으면 null")
-        void nullWhenNoHoldings() {
-            givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
-            givenGbBalance(null);
+        @DisplayName("폴백 종목의 통화가 다르면 쓰지 않는다 — 조용히 틀린 환율이 화면에 나간다")
+        void nullWhenProbeCurrencyDiffers() {
+            givenAccounts();
+            givenGbQuote("JPY", "891.50");
 
             assertThat(sut.getFxRate(USER, "USD")).isNull();
         }

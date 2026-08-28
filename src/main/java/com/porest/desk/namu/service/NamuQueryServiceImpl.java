@@ -597,17 +597,37 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     }
 
     /**
-     * 환율은 <b>종목별 행(Output_1)</b>에 실려 온다 — 계좌 요약이 아니다. 종목마다 통화가
-     * 달라 계좌 단위로 환율 하나를 들 수 없는 구조라서다.
+     * 원화 환산 환율. <b>두 경로를 순서대로 시도한다.</b>
      *
-     * <p>그래서 제약이 둘 붙는다. 하나, <b>USD 만 구할 수 있다</b> — 잔고 조회의 거래국가가
-     * 미국 고정이라({@link #NATION_US}) 다른 통화는 물어볼 곳이 없다. 둘, <b>USD 보유 종목이
-     * 하나도 없으면 못 구한다.</b> 어느 쪽이든 null 로 접어 외화 평가만 건너뛴다
-     * (부분합으로 금액을 왜곡하지 않는 기존 규칙).
+     * <p><b>USD 만 구할 수 있다</b> — 나무 해외 연동이 미국 고정이라({@link #NATION_US})
+     * 다른 통화는 물어볼 곳이 없다. 미지원 통화는 null 로 접는다.
+     *
+     * <h2>폴백 순서와 근거</h2>
+     * <ol>
+     *   <li><b>해외 잔고</b>({@code tdt_sby_bse_xcg_rt}) — <b>그 계좌의 외화 평가에 실제로
+     *       적용된 환율</b>이다. 같은 값을 써야 잔고 화면의 평가금액과 자산 평가가 어긋나지
+     *       않으므로, 얻을 수 있으면 이쪽이 이긴다. 다만 <b>계좌 + USD 보유 종목이 둘 다</b>
+     *       있어야 나온다(환율이 계좌 요약이 아니라 종목 행에 실려 오기 때문).</li>
+     *   <li><b>해외 현재가</b>({@code currency_prc}) — 요청에 {@code iem_cd} 하나만 필요해
+     *       <b>계좌도 보유도 없이</b> 얻는다. 대신 계좌가 아니라 <b>시세 기준</b> 환율이라
+     *       1번과 소수점이 다를 수 있다. 그래서 폴백이다.</li>
+     * </ol>
+     *
+     * <p><b>예전 주석이 "해외 잔고가 문서화된 유일한 경로" 라고 단정했는데 사실이 아니다.</b>
+     * 그 말을 믿고 폴백을 안 두는 바람에 <b>해외 계좌가 없는 사용자는 환율을 영영 못 구했고</b>
+     * 화면이 외화 평가를 통째로 접었다. 나무 공식 스펙상 {@code /gbstock/quote/v1/current} 의
+     * {@code Output_0} 에 {@code currency_prc} 가 있고, 그 요청은 종목코드만 받는다.
+     *
+     * <p>세 번째 후보로 {@code /gbstock/inquiry/v1/margin}(해외증거금 통화별조회)의
+     * {@code sby_bse_xcg_rt} 도 있다 — <b>통화별 배열</b>이라 USD 외 통화까지 준다. 지금은 안
+     * 쓴다: 계좌를 요구하는데 그 조건은 2번이 이미 계좌 없이 덮으므로 커버리지가 늘지 않는다.
+     * 나중에 <b>USD 외 통화를 지원하게 되면</b> 그때 여기 끼울 자리다.
      *
      * <p><b>여기서는 던지지 않는다</b> — 잔고 화면은 미지원 통화를 400 으로 거절하지만
      * ({@link #requireUsCompatible}), 이 경로는 자산 평가가 부르는 자리라 예외가 나가면
      * 환율 하나 때문에 평가 전체가 멈춘다.
+     *
+     * @see <a href="https://www.nhplug.com/llms-full.txt">NH PLUG OpenAPI 전체 스펙</a>
      */
     @Override
     public BigDecimal getFxRate(Long userRowId, String currency) {
@@ -616,13 +636,27 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             log.debug("나무 환율 조회 불가 - 미국(USD)만 지원한다: 요청={} (userRowId={})", want, userRowId);
             return null;
         }
+        BigDecimal fromBalance = fxRateFromBalance(userRowId, want);
+        if (fromBalance != null) {
+            return fromBalance;
+        }
+        return fxRateFromQuote(userRowId, want);
+    }
+
+    /**
+     * 1순위 — 해외 잔고의 당일매매기준환율. 계좌와 {@code want} 보유 종목이 둘 다 있어야 나온다.
+     *
+     * <p>환율은 <b>종목별 행(Output_1)</b>에 실려 온다 — 계좌 요약이 아니다. 종목마다 통화가
+     * 달라 계좌 단위로 환율 하나를 들 수 없는 구조라서다.
+     */
+    private BigDecimal fxRateFromBalance(Long userRowId, String want) {
         try {
             // 계좌 해석도 try 안이다 — 환경에 맞는 계좌가 없으면 예외가 나는데, 그게 자산 평가
             // 전체를 무너뜨리면 안 된다. 잔고 화면에서는 그대로 던져 원인을 보여주고,
-            // 여기서는 외화 평가만 접는다(부분합으로 금액을 왜곡하지 않는 기존 규칙).
+            // 여기서는 폴백으로 넘어간다(부분합으로 금액을 왜곡하지 않는 기존 규칙).
             String account = resolveAccountNo(userRowId, null);
             if (account == null) {
-                log.debug("나무 환율 조회 불가 - 계좌 없음 (userRowId={})", userRowId);
+                log.debug("나무 환율 - 계좌가 없어 잔고 경로를 건너뛴다 (userRowId={})", userRowId);
                 return null;
             }
             List<NamuAccountDto.GbHolding> items = namuApiClient
@@ -637,12 +671,55 @@ public class NamuQueryServiceImpl implements NamuQueryService {
                 .orElse(null);
 
             if (rate == null) {
-                log.warn("나무 환율 미확보 - {} 보유 종목이 없거나 환율 필드가 비었다 (userRowId={}, 종목={}건)",
+                log.debug("나무 환율 - 잔고에 {} 보유 종목이 없어 시세 경로로 넘어간다 (userRowId={}, 종목={}건)",
                     want, userRowId, items.size());
             }
             return rate;
         } catch (RuntimeException e) {
-            log.warn("나무 환율 조회 실패 (userRowId={}): {}", userRowId, e.getMessage());
+            log.debug("나무 환율 - 잔고 경로 실패, 시세 경로로 넘어간다 (userRowId={}): {}", userRowId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 2순위 — 해외 현재가의 {@code currency_prc}. <b>계좌도 보유 종목도 필요 없다.</b>
+     *
+     * <p>물어볼 종목은 {@code app.namu.fx-probe-symbol} 이 정한다. 비어 있으면 폴백을 끈다.
+     *
+     * <p><b>응답 통화를 반드시 확인한다</b> — {@code currency_prc} 는 그 종목의
+     * {@code currency_unit} 1단위 원화 가격이다. 설정된 종목이 미국 상장이 아니게 되면
+     * (티커 재사용·거래소 이전) 엉뚱한 통화의 환율을 USD 환율로 쓰게 되는데, 그건 화면에
+     * 그럴듯한 숫자로 나가 아무도 못 알아챈다. 그래서 다르면 쓰지 않고 접는다.
+     */
+    private BigDecimal fxRateFromQuote(Long userRowId, String want) {
+        String probe = namuProperties.getFxProbeSymbol();
+        if (probe == null || probe.isBlank()) {
+            log.debug("나무 환율 - 시세 폴백이 꺼져 있다(app.namu.fx-probe-symbol 비어 있음) (userRowId={})", userRowId);
+            return null;
+        }
+        try {
+            NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
+                Map.of("iem_cd", probe.trim()), GB_TYPE);
+            if (p == null) {
+                log.warn("나무 환율 미확보 - 시세 응답이 비었다 (userRowId={}, 종목={})", userRowId, probe);
+                return null;
+            }
+            if (!want.equalsIgnoreCase(p.currency())) {
+                log.warn("나무 환율 미확보 - 폴백 종목의 통화가 다르다: 기대={} 실제={} (userRowId={}, 종목={}). "
+                        + "app.namu.fx-probe-symbol 을 미국 상장 종목으로 바꿔라",
+                    want, p.currency(), userRowId, probe);
+                return null;
+            }
+            BigDecimal rate = decimal(p.exchangeRate());
+            if (rate == null || rate.signum() <= 0) {
+                log.warn("나무 환율 미확보 - 시세의 환율 필드가 비었다 (userRowId={}, 종목={}, currency_prc={})",
+                    userRowId, probe, p.exchangeRate());
+                return null;
+            }
+            log.debug("나무 환율 - 시세 폴백으로 확보 (userRowId={}, 종목={}, 환율={})", userRowId, probe, rate);
+            return rate;
+        } catch (RuntimeException e) {
+            log.warn("나무 환율 조회 실패 - 시세 폴백 (userRowId={}, 종목={}): {}", userRowId, probe, e.getMessage());
             return null;
         }
     }
