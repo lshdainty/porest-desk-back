@@ -51,6 +51,28 @@ class ExpenseBudgetServiceComplianceTest {
 
     private static final long USER_ID = 1L;
 
+    /**
+     * 이번 달 안의 확실한 <b>과거</b> — 1일 00:00.
+     *
+     * <p>{@code now().minusDays(n)} 을 쓰면 매월 1~n 일에 그 값이 <b>지난 달</b>로 떨어져
+     * 이번 달 집계에서 빠진다. 실제로 9월 1일에 이 클래스가 통째로 깨졌다.
+     */
+    private static LocalDateTime thisMonthPast() {
+        return LocalDate.now().withDayOfMonth(1).atStartOfDay();
+    }
+
+    /**
+     * 이번 달 안의 확실한 <b>미래</b> — 말일 23:59:59.
+     *
+     * <p>미래 판정은 {@code ExpenseAggregates.countable} 이 시각(LocalDateTime)으로 한다.
+     * 말일을 쓰는 이유는 달을 안 벗어나기 위해서다 — 달을 벗어나면 "미래라서 빠졌다" 가 아니라
+     * "이번 달이 아니라서 빠졌다" 가 되어 테스트가 의도를 잃는다.
+     */
+    private static LocalDateTime thisMonthFuture() {
+        LocalDate today = LocalDate.now();
+        return today.withDayOfMonth(today.lengthOfMonth()).atTime(23, 59, 59);
+    }
+
     private ExpenseBudget overallBudget(long amount) {
         return ExpenseBudget.createBudget(null, null, amount, 2026, 6);
     }
@@ -189,9 +211,9 @@ class ExpenseBudgetServiceComplianceTest {
     void complianceExcludesFutureSpending() {
         givenBudgets(List.of(overallBudget(500_000L)));
         givenExpenses(List.of(
-            expenseAt(100_000L, LocalDateTime.now().minusDays(1)),
+            expenseAt(100_000L, thisMonthPast()),
             // 반복거래 선생성분 — 요약 카드는 안 세는데 차트만 세면 같은 화면에서 값이 달라진다.
-            expenseAt(400_000L, LocalDateTime.now().plusDays(10))));
+            expenseAt(400_000L, thisMonthFuture())));
 
         var result = sut.getCompliance(USER_ID, 1);
 
@@ -204,8 +226,8 @@ class ExpenseBudgetServiceComplianceTest {
     void complianceOffsetsRefund() {
         givenBudgets(List.of(overallBudget(500_000L)));
         givenExpenses(List.of(
-            expenseAt(100_000L, LocalDateTime.now().minusDays(2)),
-            refundAt(30_000L, LocalDateTime.now().minusDays(1))));
+            expenseAt(100_000L, thisMonthPast()),
+            refundAt(30_000L, thisMonthPast())));
 
         var result = sut.getCompliance(USER_ID, 1);
 
