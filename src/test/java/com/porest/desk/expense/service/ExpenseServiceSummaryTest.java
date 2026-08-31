@@ -388,7 +388,9 @@ class ExpenseServiceSummaryTest {
     @Test
     @DisplayName("추이(trend)도 환불을 상계한다 — 기간 요약과 같은 값이어야 한다")
     void trendOffsetsRefund() {
-        LocalDateTime past = LocalDateTime.now().minusDays(3);
+        // 이번 달 1일 00:00 — now().minusDays(3) 을 쓰면 매월 1~3 일에 지난 달로 떨어져
+        // 이번 달 추이 버킷에서 빠진다(9월 1일에 실제로 깨졌다).
+        LocalDateTime past = LocalDate.now().withDayOfMonth(1).atStartOfDay();
         List<Expense> rows = List.of(
             at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
             refund(3_000L, past, "쿠팡"));
