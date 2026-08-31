@@ -267,16 +267,25 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      */
     private CardBilling payoff(Asset card, Asset paymentAsset, long amount, LocalDate periodStart,
                                LocalDate periodEnd, LocalDate today, Long userRowId) {
-        if (paymentAsset != null) {
+        // 돈은 남은 빚까지만 움직인다 — 청구(기록)는 회차 사용액 전액, 이체는 min(청구, 빚).
+        // 잔액을 수동 보정(앵커)해 빚을 지워 둔 카드는 그 지출이 이미 잔액에 정리된 상태라,
+        // 전액을 또 이체하면 카드가 양수로 뒤집히고 다음 날 과납 환급 스윕이 도로 돌려보낸다
+        // — 아무 일도 아닌 왕복이 기록만 어지럽힌다. 그래서 역전 방지는 표시(upcomingCycle)가
+        // 아니라 여기서 건다.
+        long move = Math.min(amount, currentDebt(card));
+        if (paymentAsset != null && move > 0L) {
             AssetServiceDto.TransferInfo transfer =
-                createPaymentTransfer(card, paymentAsset, amount, userRowId, today);
+                createPaymentTransfer(card, paymentAsset, move, userRowId, today);
             return CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today,
                 transferRef(transfer.rowId()));
         }
-        // 이체 없이 카드 잔액만 되돌린다 — 사용액이 음수로 쌓여 있으므로 +금액 flow.
-        balanceHistoryService.recordExpense(
-            card, null, ExpenseType.INCOME, amount, today.atStartOfDay());
-        return CardBilling.completed(card, null, amount, periodStart, periodEnd, today, null);
+        if (paymentAsset == null && move > 0L) {
+            // 이체 없이 카드 잔액만 되돌린다 — 사용액이 음수로 쌓여 있으므로 +금액 flow.
+            balanceHistoryService.recordExpense(
+                card, null, ExpenseType.INCOME, move, today.atStartOfDay());
+        }
+        // move == 0(빚 없음)이면 돈·잔액을 건드리지 않고 회차 완료만 기록한다.
+        return CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today, null);
     }
 
     private AssetServiceDto.TransferInfo createPaymentTransfer(Asset card, Asset paymentAsset, long amount,
@@ -316,13 +325,11 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 다가오는 결제 회차 계산. 회차 금액 = 청구 기간(결제일의 전월 1일~말일) 카드 순사용액
      * (지출 − 환불) − 같은 회차에 이미 결제 완료된 금액(선결제 차감), 최소 0.
      *
-     * <p>그리고 <b>현재 카드빚을 넘지 않는다</b>. 지출 기록만 보고 청구하면, 사용자가 잔액을
-     * 수동 보정(MANUAL)해 빚을 줄여 놨거나 환불이 들어온 경우 이미 없는 빚을 또 결제해
-     * 카드 잔액이 양수로 역전된다. 실제 카드 앱이 승인취소분을 누적 청구액에서 바로 빼는 것과
-     * 같은 동작이다.
-     *
-     * <p>할부는 구매 시 전액이 잔액 이력에 잡히므로(회차 분할이 아님) 정상 상태에서는
-     * 빚 ≥ 회차 청구다 — 캡이 오발동하지 않는다.
+     * <p><b>현재 카드빚으로 캡하지 않는다.</b> 잔액을 수동 보정(앵커)해 0 으로 맞춘 카드는
+     * 빚이 0 으로 계산되는데, 종전엔 그 캡이 여기(표시)에 걸려 있어 사용액이 있어도
+     * 결제예정액이 0 이 되고 결제 버튼이 죽었다(문자 수입으로 지출만 기록하는 사용자의
+     * 실제 사고). 양수 역전 방지는 표시가 아니라 결제 시점이 맡는다 — {@link #payoff} 가
+     * 돈을 남은 빚까지만 움직인다.
      */
     private BillingCycle upcomingCycle(Asset card, LocalDate nextPaymentDate) {
         LocalDate periodStart;
@@ -341,8 +348,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         long spend = cycleNetSpend(card.getRowId(), periodStart, periodEnd);
         long alreadyPaid = cardBillingRepository
             .sumCompletedAmountByCardAndPeriod(card.getRowId(), periodStart, periodEnd);
-        long billable = Math.max(0L, spend - alreadyPaid);
-        return new BillingCycle(periodStart, periodEnd, Math.min(billable, currentDebt(card)));
+        return new BillingCycle(periodStart, periodEnd, Math.max(0L, spend - alreadyPaid));
     }
 
     /**

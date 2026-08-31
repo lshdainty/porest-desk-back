@@ -297,8 +297,8 @@ class CardPaymentServiceImplTest {
     }
 
     @Test
-    @DisplayName("결제일 미설정 카드 — 잔액이 양수면 청구액 0(종전엔 절대값이라 양수도 또 청구했다)")
-    void positiveBalanceWithoutPaymentDayBillsNothing() {
+    @DisplayName("결제일 미설정 카드 — 잔액이 양수여도 당월 사용액을 보여준다(돈 이동은 payoff 캡)")
+    void positiveBalanceWithoutPaymentDayShowsSpend() {
         Asset card = creditCard(null);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
@@ -308,14 +308,14 @@ class CardPaymentServiceImplTest {
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
 
-        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isZero();
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(50_000L);
     }
 
-    // === 청구 캡 — 없는 빚을 청구하지 않는다 ===
+    // === 결제예정액 — 빚으로 캡하지 않는다(양수 역전 방지는 payoff 의 돈 이동 캡) ===
 
     @Test
-    @DisplayName("청구 캡 — 잔액을 수동 보정해 빚이 줄었으면 청구도 그만큼만(양수 역전 방지)")
-    void billingIsCappedByCurrentDebt() {
+    @DisplayName("결제예정액 — 잔액을 수동 보정(앵커)해 빚이 줄어도 표시·기록은 회차 사용액 전액")
+    void billingShowsCycleSpendDespiteReducedDebt() {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
@@ -325,13 +325,13 @@ class CardPaymentServiceImplTest {
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
 
-        // 500,000 을 그대로 청구하면 잔액이 +380,000 으로 뒤집힌다
-        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(120_000L);
+        // 종전엔 빚(120,000)으로 캡해서 표시했다 — 빚 0 카드는 버튼이 죽는 사고의 뿌리.
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(500_000L);
     }
 
     @Test
-    @DisplayName("청구 캡 — 잔액이 이미 양수면 청구액 0")
-    void positiveBalanceBillsNothing() {
+    @DisplayName("결제예정액 — 잔액이 양수여도 회차 사용액을 그대로 보여준다(돈은 결제 시 안 움직임)")
+    void positiveBalanceStillShowsCycleSpend() {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
@@ -341,11 +341,11 @@ class CardPaymentServiceImplTest {
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
 
-        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isZero();
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).upcomingAmount()).isEqualTo(500_000L);
     }
 
     @Test
-    @DisplayName("청구 캡 — 빚이 사용액보다 많으면 캡이 걸리지 않는다(할부 전액 선반영 등)")
+    @DisplayName("결제예정액 — 빚이 사용액보다 많은 정상 상태는 사용액 그대로(할부 전액 선반영 등)")
     void capDoesNotShrinkNormalBilling() {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
@@ -371,6 +371,7 @@ class CardPaymentServiceImplTest {
         given(card.getPaymentAsset()).willReturn(paymentAsset);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         givenCycleSpend(70_000L);
+        givenCardBalance(-70_000L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
 
@@ -423,6 +424,7 @@ class CardPaymentServiceImplTest {
         given(card.getPaymentAsset()).willReturn(paymentAsset);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         givenCycleSpend(448_600L);
+        givenCardBalance(-448_600L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
         AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
@@ -445,6 +447,7 @@ class CardPaymentServiceImplTest {
         given(card.getPaymentAsset()).willReturn(paymentAsset);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         givenCycleSpend(448_600L);
+        givenCardBalance(-248_600L);
         // 청구액은 '사용액 − 이미 결제한 금액' 이라 선결제분이 자동으로 빠진다.
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(200_000L);
@@ -457,6 +460,79 @@ class CardPaymentServiceImplTest {
         CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
 
         assertThat(result.billingAmount()).isEqualTo(248_600L);
+    }
+
+    // === 돈 이동 캡 — 청구(기록)는 사용액, 이체는 남은 빚까지만 ===
+
+    @Test
+    @DisplayName("빚 0(잔액 앵커) 카드 — 사용액대로 결제 완료되고 이체·상계는 만들지 않는다")
+    void paysAnchoredCardWithoutMovingMoney() {
+        Asset paymentAsset = mock(Asset.class);
+        Asset card = creditCard(12);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(225_733L);
+        givenCardBalance(0L); // 자산 수정으로 잔액 0 앵커 — 지출은 이미 잔액에 정리된 상태
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        assertThat(result.status()).isEqualTo(BillingStatus.COMPLETED);
+        assertThat(result.billingAmount()).isEqualTo(225_733L);
+        then(assetService).should(never()).createTransfer(any());
+        then(balanceHistoryService).should(never())
+            .recordExpense(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("돈 이동 캡 — 빚이 청구보다 작으면 이체는 남은 빚까지만 나간다")
+    void transferIsCappedByRemainingDebt() {
+        Asset paymentAsset = mock(Asset.class);
+        lenient().when(paymentAsset.getRowId()).thenReturn(9L);
+        Asset card = creditCard(12);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(500_000L);
+        givenCardBalance(-120_000L); // 수동 보정으로 빚이 줄어든 상태
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
+        given(transfer.rowId()).willReturn(77L);
+        given(assetService.createTransfer(any())).willReturn(transfer);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        // 기록은 회차 사용액 전액 — 500,000 을 그대로 이체하면 잔액이 +380,000 으로 뒤집힌다.
+        assertThat(result.billingAmount()).isEqualTo(500_000L);
+        ArgumentCaptor<AssetServiceDto.CreateTransferCommand> cmdCaptor =
+            ArgumentCaptor.forClass(AssetServiceDto.CreateTransferCommand.class);
+        verify(assetService).createTransfer(cmdCaptor.capture());
+        assertThat(cmdCaptor.getValue().amount()).isEqualTo(120_000L);
+    }
+
+    @Test
+    @DisplayName("무계좌 카드 — 상계 flow 도 남은 빚까지만 쌓는다")
+    void offsetFlowIsCappedByRemainingDebt() {
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(null);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(100_000L);
+        givenCardBalance(-80_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        assertThat(result.billingAmount()).isEqualTo(100_000L);
+        then(balanceHistoryService).should()
+            .recordExpense(eq(card), isNull(), eq(ExpenseType.INCOME), eq(80_000L), any());
     }
 
     @Test
@@ -496,6 +572,7 @@ class CardPaymentServiceImplTest {
         given(card.getPaymentAsset()).willReturn(null);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         givenCycleSpend(448_600L);
+        givenCardBalance(-448_600L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
         given(cardBillingRepository.save(any(CardBilling.class)))
@@ -519,6 +596,7 @@ class CardPaymentServiceImplTest {
         given(card.getPaymentAsset()).willReturn(paymentAsset);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         givenCycleSpend(448_600L);
+        givenCardBalance(-448_600L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
         AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
