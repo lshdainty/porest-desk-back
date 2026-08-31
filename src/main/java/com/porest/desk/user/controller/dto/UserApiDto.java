@@ -123,4 +123,23 @@ public class UserApiDto {
         // 값 형식은 ZoneId 로만 판단 가능해 서비스에서 검증한다.
         private String timezone;
     }
+
+    /**
+     * 금액 가리기 목록.
+     *
+     * @param hideCards 가려 둔 카드 키들. <b>{@code null} 이면 "아직 한 번도 올린 적 없음"</b> 이고
+     *                  빈 배열은 "사용자가 아무것도 안 가림을 골랐음" 이다 — 클라이언트는 이
+     *                  둘을 반드시 구분해야 한다. {@code null} 을 빈 목록으로 받아 로컬을 덮으면
+     *                  가려 뒀던 금액이 드러난다
+     */
+    public record HideCardsResponse(java.util.List<String> hideCards) {}
+
+    /** @param hideCards 교체할 카드 키 전체. 부분 갱신이 아니라 통째로 바꾼다 */
+    public record UpdateHideCardsReq(
+            @jakarta.validation.constraints.NotNull(message = "hideCards 는 null 일 수 없다")
+            @jakarta.validation.constraints.Size(max = 200, message = "카드 수가 너무 많다")
+            java.util.List<
+                    @jakarta.validation.constraints.Size(max = 64, message = "카드 키가 너무 길다")
+                    String> hideCards
+    ) {}
 }

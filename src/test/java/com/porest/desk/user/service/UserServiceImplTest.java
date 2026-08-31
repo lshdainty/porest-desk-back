@@ -25,6 +25,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import com.porest.desk.user.controller.dto.UserApiDto;
 import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 
 /**
@@ -253,5 +255,75 @@ class UserServiceImplTest {
         assertThatThrownBy(() -> sut.updatePreferences(USER_ID, req))
                 .isInstanceOf(InvalidValueException.class);
         assertThat(u.getTimezone()).isEqualTo("Asia/Seoul");
+    }
+
+    // ── 금액 가리기 ──────────────────────────────────────────────────────
+
+    private User userWithHideCards(String raw) {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        ReflectionTestUtils.setField(u, "hideCards", raw);
+        return u;
+    }
+
+    @Test
+    @DisplayName("올린 적 없으면 null 을 그대로 준다 — 빈 목록으로 뭉개면 첫 실행에 금액이 드러난다")
+    void getHideCards_neverSynced_returnsNull() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(userWithHideCards(null)));
+
+        // null(아직 안 올림)과 []( 사용자가 다 풀었음)는 뜻이 다르다. 클라이언트는 전자면
+        // 내려받지 않고 자기 로컬 값을 올린다 — 여기서 []로 바꾸면 그 분기가 사라진다.
+        assertThat(sut.getHideCards(USER_ID).hideCards()).isNull();
+    }
+
+    @Test
+    @DisplayName("사용자가 다 푼 상태는 빈 목록으로 준다 — null 과 구분된다")
+    void getHideCards_explicitlyEmpty_returnsEmptyList() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(userWithHideCards("[]")));
+
+        assertThat(sut.getHideCards(USER_ID).hideCards()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("저장된 목록을 그대로 돌려준다 — 서버는 카드 키를 해석하지 않는다")
+    void getHideCards_returnsStoredCards() {
+        given(userRepository.findById(USER_ID))
+                .willReturn(Optional.of(userWithHideCards("[\"asset.netWorth\",\"kind.expense\"]")));
+
+        assertThat(sut.getHideCards(USER_ID).hideCards())
+                .containsExactly("asset.netWorth", "kind.expense");
+    }
+
+    @Test
+    @DisplayName("깨진 값은 빈 목록으로 준다 — null 로 주면 클라이언트가 로컬 값으로 덮어쓴다")
+    void getHideCards_brokenJson_returnsEmptyList() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(userWithHideCards("not json")));
+
+        assertThat(sut.getHideCards(USER_ID).hideCards()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("교체 저장 — 중복은 걷는다(두 클라이언트가 같은 카드를 각자 올려도 부풀지 않는다)")
+    void updateHideCards_dedupesAndStores() {
+        User user = userWithHideCards(null);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+
+        var res = sut.updateHideCards(USER_ID,
+                new UserApiDto.UpdateHideCardsReq(List.of("a", "b", "a")));
+
+        assertThat(res.hideCards()).containsExactly("a", "b");
+        assertThat(user.getHideCards()).isEqualTo("[\"a\",\"b\"]");
+    }
+
+    @Test
+    @DisplayName("빈 목록으로 교체하면 null 이 아니라 [] 가 저장된다 — '다 풀었음' 이 기록돼야 한다")
+    void updateHideCards_empty_storesEmptyArrayNotNull() {
+        User user = userWithHideCards("[\"a\"]");
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user));
+
+        sut.updateHideCards(USER_ID, new UserApiDto.UpdateHideCardsReq(List.of()));
+
+        // null 이 되면 다음 로그인에서 "아직 안 올림" 으로 읽혀 옛 로컬 값이 되살아난다.
+        assertThat(user.getHideCards()).isEqualTo("[]");
     }
 }

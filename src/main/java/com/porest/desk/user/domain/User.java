@@ -44,6 +44,20 @@ public class User extends AuditingFieldsWithIp {
     @Column(name = "dashboard", columnDefinition = "TEXT")
     private String dashboard;
 
+    /**
+     * 금액 가리기 카드 목록 (JSON 배열 문자열).
+     *
+     * <p>서버는 내용을 해석하지 않는다 — 카드 키 목록은 화면이 정하는 어휘이고
+     * (앱 {@code hide_amounts_cards.dart} · 웹 {@code hide-amounts-cards.ts}),
+     * 서버가 그걸 알고 있으면 카드를 하나 추가할 때마다 배포가 묶인다.
+     *
+     * <p><b>{@code null} 과 {@code "[]"} 는 뜻이 다르다.</b> {@code null} 은 "아직 한 번도
+     * 올린 적 없음", {@code "[]"} 는 "사용자가 아무것도 안 가림을 골랐음" 이다. 구분하지
+     * 않으면 배포 첫 실행에 서버의 빈 값이 로컬을 덮어 가려 뒀던 금액이 통째로 드러난다.
+     */
+    @Column(name = "hide_cards", columnDefinition = "TEXT")
+    private String hideCards;
+
     @Column(name = "timezone", nullable = false, length = 50)
     private String timezone;
 
@@ -173,6 +187,11 @@ public class User extends AuditingFieldsWithIp {
 
     public void updateDashboard(String dashboard) {
         this.dashboard = dashboard;
+    }
+
+    /** 금액 가리기 목록 교체. {@code null} 로 되돌리는 경로는 없다 — 한 번 올리면 계속 서버가 기준이다. */
+    public void updateHideCards(String hideCards) {
+        this.hideCards = hideCards;
     }
 
     public void updateTimezone(String timezone) {
