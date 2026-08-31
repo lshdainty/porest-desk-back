@@ -1,6 +1,7 @@
 package com.porest.desk.security.client;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.porest.core.exception.ExternalServiceException;
 import com.porest.core.exception.UnauthorizedException;
 import com.porest.desk.common.config.properties.AppProperties;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -8,9 +9,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.LinkedHashMap;
@@ -120,6 +123,41 @@ public class SsoOAuth2Client {
      * SSO /oauth2/token 에 client_credentials 그랜트로 desk 서비스 토큰(RS256)을 발급받아 access_token 을 반환.
      * <p>비밀번호 변경/검증 프록시에서 SSO 를 호출할 때 Bearer 로 사용한다. 실패 시 AUTH_EXCHANGE_FAILED.
      */
+    /**
+     * 이 사용자의 SSO 세션을 전부 끊는다 — "모든 기기에서 로그아웃".
+     *
+     * <p>desk 자기 세션은 호출부가 따로 끊는다. 이건 <b>SSO·hr 까지 함께 끊기게</b> 하려는
+     * 것으로, SSO 가 전체 폐기와 함께 세션 폐기 이벤트를 내보내 다른 서비스에 전파한다.
+     *
+     * <p><b>desk 의 세션 폐기 구독자에서 부르면 안 된다.</b> SSO 이벤트 → desk 폐기 →
+     * 다시 SSO 호출 → 또 이벤트로 무한히 돈다. 사용자가 버튼을 누른 경로에서만 부른다.
+     *
+     * @throws ExternalServiceException SSO 가 응답하지 못하면 — 호출부가 "일부만 끊겼다" 를
+     *         사용자에게 알릴 수 있어야 한다. 조용히 삼키면 다른 기기가 살아 있는데
+     *         끊었다고 믿게 된다
+     */
+    public void revokeAllSessions(String userId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(issueServiceToken());
+
+        // 서비스 토큰에는 사용자 식별자가 없으므로 대상 userId 를 body 에 담는다.
+        HttpEntity<Map<String, String>> entity =
+                new HttpEntity<>(Map.of("userId", userId), headers);
+
+        try {
+            ssoRestTemplate.exchange(
+                    "/api/v1/auth/sessions/revoke-all",
+                    HttpMethod.POST,
+                    entity,
+                    Void.class);
+            log.info("SSO 전체 세션 폐기 요청 완료. userId={}", userId);
+        } catch (RestClientException e) {
+            log.error("SSO 전체 세션 폐기 실패. userId={}", userId, e);
+            throw new ExternalServiceException(DeskErrorCode.SSO_SERVICE_ERROR, e);
+        }
+    }
+
     public String issueServiceToken() {
         Map<String, String> body = new LinkedHashMap<>();
         body.put("grant_type", GRANT_TYPE_CLIENT_CREDENTIALS);

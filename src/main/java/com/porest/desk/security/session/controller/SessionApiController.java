@@ -4,6 +4,7 @@ import com.porest.core.controller.ApiResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.security.session.controller.dto.SessionApiDto;
+import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.session.service.SsoSessionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,6 +27,7 @@ import java.util.List;
 public class SessionApiController {
 
     private final SsoSessionService ssoSessionService;
+    private final SsoOAuth2Client ssoOAuth2Client;
 
     /** 살아 있는 기기 목록. 최근 사용 순. */
     @GetMapping
@@ -48,13 +50,22 @@ public class SessionApiController {
     }
 
     /**
-     * 모든 기기에서 로그아웃 — 지금 이 기기도 포함해서 끊는다.
+     * 모든 기기에서 로그아웃 — 지금 이 기기도 포함해, <b>전 기기·전 서비스</b>를 끊는다.
      *
-     * <p>아직 desk 세션만 끊는다. SSO·hr 은 다음 단계(SSO 로그아웃 이벤트)에서 이어붙인다.
+     * <p>desk 세션을 먼저 끊고, SSO 에 전체 폐기를 요청한다. SSO 가 자기 토큰을 전부 끊으면서
+     * 세션 폐기 이벤트를 내보내 hr 까지 전파된다.
+     *
+     * <p>순서가 이렇다. SSO 요청이 실패하면 예외가 올라가 사용자에게 알려지는데, 그때
+     * <b>desk 는 이미 끊긴 상태</b>여야 한다 — 반대로 두면 SSO 만 끊기고 desk 가 남아
+     * "로그아웃했는데 이 서비스만 열려 있는" 상태가 된다.
+     *
+     * <p>SSO 이벤트를 받아 처리하는 쪽({@code SsoSessionEventSubscriber})은 여기를 타지 않고
+     * {@code revokeAll} 만 부른다. 거기서 SSO 를 다시 부르면 이벤트가 무한히 돈다.
      */
     @DeleteMapping
     public ApiResponse<Void> revokeAll(@LoginUser UserPrincipal loginUser) {
         ssoSessionService.revokeAll(loginUser.getRowId());
+        ssoOAuth2Client.revokeAllSessions(loginUser.getUserId());
         return ApiResponse.success();
     }
 }
