@@ -51,7 +51,11 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
             "/actuator/health",
             "/actuator/prometheus",
             "/favicon.ico",
-            "/api/v1/notifications/stream"
+            "/api/v1/notifications/stream",
+            // 결제 문자 수입 — 요청 본문이 문자 원문(개인정보)이고 응답에 가맹점·금액·카드뒤4가
+            // 실린다. 마스커는 이름 붙은 키만 보므로 text 값은 못 가린다 — 경로째 로그에서 뺀다.
+            // startsWith 매칭이라 /parse·/commit 하위까지 걸리고, 접근줄은 엣지 nginx 가 남긴다.
+            "/api/v1/import/sms"
     );
 
     /**

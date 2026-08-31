@@ -13,6 +13,11 @@ public final class SecuritiesCredentialApiDto {
     /** 키 등록 요청. 라벨은 증권사마다 다르지만(Client ID / App Key) 자리는 둘로 같다. */
     @Schema(name = "SecuritiesCredentialRegisterRequest")
     public record RegisterRequest(String apiKey, String apiSecret) {
+        /** 자동 toString 이 평문 크리덴셜을 노출하지 않게 고정한다 — 인자를 로그에 찍는 코드가 생겨도 안전. */
+        @Override
+        public String toString() {
+            return "RegisterRequest[apiKey=***, apiSecret=***]";
+        }
     }
 
     /**
