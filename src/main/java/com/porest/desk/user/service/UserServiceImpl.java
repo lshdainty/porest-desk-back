@@ -7,6 +7,7 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.user.controller.dto.UserApiDto.PreferencesResponse;
+import com.porest.desk.user.controller.dto.UserApiDto;
 import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -24,7 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
+import java.util.List;
 import java.util.Map;
 import java.time.DateTimeException;
 import java.time.ZoneId;
@@ -128,6 +134,54 @@ public class UserServiceImpl implements UserService {
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
         Integer v = user.getBudgetAlertThreshold();
         return v != null ? v : 85;
+    }
+
+    /**
+     * 금액 가리기 목록의 JSON 직렬화 전용.
+     *
+     * <p>서버는 카드 키를 해석하지 않는다 — 어떤 카드가 있는지는 화면이 정하는 어휘라
+     * 서버가 알고 있으면 카드를 하나 늘릴 때마다 배포가 묶인다. 여기서는 문자열 목록을
+     * 그대로 담았다 빼기만 한다.
+     */
+    private static final ObjectMapper HIDE_CARDS_JSON = JsonMapper.builder().build();
+
+    @Override
+    public UserApiDto.HideCardsResponse getHideCards(Long userRowId) {
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+        return new UserApiDto.HideCardsResponse(readHideCards(user.getHideCards(), userRowId));
+    }
+
+    @Override
+    @Transactional
+    public UserApiDto.HideCardsResponse updateHideCards(Long userRowId, UserApiDto.UpdateHideCardsReq req) {
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+        // 중복은 여기서 걷는다 — 두 클라이언트가 같은 카드를 각자 올려도 목록이 부풀지 않는다.
+        List<String> cards = req.hideCards().stream().distinct().toList();
+        user.updateHideCards(HIDE_CARDS_JSON.writeValueAsString(cards));
+        return new UserApiDto.HideCardsResponse(cards);
+    }
+
+    /**
+     * 저장된 JSON 을 목록으로. 저장된 적 없으면 {@code null} 을 그대로 돌려준다.
+     *
+     * <p><b>{@code null} 을 빈 목록으로 바꾸지 않는다.</b> 클라이언트는 "아직 안 올림"
+     * ({@code null})과 "사용자가 다 풀었음"(빈 목록)을 구분해 전자면 자기 로컬 값을 올린다.
+     * 여기서 뭉개면 배포 첫 실행에 가려 뒀던 금액이 통째로 드러난다.
+     */
+    private List<String> readHideCards(String raw, Long userRowId) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return HIDE_CARDS_JSON.readValue(raw, new TypeReference<List<String>>() {});
+        } catch (JacksonException e) {
+            // 깨진 값이면 빈 목록으로 준다 — null 로 주면 클라이언트가 "아직 안 올림" 으로 읽고
+            // 자기 로컬 값을 올려 깨진 값을 덮는데, 그건 사용자가 고른 적 없는 상태다.
+            log.error("hide_cards JSON 을 읽지 못했다 — 빈 목록으로 준다. userRowId={}", userRowId, e);
+            return List.of();
+        }
     }
 
     @Override
