@@ -76,6 +76,11 @@ public class LegacyTossCredentialApiController {
      */
     @Schema(name = "TossCredentialRegisterRequest")
     public record RegisterRequest(String clientId, String clientSecret) {
+        /** 자동 toString 이 평문 크리덴셜을 노출하지 않게 고정한다 — 인자를 로그에 찍는 코드가 생겨도 안전. */
+        @Override
+        public String toString() {
+            return "RegisterRequest[clientId=***, clientSecret=***]";
+        }
     }
 
     public record CredentialStatusResponse(boolean connected, boolean verified, LocalDateTime verifiedAt) {

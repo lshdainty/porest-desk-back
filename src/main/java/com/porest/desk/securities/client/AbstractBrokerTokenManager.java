@@ -85,6 +85,11 @@ public abstract class AbstractBrokerTokenManager implements BrokerTokenManager {
 
     /** 복호화한 평문 한 쌍. 이 클래스 밖으로 나가지 않는다. */
     protected record ApiCredential(String apiKey, String apiSecret) {
+        /** 자동 toString 이 평문을 노출하지 않게 고정한다. */
+        @Override
+        public String toString() {
+            return "ApiCredential[apiKey=***, apiSecret=***]";
+        }
     }
 
     /** 발급 사유. 로그로만 나간다 — 알림톡이 쌓일 때 원인을 즉시 알기 위한 것. */
