@@ -63,6 +63,35 @@ class CalendarEventServiceImplTest {
     }
 
     @Test
+    @DisplayName("getEvents — 반복(rrule) 이벤트는 구간 안 발생들로 전개된다")
+    void getEventsExpandsRecurringIntoOccurrences() {
+        given(calendarMembershipValidator.getAccessibleCalendarIds(USER_ID))
+                .willReturn(java.util.List.of(9L));
+        CalendarEvent weekly = CalendarEvent.createEvent(user(USER_ID), "주간회의", null,
+                null, null,
+                LocalDateTime.of(2026, 10, 3, 0, 0), LocalDateTime.of(2026, 10, 3, 23, 59),
+                null, null, null, "FREQ=WEEKLY", mock(UserCalendar.class));
+        ReflectionTestUtils.setField(weekly, "rowId", 162L);
+        given(calendarEventRepository.findByCalendarIdsAndDateRange(
+                org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .willReturn(java.util.List.of(weekly));
+        given(eventReminderRepository.findByEventIds(org.mockito.ArgumentMatchers.anyList()))
+                .willReturn(java.util.List.of());
+
+        var out = sut.getEvents(USER_ID,
+                LocalDateTime.of(2026, 10, 1, 0, 0), LocalDateTime.of(2026, 10, 31, 23, 59));
+
+        // 10월: 3·10·17·24·31 — dev 에선 3일 한 번만 떴다
+        org.assertj.core.api.Assertions.assertThat(out).hasSize(5);
+        org.assertj.core.api.Assertions.assertThat(out)
+                .extracting(e -> e.startDate().getDayOfMonth())
+                .containsExactly(3, 10, 17, 24, 31);
+        // 발생은 전부 원본 rowId 를 유지한다 — 수정·삭제가 시리즈에 걸리도록
+        org.assertj.core.api.Assertions.assertThat(out)
+                .allMatch(e -> e.rowId() == 162L);
+    }
+
+    @Test
     @DisplayName("createEvent — 시작이 종료보다 늦으면 거부")
     void createRejectsInvalidDateRange() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));

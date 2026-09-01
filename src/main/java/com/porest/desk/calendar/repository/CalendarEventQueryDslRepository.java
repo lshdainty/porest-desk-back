@@ -72,7 +72,10 @@ public class CalendarEventQueryDslRepository implements CalendarEventRepository 
                 calendarEvent.calendar.rowId.in(calendarRowIds),
                 calendarEvent.isDeleted.eq(YNType.N),
                 calendarEvent.startDate.loe(endDate),
-                calendarEvent.endDate.goe(startDate)
+                // 반복 이벤트는 원본이 구간보다 앞서 시작해도 이번 구간에 발생이
+                // 떨어질 수 있다 — endDate(원본 1회차의 끝) 조건을 면제하고
+                // 서비스의 RecurrenceExpander 가 구간 안 발생만 남긴다.
+                calendarEvent.endDate.goe(startDate).or(calendarEvent.rrule.isNotNull())
             )
             .orderBy(calendarEvent.startDate.asc())
             .fetch();

@@ -68,6 +68,18 @@ public class CalendarEventServiceDto {
             return from(event, List.of());
         }
 
+        /**
+         * 반복 전개용 발생(occurrence) 복제 — 시각만 그 회차로 바꾼 사본.
+         * rowId 는 원본 그대로다: 발생을 눌러 수정·삭제하면 시리즈 원본에 걸린다
+         * (회차 단위 예외는 아직 없다 — RecurrenceExpander 주석 참고).
+         */
+        public EventInfo withOccurrence(LocalDateTime occurrenceStart, LocalDateTime occurrenceEnd) {
+            return new EventInfo(rowId, userRowId, title, description, eventType, color,
+                occurrenceStart, occurrenceEnd, isAllDay, labelRowId, labelName, labelColor,
+                location, rrule, recurrenceId, isException, reminders,
+                calendarRowId, calendarName, calendarColor, createAt, modifyAt);
+        }
+
         public static EventInfo from(CalendarEvent event, List<EventReminderServiceDto.ReminderInfo> reminders) {
             return new EventInfo(
                 event.getRowId(),
