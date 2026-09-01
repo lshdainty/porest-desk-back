@@ -101,6 +101,32 @@ class CreditCardBalanceSignTest {
     }
 
     @Nested
+    @DisplayName("INIT 앵커 시각 — 분 시작으로 내린다")
+    class InitAnchorMinute {
+
+        @Test
+        @DisplayName("21:47:37.386 에 만들어도 앵커는 21:47:00.0 — 같은 분의 거래(:00)가 빠지지 않는다")
+        void initEffectiveTruncatedToMinute() {
+            sut.recordInit(asset(AssetType.BANK_ACCOUNT, 500_000L),
+                LocalDateTime.of(2026, 9, 1, 21, 47, 37, 386_000_000));
+            ArgumentCaptor<AssetBalanceHistory> c = ArgumentCaptor.forClass(AssetBalanceHistory.class);
+            then(repository).should().save(c.capture());
+            assertThat(c.getValue().getEffectiveAt())
+                .isEqualTo(LocalDateTime.of(2026, 9, 1, 21, 47, 0, 0));
+        }
+
+        @Test
+        @DisplayName("MANUAL 앵커는 내리지 않는다 — 같은 분의 앞선 거래를 이중 계상하지 않기 위해")
+        void manualEffectiveKept() {
+            LocalDateTime at = LocalDateTime.of(2026, 9, 1, 21, 47, 37, 386_000_000);
+            sut.recordManual(asset(AssetType.BANK_ACCOUNT, 0L), 1_000_000L, at);
+            ArgumentCaptor<AssetBalanceHistory> c = ArgumentCaptor.forClass(AssetBalanceHistory.class);
+            then(repository).should().save(c.capture());
+            assertThat(c.getValue().getEffectiveAt()).isEqualTo(at);
+        }
+    }
+
+    @Nested
     @DisplayName("다른 자산은 부호를 건드리지 않는다")
     class OtherTypes {
 
