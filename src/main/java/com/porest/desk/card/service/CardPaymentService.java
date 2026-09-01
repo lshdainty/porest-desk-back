@@ -18,6 +18,15 @@ public interface CardPaymentService {
     CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount);
 
     /**
+     * 할부 중도 전액 상환 — 남은 원금을 <b>다가오는 청구 회차</b>에 몰아 청구되게 한다.
+     * 그 회차를 지금 결제로 정리하면 끝난다.
+     */
+    void payoffInstallment(Long cardRowId, Long expenseRowId, Long userRowId);
+
+    /** 상환 취소 — 정상 분할로 되돌린다. */
+    void cancelInstallmentPayoff(Long cardRowId, Long expenseRowId, Long userRowId);
+
+    /**
      * 카드 결제 취소 — 결제로 만들어진 이체를 무르고 청구 회차를 되돌린다.
      *
      * <p>잘못 누른 결제를 되돌릴 길이 없었다. 이체는 CARD_PAYMENT 로 잠겨 있어 사용자가

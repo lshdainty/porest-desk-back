@@ -24,6 +24,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -81,6 +82,16 @@ public class Expense extends AuditingFieldsWithIp {
      */
     @Column(name = "installment_months")
     private Integer installmentMonths;
+
+    /**
+     * 할부 중도 전액 상환일 (null = 정상 분할).
+     *
+     * <p>이 날짜가 속한 청구 회차(월)에 <b>남은 원금</b>이 한 번에 청구되고 이후 회차는
+     * 0원이 된다. 회차는 순수 날짜 계산이라 이 값 없이는 "상환됨" 을 표현할 방법이 없었다 —
+     * 할부 개월을 고치는 우회는 과거 회차 금액까지 재계산해 이미 낸 청구와 어긋난다.
+     */
+    @Column(name = "installment_payoff_date")
+    private LocalDate installmentPayoffDate;
 
     /**
      * 환불 원거래 행 아이디 (null = 환불 아님).
@@ -257,9 +268,75 @@ public class Expense extends AuditingFieldsWithIp {
         if (seq < 1 || seq > installmentMonths) {
             return 0L;
         }
+        // 중도 전액 상환 — 상환 회차에 남은 원금을 몰고, 이후 회차는 0.
+        // 정상 분할 산식과 같은 자리에 둔다: 산식이 두 곳으로 갈라지면 합이 원금과 어긋난다.
+        Integer payoffSeq = installmentPayoffSequence();
+        if (payoffSeq != null && payoffSeq <= installmentMonths) {
+            if (seq > payoffSeq) {
+                return 0L;
+            }
+            if (seq == payoffSeq) {
+                long paidBefore = 0L;
+                for (int i = 1; i < payoffSeq; i++) {
+                    paidBefore += normalInstallmentAmountAt(i);
+                }
+                return amount - paidBefore;
+            }
+        }
+        return normalInstallmentAmountAt(seq);
+    }
+
+    /** 정상 분할 회차 금액 — 나머지는 1회차에 몰아 합이 원금과 정확히 맞는다. */
+    private long normalInstallmentAmountAt(int seq) {
         long base = amount / installmentMonths;
         long remainder = amount % installmentMonths;
         return seq == 1 ? base + remainder : base;
+    }
+
+    /**
+     * 상환일이 몇 회차(월)에 속하는지. 상환 안 했으면 null.
+     *
+     * <p>구매월보다 이른 상환일은 1회차로 본다 — 결제일이 지나 다가오는 회차가 구매월보다
+     * 앞서는 경우(이달에 산 할부를 바로 정리)인데, 그때는 첫 회차에 전액을 몰면 된다.
+     */
+    public Integer installmentPayoffSequence() {
+        if (installmentPayoffDate == null || !isInstallment()) {
+            return null;
+        }
+        return Math.max(1, installmentSequenceAt(installmentPayoffDate));
+    }
+
+    /**
+     * 이 날짜가 속한 청구 회차 번호(1-base, 구매월 = 1회차). 범위 검사는 하지 않는다.
+     *
+     * <p>회차 산식은 여기 <b>한 곳</b>이다 — 청구 계산(installmentDuesIn)·상환 검증·표시가
+     * 전부 이걸 쓴다. 산식이 갈라지면 회차 합이 원금과 어긋난다.
+     */
+    public int installmentSequenceAt(LocalDate dateInCycle) {
+        return (int) (java.time.temporal.ChronoUnit.MONTHS.between(
+            java.time.YearMonth.from(expenseDate.toLocalDate()),
+            java.time.YearMonth.from(dateInCycle)) + 1);
+    }
+
+    /**
+     * 할부 중도 전액 상환 — 남은 원금을 [payoffDate] 가 속한 회차에 몰아 청구되게 한다.
+     *
+     * <p>이미 끝난 할부(상환 회차 > N)는 거부한다 — 정리할 남은 원금이 없다.
+     */
+    public void payoffInstallment(LocalDate payoffDate) {
+        if (!isInstallment()) {
+            throw new IllegalStateException("할부 거래가 아니다");
+        }
+        this.installmentPayoffDate = payoffDate;
+        if (installmentPayoffSequence() > installmentMonths) {
+            this.installmentPayoffDate = null;
+            throw new IllegalStateException("이미 회차가 끝난 할부다");
+        }
+    }
+
+    /** 상환 취소 — 정상 분할로 되돌린다. 잘못 누른 상환을 무르는 경로. */
+    public void cancelInstallmentPayoff() {
+        this.installmentPayoffDate = null;
     }
 
     /** 카테고리만 교체 — 카테고리 재편 시 일괄 이동용(다른 값은 건드리지 않는다). */

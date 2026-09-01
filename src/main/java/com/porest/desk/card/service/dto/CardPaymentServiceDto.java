@@ -50,6 +50,8 @@ public class CardPaymentServiceDto {
      * @param installmentMonths 총 회차 수(N)
      * @param sequence          이번이 몇 회차인지(1-base)
      * @param amount            이번 회차에 빠지는 금액. 나머지는 1회차에 몰린다(카드사 관행)
+     * @param paidOff           이 회차가 중도 전액 상환으로 남은 원금을 몰아 받은 회차인지 —
+     *                          화면이 "남은 원금 정리" 표시를 달고 정리 버튼을 숨긴다
      */
     public record InstallmentDue(
         Long expenseRowId,
@@ -58,7 +60,8 @@ public class CardPaymentServiceDto {
         Long principalAmount,
         Integer installmentMonths,
         Integer sequence,
-        Long amount
+        Long amount,
+        boolean paidOff
     ) {}
 
     /**
