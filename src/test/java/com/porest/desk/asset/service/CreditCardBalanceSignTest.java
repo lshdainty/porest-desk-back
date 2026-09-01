@@ -101,6 +101,32 @@ class CreditCardBalanceSignTest {
     }
 
     @Nested
+    @DisplayName("대출 — 잔액(빚)은 음수로 저장된다")
+    class Loan {
+
+        @Test
+        @DisplayName("대출 잔액 5,000,000 을 양수로 입력해도 −5,000,000 으로 저장")
+        void initNormalized() {
+            sut.recordInit(asset(AssetType.LOAN, 5_000_000L), AT);
+            assertThat(savedAmount()).isEqualTo(-5_000_000L);
+        }
+
+        @Test
+        @DisplayName("수동 잔액 수정도 음수로 — 상환 이체(+원금)가 빚을 줄이는 방향이 된다")
+        void manualNormalized() {
+            sut.recordManual(asset(AssetType.LOAN, 0L), 4_500_000L, AT);
+            assertThat(savedAmount()).isEqualTo(-4_500_000L);
+        }
+
+        @Test
+        @DisplayName("음수로 입력하면 그대로")
+        void negativeInputStays() {
+            sut.recordManual(asset(AssetType.LOAN, 0L), -4_500_000L, AT);
+            assertThat(savedAmount()).isEqualTo(-4_500_000L);
+        }
+    }
+
+    @Nested
     @DisplayName("INIT 앵커 시각 — 분 시작으로 내린다")
     class InitAnchorMinute {
 
