@@ -272,6 +272,20 @@ class BalanceAggregateParityTest {
         }
 
         @Test
+        @DisplayName("INIT 와 같은 시각의 flow — 자산 생성 직후 같은 분에 기록한 거래가 포함된다")
+        void sameInstantInitAndFlow() {
+            // 벽시계 거래는 분 단위(:00)이고 INIT 앵커도 분 시작으로 내려 저장된다
+            // (recordInit). 같은 시각 tie 는 row_id 로 갈라 INIT 뒤의 flow 가 산다 —
+            // dev 에서 계좌 생성 직후의 이체 입금이 잔액에서 빠졌던 케이스의 고정.
+            row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 500_000L, at(3, 1));
+            row(asset, BalanceSourceType.TRANSFER, BalanceChannel.CASH, 100_000L, at(3, 1));
+            assertParity(asset);
+
+            Map<Long, Split> got = toSplits(repository.aggregateBalances(List.of(asset.getRowId()), NOW));
+            assertThat(got.get(asset.getRowId()).cash()).isEqualTo(600_000L);
+        }
+
+        @Test
         @DisplayName("소급 입력 — 1월 지출을 8월에 넣어도 시각 순서대로 끼어든다")
         void backdatedRow() {
             row(asset, BalanceSourceType.INIT, BalanceChannel.CASH, 3_000_000L, at(1, 1));

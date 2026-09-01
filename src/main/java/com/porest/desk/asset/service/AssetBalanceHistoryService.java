@@ -48,12 +48,23 @@ public class AssetBalanceHistoryService {
 
     // === 쓰기 ===
 
-    /** 자산 생성 — 초기 잔액 절대 앵커. */
+    /**
+     * 자산 생성 — 초기 잔액 절대 앵커.
+     *
+     * <p>앵커 시각은 <b>분 시작으로 내린다</b>. 거래의 벽시계(expenseDate·transferDate)는
+     * 분 단위(초 00)인데 앵커가 초를 들고 있으면, 자산을 만들고 같은 분에 기록한 거래가
+     * 앵커보다 과거(21:47:00 &lt; 21:47:37)로 떨어져 잔액에서 조용히 빠진다 — dev 에서
+     * 계좌 생성 직후의 이체가 출금 쪽만 반영됐다. 생성 이전에 이 자산의 거래가 실존할 수
+     * 없으므로 분 시작으로 내려도 실거래를 앵커 앞으로 넘길 위험이 없다. 같은 시각 tie 는
+     * 집계 쿼리가 row_id 로 가른다 — INIT 가 먼저 저장되므로 그 뒤의 flow 가 포함된다.
+     * MANUAL 앵커는 내리지 않는다 — 같은 분의 <b>앞선</b> 실거래가 있을 수 있고, 수동
+     * 스냅샷은 이미 그 거래를 품은 값이라 내리면 이중 계상이 된다.
+     */
     public void recordInit(Asset asset, LocalDateTime effectiveAt) {
         long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(),
-            normalizeAnchor(asset, initial), effectiveAt));
+            normalizeAnchor(asset, initial), effectiveAt.withSecond(0).withNano(0)));
     }
 
     /** 사용자의 수동 잔액 수정 — 절대 앵커(점프). 가계부 통계엔 영향 없음. */
