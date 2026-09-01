@@ -35,6 +35,7 @@ class TokenExchangeServiceTest {
     @Mock private JwtTokenProvider jwtTokenProvider;
     @Mock private UserRepository userRepository;
     @Mock private UserCalendarService userCalendarService;
+    @Mock private com.porest.desk.expense.service.ExpenseCategoryService expenseCategoryService;
     @Mock private com.porest.desk.security.client.SsoOAuth2Client ssoOAuth2Client;
     @Mock private com.porest.desk.security.session.service.SsoSessionService ssoSessionService;
 
@@ -69,6 +70,7 @@ class TokenExchangeServiceTest {
         sut.exchangeToken("sso", "sid");
 
         verify(userCalendarService).getOrCreateDefault(7L);
+        verify(expenseCategoryService).seedDefaults(7L);
     }
 
     @Test
@@ -83,6 +85,7 @@ class TokenExchangeServiceTest {
         sut.exchangeToken("sso", "sid");
 
         verify(userCalendarService, never()).getOrCreateDefault(eq(7L));
+        verify(expenseCategoryService, never()).seedDefaults(eq(7L));
         verify(userRepository, never()).save(any(User.class));
     }
 

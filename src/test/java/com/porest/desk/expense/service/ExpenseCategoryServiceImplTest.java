@@ -434,4 +434,45 @@ class ExpenseCategoryServiceImplTest {
                 .isInstanceOf(InvalidValueException.class);
         }
     }
+
+    @Nested
+    @DisplayName("seedDefaults — 신규 사용자 기본 카테고리")
+    class SeedDefaults {
+
+        @Test
+        @DisplayName("카테고리가 없으면 지출 8 + 수입 3 기본 세트를 만든다")
+        void seedsDefaultsForNewUser() {
+            given(expenseCategoryRepository.findAllByUser(USER_ID)).willReturn(List.of());
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            sut.seedDefaults(USER_ID);
+
+            org.mockito.ArgumentCaptor<ExpenseCategory> captor =
+                org.mockito.ArgumentCaptor.forClass(ExpenseCategory.class);
+            verify(expenseCategoryRepository, times(11)).save(captor.capture());
+
+            List<ExpenseCategory> saved = captor.getAllValues();
+            assertThat(saved).filteredOn(c -> c.getExpenseType() == ExpenseType.EXPENSE).hasSize(8);
+            assertThat(saved).filteredOn(c -> c.getExpenseType() == ExpenseType.INCOME).hasSize(3);
+            // 전부 최상위 — 부모 계층은 사용자가 스스로 세운다.
+            assertThat(saved).allMatch(c -> c.getParent() == null);
+            // 이름·아이콘·색이 비어 있으면 화면 타일이 깨진다.
+            assertThat(saved).allMatch(c -> !c.getCategoryName().isBlank()
+                && !c.getIcon().isBlank() && c.getColor().startsWith("#"));
+            // sortOrder 는 타입별 0부터 등록 순서.
+            assertThat(saved.get(0).getSortOrder()).isZero();
+            assertThat(saved.get(0).getCategoryName()).isEqualTo("식비");
+        }
+
+        @Test
+        @DisplayName("활성 카테고리가 하나라도 있으면 아무것도 만들지 않는다 (멱등)")
+        void skipsWhenCategoriesExist() {
+            given(expenseCategoryRepository.findAllByUser(USER_ID))
+                .willReturn(List.of(category(10L, user(USER_ID), null, ExpenseType.EXPENSE)));
+
+            sut.seedDefaults(USER_ID);
+
+            verify(expenseCategoryRepository, never()).save(any());
+        }
+    }
 }

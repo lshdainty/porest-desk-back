@@ -86,6 +86,57 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         return ExpenseCategoryServiceDto.CategoryInfo.from(category);
     }
 
+    /**
+     * 기본 카테고리 세트 — 이름·아이콘(lucide)·색(카테고리 팔레트).
+     *
+     * <p>이름은 한국어 고정이다. 카테고리명은 사용자 데이터라 이후 언어를 바꿔도
+     * 번역되지 않는 값이고, 시딩 시점엔 사용자의 표시 언어를 알 수 없다.
+     */
+    private static final List<String[]> DEFAULT_EXPENSE_CATEGORIES = List.of(
+        new String[]{"식비", "utensils", "#c73838"},
+        new String[]{"카페·간식", "coffee", "#b36418"},
+        new String[]{"교통", "bus", "#8c7400"},
+        new String[]{"주거·통신", "home", "#2d8060"},
+        new String[]{"생활", "shopping-cart", "#2c70bf"},
+        new String[]{"쇼핑", "shirt", "#5e60c8"},
+        new String[]{"건강", "heart", "#b83b7a"},
+        new String[]{"문화·여가", "film", "#8b4dba"}
+    );
+    private static final List<String[]> DEFAULT_INCOME_CATEGORIES = List.of(
+        new String[]{"급여", "wallet", "#2c70bf"},
+        new String[]{"용돈", "gift", "#2d8060"},
+        new String[]{"부수입", "trending-up", "#9a6536"}
+    );
+
+    @Override
+    @Transactional
+    public void seedDefaults(Long userRowId) {
+        if (!expenseCategoryRepository.findAllByUser(userRowId).isEmpty()) {
+            return;
+        }
+
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        int order = 0;
+        for (String[] c : DEFAULT_EXPENSE_CATEGORIES) {
+            saveDefault(user, c, ExpenseType.EXPENSE, order++);
+        }
+        order = 0;
+        for (String[] c : DEFAULT_INCOME_CATEGORIES) {
+            saveDefault(user, c, ExpenseType.INCOME, order++);
+        }
+
+        log.info("기본 카테고리 시딩 완료: userRowId={}, expense={}, income={}",
+            userRowId, DEFAULT_EXPENSE_CATEGORIES.size(), DEFAULT_INCOME_CATEGORIES.size());
+    }
+
+    private void saveDefault(User user, String[] def, ExpenseType type, int sortOrder) {
+        ExpenseCategory category = ExpenseCategory.createCategory(user, def[0], def[1], def[2], type, null);
+        category.updateSortOrder(sortOrder);
+        expenseCategoryRepository.save(category);
+    }
+
     @Override
     public List<ExpenseCategoryServiceDto.CategoryInfo> getCategories(Long userRowId) {
         log.debug("지출 카테고리 목록 조회: userRowId={}", userRowId);
