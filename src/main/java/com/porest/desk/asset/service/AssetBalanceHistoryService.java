@@ -77,18 +77,27 @@ public class AssetBalanceHistoryService {
     /**
      * 사용자가 넣은 절대 잔액을 규약에 맞춰 정규화한다.
      *
-     * <p>신용카드는 <b>미결제 사용액이 음수</b>다. 잔액을 움직이는 모든 경로가 이미 그 규약을
-     * 따른다 — 결제하면 {@code -amount}, 환불하면 {@code +amount}, 대금을 갚으면 {@code +원금}
-     * 이라 0 으로 수렴한다. 화면은 "현재 사용액" 을 묻고 사용자는 당연히 양수를 치므로,
-     * 막지 않고 여기서 뒤집는다.
+     * <p>부채 자산은 <b>잔액이 음수</b>다. 잔액을 움직이는 모든 경로가 이미 그 규약을
+     * 따른다 — 신용카드는 결제하면 {@code -amount}, 환불하면 {@code +amount}, 대금을 갚으면
+     * {@code +원금} 이라 0 으로 수렴하고, 대출도 상환 이체가 {@code +원금}, 추가 인출이
+     * {@code -amount} 라 같은 방향이다. 화면은 "현재 사용액"/"잔액" 을 묻고 사용자는 당연히
+     * 양수를 치므로, 막지 않고 여기서 뒤집는다.
      *
      * <p>여기서 안 잡으면 부호가 섞인다 — 잔액 자체는 부호에 무관한 소비자(순자산 {@code abs},
      * 청구액, 한도 게이지)를 통과해 버리고, 부호를 그대로 더하는 화면 합계에서만 어긋난다.
+     * 실제로 대출이 여기 빠져 있어 양수 5,000,000 이 그대로 앵커가 됐고, 순자산이 부채만큼
+     * <b>커지고</b>(총 부채 0), 상환 이체(+499,500)가 잔액을 5,499,500 으로 "늘리는" 화면이
+     * 됐다 — dev 신규 가입 E2E 에서 발견.
      */
     private long normalizeAnchor(Asset asset, long amount) {
-        return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD
+        return asset != null && isDebtType(asset.getAssetType())
             ? -Math.abs(amount)
             : amount;
+    }
+
+    /** 잔액을 음수(빚)로 관리하는 자산 유형. 체크카드는 잔액 자체가 없어(연결 계좌 즉시 차감) 제외. */
+    private static boolean isDebtType(AssetType type) {
+        return type == AssetType.CREDIT_CARD || type == AssetType.LOAN;
     }
 
     /**
