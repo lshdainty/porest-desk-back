@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.UserCalendarService;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.controller.dto.TokenExchangeDto;
+import com.porest.desk.expense.service.ExpenseCategoryService;
 import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.security.principal.JwtClaimsPrincipal;
 import com.porest.desk.security.session.service.SsoSessionService;
@@ -28,6 +29,7 @@ public class TokenExchangeService {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final UserCalendarService userCalendarService;
+    private final ExpenseCategoryService expenseCategoryService;
     private final SsoOAuth2Client ssoOAuth2Client;
     private final SsoSessionService ssoSessionService;
 
@@ -119,6 +121,9 @@ public class TokenExchangeService {
             // 동시 요청이 겹칠 때 기본 캘린더가 중복 생성될 수 있어, 단일 트랜잭션인
             // 이 시점에서 한 번 만들어 경쟁 자체를 없앤다.
             userCalendarService.getOrCreateDefault(user.getRowId());
+            // 기본 카테고리도 같은 이유로 이 시점에 심는다 — 카테고리가 하나도
+            // 없으면 거래 시트의 저장이 조용히 비활성이라 첫 기록 자체가 막힌다.
+            expenseCategoryService.seedDefaults(user.getRowId());
         }
 
         // Update user info if changed

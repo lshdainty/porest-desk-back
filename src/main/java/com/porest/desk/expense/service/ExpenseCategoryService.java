@@ -6,6 +6,20 @@ import java.util.List;
 
 public interface ExpenseCategoryService {
     ExpenseCategoryServiceDto.CategoryInfo createCategory(ExpenseCategoryServiceDto.CreateCommand command);
+
+    /**
+     * 신규 사용자에게 기본 지출·수입 카테고리 세트를 만들어 준다.
+     *
+     * <p>카테고리가 하나도 없으면 거래 시트의 저장이 조용히 비활성이라 신규
+     * 가입자는 거래를 기록할 수 없다. 기본 캘린더처럼 최초 프로비저닝
+     * 시점(단일 트랜잭션)에 한 번 심는다.
+     *
+     * <p>멱등 — 활성 카테고리가 하나라도 있으면 아무것도 하지 않는다.
+     * 호출처는 신규 사용자 프로비저닝 한 곳이라 "전부 지운 사용자" 가 다시
+     * 시딩되는 경로는 없고, 이 검사는 동시 최초 로그인 경합의 이중 시딩을
+     * 막는다.
+     */
+    void seedDefaults(Long userRowId);
     List<ExpenseCategoryServiceDto.CategoryInfo> getCategories(Long userRowId);
     ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, Long userRowId, ExpenseCategoryServiceDto.UpdateCommand command);
 
