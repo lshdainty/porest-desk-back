@@ -149,6 +149,129 @@ class CardPaymentServiceImplTest {
         assertThat(CardPaymentServiceImpl.periodEndFor(next)).isEqualTo(LocalDate.of(2026, 6, 30));
     }
 
+    // === 할부 중도 전액 상환 ===
+
+    /**
+     * 1,000,000원 3개월 할부(333,334 / 333,333 / 333,333)를 2회차 시점에 상환하면
+     * 2회차에 1,000,000 − 333,334 = 666,666원이 몰리고 3회차는 0원이어야 한다.
+     * 여기가 어긋나면 회차 합이 원금과 달라져 돈이 조용히 새거나 이중 청구된다.
+     */
+    @Test
+    @DisplayName("중도상환 — 상환 회차에 남은 원금이 몰리고 이후 회차는 0원이다")
+    void payoffLumpsRemainingIntoAnchorCycle() {
+        Expense e = installment(LocalDate.of(2026, 7, 10), 1_000_000L, 3);
+
+        e.payoffInstallment(LocalDate.of(2026, 8, 1)); // 2회차에 상환
+
+        assertThat(e.installmentAmountAt(1)).isEqualTo(333_334L); // 이미 지난 회차 그대로
+        assertThat(e.installmentAmountAt(2)).isEqualTo(666_666L); // 남은 원금 전부
+        assertThat(e.installmentAmountAt(3)).isZero();
+        // 합 = 원금 — 이게 깨지면 마지막 회차에 몇 원이 남거나 초과 청구된다.
+        assertThat(e.installmentAmountAt(1) + e.installmentAmountAt(2) + e.installmentAmountAt(3))
+            .isEqualTo(1_000_000L);
+    }
+
+    @Test
+    @DisplayName("중도상환 취소 — 정상 분할로 되돌아간다")
+    void payoffCancelRestoresNormalSchedule() {
+        Expense e = installment(LocalDate.of(2026, 7, 10), 1_000_000L, 3);
+        e.payoffInstallment(LocalDate.of(2026, 8, 1));
+
+        e.cancelInstallmentPayoff();
+
+        assertThat(e.installmentAmountAt(2)).isEqualTo(333_333L);
+        assertThat(e.installmentAmountAt(3)).isEqualTo(333_333L);
+    }
+
+    @Test
+    @DisplayName("중도상환 — 구매월보다 이른 상환일은 1회차 전액이 된다(다가오는 회차가 구매월보다 앞선 경우)")
+    void payoffBeforePurchaseMonthLumpsIntoFirstCycle() {
+        // 9/1 에 산 할부를 그날 바로 정리 — 다가오는 회차(8월분)가 구매월보다 앞선다.
+        Expense e = installment(LocalDate.of(2026, 9, 1), 1_200_000L, 12);
+
+        e.payoffInstallment(LocalDate.of(2026, 8, 1));
+
+        assertThat(e.installmentAmountAt(1)).isEqualTo(1_200_000L);
+        assertThat(e.installmentAmountAt(2)).isZero();
+    }
+
+    @Test
+    @DisplayName("중도상환 — 상환된 할부는 다가오는 청구에 남은 원금으로 잡히고 paidOff 로 표시된다")
+    void payoffReflectsInUpcomingBilling() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 오늘 8/24 → 다음 결제일 9/12 → 청구 기간 8/1~8/31 (7월 구매 기준 2회차)
+        doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(0L);
+        Expense e = installment(LocalDate.of(2026, 7, 10), 1_000_000L, 3);
+        e.payoffInstallment(LocalDate.of(2026, 8, 1));
+        givenInstallments(e);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
+
+        assertThat(info.upcomingAmount()).isEqualTo(666_666L);
+        assertThat(info.upcomingInstallments()).singleElement()
+            .satisfies(d -> {
+                assertThat(d.amount()).isEqualTo(666_666L);
+                assertThat(d.paidOff()).isTrue();
+            });
+    }
+
+    @Test
+    @DisplayName("중도상환 — 할부가 아니면 거부한다")
+    void payoffRejectsNonInstallment() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        lenient().doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        Expense lump = Expense.createExpense(
+            null, null, null, ExpenseType.EXPENSE, 50_000L, null,
+            LocalDate.of(2026, 8, 10).atTime(12, 0), "커피", "CARD", null, null,
+            null, null, null);
+        ReflectionTestUtils.setField(lump, "asset", cardAssetStub());
+        given(entityManager.find(Expense.class, 77L)).willReturn(lump);
+
+        assertThatThrownBy(() -> sut.payoffInstallment(CARD_ID, 77L, USER_ID))
+            .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("중도상환 — 이미 끝난 할부는 거부한다(정리할 남은 원금이 없다)")
+    void payoffRejectsFinishedInstallment() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        // 다가오는 회차 2027-01 — 2026-07 구매 3개월 할부는 7회차라 끝났다
+        doReturn(LocalDate.of(2027, 1, 24)).when(userClock).today(USER_ID);
+        Expense e = installment(LocalDate.of(2026, 7, 10), 300_000L, 3);
+        ReflectionTestUtils.setField(e, "asset", cardAssetStub());
+        given(entityManager.find(Expense.class, 77L)).willReturn(e);
+
+        assertThatThrownBy(() -> sut.payoffInstallment(CARD_ID, 77L, USER_ID))
+            .isInstanceOf(InvalidValueException.class);
+        assertThat(e.getInstallmentPayoffDate()).isNull(); // 거부 시 상태를 남기지 않는다
+    }
+
+    @Test
+    @DisplayName("중도상환 — 남의 카드 거래·없는 거래는 못 찾은 것으로 취급한다")
+    void payoffRejectsForeignExpense() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        lenient().doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        given(entityManager.find(Expense.class, 77L)).willReturn(null);
+
+        assertThatThrownBy(() -> sut.payoffInstallment(CARD_ID, 77L, USER_ID))
+            .isInstanceOf(com.porest.core.exception.EntityNotFoundException.class);
+    }
+
+    /** 이 카드(CARD_ID)에 붙은 자산 stub — 상환 대상 검증이 asset.rowId 를 대조한다. */
+    private Asset cardAssetStub() {
+        Asset a = mock(Asset.class);
+        lenient().when(a.getRowId()).thenReturn(CARD_ID);
+        return a;
+    }
+
     // === 할부 구성(명세서 표시용) ===
 
     /**

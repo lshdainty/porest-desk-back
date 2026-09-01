@@ -39,12 +39,14 @@ public class CardBillingApiDto {
         Long principalAmount,
         Integer installmentMonths,
         Integer sequence,
-        Long amount
+        Long amount,
+        boolean paidOff
     ) {
         public static InstallmentDueResponse from(CardPaymentServiceDto.InstallmentDue d) {
             return new InstallmentDueResponse(
                 d.expenseRowId(), d.merchant(), d.description(),
-                d.principalAmount(), d.installmentMonths(), d.sequence(), d.amount()
+                d.principalAmount(), d.installmentMonths(), d.sequence(), d.amount(),
+                d.paidOff()
             );
         }
     }

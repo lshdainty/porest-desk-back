@@ -48,6 +48,32 @@ public class CardBillingApiController {
     }
 
     /**
+     * 할부 중도 전액 상환 — 남은 원금을 다가오는 청구 회차에 몰아 청구한다.
+     *
+     * <p>그 회차의 예정액이 즉시 커지고, 지금 결제로 바로 정리할 수 있다.
+     * 회차 계산에는 상환 상태를 기록할 곳이 없어서, 이 경로 없이는 할부를 중간에
+     * 끝낼 방법이 없었다(할부 개월 수정은 과거 회차까지 재계산돼 이미 낸 청구와 어긋난다).
+     */
+    @PostMapping("/asset/{id}/installments/{expenseId}/payoff")
+    public ApiResponse<Void> payoffInstallment(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @PathVariable Long expenseId) {
+        cardPaymentService.payoffInstallment(id, expenseId, loginUser.getRowId());
+        return ApiResponse.success(null);
+    }
+
+    /** 할부 상환 취소 — 정상 분할로 되돌린다. 잘못 누른 상환을 무르는 경로. */
+    @DeleteMapping("/asset/{id}/installments/{expenseId}/payoff")
+    public ApiResponse<Void> cancelInstallmentPayoff(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @PathVariable Long expenseId) {
+        cardPaymentService.cancelInstallmentPayoff(id, expenseId, loginUser.getRowId());
+        return ApiResponse.success(null);
+    }
+
+    /**
      * 카드 결제 취소 — 결제로 만든 이체를 무르고 청구 회차를 되돌린다.
      *
      * <p>잘못 누른 결제를 되돌릴 길이 없었다. 그 이체는 청구와 묶여 있어 사용자가 직접

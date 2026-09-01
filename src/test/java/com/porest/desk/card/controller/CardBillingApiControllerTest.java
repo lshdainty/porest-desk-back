@@ -67,7 +67,7 @@ class CardBillingApiControllerTest {
         CardPaymentServiceDto.CardBillingInfo info = new CardPaymentServiceDto.CardBillingInfo(
                 50L, 12000L, 2000L, 0L,
                 List.of(new CardPaymentServiceDto.InstallmentDue(
-                        7L, "가맹점", null, 60000L, 6, 2, 10000L)),
+                        7L, "가맹점", null, 60000L, 6, 2, 10000L, false)),
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                 LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()));
         given(cardPaymentService.getCardBilling(50L, 1L)).willReturn(info);

@@ -28,8 +28,6 @@ import com.porest.desk.card.type.BillingStatus;
 import java.util.Objects;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.temporal.ChronoUnit;
-import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -343,6 +341,68 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 실제 사고). 양수 역전 방지는 표시가 아니라 결제 시점이 맡는다 — {@link #payoff} 가
      * 돈을 남은 빚까지만 움직인다.
      */
+    /**
+     * 할부 중도 전액 상환.
+     *
+     * <p>상환일을 "오늘" 이 아니라 <b>다가오는 청구 회차의 시작일</b>로 적는 게 핵심이다.
+     * 오늘로 적으면(예: 9/1, 결제일 6일) 남은 원금이 9월 회차 — 10월 6일 청구 — 로 밀려
+     * "지금 정리하고 싶다" 는 의도와 한 달 어긋난다. 다가오는 회차(8월분, 9/6 청구)에
+     * 몰아야 화면의 예정액이 즉시 커지고 지금 결제로 바로 정리된다.
+     */
+    @Override
+    @Transactional
+    public void payoffInstallment(Long cardRowId, Long expenseRowId, Long userRowId) {
+        PayoffTarget t = payoffTarget(cardRowId, expenseRowId, userRowId);
+        if (t.expense().getInstallmentPayoffDate() != null) {
+            throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_ALREADY_PAID_OFF);
+        }
+        // 다가오는 회차 기준으로도 이미 끝난 할부면 정리할 남은 원금이 없다.
+        if (Math.max(1, t.expense().installmentSequenceAt(t.anchor()))
+                > t.expense().getInstallmentMonths()) {
+            throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_FINISHED);
+        }
+        t.expense().payoffInstallment(t.anchor());
+        log.info("할부 중도 전액 상환: expenseRowId={}, anchor={}", expenseRowId, t.anchor());
+    }
+
+    /** 상환 취소 — 정상 분할로 되돌린다. 잘못 누른 상환을 무르는 경로. */
+    @Override
+    @Transactional
+    public void cancelInstallmentPayoff(Long cardRowId, Long expenseRowId, Long userRowId) {
+        PayoffTarget t = payoffTarget(cardRowId, expenseRowId, userRowId);
+        if (t.expense().getInstallmentPayoffDate() == null) {
+            throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_NOT_PAID_OFF);
+        }
+        t.expense().cancelInstallmentPayoff();
+        log.info("할부 상환 취소: expenseRowId={}", expenseRowId);
+    }
+
+    private record PayoffTarget(Expense expense, LocalDate anchor) {}
+
+    /** 상환 대상 검증 — 카드 소유·신용카드·그 카드의 살아 있는 할부 거래. */
+    private PayoffTarget payoffTarget(Long cardRowId, Long expenseRowId, Long userRowId) {
+        Asset card = findAssetOrThrow(cardRowId);
+        validateOwnership(card, userRowId);
+        validateCreditCard(card);
+
+        Expense expense = entityManager.find(Expense.class, expenseRowId);
+        if (expense == null || expense.getIsDeleted() == YNType.Y
+                || expense.getAsset() == null
+                || !Objects.equals(expense.getAsset().getRowId(), cardRowId)) {
+            // 없는 것과 남의 것을 구분해 주지 않는다 — 존재 자체가 정보다.
+            throw new EntityNotFoundException(DeskErrorCode.CARD_INSTALLMENT_NOT_FOUND);
+        }
+        if (!expense.isInstallment()) {
+            throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_NOT_INSTALLMENT);
+        }
+
+        LocalDate today = userClock.today(userRowId);
+        LocalDate next = nextPaymentDate(card.getPaymentDay(), today);
+        // upcomingCycle 과 같은 규칙 — 결제일이 없으면 당월 1일~말일 회차.
+        LocalDate anchor = next == null ? today.withDayOfMonth(1) : periodStartFor(next);
+        return new PayoffTarget(expense, anchor);
+    }
+
     private BillingCycle upcomingCycle(Asset card, LocalDate nextPaymentDate) {
         LocalDate periodStart;
         LocalDate periodEnd;
@@ -419,19 +479,19 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             .setParameter("isDeleted", YNType.N)
             .getResultList();
 
-        YearMonth cyclePeriod = YearMonth.from(start);
         List<CardPaymentServiceDto.InstallmentDue> dues = new ArrayList<>();
         for (Expense e : installments) {
-            YearMonth purchasePeriod = YearMonth.from(e.getExpenseDate().toLocalDate());
-            int seq = (int) (ChronoUnit.MONTHS.between(purchasePeriod, cyclePeriod) + 1);
+            int seq = e.installmentSequenceAt(start);
             long due = e.installmentAmountAt(seq);
             if (due == 0L) {
                 // 회차 범위(1..N) 밖 — 이 기간엔 청구되지 않는 할부다.
                 continue;
             }
+            Integer payoffSeq = e.installmentPayoffSequence();
             dues.add(new CardPaymentServiceDto.InstallmentDue(
                 e.getRowId(), e.getMerchant(), e.getDescription(),
-                e.getAmount(), e.getInstallmentMonths(), seq, due));
+                e.getAmount(), e.getInstallmentMonths(), seq, due,
+                payoffSeq != null && payoffSeq == seq));
         }
         return dues;
     }
