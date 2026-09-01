@@ -31,9 +31,30 @@ public class CardBillingApiDto {
         }
     }
 
+    /** 다가오는 회차의 할부 한 건 — 명세서의 "원금·N개월 중 k회차" 표시용. */
+    public record InstallmentDueResponse(
+        Long expenseRowId,
+        String merchant,
+        String description,
+        Long principalAmount,
+        Integer installmentMonths,
+        Integer sequence,
+        Long amount
+    ) {
+        public static InstallmentDueResponse from(CardPaymentServiceDto.InstallmentDue d) {
+            return new InstallmentDueResponse(
+                d.expenseRowId(), d.merchant(), d.description(),
+                d.principalAmount(), d.installmentMonths(), d.sequence(), d.amount()
+            );
+        }
+    }
+
     public record CardBillingResponse(
         Long cardAssetRowId,
         Long upcomingAmount,
+        Long upcomingLumpSumAmount,
+        Long upcomingAlreadyPaidAmount,
+        List<InstallmentDueResponse> upcomingInstallments,
         LocalDate upcomingPeriodStart,
         LocalDate upcomingPeriodEnd,
         LocalDate nextPaymentDate,
@@ -45,6 +66,9 @@ public class CardBillingApiDto {
             return new CardBillingResponse(
                 info.cardAssetRowId(),
                 info.upcomingAmount(),
+                info.upcomingLumpSumAmount(),
+                info.upcomingAlreadyPaidAmount(),
+                info.upcomingInstallments().stream().map(InstallmentDueResponse::from).toList(),
                 info.upcomingPeriodStart(),
                 info.upcomingPeriodEnd(),
                 info.nextPaymentDate(),

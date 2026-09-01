@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -65,6 +66,9 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         return new CardPaymentServiceDto.CardBillingInfo(
             cardRowId,
             cycle.amount(),
+            cycle.lumpSumAmount(),
+            cycle.alreadyPaid(),
+            cycle.installments(),
             cycle.periodStart(),
             cycle.periodEnd(),
             nextPaymentDate,
@@ -319,7 +323,15 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     }
 
     /** 결제 회차 — 청구 기간(전월 1일~말일)과 그 회차의 결제 필요 잔여액. */
-    record BillingCycle(LocalDate periodStart, LocalDate periodEnd, long amount) {}
+    /**
+     * @param amount        결제예정액 = max(0, 일시불 + 할부 회차 합 − 기결제)
+     * @param lumpSumAmount 일시불 순사용액(EXPENSE − 환불). 환불이 크면 음수일 수 있다
+     * @param alreadyPaid   같은 회차에 이미 낸 금액(선결제 차감분)
+     * @param installments  이 회차에 빠지는 할부 회차들 — 명세서가 원금·회차를 그릴 재료
+     */
+    record BillingCycle(LocalDate periodStart, LocalDate periodEnd, long amount,
+                        long lumpSumAmount, long alreadyPaid,
+                        List<CardPaymentServiceDto.InstallmentDue> installments) {}
 
     /**
      * 다가오는 결제 회차 계산. 회차 금액 = 청구 기간(결제일의 전월 1일~말일) 카드 순사용액
@@ -345,20 +357,16 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             periodStart = periodStartFor(nextPaymentDate);
             periodEnd = periodEndFor(nextPaymentDate);
         }
-        long spend = cycleNetSpend(card.getRowId(), periodStart, periodEnd);
+        long lumpSum = lumpSumNet(card.getRowId(), periodStart, periodEnd);
+        List<CardPaymentServiceDto.InstallmentDue> installments =
+            installmentDuesIn(card.getRowId(), periodStart, periodEnd);
+        long installmentSum = installments.stream()
+            .mapToLong(CardPaymentServiceDto.InstallmentDue::amount).sum();
         long alreadyPaid = cardBillingRepository
             .sumCompletedAmountByCardAndPeriod(card.getRowId(), periodStart, periodEnd);
-        return new BillingCycle(periodStart, periodEnd, Math.max(0L, spend - alreadyPaid));
-    }
-
-    /**
-     * 청구 기간 내 카드 순사용액 — 일시불(EXPENSE − INCOME 환불) + 이 기간에 걸린 할부 회차분.
-     *
-     * <p>할부는 결제한 달에 전액이 청구되지 않고 N개월에 나뉘어 빠진다. 그래서 거래일이 이 기간에
-     * 없더라도 과거 할부 거래의 해당 회차가 이번 청구에 잡혀야 한다.
-     */
-    private long cycleNetSpend(Long cardRowId, LocalDate start, LocalDate end) {
-        return lumpSumNet(cardRowId, start, end) + installmentDueIn(cardRowId, start, end);
+        return new BillingCycle(periodStart, periodEnd,
+            Math.max(0L, lumpSum + installmentSum - alreadyPaid),
+            lumpSum, alreadyPaid, installments);
     }
 
     /** 일시불 순사용액 — EXPENSE 합 − INCOME(환불/취소) 합. 할부 거래는 제외한다. */
@@ -387,7 +395,15 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 센다(결제일 말일 보정과 무관하게 월 단위로 세어야 회차가 밀리지 않는다).
      * 회차가 1..N 범위 밖이면 이 기간엔 청구되지 않는다.
      */
-    private long installmentDueIn(Long cardRowId, LocalDate start, LocalDate end) {
+    /**
+     * 이 청구 기간에 빠질 할부 회차 목록 — 합계가 아니라 <b>구성</b>을 돌려준다.
+     *
+     * <p>명세서에 "원금 얼마짜리 할부의 몇 번째 회차가 얼마 빠진다" 를 그리려면 합계로는
+     * 부족하다. 합만 내리던 시절에는 할부 거래가 있는 달의 예정액이 이용 내역 합과 달라
+     * "이 숫자가 어디서 왔는지" 를 화면이 설명할 수 없었다.
+     */
+    private List<CardPaymentServiceDto.InstallmentDue> installmentDuesIn(
+            Long cardRowId, LocalDate start, LocalDate end) {
         // 아직 회차가 남아 있을 수 있는 할부 거래만 — 이 기간보다 미래 거래는 볼 필요가 없다.
         List<Expense> installments = entityManager.createQuery(
             "SELECT e FROM Expense e " +
@@ -395,21 +411,29 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "AND e.expenseType = :expenseType " +
             "AND e.installmentMonths > 1 " +
             "AND e.expenseDate <= :end " +
-            "AND e.isDeleted = :isDeleted", Expense.class)
+            "AND e.isDeleted = :isDeleted " +
+            "ORDER BY e.expenseDate", Expense.class)
             .setParameter("cardRowId", cardRowId)
             .setParameter("expenseType", ExpenseType.EXPENSE)
             .setParameter("end", end.atTime(LocalTime.MAX))
             .setParameter("isDeleted", YNType.N)
             .getResultList();
 
-        long sum = 0L;
         YearMonth cyclePeriod = YearMonth.from(start);
+        List<CardPaymentServiceDto.InstallmentDue> dues = new ArrayList<>();
         for (Expense e : installments) {
             YearMonth purchasePeriod = YearMonth.from(e.getExpenseDate().toLocalDate());
             int seq = (int) (ChronoUnit.MONTHS.between(purchasePeriod, cyclePeriod) + 1);
-            sum += e.installmentAmountAt(seq);
+            long due = e.installmentAmountAt(seq);
+            if (due == 0L) {
+                // 회차 범위(1..N) 밖 — 이 기간엔 청구되지 않는 할부다.
+                continue;
+            }
+            dues.add(new CardPaymentServiceDto.InstallmentDue(
+                e.getRowId(), e.getMerchant(), e.getDescription(),
+                e.getAmount(), e.getInstallmentMonths(), seq, due));
         }
-        return sum;
+        return dues;
     }
 
     // === 결제일 / 청구기간 계산 (RecurringTransaction MONTHLY 말일 보정 로직 재활용) ===

@@ -65,7 +65,10 @@ class CardBillingApiControllerTest {
     @DisplayName("GET /asset/{id}/billing — id·로그인 사용자로 청구 조회 위임")
     void getCardBilling() throws Exception {
         CardPaymentServiceDto.CardBillingInfo info = new CardPaymentServiceDto.CardBillingInfo(
-                50L, 12000L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                50L, 12000L, 2000L, 0L,
+                List.of(new CardPaymentServiceDto.InstallmentDue(
+                        7L, "가맹점", null, 60000L, 6, 2, 10000L)),
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                 LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()));
         given(cardPaymentService.getCardBilling(50L, 1L)).willReturn(info);
 
@@ -73,6 +76,11 @@ class CardBillingApiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cardAssetRowId").value(50))
                 .andExpect(jsonPath("$.data.upcomingAmount").value(12000))
+                .andExpect(jsonPath("$.data.upcomingLumpSumAmount").value(2000))
+                .andExpect(jsonPath("$.data.upcomingInstallments[0].sequence").value(2))
+                .andExpect(jsonPath("$.data.upcomingInstallments[0].installmentMonths").value(6))
+                .andExpect(jsonPath("$.data.upcomingInstallments[0].principalAmount").value(60000))
+                .andExpect(jsonPath("$.data.upcomingInstallments[0].amount").value(10000))
                 .andExpect(jsonPath("$.data.upcomingPeriodStart").value("2026-07-01"))
                 .andExpect(jsonPath("$.data.upcomingPeriodEnd").value("2026-07-31"))
                 .andExpect(jsonPath("$.data.paymentDay").value(15))

@@ -41,10 +41,34 @@ public class CardPaymentServiceDto {
     }
 
     /**
+     * 다가오는 회차에 빠지는 할부 한 건.
+     *
+     * @param expenseRowId      원거래(지출) 행 아이디
+     * @param merchant          가맹점 — 명세서 행의 이름
+     * @param description       메모(가맹점이 없을 때의 폴백 표시용)
+     * @param principalAmount   할부 원금(거래 전액)
+     * @param installmentMonths 총 회차 수(N)
+     * @param sequence          이번이 몇 회차인지(1-base)
+     * @param amount            이번 회차에 빠지는 금액. 나머지는 1회차에 몰린다(카드사 관행)
+     */
+    public record InstallmentDue(
+        Long expenseRowId,
+        String merchant,
+        String description,
+        Long principalAmount,
+        Integer installmentMonths,
+        Integer sequence,
+        Long amount
+    ) {}
+
+    /**
      * 카드 청구 화면용 종합 응답.
      * - upcomingAmount: 다가오는 결제 회차의 결제예정액
      *   = 청구 기간(결제일의 전월 1일~말일) 순사용액 − 같은 회차 기결제액(선결제 차감).
      *   결제일 미설정 시에만 잔액 전액 fallback(기간 null).
+     * - upcomingLumpSumAmount: 회차 내 일시불 순사용액(환불 상계, 음수 가능)
+     * - upcomingAlreadyPaidAmount: 같은 회차 기결제액(선결제 차감분)
+     * - upcomingInstallments: 이 회차에 빠지는 할부 구성 — 명세서가 원금·회차를 그린다
      * - upcomingPeriodStart/End: 다가오는 회차의 청구 기간(전월 1일~말일)
      * - nextPaymentDate: payment_day 기준 다음 결제예정일(말일 보정)
      * - paymentAssetRowId: 지정된 결제 출금계좌(없으면 null)
@@ -53,6 +77,9 @@ public class CardPaymentServiceDto {
     public record CardBillingInfo(
         Long cardAssetRowId,
         Long upcomingAmount,
+        Long upcomingLumpSumAmount,
+        Long upcomingAlreadyPaidAmount,
+        List<InstallmentDue> upcomingInstallments,
         LocalDate upcomingPeriodStart,
         LocalDate upcomingPeriodEnd,
         LocalDate nextPaymentDate,

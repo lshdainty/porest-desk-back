@@ -149,6 +149,81 @@ class CardPaymentServiceImplTest {
         assertThat(CardPaymentServiceImpl.periodEndFor(next)).isEqualTo(LocalDate.of(2026, 6, 30));
     }
 
+    // === 할부 구성(명세서 표시용) ===
+
+    /**
+     * 명세서가 "원금·N개월 중 k회차·이번 회차 금액" 을 그리려면 합계가 아니라 구성이 와야 한다.
+     * 1억 24개월이면 base 4,166,666 에 나머지 16원이 1회차에 몰린다(카드사 관행) —
+     * 이 구성이 틀리면 회차 합이 원금과 안 맞아 마지막 달 청구가 어긋난다.
+     */
+    @Test
+    @DisplayName("할부 구성 — 원금·회차·회차금액이 내려가고, 나머지는 1회차에 몰린다")
+    void billingExposesInstallmentBreakdown() {
+        Asset card = creditCard(6);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 오늘 8/10 → 다음 결제일 9/6 → 청구 기간 8/1~8/31 (구매월 8월 기준 1회차)
+        doReturn(LocalDate.of(2026, 8, 10)).when(userClock).today(USER_ID);
+        givenCycleSpend(30_000L);
+        Expense phone = installment(LocalDate.of(2026, 8, 4), 100_000_000L, 24);
+        ReflectionTestUtils.setField(phone, "rowId", 66_814L);
+        givenInstallments(phone);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
+
+        assertThat(info.upcomingLumpSumAmount()).isEqualTo(30_000L);
+        assertThat(info.upcomingInstallments()).hasSize(1);
+        CardPaymentServiceDto.InstallmentDue due = info.upcomingInstallments().get(0);
+        assertThat(due.expenseRowId()).isEqualTo(66_814L);
+        assertThat(due.principalAmount()).isEqualTo(100_000_000L);
+        assertThat(due.installmentMonths()).isEqualTo(24);
+        assertThat(due.sequence()).isEqualTo(1);
+        // 1회차 = base 4,166,666 + 나머지 16
+        assertThat(due.amount()).isEqualTo(4_166_682L);
+        assertThat(info.upcomingAmount()).isEqualTo(30_000L + 4_166_682L);
+    }
+
+    @Test
+    @DisplayName("할부 구성 — 회차가 끝난 할부는 목록에서 빠진다(0원 행을 내리지 않는다)")
+    void finishedInstallmentExcludedFromBreakdown() {
+        Asset card = creditCard(6);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        // 청구 기간 2027-02 — 2026-08 구매 3개월 할부(회차 1..3)는 7회차라 이미 끝났다
+        doReturn(LocalDate.of(2027, 2, 10)).when(userClock).today(USER_ID);
+        givenCycleSpend(0L);
+        givenInstallments(installment(LocalDate.of(2026, 8, 4), 300_000L, 3));
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+
+        CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
+
+        // 0원 행을 내리면 화면이 "0/3회차 0원" 같은 유령 행을 그린다.
+        assertThat(info.upcomingInstallments()).isEmpty();
+        assertThat(info.upcomingAmount()).isZero();
+    }
+
+    @Test
+    @DisplayName("할부 구성 — 선결제한 만큼 기결제액으로 내려가 화면이 차감을 설명할 수 있다")
+    void alreadyPaidExposedForBreakdown() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        givenCycleSpend(280_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(100_000L);
+
+        CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
+
+        assertThat(info.upcomingAlreadyPaidAmount()).isEqualTo(100_000L);
+        // 예정액 = 280,000 − 100,000. 구성(일시불 280,000 − 기결제 100,000)과 합이 맞아야
+        // 화면이 "왜 이 숫자인지" 를 설명할 수 있다.
+        assertThat(info.upcomingAmount()).isEqualTo(180_000L);
+    }
+
     // === 할부 — 실제 카드 사용 시나리오 ===
 
     /**
