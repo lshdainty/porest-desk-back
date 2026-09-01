@@ -59,6 +59,25 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     );
 
     /**
+     * 스트리밍(비동기) 응답 경로 — <b>정확 일치</b>로 뺀다.
+     *
+     * <p>{@link ContentCachingResponseWrapper} 는 본문을 캐시에만 쓰고
+     * {@code copyBodyToResponse()} 때 실제 응답으로 내보낸다. 그런데
+     * {@code StreamingResponseBody} 는 초기 dispatch 가 즉시 반환되고 본문은 그 뒤
+     * 비동기 스레드가 쓴다 — 이 필터의 finally 가 그 사이에 <b>빈 캐시</b>를 복사해
+     * Content-Length: 0 으로 응답을 커밋했고, 이후 쓰인 본문은 캐시에 갇혀 버려졌다.
+     * 클라이언트는 0바이트 zip 을 받았다(dev 데이터 내보내기가 빈 파일이던 원인).
+     *
+     * <p>SSE(/notifications/stream)와 같은 이유의 같은 처치다. startsWith 목록이 아니라
+     * 따로 두는 건 하위 {@code /export/counts}·{@code /export/preview} 가 일반 JSON 이라
+     * 로깅을 유지해야 해서다. 새 스트리밍 엔드포인트를 만들면 여기 추가해야 한다 —
+     * 빠뜨리면 아래 doFilterInternal 의 async 경고 로그가 알려 준다.
+     */
+    private static final List<String> EXCLUDED_STREAMING_PATHS = Arrays.asList(
+            "/api/v1/export"
+    );
+
+    /**
      * 마스킹 규칙은 {@link SensitiveDataMasker}(porest-core) 한 벌만 쓴다.
      *
      * <p>예전에는 이 파일이 자체 키 목록과 정규식을 들고 있었다. 같은 파일의 사본이
@@ -121,8 +140,18 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
                 }
             } finally {
                 try {
-                    // Response Body를 실제 응답으로 복사 (중요!)
-                    wrappedResponse.copyBodyToResponse();
+                    if (request.isAsyncStarted()) {
+                        // 스트리밍 응답이 이 필터에 래핑된 채 비동기로 넘어갔다 — 본문은
+                        // 아직 캐시에 없고, 여기서 복사하면 빈 응답(Content-Length: 0)이
+                        // 커밋되어 이후 쓰이는 본문이 잘린다. 복사를 건너뛰어도 캐시에
+                        // 갇힌 본문을 살릴 수는 없다 — 근본 처치는 경로를
+                        // EXCLUDED_STREAMING_PATHS 에 올리는 것이고, 이 경고가 그 신호다.
+                        log.warn("스트리밍(비동기) 응답이 로깅 필터에 래핑됨 — EXCLUDED_STREAMING_PATHS 에 추가 필요: {}",
+                                request.getRequestURI());
+                    } else {
+                        // Response Body를 실제 응답으로 복사 (중요!)
+                        wrappedResponse.copyBodyToResponse();
+                    }
                 } finally {
                     // MDC 정리
                     MDC.clear();
@@ -134,7 +163,8 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
+        return EXCLUDED_STREAMING_PATHS.contains(path)
+                || EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
     }
 
     /**

@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,7 +14,10 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,7 +32,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -323,6 +330,56 @@ class RequestResponseLoggingFilterRoundTripTest {
     }
 
     // ────────────────────────────────────────────────────────────────────
+    // 사고 4 — 스트리밍(비동기) 응답이 빈 캐시로 커밋되어 0바이트가 나간다
+    // ────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("스트리밍 경로(/api/v1/export)는 필터가 정확 일치로 비껴간다 — 본문이 온전히 나간다")
+    void streamingPathBypassesFilterAndBodyArrives() throws Exception {
+        MvcResult started = mockMvc().perform(get("/api/v1/export"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        MvcResult done = mockMvc().perform(asyncDispatch(started)).andReturn();
+
+        assertThat(done.getResponse().getContentAsString()).isEqualTo("ZIPBYTES");
+        // 필터를 비껴갔으므로 이 요청의 요청·응답 로그 줄도 없어야 한다
+        assertThat(loggedText()).doesNotContain("/api/v1/export");
+    }
+
+    @Test
+    @DisplayName("하위 JSON 경로(/api/v1/export/counts 꼴)는 계속 로깅된다 — 정확 일치라 startsWith 로 쓸려 나가지 않는다")
+    void exportSubPathsStayLogged() throws Exception {
+        RequestResponseLoggingFilter filter = new RequestResponseLoggingFilter();
+        MockHttpServletRequest counts = new MockHttpServletRequest("POST", "/api/v1/export/counts");
+        counts.setRequestURI("/api/v1/export/counts");
+        MockHttpServletRequest export = new MockHttpServletRequest("POST", "/api/v1/export");
+        export.setRequestURI("/api/v1/export");
+
+        assertThat(filter.shouldNotFilter(export)).isTrue();
+        assertThat(filter.shouldNotFilter(counts)).isFalse();
+    }
+
+    @Test
+    @DisplayName("제외를 빠뜨린 비동기 응답도 빈 캐시를 커밋하지 않고 경고를 남긴다")
+    void asyncStartedSkipsEmptyCopyAndWarns() throws Exception {
+        RequestResponseLoggingFilter filter = new RequestResponseLoggingFilter();
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/future-stream");
+        request.setRequestURI("/api/v1/future-stream");
+        request.setAsyncSupported(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, res) -> {
+            ((HttpServletRequest) req).startAsync();
+        });
+
+        // 빈 캐시 복사가 실행됐다면 Content-Length: 0 이 박힌다 — 스킵됐어야 한다
+        assertThat(response.getHeader("Content-Length")).isNull();
+        assertThat(loggedText()).contains("EXCLUDED_STREAMING_PATHS");
+    }
+
+
+    // ────────────────────────────────────────────────────────────────────
 
     @RestController
     static class EchoController {
@@ -351,6 +408,16 @@ class RequestResponseLoggingFilterRoundTripTest {
         @GetMapping(value = "/token", produces = "application/json;charset=UTF-8")
         String token() {
             return "{\"code\":\"COMMON_200\",\"data\":{\"accessToken\":\"" + JWT + "\"}}";
+        }
+
+        /** StreamingResponseBody — 데이터 내보내기와 같은 비동기 스트리밍 응답 모형. */
+        @GetMapping("/api/v1/export")
+        org.springframework.http.ResponseEntity<org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody> exportStream() {
+            org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody body =
+                    out -> out.write("ZIPBYTES".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return org.springframework.http.ResponseEntity.ok()
+                    .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
+                    .body(body);
         }
 
         @GetMapping("/actuator/health")
