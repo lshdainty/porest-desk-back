@@ -117,12 +117,19 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         List<Long> eventIds = events.stream().map(CalendarEvent::getRowId).toList();
         Map<Long, List<EventReminderServiceDto.ReminderInfo>> remindersMap = loadRemindersMap(eventIds);
 
-        return events.stream()
-            .map(event -> CalendarEventServiceDto.EventInfo.from(
-                event,
-                remindersMap.getOrDefault(event.getRowId(), List.of())
-            ))
-            .toList();
+        // 반복(rrule) 이벤트는 구간 안 발생(occurrence)들로 전개해 내려준다 —
+        // 전개가 없으면 매주 반복이 첫 회차 한 번만 화면에 남는다.
+        List<CalendarEventServiceDto.EventInfo> result = new java.util.ArrayList<>();
+        for (CalendarEvent event : events) {
+            CalendarEventServiceDto.EventInfo base = CalendarEventServiceDto.EventInfo.from(
+                event, remindersMap.getOrDefault(event.getRowId(), List.of()));
+            for (RecurrenceExpander.Occurrence oc : RecurrenceExpander.expand(
+                    event.getStartDate(), event.getEndDate(), event.getRrule(), startDate, endDate)) {
+                result.add(base.withOccurrence(oc.startDate(), oc.endDate()));
+            }
+        }
+        result.sort(java.util.Comparator.comparing(CalendarEventServiceDto.EventInfo::startDate));
+        return result;
     }
 
     @Override
