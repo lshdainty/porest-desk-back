@@ -430,12 +430,22 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<Expense> expenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
         if (expenses.isEmpty()) return List.of();
 
+        Map<Long, ExpenseCategory> refundOrigin = refundOriginCategories(expenses);
         Map<Long, ExpenseServiceDto.CategoryBreakdown> agg = new HashMap<>();
         for (Expense e : expenses) {
             // 환불은 수입 항목으로 따로 서지 않고, 원래 지출 카테고리에서 음수로 빠진다
             // (식비에서 환불받으면 그 달 식비가 줄어야지 수입이 생기는 게 아니다).
+            // 여기서 "원래" 는 원거래의 카테고리다 — 환불 거래 자신의 카테고리를 쓰면
+            // 사용자가 환불 입력 때 고른 수입 카테고리(예: 급여)에 지출 상계가 꽂혀
+            // 그 카테고리의 수입 총액까지 지출 breakdown 으로 끌려 나온다.
             ExpenseType breakdownType = e.isRefund() ? ExpenseType.EXPENSE : e.getExpenseType();
             long sign = e.isRefund() ? -1L : 1L;
+            if (e.isRefund()) {
+                accumulateBreakdown(agg,
+                    refundOrigin.getOrDefault(e.getRowId(), e.getCategory()),
+                    breakdownType, sign * e.getAmount());
+                continue;
+            }
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
@@ -446,6 +456,31 @@ public class ExpenseServiceImpl implements ExpenseService {
             }
         }
         return List.copyOf(agg.values());
+    }
+
+    /**
+     * 환불 거래 rowId → 원거래 카테고리.
+     *
+     * <p>원거래는 대개 같은 조회 결과 안에 있어 그 자리에서 찾고, 기간 밖이면
+     * (지난달 지출을 이번 달에 환불) 건별로 조회한다 — 환불은 드물어 N+1 무해.
+     * 원거래가 없거나(삭제) 찾지 못하면 환불 자신의 카테고리로 폴백한다.
+     * 원거래가 분할이면 분할 배분이 모호하므로 원거래의 대표 카테고리를 쓴다.
+     */
+    private Map<Long, ExpenseCategory> refundOriginCategories(List<Expense> expenses) {
+        Map<Long, Expense> byId = new HashMap<>();
+        for (Expense e : expenses) byId.put(e.getRowId(), e);
+        Map<Long, ExpenseCategory> origin = new HashMap<>();
+        for (Expense e : expenses) {
+            if (!e.isRefund()) continue;
+            Expense src = byId.get(e.getRefundOfExpenseRowId());
+            if (src == null) {
+                src = expenseRepository.findById(e.getRefundOfExpenseRowId()).orElse(null);
+            }
+            if (src != null && src.getCategory() != null) {
+                origin.put(e.getRowId(), src.getCategory());
+            }
+        }
+        return origin;
     }
 
     /**
@@ -501,12 +536,19 @@ public class ExpenseServiceImpl implements ExpenseService {
      */
     private List<ExpenseServiceDto.CategoryAmount> expenseCategoryAmounts(
             List<Expense> monthExpenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
+        Map<Long, ExpenseCategory> refundOrigin = refundOriginCategories(monthExpenses);
         Map<Long, Long> agg = new HashMap<>();
         for (Expense e : monthExpenses) {
             // 환불은 수입 타입이지만 여기선 원래 지출 카테고리에서 음수로 빼야 한다.
+            // breakdown 과 같은 이유로 "원래" = 원거래의 카테고리다.
             boolean refund = e.isRefund();
             if (!refund && e.getExpenseType() != ExpenseType.EXPENSE) continue;
             long sign = refund ? -1L : 1L;
+            if (refund) {
+                ExpenseCategory oc = refundOrigin.getOrDefault(e.getRowId(), e.getCategory());
+                agg.merge(categoryKey(oc), sign * e.getAmount(), Long::sum);
+                continue;
+            }
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {

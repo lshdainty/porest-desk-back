@@ -372,6 +372,48 @@ class ExpenseServiceSummaryTest {
         assertThat(result.get(1).count()).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("getRangeSummary — 환불은 원거래의 카테고리에서 빠진다 (환불 자신의 수입 카테고리가 아니라)")
+    void rangeSummaryOffsetsRefundInOriginCategory() {
+        // 사용자는 환불을 수입 폼으로 입력해 수입 카테고리(급여)를 고른다.
+        // 상계가 그 카테고리로 꽂히면 급여의 진짜 수입까지 지출 breakdown 에
+        // 끌려 나온다 (dev 에서 급여 1,995,000 이 지출 도넛에 떴다).
+        ExpenseCategory food = category(20L, "식비", null);
+        ExpenseCategory salaryCat = category(30L, "급여", null);
+
+        Expense origin = expenseIn(food, ExpenseType.EXPENSE, 45_000L);
+        ReflectionTestUtils.setField(origin, "rowId", 100L);
+        Expense refundTx = Expense.createExpense(null, salaryCat, null, ExpenseType.INCOME, 5_000L, null,
+                LocalDateTime.of(2026, 6, 16, 12, 0), null, null, null, 100L, null, null, null);
+        Expense salary = expenseIn(salaryCat, ExpenseType.INCOME, 2_000_000L);
+
+        given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
+        given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
+                .willReturn(List.of(origin, refundTx, salary));
+
+        ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
+                USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
+
+        assertThat(summary.totalExpense()).isEqualTo(40_000L);
+        assertThat(summary.totalIncome()).isEqualTo(2_000_000L);
+
+        var foodEntry = summary.categoryBreakdown().stream()
+                .filter(b -> Long.valueOf(20L).equals(b.categoryRowId())).findFirst().orElseThrow();
+        assertThat(foodEntry.totalAmount()).isEqualTo(40_000L);          // 45,000 − 5,000
+        assertThat(foodEntry.expenseType()).isEqualTo(ExpenseType.EXPENSE);
+
+        var salaryEntry = summary.categoryBreakdown().stream()
+                .filter(b -> Long.valueOf(30L).equals(b.categoryRowId())).findFirst().orElseThrow();
+        assertThat(salaryEntry.expenseType()).isEqualTo(ExpenseType.INCOME); // 지출로 오태깅 금지
+        assertThat(salaryEntry.totalAmount()).isEqualTo(2_000_000L);
+
+        // breakdown 지출 합 == 총지출 (환불이 다른 카테고리로 새면 안 맞는다)
+        long expenseSum = summary.categoryBreakdown().stream()
+                .filter(b -> b.expenseType() == ExpenseType.EXPENSE)
+                .mapToLong(ExpenseServiceDto.CategoryBreakdown::totalAmount).sum();
+        assertThat(expenseSum).isEqualTo(40_000L);
+    }
+
     // ── 환불 상계·미래 제외 ─────────────────────────────────────────────
 
     private Expense at(ExpenseType type, long amount, LocalDateTime when, String merchant) {
