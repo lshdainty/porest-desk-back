@@ -149,6 +149,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CARD_INSTALLMENT_FINISHED("CARD_013", "error.card.installment.finished", HttpStatus.BAD_REQUEST),
     CARD_INSTALLMENT_ALREADY_PAID_OFF("CARD_014", "error.card.installment.already.paid.off", HttpStatus.BAD_REQUEST),
     CARD_INSTALLMENT_NOT_PAID_OFF("CARD_015", "error.card.installment.not.paid.off", HttpStatus.BAD_REQUEST),
+    CARD_BILLING_INVALID_CYCLE("CARD_016", "error.card.billing.invalid.cycle", HttpStatus.BAD_REQUEST),
 
     // Securities (증권사 Open API 연동 — 토스증권 · 나무증권)
     // 메시지에 증권사 이름을 넣지 않는다: 메시지 리졸버가 인자를 받지 않아 파라미터화가 불가능하고,

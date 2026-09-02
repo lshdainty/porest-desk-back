@@ -744,6 +744,96 @@ class CardPaymentServiceImplTest {
         assertThat(cmdCaptor.getValue().transferDate()).isEqualTo(pressedAt);
     }
 
+    // === 다음 회차(nextCycle) + 회차 선택 결제 ===
+
+    @Test
+    @DisplayName("getCardBilling — 다가오는 회차 뒤에 지금 쌓이는 회차(다음 달 결제일, 당월 1일~말일)를 하나 더 내린다")
+    void billingIncludesTheCycleAfterUpcoming() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        givenCycleSpend(100_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(30_000L);
+        doReturn(LocalDate.of(2026, 9, 2)).when(userClock).today(USER_ID);
+
+        CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
+
+        assertThat(info.nextPaymentDate()).isEqualTo(LocalDate.of(2026, 9, 12));
+        assertThat(info.upcomingPeriodStart()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(info.nextCycle()).isNotNull();
+        assertThat(info.nextCycle().paymentDate()).isEqualTo(LocalDate.of(2026, 10, 12));
+        assertThat(info.nextCycle().periodStart()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(info.nextCycle().periodEnd()).isEqualTo(LocalDate.of(2026, 9, 30));
+        assertThat(info.nextCycle().amount()).isEqualTo(70_000L);
+    }
+
+    @Test
+    @DisplayName("getCardBilling — 결제일이 없는 카드는 다음 회차도 없다")
+    void noNextCycleWithoutPaymentDay() {
+        Asset card = creditCard(null);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+        givenCycleSpend(0L);
+
+        assertThat(sut.getCardBilling(CARD_ID, USER_ID).nextCycle()).isNull();
+    }
+
+    @Test
+    @DisplayName("payCard — 다음 회차 결제일을 주면 그 회차(당월 1일~말일)로 귀속된다")
+    void payCardWithNextCycleDateBillsThatCycle() {
+        Asset card = creditCard(12);
+        given(card.getPaymentAsset()).willReturn(null);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(50_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        given(cardBillingRepository.save(any(CardBilling.class))).willAnswer(inv -> inv.getArgument(0));
+        LocalDateTime pressedAt = LocalDateTime.of(2026, 9, 2, 11, 40);
+        doReturn(pressedAt.toLocalDate()).when(userClock).today(USER_ID);
+        doReturn(pressedAt).when(userClock).now(USER_ID);
+
+        CardPaymentServiceDto.BillingInfo billed =
+            sut.payCard(CARD_ID, USER_ID, null, LocalDate.of(2026, 10, 12));
+
+        assertThat(billed.periodStart()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(billed.periodEnd()).isEqualTo(LocalDate.of(2026, 9, 30));
+        assertThat(billed.billingAmount()).isEqualTo(50_000L);
+    }
+
+    @Test
+    @DisplayName("payCard — 다가오는 회차 결제일을 주면 미전달과 같다(전월 1일~말일)")
+    void payCardWithUpcomingDateIsSameAsDefault() {
+        Asset card = creditCard(12);
+        given(card.getPaymentAsset()).willReturn(null);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(50_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        given(cardBillingRepository.save(any(CardBilling.class))).willAnswer(inv -> inv.getArgument(0));
+        LocalDateTime pressedAt = LocalDateTime.of(2026, 9, 2, 11, 40);
+        doReturn(pressedAt.toLocalDate()).when(userClock).today(USER_ID);
+        doReturn(pressedAt).when(userClock).now(USER_ID);
+
+        CardPaymentServiceDto.BillingInfo billed =
+            sut.payCard(CARD_ID, USER_ID, null, LocalDate.of(2026, 9, 12));
+
+        assertThat(billed.periodStart()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(billed.periodEnd()).isEqualTo(LocalDate.of(2026, 8, 31));
+    }
+
+    @Test
+    @DisplayName("payCard — 두 회차 밖의 날짜는 거절한다(CARD_016)")
+    void payCardRejectsOtherCycleDates() {
+        Asset card = creditCard(12);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        doReturn(LocalDate.of(2026, 9, 2)).when(userClock).today(USER_ID);
+
+        assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID, null, LocalDate.of(2026, 11, 12)))
+            .isInstanceOf(InvalidValueException.class)
+            .hasMessage("error.card.billing.invalid.cycle");
+    }
+
     @Test
     @DisplayName("무계좌 카드 — 상계 flow 도 남은 빚까지만 쌓는다")
     void offsetFlowIsCappedByRemainingDebt() {

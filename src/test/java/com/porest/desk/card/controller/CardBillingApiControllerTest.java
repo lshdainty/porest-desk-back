@@ -69,7 +69,8 @@ class CardBillingApiControllerTest {
                 List.of(new CardPaymentServiceDto.InstallmentDue(
                         7L, "가맹점", null, 60000L, 6, 2, 10000L, false)),
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
-                LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()));
+                LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()),
+            null);
         given(cardPaymentService.getCardBilling(50L, 1L)).willReturn(info);
 
         mockMvc.perform(get("/api/v1/asset/{id}/billing", 50L))
@@ -94,7 +95,7 @@ class CardBillingApiControllerTest {
     @Test
     @DisplayName("POST /asset/{id}/pay — id·로그인 사용자로 수동 결제 위임")
     void payCard() throws Exception {
-        given(cardPaymentService.payCard(50L, 1L, null)).willReturn(sampleBilling());
+        given(cardPaymentService.payCard(50L, 1L, null, null)).willReturn(sampleBilling());
 
         mockMvc.perform(post("/api/v1/asset/{id}/pay", 50L))
                 .andExpect(status().isOk())
@@ -103,7 +104,7 @@ class CardBillingApiControllerTest {
                 .andExpect(jsonPath("$.data.billingAmount").value(12000))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
 
-        verify(cardPaymentService).payCard(eq(50L), eq(1L), isNull());
+        verify(cardPaymentService).payCard(eq(50L), eq(1L), isNull(), isNull());
     }
 
     @Test
