@@ -1,6 +1,7 @@
 package com.porest.desk.expense.controller;
 
 import com.porest.core.controller.ApiResponse;
+import jakarta.validation.Valid;
 import com.porest.desk.common.time.WallClockDateTimeParser;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
@@ -34,7 +35,7 @@ public class ExpenseApiController {
     @PostMapping("/expense")
     public ApiResponse<ExpenseApiDto.Response> createExpense(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody ExpenseApiDto.CreateRequest request) {
+            @Valid @RequestBody ExpenseApiDto.CreateRequest request) {
         ExpenseServiceDto.ExpenseInfo info = expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.categoryRowId(),
@@ -72,7 +73,7 @@ public class ExpenseApiController {
     public ApiResponse<ExpenseApiDto.Response> updateExpense(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody ExpenseApiDto.UpdateRequest request) {
+            @Valid @RequestBody ExpenseApiDto.UpdateRequest request) {
         // null = 분할 미변경(기존 유지), 리스트 = 새 분할로 교체. null 의미를 보존하기 위해 null 체크.
         List<ExpenseSplitServiceDto.SplitCommand> splits = request.splits() == null
             ? null
