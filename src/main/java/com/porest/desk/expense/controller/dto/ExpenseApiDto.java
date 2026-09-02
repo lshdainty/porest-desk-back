@@ -3,6 +3,8 @@ package com.porest.desk.expense.controller.dto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -10,15 +12,25 @@ import java.util.List;
 
 public class ExpenseApiDto {
 
+    /**
+     * 거래 한 건의 금액 상한(100억원). DB 는 bigint 라 99조도 들어가지만 0 을 몇 개 더 찍는
+     * 오타를 막을 곳이 없었다(QA 2026-09-02). 거래처·설명 길이도 컬럼(100 · 500)에 맞춰
+     * 여기서 400 으로 거절한다 — 종전엔 DB 제약에 걸려 500 으로 터졌다.
+     */
+    public static final long MAX_AMOUNT = 10_000_000_000L;
+
     @Schema(name = "ExpenseCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
         Long assetRowId,
         ExpenseType expenseType,
+        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있습니다")
         Long amount,
+        @Size(max = 500, message = "설명은 500자까지 입력할 수 있습니다")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
         String expenseDate,
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있습니다")
         String merchant,
         String paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
@@ -40,10 +52,13 @@ public class ExpenseApiDto {
         Long categoryRowId,
         Long assetRowId,
         ExpenseType expenseType,
+        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있습니다")
         Long amount,
+        @Size(max = 500, message = "설명은 500자까지 입력할 수 있습니다")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
         String expenseDate,
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있습니다")
         String merchant,
         String paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */

@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -73,6 +74,38 @@ class ExpenseApiControllerTest {
             0, 0L, // 환불 없음
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of());
+    }
+
+    @Test
+    @DisplayName("POST /expense — 거래처 101자는 400 (종전엔 DB 제약에 걸려 500)")
+    void createExpenseRejectsLongMerchant() throws Exception {
+        String body = """
+                {"categoryRowId":5,"expenseType":"EXPENSE","amount":15000,
+                 "expenseDate":"2026-07-03","merchant":"%s"}
+                """.formatted("가".repeat(101));
+
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).createExpense(any());
+    }
+
+    @Test
+    @DisplayName("POST /expense — 100억원 초과 금액은 400")
+    void createExpenseRejectsHugeAmount() throws Exception {
+        String body = """
+                {"categoryRowId":5,"expenseType":"EXPENSE","amount":99999999999999,
+                 "expenseDate":"2026-07-03","merchant":"김밥천국"}
+                """;
+
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).createExpense(any());
     }
 
     @Test
