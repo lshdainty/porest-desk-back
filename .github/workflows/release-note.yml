@@ -34,6 +34,7 @@ jobs:
           git fetch -q origin "${BASE_REF}"
 
           MISS=0
+          BROKEN=0
           LIST=""
           while IFS= read -r sha; do
             [ -n "${sha}" ] || continue
@@ -42,8 +43,21 @@ jobs:
             printf '%s' "${SUBJ}" | grep -qE '^(feat|fix)(\([^)]*\))?!?:' || continue
             NOTE=$(git log -1 --format='%(trailers:key=Release-Note,valueonly)' "${sha}")
             if [ -n "${NOTE//[[:space:]]/}" ]; then continue; fi
-            echo "::warning::Release-Note 트레일러가 없다 — ${SUBJ}"
-            LIST="${LIST}- \`${sha:0:7}\` ${SUBJ}"$'\n'
+
+            # 안 잡힌 이유가 둘이고 조치가 다르다. 뭉뚱그리면 "없다" 는 경고를 보고
+            # "달았는데?" 하며 넘기게 된다 — 2026-09-02 에 네 커밋이 그렇게 샜다.
+            #   ① 아예 안 달았다            → 문장을 쓴다
+            #   ② 달았는데 블록이 끊겼다     → 빈 줄을 지운다
+            # git 은 메시지의 마지막 문단만 트레일러로 본다. Release-Note 와
+            # Co-Authored-By 사이에 빈 줄이 있으면 앞 문단은 트레일러가 아니게 된다.
+            if git log -1 --format='%B' "${sha}" | grep -qiE '^Release-Note:'; then
+              echo "::warning::Release-Note 를 달았는데 트레일러로 안 잡힌다 — 다른 트레일러와 사이의 빈 줄을 지워라: ${SUBJ}"
+              LIST="${LIST}- \`${sha:0:7}\` ${SUBJ} — **빈 줄로 블록이 끊김**"$'\n'
+              BROKEN=$((BROKEN + 1))
+            else
+              echo "::warning::Release-Note 트레일러가 없다 — ${SUBJ}"
+              LIST="${LIST}- \`${sha:0:7}\` ${SUBJ}"$'\n'
+            fi
             MISS=$((MISS + 1))
           done < <(git rev-list --no-merges "origin/${BASE_REF}..HEAD")
 
@@ -53,7 +67,7 @@ jobs:
           fi
 
           {
-            echo "### Release-Note 트레일러가 없는 커밋 ${MISS}건"
+            echo "### Release-Note 가 노트에 안 실리는 커밋 ${MISS}건"
             echo
             echo "${LIST}"
             echo "릴리스 노트는 이 트레일러에서 나온다. 없으면 커밋 제목이 그대로 앱"
@@ -65,6 +79,17 @@ jobs:
             echo 'Release-Note: 반복 거래 행이 어중간하게 열리던 문제를 고쳤어요'
             echo '```'
             echo
+            if [ "${BROKEN}" -gt 0 ]; then
+              echo "위 목록의 **빈 줄로 블록이 끊김** 은 문장을 이미 쓴 커밋이다. 아래처럼 붙여 쓰면 된다."
+              echo
+              echo '```'
+              echo 'Release-Note: 행을 밀 때 어중간하게 열리던 문제를 고쳤어요'
+              echo 'Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+              echo '```'
+              echo
+              echo "git 은 메시지의 마지막 문단만 트레일러로 본다. 사이에 빈 줄이 있으면 앞 문단은 트레일러가 아니다."
+              echo
+            fi
             echo "말투는 제품 문구와 같게(\`~어요\`). 클래스·파일·토큰 이름은 쓰지 않는다."
             echo "쓰는 사람 눈에 아무 일도 안 일어나는 변경이면 \`Release-Note: skip\`."
             echo
