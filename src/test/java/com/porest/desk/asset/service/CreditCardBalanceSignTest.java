@@ -127,6 +127,38 @@ class CreditCardBalanceSignTest {
     }
 
     @Nested
+    @DisplayName("사용액 0 신용카드 — INIT 앵커를 먼 과거에 둔다(앵커 없음)")
+    class ZeroUsageCardHasNoSnapshot {
+
+        private LocalDateTime savedEffectiveAt() {
+            ArgumentCaptor<AssetBalanceHistory> c = ArgumentCaptor.forClass(AssetBalanceHistory.class);
+            then(repository).should().save(c.capture());
+            return c.getValue().getEffectiveAt();
+        }
+
+        @Test
+        @DisplayName("사용액 0 으로 만든 카드 — 생성 이전 날짜의 지출도 빚에 잡히도록 1970-01-01 앵커")
+        void zeroUsageCardAnchorsAtEpoch() {
+            sut.recordInit(asset(AssetType.CREDIT_CARD, 0L), AT);
+            assertThat(savedEffectiveAt()).isEqualTo(AssetBalanceHistoryService.NO_SNAPSHOT_ANCHOR);
+        }
+
+        @Test
+        @DisplayName("사용액을 적은 카드 — 사용자가 선언한 스냅샷이라 생성 시각(분) 앵커 유지")
+        void positiveUsageCardKeepsCreationAnchor() {
+            sut.recordInit(asset(AssetType.CREDIT_CARD, 100_000L), AT);
+            assertThat(savedEffectiveAt()).isEqualTo(AT.withSecond(0).withNano(0));
+        }
+
+        @Test
+        @DisplayName("잔액 0 통장 — 카드 규칙과 무관하게 생성 시각 앵커 유지")
+        void zeroBankAccountKeepsCreationAnchor() {
+            sut.recordInit(asset(AssetType.BANK_ACCOUNT, 0L), AT);
+            assertThat(savedEffectiveAt()).isEqualTo(AT.withSecond(0).withNano(0));
+        }
+    }
+
+    @Nested
     @DisplayName("INIT 앵커 시각 — 분 시작으로 내린다")
     class InitAnchorMinute {
 
