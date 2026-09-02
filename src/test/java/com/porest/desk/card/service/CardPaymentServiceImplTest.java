@@ -30,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -711,6 +712,36 @@ class CardPaymentServiceImplTest {
             ArgumentCaptor.forClass(AssetServiceDto.CreateTransferCommand.class);
         verify(assetService).createTransfer(cmdCaptor.capture());
         assertThat(cmdCaptor.getValue().amount()).isEqualTo(120_000L);
+    }
+
+    @Test
+    @DisplayName("수동 결제 이체는 결제일 자정이 아니라 누른 시각으로 찍힌다")
+    void manualPaymentTransferIsStampedAtPressTime() {
+        Asset paymentAsset = mock(Asset.class);
+        lenient().when(paymentAsset.getRowId()).thenReturn(9L);
+        Asset card = creditCard(12);
+        given(card.getPaymentAsset()).willReturn(paymentAsset);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(300_000L);
+        givenCardBalance(-300_000L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        AssetServiceDto.TransferInfo transfer = mock(AssetServiceDto.TransferInfo.class);
+        given(transfer.rowId()).willReturn(78L);
+        given(assetService.createTransfer(any())).willReturn(transfer);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+        // 11:40 에 눌렀다 — 같은 날 11:30 에 만든 통장 INIT 앵커보다 뒤여야 잔액에 잡힌다.
+        LocalDateTime pressedAt = LocalDateTime.of(2026, 9, 2, 11, 40);
+        doReturn(pressedAt.toLocalDate()).when(userClock).today(USER_ID);
+        doReturn(pressedAt).when(userClock).now(USER_ID);
+
+        sut.payCard(CARD_ID, USER_ID, null);
+
+        ArgumentCaptor<AssetServiceDto.CreateTransferCommand> cmdCaptor =
+            ArgumentCaptor.forClass(AssetServiceDto.CreateTransferCommand.class);
+        verify(assetService).createTransfer(cmdCaptor.capture());
+        assertThat(cmdCaptor.getValue().transferDate()).isEqualTo(pressedAt);
     }
 
     @Test

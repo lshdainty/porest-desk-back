@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.porest.desk.card.type.BillingStatus;
 import java.util.Objects;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -115,8 +116,12 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
         // 잔액 부족을 막지 않는다 — 기록용 앱이라 통장 잔액을 안 맞춰 둔 사용자가 많고,
         // 실제로는 결제됐는데 앱에서만 결제가 안 되는 상태를 만들 이유가 없다(마이너스 통장도 있다).
+        // 이체 시각은 누른 시각이다 — 결제일 00:00 으로 찍으면 같은 날 그 뒤에 만든 통장 INIT 이나
+        // 카드 잔액 수정(MANUAL) 앵커보다 과거가 되어 양쪽 잔액 집계에서 사라진다(이체 행은 있는데
+        // 통장·카드가 그대로). 자동 결제는 결제일 자정에 도는 배치라 그날 시작이 곧 실행 시각이다.
         CardBilling billing = cardBillingRepository.save(payoff(
-            card, paymentAsset, payAmount, periodStart, periodEnd, today, userRowId));
+            card, paymentAsset, payAmount, periodStart, periodEnd, today, userRowId,
+            userClock.now(userRowId)));
 
         log.info("카드 수동 결제 완료: cardRowId={}, amount={}, 남은청구액={}",
             cardRowId, payAmount, remaining - payAmount);
@@ -208,7 +213,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         // 결제계좌 미지정·잔액 부족으로 실패시키지 않는다 — 기록용 앱이라 통장을 안 적거나
         // 잔액을 안 맞춰 둔 사용자가 있고, 막으면 카드 부채가 영원히 안 지워진다.
         cardBillingRepository.save(payoff(
-            card, paymentAsset, amount, cycle.periodStart(), cycle.periodEnd(), today, userRowId));
+            card, paymentAsset, amount, cycle.periodStart(), cycle.periodEnd(), today, userRowId,
+            today.atStartOfDay()));
 
         log.info("자동 카드 결제 완료: cardRowId={}, amount={}, 결제계좌={}",
             card.getRowId(), amount, paymentAsset != null ? paymentAsset.getRowId() : "미지정");
@@ -268,7 +274,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 애초에 순자산에 안 잡혀 있으므로 카드 쪽만 0 으로 맞추면 일관된다(규칙6 과 같은 논리).
      */
     private CardBilling payoff(Asset card, Asset paymentAsset, long amount, LocalDate periodStart,
-                               LocalDate periodEnd, LocalDate today, Long userRowId) {
+                               LocalDate periodEnd, LocalDate today, Long userRowId,
+                               LocalDateTime transferAt) {
         // 돈은 남은 빚까지만 움직인다 — 청구(기록)는 회차 사용액 전액, 이체는 min(청구, 빚).
         // 잔액을 수동 보정(앵커)해 빚을 지워 둔 카드는 그 지출이 이미 잔액에 정리된 상태라,
         // 전액을 또 이체하면 카드가 양수로 뒤집히고 다음 날 과납 환급 스윕이 도로 돌려보낸다
@@ -277,21 +284,21 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         long move = Math.min(amount, currentDebt(card));
         if (paymentAsset != null && move > 0L) {
             AssetServiceDto.TransferInfo transfer =
-                createPaymentTransfer(card, paymentAsset, move, userRowId, today);
+                createPaymentTransfer(card, paymentAsset, move, userRowId, transferAt);
             return CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today,
                 transferRef(transfer.rowId()));
         }
         if (paymentAsset == null && move > 0L) {
             // 이체 없이 카드 잔액만 되돌린다 — 사용액이 음수로 쌓여 있으므로 +금액 flow.
             balanceHistoryService.recordExpense(
-                card, null, ExpenseType.INCOME, move, today.atStartOfDay());
+                card, null, ExpenseType.INCOME, move, transferAt);
         }
         // move == 0(빚 없음)이면 돈·잔액을 건드리지 않고 회차 완료만 기록한다.
         return CardBilling.completed(card, paymentAsset, amount, periodStart, periodEnd, today, null);
     }
 
     private AssetServiceDto.TransferInfo createPaymentTransfer(Asset card, Asset paymentAsset, long amount,
-                                                              Long userRowId, LocalDate date) {
+                                                              Long userRowId, LocalDateTime at) {
         return assetService.createTransfer(new AssetServiceDto.CreateTransferCommand(
             userRowId,
             paymentAsset.getRowId(),
@@ -300,9 +307,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             0L,
             0L, // 카드 결제는 이자 개념이 없다 — 할부 이자는 청구액에 이미 포함돼 들어온다
             "신용카드 자동결제",
-            // 이체가 일시(DATETIME)로 바뀜 — 자동결제는 사용자가 시각을 고른 게 아니라
-            // 결제일 자체가 기준이므로 그날 시작으로 둔다.
-            date.atStartOfDay(),
+            // 수동 결제는 누른 시각, 자동 결제는 결제일 자정(배치 실행 시각) — 호출자가 정한다.
+            at,
             // 카드 결제는 청구 회차와 묶여 있다 — 이 이체만 따로 고치면 청구가 어긋난다.
             "CARD_PAYMENT"
         ));
