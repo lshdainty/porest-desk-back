@@ -62,9 +62,31 @@ public class AssetBalanceHistoryService {
      */
     public void recordInit(Asset asset, LocalDateTime effectiveAt) {
         long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
+        LocalDateTime anchorAt = isNoSnapshotCard(asset, initial)
+            ? NO_SNAPSHOT_ANCHOR
+            : effectiveAt.withSecond(0).withNano(0);
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(),
-            normalizeAnchor(asset, initial), effectiveAt.withSecond(0).withNano(0)));
+            normalizeAnchor(asset, initial), anchorAt));
+    }
+
+    /**
+     * "앵커 없음" 을 뜻하는 INIT 시각 — 모든 날짜의 flow 가 이 뒤에 온다.
+     *
+     * <p>신용카드를 <b>현재 사용액 0</b> 으로 만들면 그 0 은 "이 시점의 미결제 스냅샷" 이라기보다
+     * 대개 아직 안 적은 상태다. 카드는 지난 며칠 쓴 걸 나중에 입력하는 게 자연스러운 물건인데,
+     * 생성 시각을 앵커로 두면 그 전 날짜의 지출이 청구서에는 들어가고 빚에는 안 잡혀
+     * "결제 완료인데 이체 없음"(payoff 의 빚 캡)이 구조적으로 생긴다 — 운영에서 8/3 에 만든
+     * 카드에 8/1·8/2 지출을 넣은 사용자가 정확히 이걸 겪었다(청구 225,733 / 빚 0 / 이체 NULL).
+     * 그래서 사용액 0 카드는 앵커를 먼 과거에 두어 입력하는 모든 내역이 미결제로 잡히게 한다.
+     * 사용액을 0 보다 크게 적은 카드는 사용자가 "이 시점 미결제액" 을 선언한 것이라 종전대로
+     * 생성 시각 앵커를 쓰고, 통장·대출은 잔액이 사용자가 정확히 아는 값이라 그대로다.
+     * 잔액 수동 수정(MANUAL)은 의도된 스냅샷이므로 이 규칙과 무관하다.
+     */
+    static final LocalDateTime NO_SNAPSHOT_ANCHOR = LocalDateTime.of(1970, 1, 1, 0, 0);
+
+    private static boolean isNoSnapshotCard(Asset asset, long initial) {
+        return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD && initial == 0L;
     }
 
     /** 사용자의 수동 잔액 수정 — 절대 앵커(점프). 가계부 통계엔 영향 없음. */
