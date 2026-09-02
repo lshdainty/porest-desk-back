@@ -88,6 +88,23 @@ public class CardPaymentServiceDto {
         LocalDate nextPaymentDate,
         Integer paymentDay,
         Long paymentAssetRowId,
-        List<BillingInfo> history
+        List<BillingInfo> history,
+        /**
+         * 다가오는 회차의 다음 회차 — 지금 쌓이고 있는 이용분(당월 1일~말일, 다음 달 결제일).
+         * 없으면(결제일 미설정) null. 종전엔 다가오는 회차 하나만 내려 지금 쓰는 내역이
+         * 결제일이 지나기 전엔 어느 회차에도 안 보였다.
+         */
+        UpcomingCycle nextCycle
+    ) {}
+
+    /** 회차 하나 — 결제일·청구 기간·예정액(선결제 차감 후)·구성. */
+    public record UpcomingCycle(
+        LocalDate paymentDate,
+        LocalDate periodStart,
+        LocalDate periodEnd,
+        Long amount,
+        Long lumpSumAmount,
+        Long alreadyPaidAmount,
+        List<InstallmentDue> installments
     ) {}
 }

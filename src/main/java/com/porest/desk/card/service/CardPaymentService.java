@@ -18,6 +18,12 @@ public interface CardPaymentService {
     CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount);
 
     /**
+     * 회차를 골라 결제한다 — paymentDate 는 다가오는 회차 또는 그 다음 회차(지금 쌓이는 이용분)의
+     * 결제일. null 이면 다가오는 회차(위 오버로드와 같다).
+     */
+    CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount, LocalDate paymentDate);
+
+    /**
      * 할부 중도 전액 상환 — 남은 원금을 <b>다가오는 청구 회차</b>에 몰아 청구되게 한다.
      * 그 회차를 지금 결제로 정리하면 끝난다.
      */

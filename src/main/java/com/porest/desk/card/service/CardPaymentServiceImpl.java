@@ -62,6 +62,16 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             .map(CardPaymentServiceDto.BillingInfo::from)
             .toList();
 
+        // 다음 회차 — 지금 쌓이는 이용분. 결제일이 지나기 전에도 이번 달에 얼마 썼는지,
+        // 미리 얼마를 낼 수 있는지 보여 주려고 하나 더 내려준다.
+        CardPaymentServiceDto.UpcomingCycle nextCycle = null;
+        if (nextPaymentDate != null) {
+            LocalDate following = nextPaymentDate(card.getPaymentDay(), nextPaymentDate.plusDays(1));
+            BillingCycle c2 = upcomingCycle(card, following);
+            nextCycle = new CardPaymentServiceDto.UpcomingCycle(following, c2.periodStart(), c2.periodEnd(),
+                c2.amount(), c2.lumpSumAmount(), c2.alreadyPaid(), c2.installments());
+        }
+
         return new CardPaymentServiceDto.CardBillingInfo(
             cardRowId,
             cycle.amount(),
@@ -73,14 +83,23 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             nextPaymentDate,
             card.getPaymentDay(),
             card.getPaymentAsset() != null ? card.getPaymentAsset().getRowId() : null,
-            history
+            history,
+            nextCycle
         );
     }
 
     @Override
     @Transactional
     public CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount) {
-        log.debug("카드 수동 결제 시작: cardRowId={}, userRowId={}, amount={}", cardRowId, userRowId, amount);
+        return payCard(cardRowId, userRowId, amount, null);
+    }
+
+    @Override
+    @Transactional
+    public CardPaymentServiceDto.BillingInfo payCard(Long cardRowId, Long userRowId, Long amount,
+                                                     LocalDate paymentDate) {
+        log.debug("카드 수동 결제 시작: cardRowId={}, userRowId={}, amount={}, paymentDate={}",
+            cardRowId, userRowId, amount, paymentDate);
 
         Asset card = findAssetOrThrow(cardRowId);
         validateOwnership(card, userRowId);
@@ -91,11 +110,21 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         // 등록 안 한 자산은 애초에 순자산에 안 잡혀 있으므로 카드 쪽만 맞추면 된다).
         Asset paymentAsset = card.getPaymentAsset();
 
-        // 수동 결제 = 다가오는 결제 회차의 선결제 — 금액·기간 귀속 모두 그 회차 기준.
+        // 수동 결제 = 선택한 회차의 선결제 — 금액·기간 귀속 모두 그 회차 기준.
         // (종전엔 잔액 전액 + 실행일의 전월 라벨이라 회차·기간·금액이 어긋났음)
+        // paymentDate 가 없으면 다가오는 회차, 있으면 다가오는 회차 또는 그 다음 회차(지금 쌓이는
+        // 이용분)만 허용한다 — 그 밖의 날짜는 화면이 내려준 회차가 아니므로 거절한다.
         LocalDate today = userClock.today(userRowId);
         LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), today);
-        BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
+        LocalDate target = nextPaymentDate;
+        if (paymentDate != null && nextPaymentDate != null && !paymentDate.equals(nextPaymentDate)) {
+            LocalDate following = nextPaymentDate(card.getPaymentDay(), nextPaymentDate.plusDays(1));
+            if (!paymentDate.equals(following)) {
+                throw new InvalidValueException(DeskErrorCode.CARD_BILLING_INVALID_CYCLE);
+            }
+            target = following;
+        }
+        BillingCycle cycle = upcomingCycle(card, target);
         long remaining = cycle.amount();
         LocalDate periodStart = cycle.periodStart();
         LocalDate periodEnd = cycle.periodEnd();

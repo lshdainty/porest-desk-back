@@ -35,15 +35,20 @@ public class CardBillingApiController {
      * 카드 수동 결제 — 결제계좌에서 카드로 이체하여 사용액을 정리한다.
      * 결제계좌가 없으면 이체 없이 카드 쪽만 정리한다(기록용 앱이라 통장을 안 적는 사용자가 있다).
      *
-     * @param amount 결제 금액. 미전달이면 남은 청구액 전액, 값이 있으면 그만큼만(부분 선결제)
+     * @param amount      결제 금액. 미전달이면 남은 청구액 전액, 값이 있으면 그만큼만(부분 선결제)
+     * @param paymentDate 결제할 회차의 결제일. 미전달이면 다가오는 회차. 청구 응답의
+     *                    nextCycle.paymentDate 를 주면 지금 쌓이는 이용분을 미리 낸다
      */
     @PostMapping("/asset/{id}/pay")
     public ApiResponse<CardBillingApiDto.BillingItemResponse> payCard(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestParam(required = false) Long amount) {
+            @RequestParam(required = false) Long amount,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+            java.time.LocalDate paymentDate) {
         CardPaymentServiceDto.BillingInfo info =
-            cardPaymentService.payCard(id, loginUser.getRowId(), amount);
+            cardPaymentService.payCard(id, loginUser.getRowId(), amount, paymentDate);
         return ApiResponse.success(CardBillingApiDto.BillingItemResponse.from(info));
     }
 
