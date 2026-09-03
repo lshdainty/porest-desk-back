@@ -56,9 +56,15 @@ public class ImportApiController {
             .toList();
         // 실패 한 건마다 목록에도 한 줄이 들어가므로, 개수가 어긋나면 목록이 상한에서 잘린 것이다.
         boolean truncated = result.failed() > failures.size();
+        // 중복으로 건너뛴 행 — 미리보기와 같은 모양으로 내려 화면이 같은 표를 재사용한다.
+        List<ImportApiDto.PreviewRow> duplicates = result.duplicates().stream()
+            .map(ImportApiController::toPreview)
+            .toList();
+        boolean dupTruncated = result.duplicateSkipped() > duplicates.size();
         return ApiResponse.success(new ImportApiDto.ExecuteResponse(
             result.imported(), result.skipped(), result.failed(), failures,
-            truncated, result.createdCategories(), result.createdCategoryCount()));
+            truncated, result.createdCategories(), result.createdCategoryCount(),
+            result.duplicateSkipped(), duplicates, dupTruncated));
     }
 
     // ── 매핑 헬퍼 ────────────────────────────────────────────
@@ -87,7 +93,8 @@ public class ImportApiController {
             s.asset(),
             s.memo(),
             s.duplicate(),
-            s.error());
+            s.error(),
+            s.merchant());
     }
 
     /** 미리보기 카테고리 — 대분류/소분류가 부모/자식으로 들어가므로 경로로 보여준다. */

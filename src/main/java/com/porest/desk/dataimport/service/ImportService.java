@@ -59,14 +59,36 @@ public interface ImportService {
     ) {}
 
     record ExecuteResult(
+        /** 실제로 저장된 행 수. */
         int imported,
+        /**
+         * 넣지 않았지만 오류도 아닌 행 수 — <b>이체 + 중복 건너뜀</b>의 합.
+         *
+         * <p>뜻을 바꾸지 않는다(옛 화면이 이 숫자를 읽는다). 그중 중복이 몇 건인지는
+         * {@link #duplicateSkipped()} 로 따로 알린다 — 예전엔 이 합계만 있어서
+         * "가져오기는 됐다는데 그 행이 없다" 의 이유를 화면이 말해 줄 수 없었다.
+         */
         int skipped,
         int failed,
         List<Failure> failures,
         /** 이번 실행에서 <b>실제로 만들어진</b> 카테고리 경로(생성 순서) — 상한까지. */
         List<String> createdCategories,
         /** 실제로 만들어진 카테고리의 전체 개수. 위 목록이 잘려도 끝까지 센다. */
-        int createdCategoryCount
+        int createdCategoryCount,
+        /**
+         * 기존 거래와 겹쳐 건너뛴 행 수({@code skipped} 의 부분집합, {@code dupSkip} 일 때만 는다).
+         *
+         * <p>가장 흔한 오해가 여기서 난다 — 저장은 "성공" 했는데 방금 올린 행이 목록에 없다.
+         * 몇 건이 왜 빠졌는지 숫자로 말해 준다.
+         */
+        int duplicateSkipped,
+        /**
+         * 그중 <b>어떤 행</b>이었는지 — 상한까지. 전체 개수는 {@link #duplicateSkipped()}.
+         *
+         * <p>숫자만으로는 파일을 고칠 수 없다. 줄번호·날짜·금액·거래처가 있어야
+         * "이건 진짜 중복" 과 "이건 같은 날 두 번째 커피" 를 사용자가 가른다.
+         */
+        List<StandardRow> duplicates
     ) {}
 
     record Failure(int lineNo, String reason) {}

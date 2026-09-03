@@ -57,7 +57,7 @@ class ImportApiControllerTest {
     @DisplayName("POST /import/analyze — 파일+소스로 자동매핑·미리보기 위임")
     void analyze() throws Exception {
         StandardRow row = new StandardRow(1, java.time.LocalDateTime.of(2026, 5, 28, 0, 0),
-            ExpenseType.EXPENSE, 5700L, "식비", null, "체크카드", "편의점", null, null, false, null);
+            ExpenseType.EXPENSE, 5700L, "식비", null, "체크카드", "편의점", "당근마켓", null, false, null);
         given(importService.analyze(any(), eq(ImportSource.EASYBUDGET), eq(1L)))
             .willReturn(new ImportService.AnalyzeResult(
                 "t.csv", 2, 2, 0,
@@ -76,6 +76,7 @@ class ImportApiControllerTest {
             .andExpect(jsonPath("$.data.suggestedMapping.DATE").value(0))
             .andExpect(jsonPath("$.data.preview[0].amount").value(5700))
             .andExpect(jsonPath("$.data.preview[0].type").value("EXPENSE"))
+            .andExpect(jsonPath("$.data.preview[0].merchant").value("당근마켓"))
             // 실행 전에 "무엇이 새로 생기는지" 가 응답에 실려야 화면이 물어볼 수 있다.
             .andExpect(jsonPath("$.data.newCategories[0]").value("싟비"))
             .andExpect(jsonPath("$.data.newCategories[1]").value("여행 > 기타"))
@@ -88,7 +89,7 @@ class ImportApiControllerTest {
     @DisplayName("POST /import/execute — 파일 + 매핑·옵션(JSON part)으로 저장 위임")
     void execute() throws Exception {
         given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
-            .willReturn(new ImportService.ExecuteResult(2, 1, 0, List.of(), List.of("싟비"), 1));
+            .willReturn(new ImportService.ExecuteResult(2, 1, 0, List.of(), List.of("싟비"), 1, 0, List.of()));
 
         mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
             .andExpect(status().isOk())
@@ -97,7 +98,9 @@ class ImportApiControllerTest {
             .andExpect(jsonPath("$.data.failed").value(0))
             .andExpect(jsonPath("$.data.failuresTruncated").value(false))
             .andExpect(jsonPath("$.data.createdCategories[0]").value("싟비"))
-            .andExpect(jsonPath("$.data.createdCategoryCount").value(1));
+            .andExpect(jsonPath("$.data.createdCategoryCount").value(1))
+            .andExpect(jsonPath("$.data.duplicateSkipped").value(0))
+            .andExpect(jsonPath("$.data.duplicatesTruncated").value(false));
 
         verify(importService).execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L));
     }
@@ -109,7 +112,7 @@ class ImportApiControllerTest {
         given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
             .willReturn(new ImportService.ExecuteResult(0, 20, 2,
                 List.of(new ImportService.Failure(21, "amount"), new ImportService.Failure(22, "date")),
-                List.of(), 0));
+                List.of(), 0, 0, List.of()));
 
         mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
             .andExpect(status().isOk())
@@ -128,7 +131,7 @@ class ImportApiControllerTest {
             .mapToObj(i -> new ImportService.Failure(i, "amount"))
             .toList();
         given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
-            .willReturn(new ImportService.ExecuteResult(0, 0, 120, capped, List.of(), 0));
+            .willReturn(new ImportService.ExecuteResult(0, 0, 120, capped, List.of(), 0, 0, List.of()));
 
         mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
             .andExpect(status().isOk())
@@ -156,6 +159,44 @@ class ImportApiControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.newCategories.length()").value(50))
             .andExpect(jsonPath("$.data.newCategoryCount").value(3000));
+    }
+
+    @Test
+    @DisplayName("POST /import/execute — 중복으로 건너뛴 행을 개수와 함께 내려준다")
+    void execute_returnsSkippedDuplicates() throws Exception {
+        // "가져오기 성공" 이라는데 방금 올린 행이 목록에 없다 — 화면이 그 이유를 말하려면 이 두 값이 필요하다.
+        StandardRow dup = new StandardRow(7, java.time.LocalDateTime.of(2026, 5, 28, 10, 0),
+            ExpenseType.EXPENSE, 500L, "식비", null, "체크카드", null, "동네카페", null, true, null);
+        given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
+            .willReturn(new ImportService.ExecuteResult(0, 1, 0, List.of(), List.of(), 0, 1, List.of(dup)));
+
+        mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.duplicateSkipped").value(1))
+            .andExpect(jsonPath("$.data.duplicates[0].lineNo").value(7))
+            .andExpect(jsonPath("$.data.duplicates[0].amount").value(500))
+            .andExpect(jsonPath("$.data.duplicates[0].merchant").value("동네카페"))
+            .andExpect(jsonPath("$.data.duplicates[0].duplicate").value(true))
+            .andExpect(jsonPath("$.data.duplicatesTruncated").value(false))
+            // 기존 필드는 그대로 — 옛 앱이 읽는다.
+            .andExpect(jsonPath("$.data.skipped").value(1));
+    }
+
+    @Test
+    @DisplayName("POST /import/execute — 중복 목록이 상한에서 잘리면 잘렸다고 알린다")
+    void execute_flagsTruncatedDuplicates() throws Exception {
+        List<StandardRow> capped = java.util.stream.IntStream.rangeClosed(1, 50)
+            .mapToObj(i -> new StandardRow(i, java.time.LocalDateTime.of(2026, 5, 28, 0, 0),
+                ExpenseType.EXPENSE, 500L, "식비", null, null, null, null, null, true, null))
+            .toList();
+        given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
+            .willReturn(new ImportService.ExecuteResult(0, 300, 0, List.of(), List.of(), 0, 300, capped));
+
+        mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.duplicateSkipped").value(300))
+            .andExpect(jsonPath("$.data.duplicates.length()").value(50))
+            .andExpect(jsonPath("$.data.duplicatesTruncated").value(true));
     }
 
     private MockMultipartFile csvFile() {
