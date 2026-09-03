@@ -10,11 +10,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.format.DateTimeParseException;
 
 /**
- * 요청값 자체가 틀렸을 때 500 대신 400 을 돌려주는 핸들러.
+ * 요청값 자체가 틀렸을 때 500 대신 400 을 돌려주는 핸들러. 뒤에 <b>말투</b>도 여기서 맞춘다
+ * (QA 2026-09-03 #74 — 타입 불일치 문구가 core 에 격식체로 박혀 있었다).
  *
  * <p>porest-core 의 GlobalExceptionHandler 는 {@link DateTimeParseException} 도
  * {@link HttpMessageNotReadableException} 도 매핑하지 않아 마지막 {@code @ExceptionHandler(Exception.class)}
@@ -68,6 +70,30 @@ public class RequestValueExceptionHandler {
             if (c == c.getCause()) break;   // 자기참조 방어
         }
         return false;
+    }
+
+    /**
+     * 쿼리·경로 파라미터의 타입이 안 맞는다 — {@code DELETE /api/v1/expense/budget/abc}(QA 2026-09-03 #74).
+     *
+     * <p>core 가 이미 400 으로 답하고 있어 <b>상태코드는 그대로다.</b> 문제는 문구였다 — core 는
+     * {@code "'%s' 파라미터의 값이 유효하지 않습니다."} 를 코드에 박아 둬서, 같은 API 가 검증 실패
+     * (번들 · {@code ~어요})와 타입 불일치(하드코딩 · {@code ~습니다})에 두 말투로 답했다. 여기서
+     * 가로채 번들 문구로 바꾼다. 코드는 {@code COMMON_400} 그대로다.
+     *
+     * <p><b>{@code BindException} 은 일부러 안 잡는다.</b> {@code MethodArgumentNotValidException} 이
+     * 그 하위 타입이라, 여기에 {@code BindException} 핸들러를 두면 {@code @Valid} 실패까지 이 advice 가
+     * 먼저 먹는다(Spring 은 advice 를 순서대로 훑다 처음 매칭에서 멈춘다) — DTO 마다 다른 필드 메시지가
+     * 통째로 사라진다. 실제로 그렇게 되는지는
+     * {@code ErrorEnvelopeTest#validationMessagesStillComeFromTheDto} 가 지킨다.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        log.warn("파라미터 타입 불일치: name={}, required={}", e.getName(), e.getRequiredType());
+
+        DeskErrorCode code = DeskErrorCode.INVALID_PARAMETER_VALUE;
+        return ResponseEntity
+                .status(code.getHttpStatus())
+                .body(ApiResponse.error(code.getCode(), messageResolver.getMessage(code, e.getName())));
     }
 
     private ResponseEntity<ApiResponse<Void>> badRequest(DeskErrorCode code) {

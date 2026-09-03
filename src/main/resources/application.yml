@@ -4,7 +4,11 @@ spring:
   application:
     name: porest-desk
   messages:
-    basename: message/core-messages,message/messages
+    # 앞에 적은 번들이 이긴다(ResourceBundleMessageSource 는 basename 을 순서대로 훑다
+    # 처음 찾은 값을 쓴다). desk 가 앞이라야 core 번들의 같은 키를 덮을 수 있다 —
+    # 뒤에 두면 error.common.invalid.input 처럼 겹치는 키가 core 값으로 나가고,
+    # 이 레포의 messages_ko 를 아무리 고쳐도 화면은 그대로다(QA 2026-09-03 #74 실측).
+    basename: message/messages,message/core-messages
     encoding: utf-8
 
   # 파일 업로드 (데이터 가져오기 등) — 기본 1MB 제한을 넘겨 CSV/Excel 업로드 허용

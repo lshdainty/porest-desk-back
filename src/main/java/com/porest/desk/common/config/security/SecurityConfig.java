@@ -2,6 +2,7 @@ package com.porest.desk.common.config.security;
 
 import com.porest.desk.common.config.properties.AppProperties;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
+import com.porest.desk.security.handler.CustomAccessDeniedHandler;
 import com.porest.desk.security.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +27,7 @@ import java.util.List;
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
+    private final CustomAccessDeniedHandler customAccessDeniedHandler;
     private final AppProperties appProperties;
 
     @Bean
@@ -34,7 +36,11 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(exception -> exception.authenticationEntryPoint(customAuthenticationEntryPoint))
+            // 401·403 을 둘 다 우리 핸들러로 보낸다. accessDeniedHandler 를 빼면 403 만 시큐리티
+            // 기본 경로(sendError → /error)로 새어 부트 기본 에러 본문이 나간다.
+            .exceptionHandling(exception -> exception
+                .authenticationEntryPoint(customAuthenticationEntryPoint)
+                .accessDeniedHandler(customAccessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(

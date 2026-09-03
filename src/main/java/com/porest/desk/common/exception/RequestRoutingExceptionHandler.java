@@ -35,7 +35,9 @@ import java.util.stream.Collectors;
  * {@link NoHandlerFoundException} 을 잡는 건 <b>지금 도는 경로가 아니라 안전망</b>이다 —
  * {@code spring.web.resources.add-mappings=false} 로 정적 매핑을 끄는 순간 그 예외가 살아나고,
  * 그때 이 핸들러가 없으면 없는 경로가 다시 500 으로 나간다. 응답은 core 의 NoResourceFound
- * 핸들러와 <b>글자까지 같게</b> 맞춰 뒀다(같은 코드 · 같은 메시지 키).
+ * 핸들러와 <b>글자까지 같게</b> 맞춰 뒀다(같은 코드 · 같은 메시지 키). 그 키({@code error.common.404})의
+ * 값은 이 레포 번들이 갖는다 — core 번들에도 같은 키가 있지만 basename 순서상 이쪽이 이긴다
+ * (QA 2026-09-03 #74, {@code application.yml} 주석 참고).
  *
  * <p>{@code spring.mvc.throw-exception-if-no-handler-found} 는 <b>건드리지 않는다</b>. Boot 3.2 부터
  * deprecated(level=error, "should no longer need to be configured")이고, 켜 봐야 정적 리소스 핸들러가
