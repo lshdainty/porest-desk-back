@@ -374,4 +374,36 @@ class ExpenseApiControllerTest {
         assertThat(captor.getValue().startDate()).isEqualTo(LocalDate.of(2026, 7, 1));
         assertThat(captor.getValue().endDate()).isEqualTo(LocalDate.of(2026, 7, 31));
     }
+
+    @Test
+    @DisplayName("POST /expense — 존재하지 않는 날짜(2026-02-30)는 400 (종전엔 500)")
+    void createExpenseRejectsImpossibleDate() throws Exception {
+        String body = """
+                {"categoryRowId":5,"expenseType":"EXPENSE","amount":15000,
+                 "expenseDate":"2026-02-30","merchant":"김밥천국"}
+                """;
+
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).createExpense(any());
+    }
+
+    @Test
+    @DisplayName("POST /expense — 존재하지 않는 일시(2026-02-30T09:00:00)도 400")
+    void createExpenseRejectsImpossibleDateTime() throws Exception {
+        String body = """
+                {"categoryRowId":5,"expenseType":"EXPENSE","amount":15000,
+                 "expenseDate":"2026-02-30T09:00:00","merchant":"김밥천국"}
+                """;
+
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).createExpense(any());
+    }
 }

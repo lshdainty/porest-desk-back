@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -253,5 +254,126 @@ class TodoApiControllerTest {
                 .andExpect(jsonPath("$.data.noteCount").value(4));
 
         verify(todoService).getStats(1L);
+    }
+
+    @Test
+    @DisplayName("POST /todo — 존재하지 않는 마감일(2026-02-30)은 400 (종전엔 500)")
+    void createTodoRejectsImpossibleDueDate() throws Exception {
+        String body = """
+                {"title":"할일","priority":"HIGH","dueDate":"2026-02-30","type":"TASK"}
+                """;
+
+        mockMvc.perform(post("/api/v1/todo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).createTodo(any());
+    }
+
+    @Test
+    @DisplayName("PUT /todo/{id} — 존재하지 않는 마감일(2026-02-30)은 400")
+    void updateTodoRejectsImpossibleDueDate() throws Exception {
+        String body = """
+                {"title":"할일","priority":"HIGH","dueDate":"2026-02-30"}
+                """;
+
+        mockMvc.perform(put("/api/v1/todo/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).updateTodo(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("POST /todo — 1900·2099 마감일은 허용한다(범위 제한 없음 — QA #11 결정)")
+    void createTodoAllowsFarDueDates() throws Exception {
+        given(todoService.createTodo(any())).willReturn(sampleTodo());
+
+        for (String dueDate : new String[]{"1900-01-01", "2099-12-31"}) {
+            mockMvc.perform(post("/api/v1/todo")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"title\":\"할일\",\"priority\":\"HIGH\",\"dueDate\":\""
+                                    + dueDate + "\",\"type\":\"TASK\"}"))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    @DisplayName("POST /todo — 제목 201자는 400 (종전엔 DB 제약에 걸려 500)")
+    void createTodoRejectsLongTitle() throws Exception {
+        String body = """
+                {"title":"%s","priority":"HIGH","type":"TASK"}
+                """.formatted("가".repeat(201));
+
+        mockMvc.perform(post("/api/v1/todo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).createTodo(any());
+    }
+
+    @Test
+    @DisplayName("POST /todo — 제목 200자(경계)는 통과")
+    void createTodoAcceptsTitleAtLimit() throws Exception {
+        given(todoService.createTodo(any())).willReturn(sampleTodo());
+
+        String body = """
+                {"title":"%s","priority":"HIGH","type":"TASK"}
+                """.formatted("가".repeat(200));
+
+        mockMvc.perform(post("/api/v1/todo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(todoService).createTodo(any());
+    }
+
+    @Test
+    @DisplayName("PUT /todo/{id} — 제목 201자는 400")
+    void updateTodoRejectsLongTitle() throws Exception {
+        String body = """
+                {"title":"%s","priority":"HIGH"}
+                """.formatted("가".repeat(201));
+
+        mockMvc.perform(put("/api/v1/todo/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).updateTodo(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("POST /todo — 메모 10,001자는 400 (공통 상한 10,000)")
+    void createTodoRejectsOversizedContent() throws Exception {
+        String body = "{\"title\":\"할일\",\"priority\":\"HIGH\",\"type\":\"TASK\",\"content\":\""
+                + "가".repeat(10_001) + "\"}";
+
+        mockMvc.perform(post("/api/v1/todo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).createTodo(any());
+    }
+
+    @Test
+    @DisplayName("POST /todo — 메모 10,000자(경계)는 통과")
+    void createTodoAcceptsContentAtLimit() throws Exception {
+        given(todoService.createTodo(any())).willReturn(sampleTodo());
+
+        String body = "{\"title\":\"할일\",\"priority\":\"HIGH\",\"type\":\"TASK\",\"content\":\""
+                + "가".repeat(10_000) + "\"}";
+
+        mockMvc.perform(post("/api/v1/todo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(todoService).createTodo(any());
     }
 }

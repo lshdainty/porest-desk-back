@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -171,5 +172,91 @@ class MemoApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(memoService).deleteMemo(5L, 1L);
+    }
+
+    @Test
+    @DisplayName("POST /memo — 제목 201자는 400 (종전엔 DB 제약에 걸려 500)")
+    void createMemoRejectsLongTitle() throws Exception {
+        String body = """
+                {"title":"%s","content":"내용"}
+                """.formatted("가".repeat(201));
+
+        mockMvc.perform(post("/api/v1/memo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(memoService, never()).createMemo(any());
+    }
+
+    @Test
+    @DisplayName("POST /memo — 제목 200자(경계)는 통과")
+    void createMemoAcceptsTitleAtLimit() throws Exception {
+        given(memoService.createMemo(any())).willReturn(sampleInfo());
+
+        String body = """
+                {"title":"%s","content":"내용"}
+                """.formatted("가".repeat(200));
+
+        mockMvc.perform(post("/api/v1/memo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(memoService).createMemo(any());
+    }
+
+    @Test
+    @DisplayName("PUT /memo/{id} — 제목 201자는 400")
+    void updateMemoRejectsLongTitle() throws Exception {
+        String body = """
+                {"title":"%s","content":"내용"}
+                """.formatted("가".repeat(201));
+
+        mockMvc.perform(put("/api/v1/memo/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(memoService, never()).updateMemo(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("POST /memo — 본문 10,001자는 400 (공통 상한 10,000)")
+    void createMemoRejectsOversizedContent() throws Exception {
+        String body = "{\"title\":\"메모\",\"content\":\"" + "가".repeat(10_001) + "\"}";
+
+        mockMvc.perform(post("/api/v1/memo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(memoService, never()).createMemo(any());
+    }
+
+    @Test
+    @DisplayName("POST /memo — 본문 10,000자(경계)는 통과")
+    void createMemoAcceptsContentAtLimit() throws Exception {
+        given(memoService.createMemo(any())).willReturn(sampleInfo());
+
+        String body = "{\"title\":\"메모\",\"content\":\"" + "가".repeat(10_000) + "\"}";
+
+        mockMvc.perform(post("/api/v1/memo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(memoService).createMemo(any());
+    }
+
+    @Test
+    @DisplayName("POST /memo — 깨진 JSON 본문은 400 (종전엔 500)")
+    void createMemoRejectsMalformedJson() throws Exception {
+        mockMvc.perform(post("/api/v1/memo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"메모\","))
+                .andExpect(status().isBadRequest());
+
+        verify(memoService, never()).createMemo(any());
     }
 }
