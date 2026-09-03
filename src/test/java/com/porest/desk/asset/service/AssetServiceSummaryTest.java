@@ -30,7 +30,12 @@ import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
 
 /**
- * 자산 순자산 집계 로직 회귀 방지 테스트 — 자산/부채(CREDIT_CARD·LOAN) 분류 합산과 netWorth 계산.
+ * 자산 순자산 집계 로직 회귀 방지 테스트 — 자산/부채 분류 합산과 netWorth 계산.
+ *
+ * <p>가르는 기준은 잔액의 <b>부호가 아니라 유형</b>이다(QA 2026-09-03 #21). 부호로 가르면
+ * 잔액이 음수인 입출금(마이너스 통장)이 부채로 넘어가 홈과 자산 화면의 총자산이 어긋난다.
+ * 대신 선결제한 카드처럼 부채군이 양수가 되면 {@code totalDebt} 가 <b>음수</b>가 될 수 있다.
+ * {@code netWorth == totalBalance} 단언이 두 식이 갈라지지 않게 잡아 주는 방어선이다.
  */
 @ExtendWith(MockitoExtension.class)
 class AssetServiceSummaryTest {
@@ -108,9 +113,10 @@ class AssetServiceSummaryTest {
 
         AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
 
-        // 유형으로 갈라 abs() 를 씌우면 자산에서 빠지고 부채로도 더해져 713,600 이 두 번 깎였다.
-        assertThat(summary.totalAssets()).isEqualTo(1_356_800L);
-        assertThat(summary.totalDebt()).isZero();
+        // 유형 기준이라 카드는 부채군에 남고, 양수 잔액은 부호를 뒤집어 더해져 <b>부채를 줄인다</b>.
+        // abs() 로 묶으면 자산에서 빠지고 부채로도 더해져 713,600 이 두 번 깎인다.
+        assertThat(summary.totalAssets()).isEqualTo(1_000_000L);
+        assertThat(summary.totalDebt()).isEqualTo(-356_800L);
         assertThat(summary.netWorth()).isEqualTo(1_356_800L);
         // 같은 응답 안에서 두 값이 어긋나면 화면의 분해 합계와 헤드라인이 안 맞는다.
         assertThat(summary.netWorth()).isEqualTo(summary.totalBalance());
@@ -129,7 +135,54 @@ class AssetServiceSummaryTest {
 
         AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
 
+        // 유형이 대출이므로 자산군에는 한 푼도 안 들어가고, 부호를 뒤집어 부채가 음수가 된다.
+        assertThat(summary.totalAssets()).isZero();
+        assertThat(summary.totalDebt()).isEqualTo(-500_000L);
         assertThat(summary.netWorth()).isEqualTo(500_000L);
+        assertThat(summary.netWorth()).isEqualTo(summary.totalBalance());
+    }
+
+    @Test
+    @DisplayName("마이너스 통장 — 음수 입출금은 부채가 아니라 총자산을 깎는다(QA #21)")
+    void minusAccountStaysInAssetsNotDebt() {
+        Asset minus = asset(1L, AssetType.BANK_ACCOUNT);
+        Asset bank = asset(2L, AssetType.BANK_ACCOUNT);
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(minus, bank));
+
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(-50_000L, 0L));
+        balances.put(2L, new AssetBalanceHistoryService.Split(1_000_000L, 0L));
+
+        AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
+
+        // 부호로 갈랐을 때는 totalAssets=1,000,000 / totalDebt=50,000 이라 자산 화면(950,000)과
+        // 홈이 정확히 50,000 어긋났다 — QA 실측 차이와 같은 값이다.
+        assertThat(summary.totalAssets()).isEqualTo(950_000L);
+        assertThat(summary.totalDebt()).isZero();
+        assertThat(summary.netWorth()).isEqualTo(950_000L);
+        assertThat(summary.netWorth()).isEqualTo(summary.totalBalance());
+    }
+
+    @Test
+    @DisplayName("체크카드 — 부채군이 아니라 자산군이라 음수여도 총부채로 안 넘어간다")
+    void checkCardCountsAsAsset() {
+        Asset bank = asset(1L, AssetType.BANK_ACCOUNT);
+        Asset checkCard = asset(2L, AssetType.CHECK_CARD);
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(bank, checkCard));
+
+        java.util.Map<Long, AssetBalanceHistoryService.Split> balances = new java.util.HashMap<>();
+        given(balanceHistoryService.balancesAt(anyCollection(), any(LocalDateTime.class)))
+            .willReturn(balances);
+        balances.put(1L, new AssetBalanceHistoryService.Split(1_000_000L, 0L));
+        // 연결 계좌를 아직 안 고른 체크카드에는 지출 flow 가 카드 앞으로 쌓인다.
+        balances.put(2L, new AssetBalanceHistoryService.Split(-7_000L, 0L));
+
+        AssetServiceDto.AssetSummary summary = sut.getAssetSummary(USER_ID, null, null);
+
+        assertThat(summary.totalAssets()).isEqualTo(993_000L);
+        assertThat(summary.totalDebt()).isZero();
         assertThat(summary.netWorth()).isEqualTo(summary.totalBalance());
     }
 

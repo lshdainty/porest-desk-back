@@ -5,6 +5,7 @@ import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.domain.AssetBalanceHistory;
 import com.porest.desk.asset.domain.AssetTransfer;
 import com.porest.desk.asset.repository.AssetBalanceHistoryRepository;
+import com.porest.desk.asset.type.AssetSignPolicy;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.BalanceChannel;
 import com.porest.desk.asset.type.BalanceSourceType;
@@ -110,16 +111,13 @@ public class AssetBalanceHistoryService {
      * 실제로 대출이 여기 빠져 있어 양수 5,000,000 이 그대로 앵커가 됐고, 순자산이 부채만큼
      * <b>커지고</b>(총 부채 0), 상환 이체(+499,500)가 잔액을 5,499,500 으로 "늘리는" 화면이
      * 됐다 — dev 신규 가입 E2E 에서 발견.
+     *
+     * <p>규칙 자체는 {@link AssetSignPolicy} 에 있다 — 요약 집계도 같은 분류를 봐야 해서
+     * 여기 숨겨 두지 않는다. 자산군 값은 <b>안 건드린다</b>: 마이너스 통장은 API 경계에서
+     * 이미 음수로 확정된 채 내려오므로 여기서 다시 뒤집으면 안 된다.
      */
     private long normalizeAnchor(Asset asset, long amount) {
-        return asset != null && isDebtType(asset.getAssetType())
-            ? -Math.abs(amount)
-            : amount;
-    }
-
-    /** 잔액을 음수(빚)로 관리하는 자산 유형. 체크카드는 잔액 자체가 없어(연결 계좌 즉시 차감) 제외. */
-    private static boolean isDebtType(AssetType type) {
-        return type == AssetType.CREDIT_CARD || type == AssetType.LOAN;
+        return asset == null ? amount : AssetSignPolicy.normalizeAnchor(asset.getAssetType(), amount);
     }
 
     /**

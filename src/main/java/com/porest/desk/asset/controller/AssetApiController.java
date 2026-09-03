@@ -6,6 +6,7 @@ import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,10 +34,10 @@ public class AssetApiController {
     @PostMapping("/asset")
     public ApiResponse<AssetApiDto.AssetResponse> createAsset(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody AssetApiDto.CreateAssetRequest request) {
+            @Valid @RequestBody AssetApiDto.CreateAssetRequest request) {
         AssetServiceDto.AssetInfo info = assetService.createAsset(new AssetServiceDto.CreateAssetCommand(
             loginUser.getRowId(),
-            request.assetName(), request.assetType(), request.balance(),
+            request.assetName(), request.assetType(), request.balance(), request.isOverdraft(),
             request.currency(), request.exchangeRate(), request.color(),
             request.institution(), request.memo(), request.sortOrder(),
             request.isIncludedInTotal(),
@@ -65,9 +66,9 @@ public class AssetApiController {
     public ApiResponse<AssetApiDto.AssetResponse> updateAsset(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody AssetApiDto.UpdateAssetRequest request) {
+            @Valid @RequestBody AssetApiDto.UpdateAssetRequest request) {
         AssetServiceDto.AssetInfo info = assetService.updateAsset(id, loginUser.getRowId(), new AssetServiceDto.UpdateAssetCommand(
-            request.assetName(), request.assetType(), request.balance(),
+            request.assetName(), request.assetType(), request.balance(), request.isOverdraft(),
             request.currency(), request.exchangeRate(), request.color(),
             request.institution(), request.memo(), request.isIncludedInTotal(),
             request.cardCatalogRowId(),

@@ -98,7 +98,7 @@ class InvestmentCashPreservedTest {
     private AssetServiceDto.UpdateAssetCommand command(Long balance,
                                                        List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
-            "주식계좌", AssetType.INVESTMENT, balance, "KRW", null,
+            "주식계좌", AssetType.INVESTMENT, balance, null, "KRW", null,
             null, "삼성증권", null, YNType.Y,
             null, null, null, null, holdings);
     }

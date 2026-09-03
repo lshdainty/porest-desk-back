@@ -22,6 +22,13 @@ public class AssetServiceDto {
         String assetName,
         AssetType assetType,
         Long balance,
+        /**
+         * 마이너스 통장 여부 — true 면 잔액을 음수로 저장한다({@code BANK_ACCOUNT} + 음수).
+         *
+         * <p>null 은 "이 필드를 모르는 클라이언트" 다. 그때는 보낸 부호를 그대로 존중한다 —
+         * 무조건 abs() 를 걸면 옛 앱이 마이너스 통장을 저장만 해도 부호가 뒤집힌다.
+         */
+        Boolean isOverdraft,
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
         java.math.BigDecimal exchangeRate,
@@ -42,6 +49,13 @@ public class AssetServiceDto {
         String assetName,
         AssetType assetType,
         Long balance,
+        /**
+         * 마이너스 통장 여부 — true 면 잔액을 음수로 저장한다({@code BANK_ACCOUNT} + 음수).
+         *
+         * <p>null 은 "이 필드를 모르는 클라이언트" 다. 그때는 보낸 부호를 그대로 존중한다 —
+         * 무조건 abs() 를 걸면 옛 앱이 마이너스 통장을 저장만 해도 부호가 뒤집힌다.
+         */
+        Boolean isOverdraft,
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
         java.math.BigDecimal exchangeRate,

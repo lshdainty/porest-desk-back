@@ -1,6 +1,7 @@
 package com.porest.desk.expense.controller.dto;
 
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
@@ -16,8 +17,12 @@ public class ExpenseApiDto {
      * 거래 한 건의 금액 상한(100억원). DB 는 bigint 라 99조도 들어가지만 0 을 몇 개 더 찍는
      * 오타를 막을 곳이 없었다(QA 2026-09-02). 거래처·설명 길이도 컬럼(100 · 500)에 맞춰
      * 여기서 400 으로 거절한다 — 종전엔 DB 제약에 걸려 500 으로 터졌다.
+     *
+     * <p>값은 {@link AmountLimits#MAX_TX_AMOUNT} 하나에서 온다 — 예산·저축목표·반복거래도
+     * 같은 층이라 리터럴이 갈리면 다음 사람이 틀린 쪽을 본다(QA 2026-09-03 #48 #52 #54).
+     * 여기 이름을 남겨 두는 건 이미 이 상수를 참조하는 코드가 있어서다.
      */
-    public static final long MAX_AMOUNT = 10_000_000_000L;
+    public static final long MAX_AMOUNT = AmountLimits.MAX_TX_AMOUNT;
 
     @Schema(name = "ExpenseCreateRequest")
     public record CreateRequest(

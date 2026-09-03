@@ -11,6 +11,7 @@ import com.porest.desk.asset.repository.AssetHoldingRepository;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.repository.AssetTransferRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
+import com.porest.desk.asset.type.AssetSignPolicy;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.asset.type.HoldingType;
 import com.porest.desk.card.domain.CardCatalog;
@@ -95,7 +96,12 @@ public class AssetServiceImpl implements AssetService {
         //
         // 평가액은 예수금(balance)이 아니라 HOLDING 채널 앵커로 따로 찍는다. 한 칸에 담으면
         // 다음 평가 갱신이 그 사이 들어온 이체를 덮어써 돈이 사라진다.
-        Long balance = command.balance();
+        // 부호는 사용자가 아니라 종류가 정한다(QA #19) — 부채군은 음수, 마이너스 통장도 음수,
+        // 나머지 자산군은 양수. isOverdraft 를 안 보내는 옛 클라이언트에게는 보낸 부호를
+        // 그대로 존중한다(AssetSignPolicy.normalizeBalance 참조).
+        // asset.initial_balance 에도 이 값이 그대로 들어가 recordInit 의 앵커와 어긋나지 않는다.
+        Long balance = command.balance() == null ? null
+            : AssetSignPolicy.normalizeBalance(command.assetType(), command.isOverdraft(), command.balance());
         Long holdingValuation = null;
         if (command.assetType() == AssetType.INVESTMENT
             && command.holdings() != null && !command.holdings().isEmpty()) {
@@ -273,9 +279,16 @@ public class AssetServiceImpl implements AssetService {
         // 비교 대상이 총액이 아니라 예수금인 게 핵심이다. 전량 매도로 평가금액이 예수금으로
         // 옮겨오면 총액은 그대로인 채 칸만 바뀌는데, 총액끼리 비교하면 '안 바뀌었다'로 보여
         // 매도 대금이 통째로 사라진다.
-        if (!hasHoldings && command.balance() != null
-            && !Objects.equals(current.cash(), command.balance())) {
-            balanceHistoryService.recordManual(asset, command.balance(), userClock.now(userRowId));
+        //
+        // 부호를 씌운 뒤에 비교한다(QA #19). 정규화 전 값과 비교하면 '값은 그대로인데 부호만
+        // 바뀐' 요청에서 앵커가 한 번 더 찍히고, 반대로 정규화 뒤 같은 값이 되는 요청에서
+        // 헛 앵커가 남는다. 유형은 이 시점의 asset 것을 본다 — 이번 요청에서 종류를 바꿨으면
+        // 새 종류가 부호를 정하는 게 맞다.
+        Long newBalance = command.balance() == null ? null
+            : AssetSignPolicy.normalizeBalance(asset.getAssetType(), command.isOverdraft(), command.balance());
+        if (!hasHoldings && newBalance != null
+            && !Objects.equals(current.cash(), newBalance)) {
+            balanceHistoryService.recordManual(asset, newBalance, userClock.now(userRowId));
         }
 
         // 체크카드 연결 계좌가 바뀌면 그 카드로 쓴 기존 지출 이력도 새 계좌로 옮긴다 —
@@ -842,11 +855,15 @@ public class AssetServiceImpl implements AssetService {
             // 순자산에 1,000원으로 들어가 합계가 무너진다(원화 자산은 환산율 1이라 그대로).
             long bal = a.balanceInKrw(totalOf(at, a));
             totalBalance += bal;
-            // 부채 유형이라도 <b>부호로</b> 가른다. abs() 로 묶으면 선결제한 카드(양수)가
-            // 자산에서 빠지고 부채로도 더해져 두 번 깎인다 — 그때 netWorth 가 totalBalance 와
-            // 어긋나고, 화면의 (계좌+투자−카드) 합계와 헤드라인 순자산이 안 맞는다.
-            // 대출을 양수로 입력한 경우도 같다.
-            if (bal < 0) {
+            // 부호가 아니라 <b>유형</b>으로 가른다(QA #21). 부호로 가르면 잔액이 음수인
+            // 입출금(마이너스 통장)이 부채로 넘어가, 유형으로 가르는 자산 화면과 총자산이
+            // 그 금액만큼 어긋난다(실측 차이 50,000).
+            //
+            // 자산군은 음수도 그대로 더한다 — 마이너스 통장은 총자산을 깎는 게 맞다.
+            // 부채군은 부호를 뒤집어 더하므로 선결제해 양수가 된 카드는 <b>부채를 줄인다</b>
+            // (그래서 totalDebt 는 음수가 될 수 있다). abs() 로 묶으면 그 카드가 자산에서
+            // 빠지고 부채로도 더해져 두 번 깎인다.
+            if (AssetSignPolicy.isDebtType(a.getAssetType())) {
                 totalDebt += -bal;
             } else {
                 totalAssets += bal;
@@ -855,6 +872,7 @@ public class AssetServiceImpl implements AssetService {
             acc[0] += bal;
             acc[1] += 1;
         }
+        // 새 식에서도 totalAssets - totalDebt = Σ자산군 + Σ부채군 = totalBalance 라 항등이 유지된다.
         long netWorth = totalAssets - totalDebt;
 
         long lastMonthNetWorth = netWorthOf(included, prev);
