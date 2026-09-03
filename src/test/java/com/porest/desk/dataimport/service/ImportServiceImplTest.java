@@ -477,6 +477,59 @@ class ImportServiceImplTest {
         assertThat(r.failures()).extracting(ImportService.Failure::reason).containsOnly("amount");
     }
 
+    // ── 없는 날짜 ───────────────────────────────────────────
+
+    @Test
+    @DisplayName("execute — 달력에 없는 날짜(2026-02-30 10:00)는 저장하지 않고 date 실패로 돌린다")
+    void execute_rejectsNonExistentDate() {
+        // 예전엔 조용히 2026-02-28 로 당겨 저장했다. 같은 값을 거래 API 로 보내면 400 이라
+        // 같은 입력이 경로에 따라 다른 결과였다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-02-30 10:00,EXPENSE,식비,체크카드,5700,없는날짜\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isZero();
+        assertThat(r.failed()).isEqualTo(1);
+        assertThat(r.failures()).singleElement()
+            .extracting(ImportService.Failure::reason).isEqualTo("date");
+        verify(expenseService, never()).createExpensesChunk(any());
+        verify(expenseService, never()).createExpense(any(), anyBoolean());
+        // 저장도 안 될 행 때문에 카테고리가 생기면 안 된다.
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("execute — 내보내기 CSV 형식(yyyy-MM-dd HH:mm)은 그대로 다시 읽힌다")
+    void execute_acceptsExportedTimestampFormat() {
+        // 내보내기는 전 파일을 이 형식으로 쓴다. 왕복(내보내기 → 다시 가져오기)이 여기서 깨지면 안 된다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-05-28 13:20,EXPENSE,식비,체크카드,5700,편의점\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(1);
+        assertThat(r.failed()).isZero();
+        assertThat(capturedCommands()).singleElement()
+            .extracting(ExpenseServiceDto.CreateCommand::expenseDate)
+            .isEqualTo(LocalDateTime.of(2026, 5, 28, 13, 20));
+    }
+
     @Test
     @DisplayName("execute — 날짜/금액 매핑 누락 시 예외")
     void execute_missingRequiredMapping_throws() {

@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.List;
 
 /**
@@ -23,11 +24,29 @@ public final class ValueNormalizer {
 
     private static final LocalDate EXCEL_EPOCH = LocalDate.of(1899, 12, 30);
 
+    /**
+     * 달력에 없는 날짜(2026-02-30)를 <b>말없이 당겨 붙이지 않기 위한</b> 해석 방식.
+     *
+     * <p>{@link DateTimeFormatter#ofPattern} 의 기본값 {@link ResolverStyle#SMART} 는 없는 날을
+     * 그 달의 마지막 날로 끌어당긴다 — {@code 2026-02-30 10:00} 이 조용히 {@code 2026-02-28} 로
+     * 저장됐다. 같은 값을 거래 API 로 직접 보내면 400 인데 가져오기만 통과시켜,
+     * <b>같은 입력이 경로에 따라 다른 결과</b>가 됐다.
+     *
+     * <p>{@link ResolverStyle#STRICT} 는 없는 날을 거부한다. 다만 STRICT 에서 {@code yyyy}
+     * (연호 기준 연도)는 연호 필드를 함께 요구해 정상 날짜까지 터지므로, 패턴의 연도 문자를
+     * 전부 {@code uuuu}(ISO 연도)로 바꿔 쓴다.
+     */
+    private static DateTimeFormatter strict(String pattern) {
+        return DateTimeFormatter.ofPattern(pattern).withResolverStyle(ResolverStyle.STRICT);
+    }
+
+    // ISO_LOCAL_DATE_TIME·ISO_LOCAL_DATE 는 이미 STRICT 다 — 그대로 쓴다.
     private static final List<DateTimeFormatter> DATETIME_FORMATS = List.of(
         DateTimeFormatter.ISO_LOCAL_DATE_TIME,
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm[:ss]"),
-        DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm[:ss]"),
-        DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm[:ss]")
+        // 내보내기 CSV 의 형식 — 왕복(내보내기 → 다시 가져오기)이 여기서 깨지면 안 된다.
+        strict("uuuu-MM-dd HH:mm[:ss]"),
+        strict("uuuu.MM.dd HH:mm[:ss]"),
+        strict("uuuu/MM/dd HH:mm[:ss]")
     );
 
     private static final List<DateTimeFormatter> TIME_FORMATS = List.of(
@@ -38,13 +57,18 @@ public final class ValueNormalizer {
 
     private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
         DateTimeFormatter.ISO_LOCAL_DATE,
-        DateTimeFormatter.ofPattern("yyyy.MM.dd"),
-        DateTimeFormatter.ofPattern("yyyy/MM/dd"),
-        DateTimeFormatter.ofPattern("MM/dd/yyyy"),
-        DateTimeFormatter.ofPattern("yyyyMMdd")
+        strict("uuuu.MM.dd"),
+        strict("uuuu/MM/dd"),
+        strict("MM/dd/uuuu"),
+        strict("uuuuMMdd")
     );
 
-    /** 날짜/일시 파싱. 실패 시 null. */
+    /**
+     * 날짜/일시 파싱. 실패 시 null — 호출측({@link ImportColumnMapper})이 {@code reason: date} 실패 행으로 돌린다.
+     *
+     * <p>달력에 없는 날짜는 <b>실패</b>다. 끌어당겨 저장하면 사용자가 쓴 적 없는 날에 거래가 생기고,
+     * 화면에는 아무 경고도 남지 않는다.
+     */
     public static LocalDateTime parseDate(String raw) {
         if (raw == null) return null;
         String s = raw.trim();
