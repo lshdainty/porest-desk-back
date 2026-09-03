@@ -34,14 +34,39 @@ public interface ImportService {
          * 거래가 직접 달려 있어 자식을 만들 수 없는 대분류 이름들.
          * 비어 있지 않으면 그 대분류를 쓰는 행이 전부 실패하므로, 실행 전에 알려야 한다.
          */
-        List<String> blockedParents
+        List<String> blockedParents,
+        /**
+         * 이대로 실행하면 <b>새로 만들어질</b> 카테고리 경로("대분류 &gt; 소분류", 최상위는 이름만).
+         *
+         * <p>가져오기는 파일에 있는 이름이 우리에게 없으면 묻지 않고 만든다. 오타(식비→싟비)가
+         * 그대로 새 카테고리가 되므로, 실행 전에 무엇이 생기는지 보여 준다.
+         * 실제로 만들지는 않는다(analyze 는 읽기 전용) — 해석만 그대로 돌려 본 결과다.
+         *
+         * <p>자동생성(autoCat)을 <b>켠 기준</b>으로 계산한다 — 이 목록이 그 토글을 끌지 말지의 판단 재료다.
+         * 토글을 끄면 목록이 비는 것이 아니라 "미분류" 로 줄어든다(못 찾은 행이 거기로 가고,
+         * 그 카테고리가 아직 없으면 그것도 새로 만들어진다).
+         *
+         * <p>길이는 상한이 있다 — 전체 개수는 {@link #newCategoryCount()} 를 봐라.
+         */
+        List<String> newCategories,
+        /**
+         * 새로 만들어질 카테고리의 <b>전체 개수</b>. {@code newCategories} 가 상한에서 잘려도 끝까지 센다.
+         *
+         * <p>카테고리 열을 잘못 매핑하면 행 수만큼 새 이름이 나온다 — 목록이 아니라 이 숫자가
+         * "이대로 실행하면 안 되겠다" 를 말해 준다.
+         */
+        int newCategoryCount
     ) {}
 
     record ExecuteResult(
         int imported,
         int skipped,
         int failed,
-        List<Failure> failures
+        List<Failure> failures,
+        /** 이번 실행에서 <b>실제로 만들어진</b> 카테고리 경로(생성 순서) — 상한까지. */
+        List<String> createdCategories,
+        /** 실제로 만들어진 카테고리의 전체 개수. 위 목록이 잘려도 끝까지 센다. */
+        int createdCategoryCount
     ) {}
 
     record Failure(int lineNo, String reason) {}

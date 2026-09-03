@@ -136,6 +136,9 @@ class ImportServiceImplTest {
         assertThat(r.failed()).isZero();
         assertThat(capturedCommands()).hasSize(2);
         verify(expenseCategoryService, times(2)).createCategory(any()); // 식비(지출)·급여(수입)
+        // 묻지 않고 만들었으면 무엇을 만들었는지는 알려줘야 한다.
+        assertThat(r.createdCategories()).containsExactly("식비", "급여");
+        assertThat(r.createdCategoryCount()).isEqualTo(2);
     }
 
     @Test
@@ -224,7 +227,12 @@ class ImportServiceImplTest {
         Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
             ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
 
-        sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, false, true, 1L);
+
+        // 계층은 미리보기 카테고리 칸과 같은 "대분류 > 소분류" 표기로 알린다.
+        assertThat(r.createdCategories()).containsExactly("관리비", "관리비 > 전기비");
+        assertThat(r.createdCategoryCount()).isEqualTo(2);
 
         ArgumentCaptor<ExpenseCategoryServiceDto.CreateCommand> captor =
             ArgumentCaptor.forClass(ExpenseCategoryServiceDto.CreateCommand.class);
@@ -265,6 +273,7 @@ class ImportServiceImplTest {
         assertThat(captor.getAllValues()).extracting(ExpenseCategoryServiceDto.CreateCommand::categoryName)
             .containsExactly("식비", "아침", "미분류");
         assertThat(captor.getAllValues().get(2).parentRowId()).isEqualTo(100L);
+        assertThat(r.createdCategories()).containsExactly("식비", "식비 > 아침", "식비 > 미분류");
     }
     @Test
     @DisplayName("execute — 이체 행은 실패가 아니라 건너뜀으로 집계한다")
@@ -352,6 +361,120 @@ class ImportServiceImplTest {
         assertThat(result.validRows()).isEqualTo(1);   // 관리비 행은 유효하지 않다
         assertThat(result.preview()).extracting(StandardRow::error)
             .containsExactly(StandardRow.ERROR_PARENT_HAS_TX, null);
+    }
+
+    // ── 실행 전 "새로 만들 카테고리" 예고 ──────────────────────────
+
+    @Test
+    @DisplayName("analyze — 새로 만들어질 카테고리를 알리되 실제로 만들지는 않는다")
+    void analyze_reportsNewCategoriesWithoutCreatingThem() {
+        // 오타('싟비')가 그대로 새 카테고리가 되던 결함 — 이제 실행 전에 목록으로 보여준다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of(cat(1L, "식비", null)));
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-05-28,EXPENSE,식비,체크카드,5700,편의점\n"
+            + "2026-05-27,EXPENSE,싟비,체크카드,3000,오타\n";
+
+        ImportService.AnalyzeResult r = sut.analyze(csv(content), ImportSource.POREST, 1L);
+
+        assertThat(r.newCategories()).containsExactly("싟비");
+        assertThat(r.newCategoryCount()).isEqualTo(1);
+        // analyze 는 읽기 전용이다 — 예고하려다 만들어 버리면 결함이 그대로다.
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("analyze — 이미 있는 카테고리만 쓰면 예고할 것이 없다")
+    void analyze_reportsNothingWhenAllCategoriesExist() {
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of(cat(1L, "식비", null)));
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-05-28,EXPENSE,식비,체크카드,5700,편의점\n";
+
+        ImportService.AnalyzeResult r = sut.analyze(csv(content), ImportSource.POREST, 1L);
+
+        assertThat(r.newCategories()).isEmpty();
+        assertThat(r.newCategoryCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("analyze — 부모/자식 계층을 경로로 알리고 부모는 한 번만 센다")
+    void analyze_reportsParentOnceWithChildPaths() {
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,여행,기타,기념품,12000,지출\n"
+            + "2026-05-29,체크카드,여행,숙박,호텔,50000,지출\n";
+
+        ImportService.AnalyzeResult r = sut.analyze(csv(content), ImportSource.EASYBUDGET, 1L);
+
+        // '여행' 을 두 번 세면 "새 카테고리 4개" 라고 겁을 주게 된다.
+        assertThat(r.newCategories()).containsExactly("여행", "여행 > 기타", "여행 > 숙박");
+        assertThat(r.newCategoryCount()).isEqualTo(3);
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("analyze — 새 카테고리가 많으면 목록은 자르되 개수는 끝까지 센다")
+    void analyze_capsNewCategoryListButKeepsCount() {
+        // 카테고리 열을 잘못 매핑하면 행마다 다른 이름이 나온다 — 목록을 다 실으면
+        // 응답이 부풀고 화면이 그리지 못한다. 경고의 핵심인 '개수' 는 살려 둔다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        StringBuilder sb = new StringBuilder("날짜,유형,카테고리,자산,금액,설명\n");
+        for (int i = 1; i <= 120; i++) {
+            sb.append("2026-05-28,EXPENSE,가게").append(i).append(",체크카드,5700,결제\n");
+        }
+
+        ImportService.AnalyzeResult r = sut.analyze(csv(sb.toString()), ImportSource.POREST, 1L);
+
+        assertThat(r.newCategories()).hasSize(50);
+        assertThat(r.newCategories().get(0)).isEqualTo("가게1");
+        assertThat(r.newCategoryCount()).isEqualTo(120);
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("analyze — 실패할 행(존재하지 않는 날짜)의 카테고리는 예고하지 않는다")
+    void analyze_ignoresInvalidRowsWhenPreviewingCategories() {
+        // 어차피 저장되지 않을 행 때문에 "새 카테고리가 생겨요" 라고 하면 안 된다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-02-30,EXPENSE,없는카테고리,체크카드,5700,깨진날짜\n";
+
+        ImportService.AnalyzeResult r = sut.analyze(csv(content), ImportSource.POREST, 1L);
+
+        assertThat(r.validRows()).isZero();
+        assertThat(r.newCategories()).isEmpty();
+        assertThat(r.newCategoryCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("execute — 실패 목록은 상한까지만 담는다(개수는 그대로 센다)")
+    void execute_capsFailureListButKeepsCount() {
+        // 목록이 잘려도 failed 는 전부 세야 컨트롤러가 "잘렸다" 를 판단할 수 있다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        StringBuilder sb = new StringBuilder("날짜,유형,카테고리,자산,금액,설명\n");
+        for (int i = 0; i < 60; i++) {
+            sb.append("2026-05-28,EXPENSE,식비,체크카드,abc,금액오류\n");
+        }
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(sb.toString()), ImportSource.POREST, mapping, false, true, 1L);
+
+        assertThat(r.failed()).isEqualTo(60);
+        assertThat(r.failures()).hasSize(50);
+        assertThat(r.failures()).extracting(ImportService.Failure::reason).containsOnly("amount");
     }
 
     @Test

@@ -63,7 +63,7 @@ class ImportApiControllerTest {
                 "t.csv", 2, 2, 0,
                 List.of("기간", "금액"),
                 Map.of(ImportField.DATE, 0, ImportField.AMOUNT, 1),
-                List.of(row), List.of()));
+                List.of(row), List.of(), List.of("싟비", "여행 > 기타"), 2));
 
         MockMultipartFile file = new MockMultipartFile("file", "t.csv", "text/csv",
             "기간,금액\n2026-05-28,5700\n".getBytes(StandardCharsets.UTF_8));
@@ -75,7 +75,11 @@ class ImportApiControllerTest {
             .andExpect(jsonPath("$.data.columns[0].name").value("기간"))
             .andExpect(jsonPath("$.data.suggestedMapping.DATE").value(0))
             .andExpect(jsonPath("$.data.preview[0].amount").value(5700))
-            .andExpect(jsonPath("$.data.preview[0].type").value("EXPENSE"));
+            .andExpect(jsonPath("$.data.preview[0].type").value("EXPENSE"))
+            // 실행 전에 "무엇이 새로 생기는지" 가 응답에 실려야 화면이 물어볼 수 있다.
+            .andExpect(jsonPath("$.data.newCategories[0]").value("싟비"))
+            .andExpect(jsonPath("$.data.newCategories[1]").value("여행 > 기타"))
+            .andExpect(jsonPath("$.data.newCategoryCount").value(2));
 
         verify(importService).analyze(any(), eq(ImportSource.EASYBUDGET), eq(1L));
     }
@@ -84,20 +88,84 @@ class ImportApiControllerTest {
     @DisplayName("POST /import/execute — 파일 + 매핑·옵션(JSON part)으로 저장 위임")
     void execute() throws Exception {
         given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
-            .willReturn(new ImportService.ExecuteResult(2, 1, 0, List.of()));
+            .willReturn(new ImportService.ExecuteResult(2, 1, 0, List.of(), List.of("싟비"), 1));
 
-        MockMultipartFile file = new MockMultipartFile("file", "t.csv", "text/csv",
-            "날짜,금액\n2026-05-28,5700\n".getBytes(StandardCharsets.UTF_8));
-        MockMultipartFile request = new MockMultipartFile("request", "", "application/json",
-            "{\"source\":\"POREST\",\"mapping\":{\"DATE\":0,\"AMOUNT\":1},\"dupSkip\":true,\"autoCat\":true}"
-                .getBytes(StandardCharsets.UTF_8));
-
-        mockMvc.perform(multipart("/api/v1/import/execute").file(file).file(request))
+        mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.imported").value(2))
             .andExpect(jsonPath("$.data.skipped").value(1))
-            .andExpect(jsonPath("$.data.failed").value(0));
+            .andExpect(jsonPath("$.data.failed").value(0))
+            .andExpect(jsonPath("$.data.failuresTruncated").value(false))
+            .andExpect(jsonPath("$.data.createdCategories[0]").value("싟비"))
+            .andExpect(jsonPath("$.data.createdCategoryCount").value(1));
 
         verify(importService).execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L));
+    }
+
+    @Test
+    @DisplayName("POST /import/execute — 실패 행의 줄번호·사유를 그대로 내려준다")
+    void execute_returnsFailureRows() throws Exception {
+        // 화면이 "실패 2" 숫자만 띄우면 사용자가 CSV 를 못 고친다. 어느 줄이 왜 실패했는지 실어 보낸다.
+        given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
+            .willReturn(new ImportService.ExecuteResult(0, 20, 2,
+                List.of(new ImportService.Failure(21, "amount"), new ImportService.Failure(22, "date")),
+                List.of(), 0));
+
+        mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.failures[0].lineNo").value(21))
+            .andExpect(jsonPath("$.data.failures[0].reason").value("amount"))
+            .andExpect(jsonPath("$.data.failures[1].lineNo").value(22))
+            .andExpect(jsonPath("$.data.failures[1].reason").value("date"))
+            .andExpect(jsonPath("$.data.failuresTruncated").value(false));
+    }
+
+    @Test
+    @DisplayName("POST /import/execute — 실패 목록이 상한에서 잘리면 잘렸다고 알린다")
+    void execute_flagsTruncatedFailures() throws Exception {
+        // 실패 120 인데 목록이 50줄이면 화면은 나머지 70줄을 조용히 잃는다 — 잘렸다는 사실을 응답에 남긴다.
+        List<ImportService.Failure> capped = java.util.stream.IntStream.rangeClosed(1, 50)
+            .mapToObj(i -> new ImportService.Failure(i, "amount"))
+            .toList();
+        given(importService.execute(any(), eq(ImportSource.POREST), any(), eq(true), eq(true), eq(1L)))
+            .willReturn(new ImportService.ExecuteResult(0, 0, 120, capped, List.of(), 0));
+
+        mockMvc.perform(multipart("/api/v1/import/execute").file(csvFile()).file(executeRequest()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.failed").value(120))
+            .andExpect(jsonPath("$.data.failures.length()").value(50))
+            .andExpect(jsonPath("$.data.failuresTruncated").value(true));
+    }
+
+    @Test
+    @DisplayName("POST /import/analyze — 새 카테고리 목록이 잘려도 전체 개수는 그대로 내려준다")
+    void analyze_keepsNewCategoryCountWhenListIsCapped() throws Exception {
+        // 카테고리 열을 잘못 매핑하면 행 수만큼 새 이름이 나온다. 목록은 잘라도
+        // "3,000개가 만들어져요" 라는 경고는 살아 있어야 한다.
+        List<String> capped = java.util.stream.IntStream.rangeClosed(1, 50)
+            .mapToObj(i -> "새카테고리" + i)
+            .toList();
+        given(importService.analyze(any(), eq(ImportSource.POREST), eq(1L)))
+            .willReturn(new ImportService.AnalyzeResult(
+                "t.csv", 3000, 3000, 0,
+                List.of("날짜", "금액"),
+                Map.of(ImportField.DATE, 0, ImportField.AMOUNT, 1),
+                List.of(), List.of(), capped, 3000));
+
+        mockMvc.perform(multipart("/api/v1/import/analyze").file(csvFile()).param("source", "POREST"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.newCategories.length()").value(50))
+            .andExpect(jsonPath("$.data.newCategoryCount").value(3000));
+    }
+
+    private MockMultipartFile csvFile() {
+        return new MockMultipartFile("file", "t.csv", "text/csv",
+            "날짜,금액\n2026-05-28,5700\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private MockMultipartFile executeRequest() {
+        return new MockMultipartFile("request", "", "application/json",
+            "{\"source\":\"POREST\",\"mapping\":{\"DATE\":0,\"AMOUNT\":1},\"dupSkip\":true,\"autoCat\":true}"
+                .getBytes(StandardCharsets.UTF_8));
     }
 }
