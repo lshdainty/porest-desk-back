@@ -14,7 +14,12 @@ public class ImportApiDto {
     /** 원본 파일의 열(매핑 UI 의 select 옵션). */
     public record ColumnInfo(int index, String name) {}
 
-    /** 미리보기 한 행(매핑·정규화 적용 결과). */
+    /**
+     * 미리보기 한 행(매핑·정규화 적용 결과).
+     *
+     * <p>execute 응답의 "중복으로 건너뛴 행" 도 같은 모양을 쓴다 — 화면이 이미 그리는 표라
+     * 새 컴포넌트가 필요 없다.
+     */
     public record PreviewRow(
         int lineNo,
         String date,       // ISO, null 이면 파싱 실패
@@ -24,7 +29,9 @@ public class ImportApiDto {
         String asset,
         String memo,
         boolean duplicate,
-        String error       // date/amount/type 등 오류 코드, null 이면 정상
+        String error,      // date/amount/type 등 오류 코드, null 이면 정상
+        /** 거래처 — 중복 판정에 들어가는 값이라 "왜 중복인지" 를 보려면 필요하다. */
+        String merchant
     ) {}
 
     /** analyze 응답. */
@@ -70,7 +77,21 @@ public class ImportApiDto {
         /** 이번 실행에서 실제로 만들어진 카테고리 경로(생성 순서) — 상한까지만 담는다. */
         List<String> createdCategories,
         /** 실제로 만들어진 카테고리의 전체 개수({@code createdCategories.size()} 보다 클 수 있다). */
-        int createdCategoryCount
+        int createdCategoryCount,
+        /**
+         * 기존 거래와 겹쳐 <b>건너뛴</b> 행 수. {@code skipped}(이체 + 중복)의 부분집합이다.
+         *
+         * <p>화면은 이 숫자로 "중복으로 건너뜀 N건" 을 말한다 — 저장은 성공했다는데
+         * 방금 올린 행이 목록에 없는 상황의 유일한 설명이다.
+         */
+        int duplicateSkipped,
+        /** 그 행들 — <b>상한까지만</b> 담는다. 전체 개수는 {@code duplicateSkipped}. */
+        List<PreviewRow> duplicates,
+        /**
+         * {@code duplicates} 가 잘렸는지. {@code failuresTruncated} 와 같은 이유 —
+         * "중복 300건" 이라 띄우고 50줄만 보여주면 나머지를 조용히 잃는다.
+         */
+        boolean duplicatesTruncated
     ) {}
 
     /** 실패한 행. reason 은 화면 문구가 아니라 <b>사유 코드</b> 다(date/amount/type/parentHasTx/resolve/save). */

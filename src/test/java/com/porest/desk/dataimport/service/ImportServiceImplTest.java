@@ -75,6 +75,23 @@ class ImportServiceImplTest {
         return c;
     }
 
+    /**
+     * 기존 거래 픽스처 — 중복 판정이 보는 값(날짜·금액·유형·설명·거래처·카테고리)을 전부 심는다.
+     *
+     * <p>키에 든 값 하나라도 빼먹으면 "중복이 아니다" 가 되어 테스트가 통과 이유를 잃는다.
+     */
+    private Expense existing(LocalDateTime date, long amount, ExpenseType type,
+                             String description, String merchant, String categoryName) {
+        Expense e = mock(Expense.class);
+        given(e.getExpenseDate()).willReturn(date);
+        given(e.getAmount()).willReturn(amount);
+        given(e.getExpenseType()).willReturn(type);
+        given(e.getDescription()).willReturn(description);
+        given(e.getMerchant()).willReturn(merchant);
+        given(e.getCategory()).willReturn(categoryName == null ? null : cat(900L, categoryName, null));
+        return e;
+    }
+
     /** 청크로 넘어간 CreateCommand 들을 순서대로 펼쳐 준다. */
     @SuppressWarnings("unchecked")
     private List<ExpenseServiceDto.CreateCommand> capturedCommands() {
@@ -106,13 +123,10 @@ class ImportServiceImplTest {
     }
 
     @Test
-    @DisplayName("analyze — 기존 거래(날짜·금액·설명 동일)를 중복 표시")
+    @DisplayName("analyze — 기존 거래(날짜·금액·유형·설명·거래처·카테고리 동일)를 중복 표시")
     void analyze_marksDuplicates() {
-        Expense existing = mock(Expense.class);
-        given(existing.getExpenseDate()).willReturn(LocalDateTime.of(2026, 5, 28, 0, 0));
-        given(existing.getAmount()).willReturn(5700L);
-        given(existing.getDescription()).willReturn("편의점");
-        given(expenseRepository.findByDateRange(eq(1L), any(), any())).willReturn(List.of(existing));
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 0, 0), 5700L, ExpenseType.EXPENSE, "편의점", null, "식비");
+        given(expenseRepository.findByDateRange(eq(1L), any(), any())).willReturn(List.of(existingRow));
 
         ImportService.AnalyzeResult r = sut.analyze(csv(POREST_CSV), ImportSource.POREST, 1L);
 
@@ -142,13 +156,10 @@ class ImportServiceImplTest {
     }
 
     @Test
-    @DisplayName("execute — dupSkip 시 중복행 건너뛰기")
+    @DisplayName("execute — dupSkip 시 중복행 건너뛰고, 몇 건을 왜 뺐는지 함께 돌려준다")
     void execute_skipsDuplicates() {
-        Expense existing = mock(Expense.class);
-        given(existing.getExpenseDate()).willReturn(LocalDateTime.of(2026, 5, 28, 0, 0));
-        given(existing.getAmount()).willReturn(5700L);
-        given(existing.getDescription()).willReturn("편의점");
-        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existing));
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 0, 0), 5700L, ExpenseType.EXPENSE, "편의점", null, "식비");
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
         given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
@@ -161,6 +172,14 @@ class ImportServiceImplTest {
         assertThat(r.skipped()).isEqualTo(1);
         assertThat(r.imported()).isEqualTo(1);
         assertThat(capturedCommands()).hasSize(1);
+        // "가져오기는 됐다는데 그 행이 없다" 를 화면이 설명할 수 있어야 한다.
+        assertThat(r.duplicateSkipped()).isEqualTo(1);
+        assertThat(r.duplicates()).singleElement()
+            .satisfies(row -> {
+                assertThat(row.lineNo()).isEqualTo(1);
+                assertThat(row.amount()).isEqualTo(5700L);
+                assertThat(row.memo()).isEqualTo("편의점");
+            });
     }
 
     // ── 편한가계부 대분류/소분류 → 부모/자식 계층 매칭 ──────────────
@@ -475,6 +494,207 @@ class ImportServiceImplTest {
         assertThat(r.failed()).isEqualTo(60);
         assertThat(r.failures()).hasSize(50);
         assertThat(r.failures()).extracting(ImportService.Failure::reason).containsOnly("amount");
+    }
+
+    // ── 없는 날짜 · 중복 판정 키 ────────────────────────────
+
+    private static final List<String> POREST_HEADERS_WITH_MERCHANT =
+        List.of("날짜", "유형", "카테고리", "자산", "금액", "설명", "거래처");
+
+    private Map<ImportField, Integer> porestMappingWithMerchant() {
+        return ImportColumnMapper.suggest(ImportSource.POREST, POREST_HEADERS_WITH_MERCHANT);
+    }
+
+    @Test
+    @DisplayName("execute — 달력에 없는 날짜(2026-02-30 10:00)는 저장하지 않고 date 실패로 돌린다")
+    void execute_rejectsNonExistentDate() {
+        // 예전엔 조용히 2026-02-28 로 당겨 저장했다. 같은 값을 거래 API 로 보내면 400 이라
+        // 같은 입력이 경로에 따라 다른 결과였다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-02-30 10:00,EXPENSE,식비,체크카드,5700,없는날짜\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isZero();
+        assertThat(r.failed()).isEqualTo(1);
+        assertThat(r.failures()).singleElement()
+            .extracting(ImportService.Failure::reason).isEqualTo("date");
+        verify(expenseService, never()).createExpensesChunk(any());
+        verify(expenseService, never()).createExpense(any(), anyBoolean());
+        // 저장도 안 될 행 때문에 카테고리가 생기면 안 된다.
+        verify(expenseCategoryService, never()).createCategory(any());
+    }
+
+    @Test
+    @DisplayName("execute — 내보내기 CSV 형식(yyyy-MM-dd HH:mm)은 그대로 다시 읽힌다")
+    void execute_acceptsExportedTimestampFormat() {
+        // 내보내기는 전 파일을 이 형식으로 쓴다. 왕복(내보내기 → 다시 가져오기)이 여기서 깨지면 안 된다.
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,유형,카테고리,자산,금액,설명\n"
+            + "2026-05-28 13:20,EXPENSE,식비,체크카드,5700,편의점\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, mapping, false, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(1);
+        assertThat(r.failed()).isZero();
+        assertThat(capturedCommands()).singleElement()
+            .extracting(ExpenseServiceDto.CreateCommand::expenseDate)
+            .isEqualTo(LocalDateTime.of(2026, 5, 28, 13, 20));
+    }
+
+    @Test
+    @DisplayName("execute — 날짜·금액이 같아도 거래처가 다르면 중복이 아니다")
+    void execute_differentMerchantIsNotDuplicate() {
+        // 같은 날 같은 금액의 커피 두 잔이 통째로 빠지던 규칙. 거래처가 다르면 다른 거래다.
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 10, 0), 500L, ExpenseType.EXPENSE, null, "기존 거래처", "식비");
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,유형,카테고리,자산,금액,설명,거래처\n"
+            + "2026-05-28 10:00,EXPENSE,식비,체크카드,500,,QA 임포트 신규\n";
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, porestMappingWithMerchant(), true, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(1);
+        assertThat(r.duplicateSkipped()).isZero();
+        assertThat(r.duplicates()).isEmpty();
+        assertThat(capturedCommands()).singleElement()
+            .extracting(ExpenseServiceDto.CreateCommand::merchant).isEqualTo("QA 임포트 신규");
+    }
+
+    @Test
+    @DisplayName("execute — 날짜·금액·거래처가 같아도 카테고리가 다르면 중복이 아니다")
+    void execute_differentCategoryIsNotDuplicate() {
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 10, 0), 500L, ExpenseType.EXPENSE, null, "같은 가게", "식비");
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,유형,카테고리,자산,금액,설명,거래처\n"
+            + "2026-05-28 10:00,EXPENSE,QA신규카테고리,체크카드,500,,같은 가게\n";
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, porestMappingWithMerchant(), true, true, 1L);
+
+        assertThat(r.imported()).isEqualTo(1);
+        assertThat(r.duplicateSkipped()).isZero();
+        // 새 카테고리도 실제로 만들어져야 한다 — 건너뛰면 createdCategories 가 비었다.
+        assertThat(r.createdCategories()).containsExactly("QA신규카테고리");
+    }
+
+    @Test
+    @DisplayName("execute — 거래처·카테고리까지 같으면 여전히 중복이다(같은 파일 재업로드)")
+    void execute_sameMerchantAndCategoryStillDuplicate() {
+        // 키를 넓힌 대가로 진짜 중복을 놓치면 안 된다 — 왕복 재업로드가 두 배로 쌓인다.
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 10, 0), 500L, ExpenseType.EXPENSE, null, "같은 가게", "식비");
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,유형,카테고리,자산,금액,설명,거래처\n"
+            + "2026-05-28 10:00,EXPENSE,식비,체크카드,500,,같은 가게\n";
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, porestMappingWithMerchant(), true, true, 1L);
+
+        assertThat(r.imported()).isZero();
+        assertThat(r.skipped()).isEqualTo(1);
+        assertThat(r.duplicateSkipped()).isEqualTo(1);
+        assertThat(r.duplicates()).singleElement()
+            .extracting(StandardRow::merchant).isEqualTo("같은 가게");
+        verify(expenseService, never()).createExpensesChunk(any());
+    }
+
+    @Test
+    @DisplayName("execute — 소분류가 있으면 말단(소분류) 이름으로 중복을 맞춘다")
+    void execute_matchesDuplicateOnLeafCategory() {
+        // 거래는 말단에만 달리므로 저장된 거래의 카테고리 이름은 소분류다. 대분류로 맞추면 영영 안 맞는다.
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 0, 0), 5000L, ExpenseType.EXPENSE, "김밥", null, "아침");
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
+            + "2026-05-28,체크카드,식비,아침,김밥,5000,지출\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.EASYBUDGET, List.of("날짜", "자산", "대분류", "소분류", "내용", "금액", "유형"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.EASYBUDGET, mapping, true, true, 1L);
+
+        assertThat(r.duplicateSkipped()).isEqualTo(1);
+        assertThat(r.imported()).isZero();
+    }
+
+    @Test
+    @DisplayName("execute — imported 는 실제로 저장에 넘어간 건수와 같다")
+    void execute_importedMatchesPersistedRows() {
+        // "imported N" 인데 그 행이 없다는 신고가 있었다. 숫자와 실제 저장 호출을 맞물려 고정한다.
+        Expense existingRow = existing(LocalDateTime.of(2026, 5, 28, 0, 0), 5700L, ExpenseType.EXPENSE, "편의점", null, "식비");
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        String content = POREST_CSV + "2026-05-26,EXPENSE,식비,체크카드,abc,금액오류\n";
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(content), ImportSource.POREST, mapping, true, true, 1L);
+
+        assertThat(capturedCommands()).hasSize(r.imported());
+        // 3행 = 저장 1 + 중복 건너뜀 1 + 실패 1. 어느 칸에도 안 들어간 행이 없어야 한다.
+        assertThat(r.imported() + r.skipped() + r.failed()).isEqualTo(3);
+        assertThat(r.duplicateSkipped()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("execute — 중복 목록은 상한까지만 담고 개수는 끝까지 센다")
+    void execute_capsDuplicateListButKeepsCount() {
+        // 같은 파일을 두 번 올리면 전 행이 중복이다. 목록이 잘려도 "몇 건" 은 살아 있어야 한다.
+        List<Expense> existingRows = java.util.stream.IntStream.rangeClosed(1, 60)
+            .mapToObj(i -> existing(LocalDateTime.of(2026, 5, 28, 0, 0), 100L + i,
+                ExpenseType.EXPENSE, "메모" + i, null, "식비"))
+            .collect(java.util.stream.Collectors.toList());
+        given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(existingRows);
+        given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
+        given(assetRepository.findByUser(1L)).willReturn(List.of());
+        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+
+        StringBuilder sb = new StringBuilder("날짜,유형,카테고리,자산,금액,설명\n");
+        for (int i = 1; i <= 60; i++) {
+            sb.append("2026-05-28,EXPENSE,식비,체크카드,").append(100 + i).append(",메모").append(i).append("\n");
+        }
+        Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
+            ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
+
+        ImportService.ExecuteResult r =
+            sut.execute(csv(sb.toString()), ImportSource.POREST, mapping, true, true, 1L);
+
+        assertThat(r.duplicateSkipped()).isEqualTo(60);
+        assertThat(r.duplicates()).hasSize(50);
+        assertThat(r.imported()).isZero();
     }
 
     @Test

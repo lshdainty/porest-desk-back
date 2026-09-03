@@ -47,6 +47,13 @@ public class ImportServiceImpl implements ImportService {
     private static final int PREVIEW_LIMIT = 8;
     private static final int MAX_FAILURES = 50;
     /**
+     * 응답에 실어 보낼 "중복으로 건너뛴 행" 목록의 상한 — {@link #MAX_FAILURES} 와 같은 이유·같은 크기.
+     *
+     * <p>같은 파일을 두 번 올리면 행 전체가 중복이 된다. 전부 실으면 응답이 파일만 해진다.
+     * 개수는 {@code duplicateSkipped} 로 끝까지 센다.
+     */
+    private static final int MAX_DUPLICATES = 50;
+    /**
      * 응답에 실어 보낼 "새로 만들 / 만든 카테고리" 경로의 상한.
      *
      * <p>이 목록은 <b>파일 내용</b>이 길이를 정한다 — 카테고리 열을 잘못 매핑하면 행 수(최대 20만)만큼
@@ -135,8 +142,10 @@ public class ImportServiceImpl implements ImportService {
         CategoryResolver categories = new CategoryResolver(userRowId, false);
         AssetResolver assets = new AssetResolver(userRowId);
 
-        int imported = 0, skipped = 0, failed = 0;
+        int imported = 0, skipped = 0, failed = 0, duplicateSkipped = 0;
         List<Failure> failures = new ArrayList<>();
+        // 건너뛴 중복 행 — 개수는 끝까지 세고 목록만 상한에서 자른다.
+        List<StandardRow> duplicates = new ArrayList<>();
         // 잔액 재산정을 미뤄둔 자산들 — 루프가 끝나고 한 번씩만 계산한다.
         Set<Long> touchedAssets = new LinkedHashSet<>();
         // 청크로 모았다가 한 트랜잭션에 넣는다 — 건별 커밋(디스크 동기화)을 줄이는 게 목적.
@@ -155,6 +164,8 @@ public class ImportServiceImpl implements ImportService {
             }
             if (dupSkip && r.duplicate()) {
                 skipped++;
+                duplicateSkipped++;
+                if (duplicates.size() < MAX_DUPLICATES) duplicates.add(r);
                 continue;
             }
             try {
@@ -194,9 +205,11 @@ public class ImportServiceImpl implements ImportService {
         }
         // 미뤄둔 잔액 재산정 — 자산당 1회. 행마다 하면 자산 전체 이력을 매번 다시 읽어 O(N²) 이 된다.
 
-        log.info("가져오기 완료: userRowId={}, imported={}, skipped={}, failed={}", userRowId, imported, skipped, failed);
+        log.info("가져오기 완료: userRowId={}, imported={}, skipped={}(중복 {}), failed={}",
+            userRowId, imported, skipped, duplicateSkipped, failed);
         return new ExecuteResult(imported, skipped, failed, failures,
-            categories.createdCategories(), categories.createdCategoryCount());
+            categories.createdCategories(), categories.createdCategoryCount(),
+            duplicateSkipped, List.copyOf(duplicates));
     }
 
     private record PendingRow(int lineNo, ExpenseServiceDto.CreateCommand command) {}
@@ -299,7 +312,18 @@ public class ImportServiceImpl implements ImportService {
             .toList();
     }
 
-    /** 유효행을 기존 거래(같은 날짜·금액·설명)와 대조해 중복 표시. */
+    /**
+     * 유효행을 기존 거래와 대조해 중복 표시.
+     *
+     * <p>키는 <b>날짜·금액·유형·설명·거래처·카테고리(말단 이름)</b> 다.
+     * 예전엔 날짜·금액·설명만 봐서, 같은 날 같은 금액이면 <b>다른 가게에서 산 다른 물건</b>도
+     * 중복으로 삼켰다 — 같은 날 5,000원짜리 커피 두 잔이 통째로 빠지고, 화면은 그 사실을
+     * 알리지 않았다. 사람이 "이건 같은 거래" 라고 판단할 때 실제로 보는 값들을 전부 키에 넣는다.
+     *
+     * <p>키를 좁힌 만큼 <b>놓치는 중복</b>도 는다 — 같은 거래를 은행 CSV 와 카드 CSV 로 두 번
+     * 넣으면 거래처 표기가 달라 각각 들어온다. 없는 행을 조용히 버리는 쪽보다 두 번 보이는 쪽이
+     * 사용자가 알아채고 지울 수 있어 안전하다.
+     */
     private void markDuplicates(List<StandardRow> rows, Long userRowId) {
         LocalDate min = null, max = null;
         for (StandardRow r : rows) {
@@ -312,19 +336,41 @@ public class ImportServiceImpl implements ImportService {
 
         Set<String> existing = new HashSet<>();
         expenseRepository.findByDateRange(userRowId, min, max).forEach(e ->
-            existing.add(dupKey(e.getExpenseDate().toLocalDate(), e.getAmount(), e.getDescription())));
+            existing.add(dupKey(
+                e.getExpenseDate().toLocalDate(), e.getAmount(), e.getExpenseType(),
+                e.getDescription(), e.getMerchant(),
+                e.getCategory() == null ? null : e.getCategory().getCategoryName())));
         if (existing.isEmpty()) return;
 
         for (int i = 0; i < rows.size(); i++) {
             StandardRow r = rows.get(i);
-            if (r.valid() && existing.contains(dupKey(r.date().toLocalDate(), r.amount(), r.memo()))) {
+            if (r.valid() && existing.contains(dupKey(
+                    r.date().toLocalDate(), r.amount(), r.type(),
+                    r.memo(), r.merchant(), leafCategory(r)))) {
                 rows.set(i, r.withDuplicate(true));
             }
         }
     }
 
-    private static String dupKey(LocalDate date, Long amount, String desc) {
-        return date + "|" + amount + "|" + (desc == null ? "" : desc.trim());
+    /**
+     * 행이 가리키는 <b>말단</b> 카테고리 이름 — 소분류가 있으면 그것, 없으면 대분류.
+     *
+     * <p>거래는 말단에만 달리므로 저장된 거래의 {@code category.categoryName} 과 같은 자리다.
+     * 내보내기 CSV 도 말단 이름만 적어 나가므로, 왕복(내보내기 → 다시 가져오기)에서 이 키가 맞는다.
+     */
+    private static String leafCategory(StandardRow r) {
+        return r.subcategory() != null ? r.subcategory() : r.category();
+    }
+
+    /** 표기 차이(앞뒤 공백·대소문자)로 중복을 놓치지 않도록 정규화해 붙인다. */
+    private static String dupKey(LocalDate date, Long amount, ExpenseType type,
+                                 String desc, String merchant, String category) {
+        return date + "|" + amount + "|" + (type == null ? "" : type.name())
+            + "|" + norm(desc) + "|" + norm(merchant) + "|" + norm(category);
+    }
+
+    private static String norm(String s) {
+        return s == null ? "" : s.trim().toLowerCase();
     }
 
 
