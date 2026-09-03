@@ -2,7 +2,8 @@ spring:
   application:
     name: porest-desk-test
   messages:
-    basename: message/core-messages,message/messages
+    # 운영과 같은 순서 — desk 번들이 core 번들을 덮는다(application.yml 주석 참고).
+    basename: message/messages,message/core-messages
     encoding: utf-8
 
   # 테스트 DB — H2 인메모리(MariaDB 호환 모드), 엔티티 기반 스키마 자동 생성.

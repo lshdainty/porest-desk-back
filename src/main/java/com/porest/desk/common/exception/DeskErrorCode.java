@@ -18,6 +18,9 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // 경로는 있는데 메서드가 없는 자리(QA 2026-09-03 #64). 매핑이 아예 없는 경로는 core 가
     // NoResourceFoundException 을 COMMON_404 로 잡으므로 여기에 짝이 되는 상수를 두지 않는다.
     METHOD_NOT_ALLOWED("COMMON_405", "error.common.method.not.allowed", HttpStatus.METHOD_NOT_ALLOWED),
+    // 쿼리·경로 파라미터의 타입이 안 맞는 자리(QA 2026-09-03 #74). core 가 이 문구를 코드에
+    // 박아 두고 있어(격식체) 번들로 끌어낸다 — 코드는 COMMON_400 그대로다.
+    INVALID_PARAMETER_VALUE("COMMON_400", "error.common.invalid.parameter.value", HttpStatus.BAD_REQUEST),
 
     // Auth
     AUTH_INVALID_TOKEN("AUTH_001", "error.auth.invalid.token", HttpStatus.UNAUTHORIZED),
