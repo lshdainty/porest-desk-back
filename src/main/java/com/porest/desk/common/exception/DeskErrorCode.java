@@ -15,6 +15,9 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CONCURRENT_MODIFICATION("COMMON_409", "error.common.concurrent.modification", HttpStatus.CONFLICT),
     INVALID_DATE_VALUE("COMMON_400", "error.common.invalid.date.value", HttpStatus.BAD_REQUEST),
     MALFORMED_REQUEST_BODY("COMMON_400", "error.common.malformed.request.body", HttpStatus.BAD_REQUEST),
+    // 경로는 있는데 메서드가 없는 자리(QA 2026-09-03 #64). 매핑이 아예 없는 경로는 core 가
+    // NoResourceFoundException 을 COMMON_404 로 잡으므로 여기에 짝이 되는 상수를 두지 않는다.
+    METHOD_NOT_ALLOWED("COMMON_405", "error.common.method.not.allowed", HttpStatus.METHOD_NOT_ALLOWED),
 
     // Auth
     AUTH_INVALID_TOKEN("AUTH_001", "error.auth.invalid.token", HttpStatus.UNAUTHORIZED),
