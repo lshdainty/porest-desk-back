@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -174,5 +175,71 @@ class RecurringTransactionApiControllerTest {
                 .andExpect(jsonPath("$.data.isActive").value("Y"));
 
         verify(recurringTransactionService).toggleActive(40L, 1L);
+    }
+
+    // === 금액 상한·하한 (QA #54) ===
+
+    private static String createBody(String amount) {
+        return "{\"categoryRowId\":5,\"expenseType\":\"EXPENSE\",\"amount\":" + amount
+                + ",\"frequency\":\"MONTHLY\",\"startDate\":\"2026-07-15\"}";
+    }
+
+    @Test
+    @DisplayName("POST /recurring-transaction — 999억은 400 (거래 상한을 우회하는 경로였다)")
+    void createRejectsOverLimit() throws Exception {
+        mockMvc.perform(post("/api/v1/recurring-transaction")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody("99999999999")))
+                .andExpect(status().isBadRequest());
+
+        verify(recurringTransactionService, never()).createRecurring(any());
+    }
+
+    @Test
+    @DisplayName("POST /recurring-transaction — 정확히 100억(경계)은 통과")
+    void createAcceptsAmountAtLimit() throws Exception {
+        given(recurringTransactionService.createRecurring(any())).willReturn(sampleInfo());
+
+        mockMvc.perform(post("/api/v1/recurring-transaction")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody("10000000000")))
+                .andExpect(status().isOk());
+
+        verify(recurringTransactionService).createRecurring(any());
+    }
+
+    @Test
+    @DisplayName("POST /recurring-transaction — 음수는 400")
+    void createRejectsNegative() throws Exception {
+        mockMvc.perform(post("/api/v1/recurring-transaction")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody("-5")))
+                .andExpect(status().isBadRequest());
+
+        verify(recurringTransactionService, never()).createRecurring(any());
+    }
+
+    @Test
+    @DisplayName("POST /recurring-transaction — 거래처 101자는 400 (컬럼 varchar(100))")
+    void createRejectsLongMerchant() throws Exception {
+        mockMvc.perform(post("/api/v1/recurring-transaction")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"expenseType\":\"EXPENSE\",\"amount\":9900,"
+                                + "\"merchant\":\"" + "가".repeat(101) + "\","
+                                + "\"frequency\":\"MONTHLY\",\"startDate\":\"2026-07-15\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(recurringTransactionService, never()).createRecurring(any());
+    }
+
+    @Test
+    @DisplayName("PUT /recurring-transaction/{id} — 999억은 400")
+    void updateRejectsOverLimit() throws Exception {
+        mockMvc.perform(put("/api/v1/recurring-transaction/{id}", 40L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":99999999999}"))
+                .andExpect(status().isBadRequest());
+
+        verify(recurringTransactionService, never()).updateRecurring(any(Long.class), any(Long.class), any());
     }
 }

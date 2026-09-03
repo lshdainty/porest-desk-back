@@ -7,6 +7,7 @@ import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.domain.RecurringTransaction;
@@ -359,9 +360,15 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             });
     }
 
-    /** 반복거래 금액도 0보다 커야 한다 — 실행될 때마다 지출 flow 를 만들기 때문이다. */
+    /**
+     * 반복거래 금액도 1원 이상 100억원 이하여야 한다 — 실행될 때마다 지출 flow 를 만들기 때문이다.
+     *
+     * <p>상한이 거래(ExpenseApiDto.MAX_AMOUNT)보다 크면 이 설정이 거래 상한을 우회하는 경로가
+     * 된다 — 종전엔 상한이 없어 99조 반복 설정을 스케줄러가 그대로 찍었다(QA 2026-09-03 #54).
+     * DTO 검증과 겹치지만 스케줄러·가져오기가 서비스를 직접 부르므로 여기도 남긴다.
+     */
     private void validateAmount(Long amount) {
-        if (amount == null || amount <= 0) {
+        if (amount == null || amount <= 0 || amount > AmountLimits.MAX_TX_AMOUNT) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
         }
     }

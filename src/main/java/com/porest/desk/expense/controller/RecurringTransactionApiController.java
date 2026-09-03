@@ -6,6 +6,7 @@ import com.porest.desk.expense.service.RecurringTransactionService;
 import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +30,7 @@ public class RecurringTransactionApiController {
     @PostMapping("/recurring-transaction")
     public ApiResponse<RecurringTransactionApiDto.Response> createRecurring(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody RecurringTransactionApiDto.CreateRequest request) {
+            @Valid @RequestBody RecurringTransactionApiDto.CreateRequest request) {
         RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.createRecurring(
             new RecurringTransactionServiceDto.CreateCommand(
                 loginUser.getRowId(),
@@ -64,7 +65,7 @@ public class RecurringTransactionApiController {
     public ApiResponse<RecurringTransactionApiDto.Response> updateRecurring(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody RecurringTransactionApiDto.UpdateRequest request) {
+            @Valid @RequestBody RecurringTransactionApiDto.UpdateRequest request) {
         RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.updateRecurring(id, loginUser.getRowId(),
             new RecurringTransactionServiceDto.UpdateCommand(
                 request.categoryRowId(), request.assetRowId(),

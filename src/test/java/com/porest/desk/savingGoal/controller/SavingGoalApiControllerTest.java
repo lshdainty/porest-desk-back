@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -178,5 +179,64 @@ class SavingGoalApiControllerTest {
         assertThat(captor.getValue()).hasSize(2);
         assertThat(captor.getValue().get(0).id()).isEqualTo(1L);
         assertThat(captor.getValue().get(1).sortOrder()).isEqualTo(1);
+    }
+
+    // === 목표 금액 하한·상한 (QA #52) ===
+
+    @Test
+    @DisplayName("POST /saving-goal — 목표 금액 −5 는 400 (종전엔 서버 검증이 아예 없었다)")
+    void createRejectsNegativeTarget() throws Exception {
+        mockMvc.perform(post("/api/v1/saving-goal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"여행 자금\",\"targetAmount\":-5}"))
+                .andExpect(status().isBadRequest());
+
+        verify(savingGoalService, never()).createSavingGoal(any());
+    }
+
+    @Test
+    @DisplayName("POST /saving-goal — 999억은 400, 정확히 100억(경계)은 통과")
+    void createBoundsTarget() throws Exception {
+        mockMvc.perform(post("/api/v1/saving-goal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"여행 자금\",\"targetAmount\":99999999999}"))
+                .andExpect(status().isBadRequest());
+        verify(savingGoalService, never()).createSavingGoal(any());
+
+        given(savingGoalService.createSavingGoal(any())).willReturn(sampleGoal());
+        mockMvc.perform(post("/api/v1/saving-goal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"여행 자금\",\"targetAmount\":10000000000}"))
+                .andExpect(status().isOk());
+        verify(savingGoalService).createSavingGoal(any());
+    }
+
+    @Test
+    @DisplayName("PUT /saving-goal/{id} — 목표 금액 0 은 400")
+    void updateRejectsZeroTarget() throws Exception {
+        mockMvc.perform(put("/api/v1/saving-goal/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"여행 자금\",\"targetAmount\":0}"))
+                .andExpect(status().isBadRequest());
+
+        verify(savingGoalService, never()).updateSavingGoal(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("PATCH /contribute — 회수(음수)는 막지 않는다. 100억 초과만 400")
+    void contributeAllowsWithdrawal() throws Exception {
+        given(savingGoalService.contribute(eq(100L), eq(1L), any())).willReturn(sampleGoal());
+
+        // 적립 취소는 정상 기능이다 — 여기에 @Min(0) 을 걸면 회수가 죽는다.
+        mockMvc.perform(patch("/api/v1/saving-goal/{id}/contribute", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":-50000}"))
+                .andExpect(status().isOk());
+        verify(savingGoalService).contribute(eq(100L), eq(1L), any());
+
+        mockMvc.perform(patch("/api/v1/saving-goal/{id}/contribute", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":-99999999999}"))
+                .andExpect(status().isBadRequest());
     }
 }

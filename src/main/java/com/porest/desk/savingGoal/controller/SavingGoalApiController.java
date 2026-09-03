@@ -6,6 +6,7 @@ import com.porest.desk.savingGoal.service.SavingGoalService;
 import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +29,7 @@ public class SavingGoalApiController {
     @PostMapping("/saving-goal")
     public ApiResponse<SavingGoalApiDto.SavingGoalResponse> createSavingGoal(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody SavingGoalApiDto.CreateSavingGoalRequest request) {
+            @Valid @RequestBody SavingGoalApiDto.CreateSavingGoalRequest request) {
         SavingGoalServiceDto.GoalInfo info = savingGoalService.createSavingGoal(
             new SavingGoalServiceDto.CreateCommand(
                 loginUser.getRowId(),
@@ -64,7 +65,7 @@ public class SavingGoalApiController {
     public ApiResponse<SavingGoalApiDto.SavingGoalResponse> updateSavingGoal(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody SavingGoalApiDto.UpdateSavingGoalRequest request) {
+            @Valid @RequestBody SavingGoalApiDto.UpdateSavingGoalRequest request) {
         SavingGoalServiceDto.GoalInfo info = savingGoalService.updateSavingGoal(
             id, loginUser.getRowId(),
             new SavingGoalServiceDto.UpdateCommand(
@@ -84,7 +85,7 @@ public class SavingGoalApiController {
     public ApiResponse<SavingGoalApiDto.SavingGoalResponse> contribute(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody SavingGoalApiDto.ContributeRequest request) {
+            @Valid @RequestBody SavingGoalApiDto.ContributeRequest request) {
         SavingGoalServiceDto.GoalInfo info = savingGoalService.contribute(
             id, loginUser.getRowId(),
             new SavingGoalServiceDto.ContributeCommand(request.amount(), request.note())

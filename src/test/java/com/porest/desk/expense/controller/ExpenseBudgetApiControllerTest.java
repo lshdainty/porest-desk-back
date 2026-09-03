@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -155,5 +156,53 @@ class ExpenseBudgetApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(expenseBudgetService).deleteBudget(eq(50L), eq(1L));
+    }
+
+    // === 금액 하한·상한 (QA #47 #48) ===
+
+    @Test
+    @DisplayName("POST /expense/budget — 999억은 400 (거래와 같은 100억 상한)")
+    void createRejectsOverLimit() throws Exception {
+        mockMvc.perform(post("/api/v1/expense/budget")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"budgetAmount\":99999999999,\"budgetYear\":2026,\"budgetMonth\":7}"))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseBudgetService, never()).createBudget(any());
+    }
+
+    @Test
+    @DisplayName("POST /expense/budget — 정확히 100억(경계)은 통과")
+    void createAcceptsAmountAtLimit() throws Exception {
+        given(expenseBudgetService.createBudget(any())).willReturn(sampleInfo());
+
+        mockMvc.perform(post("/api/v1/expense/budget")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"budgetAmount\":10000000000,\"budgetYear\":2026,\"budgetMonth\":7}"))
+                .andExpect(status().isOk());
+
+        verify(expenseBudgetService).createBudget(any());
+    }
+
+    @Test
+    @DisplayName("POST /expense/budget — 음수는 400 (종전엔 서비스까지 들어가서 막혔다)")
+    void createRejectsNegative() throws Exception {
+        mockMvc.perform(post("/api/v1/expense/budget")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"budgetAmount\":-1000,\"budgetYear\":2026,\"budgetMonth\":7}"))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseBudgetService, never()).createBudget(any());
+    }
+
+    @Test
+    @DisplayName("PUT /expense/budget/{id} — 999억은 400")
+    void updateRejectsOverLimit() throws Exception {
+        mockMvc.perform(put("/api/v1/expense/budget/{id}", 50L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"budgetAmount\":99999999999}"))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseBudgetService, never()).updateBudget(any(Long.class), any(Long.class), any());
     }
 }
