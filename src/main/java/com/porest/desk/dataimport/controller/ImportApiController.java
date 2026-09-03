@@ -54,8 +54,11 @@ public class ImportApiController {
         List<ImportApiDto.FailureRow> failures = result.failures().stream()
             .map(f -> new ImportApiDto.FailureRow(f.lineNo(), f.reason()))
             .toList();
+        // 실패 한 건마다 목록에도 한 줄이 들어가므로, 개수가 어긋나면 목록이 상한에서 잘린 것이다.
+        boolean truncated = result.failed() > failures.size();
         return ApiResponse.success(new ImportApiDto.ExecuteResponse(
-            result.imported(), result.skipped(), result.failed(), failures));
+            result.imported(), result.skipped(), result.failed(), failures,
+            truncated, result.createdCategories(), result.createdCategoryCount()));
     }
 
     // ── 매핑 헬퍼 ────────────────────────────────────────────
@@ -70,7 +73,8 @@ public class ImportApiController {
             .toList();
         return new ImportApiDto.AnalyzeResponse(
             r.fileName(), r.totalRows(), r.validRows(), r.duplicateCount(),
-            columns, r.suggestedMapping(), preview, r.blockedParents());
+            columns, r.suggestedMapping(), preview, r.blockedParents(),
+            r.newCategories(), r.newCategoryCount());
     }
 
     private static ImportApiDto.PreviewRow toPreview(StandardRow s) {

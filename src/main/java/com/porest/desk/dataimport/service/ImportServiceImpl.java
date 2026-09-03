@@ -47,6 +47,14 @@ public class ImportServiceImpl implements ImportService {
     private static final int PREVIEW_LIMIT = 8;
     private static final int MAX_FAILURES = 50;
     /**
+     * 응답에 실어 보낼 "새로 만들 / 만든 카테고리" 경로의 상한.
+     *
+     * <p>이 목록은 <b>파일 내용</b>이 길이를 정한다 — 카테고리 열을 잘못 매핑하면 행 수(최대 20만)만큼
+     * 서로 다른 이름이 나온다. 전부 실으면 응답이 메가바이트로 부풀고 화면은 그 목록을 못 그린다.
+     * 개수는 {@code newCategoryCount}/{@code createdCategoryCount} 로 끝까지 세어 따로 알린다.
+     */
+    private static final int CREATED_CATEGORY_LIMIT = 50;
+    /**
      * 한 트랜잭션에 묶어 넣을 행 수.
      * 크게 잡을수록 커밋이 줄지만, 청크가 실패하면 그만큼을 건별로 재시도해야 한다.
      */
@@ -73,10 +81,45 @@ public class ImportServiceImpl implements ImportService {
         int validRows = (int) rows.stream().filter(StandardRow::valid).count();
         int dupCount = (int) rows.stream().filter(r -> r.valid() && r.duplicate()).count();
         List<StandardRow> preview = rows.stream().limit(PREVIEW_LIMIT).toList();
+        NewCategoryPreview newCategories = previewNewCategories(rows, userRowId);
 
         return new AnalyzeResult(
             safeName(file), parsed.rows().size(), validRows, dupCount,
-            parsed.headers(), mapping, preview, blockedParents);
+            parsed.headers(), mapping, preview, blockedParents,
+            newCategories.paths(), newCategories.count());
+    }
+
+    /** 실행 전 예고 — 새로 만들어질 카테고리 경로(상한까지)와 전체 개수. */
+    private record NewCategoryPreview(List<String> paths, int count) {
+        static final NewCategoryPreview EMPTY = new NewCategoryPreview(List.of(), 0);
+    }
+
+    /**
+     * 이대로 실행하면 새로 만들어질 카테고리를 <b>만들지 않고</b> 미리 뽑는다.
+     *
+     * <p>가져오기는 없는 이름을 묻지 않고 만들어 왔다 — 오타 한 번이 새 카테고리가 된다.
+     * 실행 전에 목록을 보여 주면 파일을 고치거나 자동생성을 끄고 다시 시도할 수 있다.
+     *
+     * <p>실제 실행과 같은 해석 규칙({@link CategoryResolver})을 dry-run 으로 돌린다 —
+     * 규칙을 두 벌로 적으면 화면에 뜬 목록과 실제로 만들어지는 것이 어긋난다.
+     * 자동생성은 <b>항상 켠 것으로</b> 계산한다: 이 숫자가 바로 그 토글을 끌지 말지의 판단 재료다.
+     * 토글을 끄면 목록이 비는 것이 아니라 <b>"미분류" 로 줄어든다</b> —
+     * 못 찾은 행은 {@code topLevel("미분류")} 로 가고, 그 카테고리가 없으면 그것도 새로 만들어진다.
+     *
+     * <p>알려진 오차 — analyze 는 <b>제안 매핑</b>과 <b>중복 포함 전체 유효행</b> 기준이다.
+     * 사용자가 매핑에서 카테고리 열을 바꾸거나 중복 건너뛰기로 그 행이 빠지면 목록이 실제보다 넉넉해진다
+     * (미리보기·blockedParents 도 같은 성질이다). 경고 목적이라 넉넉한 쪽이 안전하다.
+     */
+    private NewCategoryPreview previewNewCategories(List<StandardRow> rows, Long userRowId) {
+        List<StandardRow> valid = rows.stream().filter(StandardRow::valid).toList();
+        if (valid.isEmpty()) {
+            return NewCategoryPreview.EMPTY;
+        }
+        CategoryResolver dryRun = new CategoryResolver(userRowId, true);
+        for (StandardRow r : valid) {
+            dryRun.resolve(r.category(), r.subcategory(), r.type(), true);
+        }
+        return new NewCategoryPreview(dryRun.createdCategories(), dryRun.createdCategoryCount());
     }
 
     @Override
@@ -89,7 +132,7 @@ public class ImportServiceImpl implements ImportService {
         markUnusableParents(rows, userRowId);
         markDuplicates(rows, userRowId);
 
-        CategoryResolver categories = new CategoryResolver(userRowId);
+        CategoryResolver categories = new CategoryResolver(userRowId, false);
         AssetResolver assets = new AssetResolver(userRowId);
 
         int imported = 0, skipped = 0, failed = 0;
@@ -152,7 +195,8 @@ public class ImportServiceImpl implements ImportService {
         // 미뤄둔 잔액 재산정 — 자산당 1회. 행마다 하면 자산 전체 이력을 매번 다시 읽어 O(N²) 이 된다.
 
         log.info("가져오기 완료: userRowId={}, imported={}, skipped={}, failed={}", userRowId, imported, skipped, failed);
-        return new ExecuteResult(imported, skipped, failed, failures);
+        return new ExecuteResult(imported, skipped, failed, failures,
+            categories.createdCategories(), categories.createdCategoryCount());
     }
 
     private record PendingRow(int lineNo, ExpenseServiceDto.CreateCommand command) {}
@@ -310,16 +354,32 @@ public class ImportServiceImpl implements ImportService {
      *   <li>못 찾고 autoCat 이면 부모부터 만들고 그 아래 자식을 만든다</li>
      * </ul>
      * 거래는 leaf 에만 귀속시킨다 — 자식이 있는 부모에 직접 달면 합계가 이중 집계된다.
+     *
+     * <p>{@code dryRun} 이면 <b>만드는 시늉만</b> 한다 — 무엇이 새로 생길지 실행 전에 보여주기 위해서다.
+     * analyze 는 읽기 전용 트랜잭션이라 실제 생성을 부를 수 없기도 하다.
      */
     private final class CategoryResolver {
         private final Long userRowId;
+        /** true 면 카테고리를 실제로 만들지 않고 "만들 것" 목록만 쌓는다. */
+        private final boolean dryRun;
         /** "타입|부모명|자식명" → rowId. 최상위 leaf 는 부모명을 빈 문자열로 둔다. */
         private final Map<String, Long> byPath = new HashMap<>();
         /** "타입|이름" → rowId (부모 카테고리). 자식을 매달 부모를 찾을 때 쓴다. */
         private final Map<String, Long> parentByName = new HashMap<>();
+        /**
+         * 만들어진(또는 dry-run 이면 만들어질) 카테고리 경로 — 생성 순서, {@code CREATED_CATEGORY_LIMIT} 까지.
+         *
+         * <p>중복 제거를 따로 하지 않는다: {@link #create} 는 위 두 캐시가 빗나갈 때만 불리므로
+         * 카테고리 하나당 정확히 한 번 들어온다. 같은 이름이 지출·수입으로 두 번 나오면
+         * 실제로 카테고리가 둘 생기는 것이라 목록에도 둘이 맞다.
+         */
+        private final List<String> created = new ArrayList<>();
+        /** 목록이 상한에서 잘려도 개수는 끝까지 센다 — 화면이 "새 카테고리 N개" 라고 말할 근거. */
+        private int createdCount;
 
-        CategoryResolver(Long userRowId) {
+        CategoryResolver(Long userRowId, boolean dryRun) {
             this.userRowId = userRowId;
+            this.dryRun = dryRun;
             var cats = expenseCategoryRepository.findAllByUser(userRowId);
             Set<Long> parentIds = new HashSet<>();
             cats.forEach(c -> {
@@ -379,7 +439,7 @@ public class ImportServiceImpl implements ImportService {
         private Long parentOf(String parentName, ExpenseType type) {
             Long cached = parentByName.get(key(type, parentName));
             if (cached != null) return cached;
-            Long rowId = create(parentName, type, null);
+            Long rowId = create(parentName, type, null, null);
             parentByName.put(key(type, parentName), rowId);
             // 최상위 leaf 로는 등록하지 않는다 — 이건 자식을 가질 부모다.
             // 여기 등록하면 소분류 빈 행이 부모에 직접 붙어 leaf 강제 규칙이 깨진다.
@@ -391,7 +451,7 @@ public class ImportServiceImpl implements ImportService {
             String k = pathKey(type, parentName, childName);
             Long cached = byPath.get(k);
             if (cached != null) return cached;
-            Long rowId = create(childName, type, parentRowId);
+            Long rowId = create(childName, type, parentRowId, parentName);
             byPath.put(k, rowId);
             return rowId;
         }
@@ -412,17 +472,43 @@ public class ImportServiceImpl implements ImportService {
                 return childOf(name, parentRowId, UNCATEGORIZED, type);
             }
 
-            Long rowId = create(name, type, null);
+            Long rowId = create(name, type, null, null);
             byPath.put(pathKey(type, "", name), rowId);
             // 나중에 같은 대분류에 소분류가 딸린 행이 오면 이 아래로 매단다.
             parentByName.putIfAbsent(key(type, name), rowId);
             return rowId;
         }
 
-        private Long create(String name, ExpenseType type, Long parentRowId) {
+        /**
+         * 카테고리 하나를 만든다. {@code parentName} 은 표시 경로용(최상위면 null).
+         *
+         * <p>dry-run 이면 만들지 않고 <b>음수 합성 id</b> 를 돌려준다. 캐시(byPath·parentByName)를
+         * 채워야 같은 이름이 뒤 행에서 또 "새로 만들 것" 으로 세지 않기 때문이다.
+         * 이 id 는 dry-run 안에서 부모 참조로만 쓰이고 거래에 실리지 않는다
+         * (analyze 는 CreateCommand 를 만들지 않는다). 실제 rowId 는 항상 양수라 섞일 일도 없다.
+         * 목록이 아니라 {@code createdCount} 로 만드는 이유는 상한에 걸린 뒤에도 id 가 겹치지 않게 하기 위해서다.
+         */
+        private Long create(String name, ExpenseType type, Long parentRowId, String parentName) {
+            createdCount++;
+            if (created.size() < CREATED_CATEGORY_LIMIT) {
+                created.add(parentName == null ? name : parentName + " > " + name);
+            }
+            if (dryRun) {
+                return -(long) createdCount;
+            }
             var info = expenseCategoryService.createCategory(new ExpenseCategoryServiceDto.CreateCommand(
                 userRowId, name, DEFAULT_ICON, DEFAULT_COLOR, type, parentRowId));
             return info.rowId();
+        }
+
+        /** 이번 해석에서 만들어진(dry-run 이면 만들어질) 카테고리 경로 — 생성 순서, 상한까지. */
+        List<String> createdCategories() {
+            return List.copyOf(created);
+        }
+
+        /** 위 목록이 잘리기 전의 전체 개수. */
+        int createdCategoryCount() {
+            return createdCount;
         }
 
         private String key(ExpenseType type, String name) {

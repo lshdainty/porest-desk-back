@@ -37,7 +37,15 @@ public class ImportApiDto {
         Map<ImportField, Integer> suggestedMapping,
         List<PreviewRow> preview,
         /** 거래가 달려 있어 하위를 만들 수 없는 대분류 — 비어 있지 않으면 그 행들이 전부 실패한다. */
-        List<String> blockedParents
+        List<String> blockedParents,
+        /**
+         * 이대로 실행하면 새로 만들어질 카테고리 경로("대분류 &gt; 소분류", 최상위는 이름만).
+         * 오타가 그대로 새 카테고리가 되므로 실행 전에 보여준다. 자동생성을 켠 기준.
+         * <b>상한까지만</b> 담는다 — 전체 개수는 {@code newCategoryCount}.
+         */
+        List<String> newCategories,
+        /** 새로 만들어질 카테고리의 전체 개수({@code newCategories.size()} 보다 클 수 있다). */
+        int newCategoryCount
     ) {}
 
     /** execute 요청(JSON part). mapping: 필드→열인덱스. */
@@ -53,8 +61,18 @@ public class ImportApiDto {
         int imported,
         int skipped,
         int failed,
-        List<FailureRow> failures
+        List<FailureRow> failures,
+        /**
+         * {@code failures} 가 잘렸는지. 서버는 실패 목록을 일정 수까지만 담는다 —
+         * 잘렸다는 사실을 안 알리면 화면이 "실패 120" 이라 띄우고 50줄만 보여주게 된다.
+         */
+        boolean failuresTruncated,
+        /** 이번 실행에서 실제로 만들어진 카테고리 경로(생성 순서) — 상한까지만 담는다. */
+        List<String> createdCategories,
+        /** 실제로 만들어진 카테고리의 전체 개수({@code createdCategories.size()} 보다 클 수 있다). */
+        int createdCategoryCount
     ) {}
 
+    /** 실패한 행. reason 은 화면 문구가 아니라 <b>사유 코드</b> 다(date/amount/type/parentHasTx/resolve/save). */
     public record FailureRow(int lineNo, String reason) {}
 }
