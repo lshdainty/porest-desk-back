@@ -17,12 +17,12 @@ public class TodoApiDto {
 
     @Schema(name = "TodoCreateRequest")
     public record CreateRequest(
-        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
-        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있어요")
         String content,
         TodoPriority priority,
-        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있어요")
         String category,
         LocalDate dueDate,
         Long parentRowId,
@@ -32,12 +32,12 @@ public class TodoApiDto {
 
     @Schema(name = "TodoUpdateRequest")
     public record UpdateRequest(
-        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
-        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있어요")
         String content,
         TodoPriority priority,
-        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있어요")
         String category,
         LocalDate dueDate,
         List<Long> tagIds

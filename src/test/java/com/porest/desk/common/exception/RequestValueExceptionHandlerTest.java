@@ -73,7 +73,7 @@ class RequestValueExceptionHandlerTest {
     @DisplayName("날짜와 무관한 본문 오류(깨진 JSON·잘못된 enum) → 본문 형식 메시지")
     void unreadableBodyWithoutDateUsesMalformedMessage() {
         given(messageResolver.getMessage(DeskErrorCode.MALFORMED_REQUEST_BODY))
-                .willReturn("요청 형식이 올바르지 않습니다");
+                .willReturn("요청 형식이 올바르지 않아요");
 
         HttpMessageNotReadableException e = new HttpMessageNotReadableException(
                 "JSON parse error",
@@ -84,7 +84,7 @@ class RequestValueExceptionHandlerTest {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody()).isNotNull();
-        assertThat(res.getBody().getMessage()).isEqualTo("요청 형식이 올바르지 않습니다");
+        assertThat(res.getBody().getMessage()).isEqualTo("요청 형식이 올바르지 않아요");
     }
 
     @Test

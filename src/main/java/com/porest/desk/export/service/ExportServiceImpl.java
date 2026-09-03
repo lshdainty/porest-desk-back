@@ -123,7 +123,7 @@ public class ExportServiceImpl implements ExportService {
     /** 요청 종 dedup + 선언 순서 정렬. 비어있으면 예외. */
     private List<ExportType> orderedTypes(List<ExportType> requested) {
         if (requested == null || requested.isEmpty()) {
-            throw new IllegalArgumentException("내보낼 데이터 종류를 1개 이상 선택하세요.");
+            throw new IllegalArgumentException("내보낼 데이터 종류를 1개 이상 골라 주세요");
         }
         LinkedHashSet<ExportType> set = new LinkedHashSet<>(requested);
         List<ExportType> ordered = new ArrayList<>();

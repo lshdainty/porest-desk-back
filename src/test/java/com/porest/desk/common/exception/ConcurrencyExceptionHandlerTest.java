@@ -29,7 +29,7 @@ class ConcurrencyExceptionHandlerTest {
     @DisplayName("ObjectOptimisticLockingFailureException → 409 CONFLICT 로 변환")
     void mapsOptimisticLockToConflict() {
         given(messageResolver.getMessage(DeskErrorCode.CONCURRENT_MODIFICATION))
-                .willReturn("다른 곳에서 먼저 수정되었습니다.");
+                .willReturn("다른 곳에서 먼저 수정됐어요.");
 
         ResponseEntity<ApiResponse<Void>> res = sut.handleOptimisticLock(
                 new ObjectOptimisticLockingFailureException("Expense", 1L));

@@ -172,6 +172,6 @@ public class OAuthLinkServiceImpl implements OAuthLinkService {
         } catch (Exception ex) {
             log.debug("Failed to extract SSO error message", ex);
         }
-        return "계정 연동에 실패했습니다";
+        return "계정을 연동하지 못했어요";
     }
 }

@@ -30,12 +30,12 @@ public class RecurringTransactionApiDto {
         Long assetRowId,
         Long sourceExpenseRowId,
         ExpenseType expenseType,
-        @Min(value = 1, message = "금액은 0보다 커야 합니다")
-        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있습니다")
+        @Min(value = 1, message = "금액은 0보다 커야 해요")
+        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
-        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "설명은 500자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "설명은 500자까지 입력할 수 있어요")
         String description,
-        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있습니다")
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
         RecurringFrequency frequency,
@@ -55,12 +55,12 @@ public class RecurringTransactionApiDto {
         Long categoryRowId,
         Long assetRowId,
         ExpenseType expenseType,
-        @Min(value = 1, message = "금액은 0보다 커야 합니다")
-        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있습니다")
+        @Min(value = 1, message = "금액은 0보다 커야 해요")
+        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
-        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "설명은 500자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "설명은 500자까지 입력할 수 있어요")
         String description,
-        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있습니다")
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
         RecurringFrequency frequency,

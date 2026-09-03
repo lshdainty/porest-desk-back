@@ -36,8 +36,8 @@ public class AssetApiDto {
         @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
         String assetName,
         AssetType assetType,
-        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
+        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
         Long balance,
         /**
          * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
@@ -58,8 +58,8 @@ public class AssetApiDto {
         YNType isIncludedInTotal,
         Long cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
-        @Min(value = 0, message = "한도는 0원 이상이어야 합니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있습니다")
+        @Min(value = 0, message = "한도는 0원 이상이어야 해요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있어요")
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
@@ -71,8 +71,8 @@ public class AssetApiDto {
         @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
         String assetName,
         AssetType assetType,
-        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
+        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
         Long balance,
         /**
          * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
@@ -92,8 +92,8 @@ public class AssetApiDto {
         YNType isIncludedInTotal,
         Long cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
-        @Min(value = 0, message = "한도는 0원 이상이어야 합니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있습니다")
+        @Min(value = 0, message = "한도는 0원 이상이어야 해요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있어요")
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,

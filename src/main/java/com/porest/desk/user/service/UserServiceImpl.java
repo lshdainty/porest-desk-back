@@ -241,6 +241,6 @@ public class UserServiceImpl implements UserService {
         } catch (Exception ex) {
             log.debug("Failed to extract SSO error message", ex);
         }
-        return "비밀번호 변경에 실패했습니다";
+        return "비밀번호를 바꾸지 못했어요";
     }
 }

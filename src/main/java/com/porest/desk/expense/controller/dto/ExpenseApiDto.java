@@ -29,13 +29,13 @@ public class ExpenseApiDto {
         Long categoryRowId,
         Long assetRowId,
         ExpenseType expenseType,
-        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있습니다")
+        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
-        @Size(max = 500, message = "설명은 500자까지 입력할 수 있습니다")
+        @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
         String expenseDate,
-        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있습니다")
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
@@ -57,13 +57,13 @@ public class ExpenseApiDto {
         Long categoryRowId,
         Long assetRowId,
         ExpenseType expenseType,
-        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있습니다")
+        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
-        @Size(max = 500, message = "설명은 500자까지 입력할 수 있습니다")
+        @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
         String expenseDate,
-        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있습니다")
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */

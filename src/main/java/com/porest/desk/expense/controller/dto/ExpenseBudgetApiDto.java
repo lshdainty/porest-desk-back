@@ -21,8 +21,8 @@ public class ExpenseBudgetApiDto {
     @Schema(name = "ExpenseBudgetCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
-        @Min(value = 1, message = "예산 금액은 0보다 커야 합니다")
-        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "예산 금액은 100억원까지 입력할 수 있습니다")
+        @Min(value = 1, message = "예산 금액은 0보다 커야 해요")
+        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "예산 금액은 100억원까지 입력할 수 있어요")
         Long budgetAmount,
         Integer budgetYear,
         Integer budgetMonth
@@ -30,8 +30,8 @@ public class ExpenseBudgetApiDto {
 
     @Schema(name = "ExpenseBudgetUpdateRequest")
     public record UpdateRequest(
-        @Min(value = 1, message = "예산 금액은 0보다 커야 합니다")
-        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "예산 금액은 100억원까지 입력할 수 있습니다")
+        @Min(value = 1, message = "예산 금액은 0보다 커야 해요")
+        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "예산 금액은 100억원까지 입력할 수 있어요")
         Long budgetAmount
     ) {}
 

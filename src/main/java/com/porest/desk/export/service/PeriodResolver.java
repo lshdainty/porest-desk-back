@@ -31,10 +31,10 @@ public class PeriodResolver {
             case THIS_YEAR -> new DateRange(LocalDate.of(today.getYear(), 1, 1), thisMonth.atEndOfMonth());
             case CUSTOM -> {
                 if (customStart == null || customEnd == null) {
-                    throw new IllegalArgumentException("사용자 지정 기간은 startDate/endDate 가 필요합니다.");
+                    throw new IllegalArgumentException("기간을 직접 고르려면 시작일과 종료일이 필요해요");
                 }
                 if (customStart.isAfter(customEnd)) {
-                    throw new IllegalArgumentException("시작일이 종료일보다 늦습니다.");
+                    throw new IllegalArgumentException("시작일이 종료일보다 늦을 수 없어요");
                 }
                 yield new DateRange(customStart, customEnd);
             }

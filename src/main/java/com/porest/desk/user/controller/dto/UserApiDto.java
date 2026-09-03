@@ -15,14 +15,14 @@ public class UserApiDto {
     @NoArgsConstructor
     public static class ChangePasswordReq {
 
-        @NotBlank(message = "현재 비밀번호를 입력해주세요")
+        @NotBlank(message = "현재 비밀번호를 입력해 주세요")
         private String currentPassword;
 
         // 길이·문자 규칙은 SSO 가 소유한다. 여기에 복제하면 SSO 정책 변경 때 조용히 어긋난다.
-        @NotBlank(message = "새 비밀번호를 입력해주세요")
+        @NotBlank(message = "새 비밀번호를 입력해 주세요")
         private String newPassword;
 
-        @NotBlank(message = "새 비밀번호 확인을 입력해주세요")
+        @NotBlank(message = "새 비밀번호 확인을 입력해 주세요")
         private String confirmPassword;
     }
 
@@ -30,7 +30,7 @@ public class UserApiDto {
     @NoArgsConstructor
     public static class VerifyPasswordReq {
 
-        @NotBlank(message = "비밀번호를 입력해주세요")
+        @NotBlank(message = "비밀번호를 입력해 주세요")
         private String password;
     }
 
@@ -98,25 +98,25 @@ public class UserApiDto {
         private Boolean notifyWeeklyReport;
         private Boolean notifyMonthlyReport;
 
-        @Min(value = 50, message = "예산 알림 임계값은 50% 이상이어야 합니다")
-        @Max(value = 150, message = "예산 알림 임계값은 150% 이하여야 합니다")
+        @Min(value = 50, message = "예산 알림 임계값은 50% 이상이어야 해요")
+        @Max(value = 150, message = "예산 알림 임계값은 150% 이하여야 해요")
         private Integer budgetAlertThreshold;
 
         private Boolean quietHoursEnabled;
 
-        @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "시간 형식은 HH:mm 이어야 합니다")
+        @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "시간 형식은 HH:mm 이어야 해요")
         private String quietHoursStart;
 
-        @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "시간 형식은 HH:mm 이어야 합니다")
+        @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "시간 형식은 HH:mm 이어야 해요")
         private String quietHoursEnd;
 
-        @Pattern(regexp = "CHIME|DEFAULT|NONE", message = "알림음은 CHIME·DEFAULT·NONE 중 하나여야 합니다")
+        @Pattern(regexp = "CHIME|DEFAULT|NONE", message = "알림음은 CHIME·DEFAULT·NONE 중 하나여야 해요")
         private String notificationSound;
 
         private Boolean vibrationEnabled;
         private Boolean emailEnabled;
 
-        @Pattern(regexp = "DAILY|WEEKLY|MONTHLY", message = "발송 주기는 DAILY·WEEKLY·MONTHLY 중 하나여야 합니다")
+        @Pattern(regexp = "DAILY|WEEKLY|MONTHLY", message = "발송 주기는 DAILY·WEEKLY·MONTHLY 중 하나여야 해요")
         private String emailFrequency;
 
         // 표시 기준 지역(IANA 타임존 ID). null = 무변경(부분 수정).
@@ -136,10 +136,10 @@ public class UserApiDto {
 
     /** @param hideCards 교체할 카드 키 전체. 부분 갱신이 아니라 통째로 바꾼다 */
     public record UpdateHideCardsReq(
-            @jakarta.validation.constraints.NotNull(message = "hideCards 는 null 일 수 없다")
-            @jakarta.validation.constraints.Size(max = 200, message = "카드 수가 너무 많다")
+            @jakarta.validation.constraints.NotNull(message = "가릴 카드 목록이 필요해요")
+            @jakarta.validation.constraints.Size(max = 200, message = "가릴 수 있는 카드는 200개까지예요")
             java.util.List<
-                    @jakarta.validation.constraints.Size(max = 64, message = "카드 키가 너무 길다")
+                    @jakarta.validation.constraints.Size(max = 64, message = "카드 키가 너무 길어요")
                     String> hideCards
     ) {}
 }
