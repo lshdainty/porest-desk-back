@@ -6,6 +6,7 @@ import com.porest.desk.common.crypto.AesGcmCipher;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.session.domain.UserSsoSession;
 import com.porest.desk.security.session.repository.UserSsoSessionRepository;
+import com.porest.desk.security.session.store.InMemorySessionRevocationStore;
 import com.porest.desk.security.session.controller.dto.SessionApiDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -52,7 +53,10 @@ class SsoSessionServiceTest {
     void setUp() {
         JwtProperties props = new JwtProperties();
         props.setSessionExpiration(604_800_000L); // 7일
-        sut = new SsoSessionService(sessionRepository, ssoOAuth2Client, cipher, props);
+        props.setAccessTokenExpiration(3_600_000L); // 폐기 표식 TTL 의 근거
+        // 폐기 표식이 실제로 남는지는 SsoSessionServiceRevocationTest 가 본다.
+        sut = new SsoSessionService(
+                sessionRepository, ssoOAuth2Client, cipher, props, new InMemorySessionRevocationStore());
 
         given(cipher.isConfigured()).willReturn(true);
         given(cipher.encrypt(anyString())).willAnswer(inv -> "enc(" + inv.getArgument(0) + ")");

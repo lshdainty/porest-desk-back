@@ -5,6 +5,7 @@ import com.porest.desk.security.controller.TokenExchangeController;
 import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.security.principal.JwtUserPrincipal;
 import com.porest.desk.security.service.TokenExchangeService;
+import com.porest.desk.security.session.store.InMemorySessionRevocationStore;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
@@ -61,7 +62,10 @@ class JwtAuthenticationFilterReauthTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<TokenExchangeService> provider = mock(ObjectProvider.class);
         given(provider.getObject()).willReturn(tokenExchangeService);
-        sut = new JwtAuthenticationFilter(jwtTokenProvider, props, provider);
+        // 폐기 표식은 비워 둔다 — 이 테스트가 보는 건 재인증 경로다.
+        // 폐기된 세션의 동작은 JwtAuthenticationFilterRevocationTest 가 본다.
+        sut = new JwtAuthenticationFilter(
+                jwtTokenProvider, props, provider, new InMemorySessionRevocationStore());
         signingKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
     }
 

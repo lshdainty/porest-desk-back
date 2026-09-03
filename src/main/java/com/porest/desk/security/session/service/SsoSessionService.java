@@ -6,6 +6,7 @@ import com.porest.desk.common.crypto.AesGcmCipher;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import com.porest.desk.security.session.domain.UserSsoSession;
 import com.porest.desk.security.session.repository.UserSsoSessionRepository;
+import com.porest.desk.security.session.store.SessionRevocationStore;
 import com.porest.desk.security.session.support.UserAgentParser;
 import com.porest.desk.security.session.controller.dto.SessionApiDto;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class SsoSessionService {
     private final SsoOAuth2Client ssoOAuth2Client;
     private final AesGcmCipher cipher;
     private final JwtProperties jwtProperties;
+    private final SessionRevocationStore revocationStore;
 
     /**
      * 재발급 결과.
@@ -102,7 +104,7 @@ public class SsoSessionService {
         if (session.isExpired(now)) {
             // 어차피 SSO 가 거부한다. 부르지 않고 여기서 끊는다.
             log.info("SSO 세션 만료 — 재로그인 필요. sessionId={}", sessionId);
-            session.revoke();
+            kill(session);
             return RefreshResult.failed();
         }
 
@@ -123,14 +125,14 @@ public class SsoSessionService {
         if (pair == null) {
             // SSO 가 명시적으로 거부했다 — 만료·폐기·권한 회수. 확정이므로 세션을 끊는다.
             log.info("SSO 가 재발급을 거부 — 세션 폐기. sessionId={}", sessionId);
-            session.revoke();
+            kill(session);
             return RefreshResult.failed();
         }
 
         if (!pair.hasRefreshToken()) {
             // rotation 이 오지 않았다. 옛 토큰은 이미 폐기됐을 수 있어 다음 재발급을 보장할 수 없다.
             log.error("SSO 재발급 응답에 refresh token 이 없다 — 세션 폐기. sessionId={}", sessionId);
-            session.revoke();
+            kill(session);
             return RefreshResult.failed();
         }
 
@@ -138,11 +140,20 @@ public class SsoSessionService {
         return RefreshResult.fromSso(pair.accessToken());
     }
 
-    /** 로그아웃 — 이 기기 세션만 끊는다. 다른 기기는 살아 있어야 한다. */
+    /**
+     * 로그아웃 — 이 기기 세션만 끊는다. 다른 기기는 살아 있어야 한다.
+     *
+     * <p>세션 행을 못 찾아도 폐기 표식은 남긴다. 로그아웃은 사용자가 명시적으로 누른 것이고,
+     * 지금 손에 든 access token 은 어떤 경우에도 죽어야 한다. 행이 없을 수 있는 이유는
+     * 실제로 있다 — {@code APP_ENCRYPTION_KEY} 가 비면 {@link #create} 가 세션을 저장하지
+     * 않고 조용히 넘어간다. 거기서 표식까지 건너뛰면 그 환경에서는 로그아웃이 통째로
+     * 무력해진다.
+     */
     @Transactional
     public void revoke(String sessionId) {
         sessionRepository.findBySessionIdAndIsDeleted(sessionId, YNType.N)
                 .ifPresent(UserSsoSession::revoke);
+        markRevoked(sessionId);
     }
 
     /**
@@ -184,7 +195,9 @@ public class SsoSessionService {
         return sessionRepository.findBySessionIdAndIsDeleted(sessionId, YNType.N)
                 .filter(s -> s.getUserRowId().equals(userRowId))
                 .map(s -> {
-                    s.revoke();
+                    // 소유자 확인을 통과한 뒤에만 끊는다. 확인 전에 표식을 남기면 세션 id 만
+                    // 아는 사람이 남의 기기를 끊을 수 있다.
+                    kill(s);
                     return true;
                 })
                 .orElse(false);
@@ -192,19 +205,43 @@ public class SsoSessionService {
 
     /**
      * "모든 기기에서 로그아웃" — 이 계정의 살아 있는 세션을 전부 끊는다. 지금 요청을 보낸
-     * 기기도 예외 없이 끊는다.
-     *
-     * <p>access token 자체는 무상태라 즉시 죽지는 않지만, 만료 후 무음 재인증이 막혀 결국
-     * 재로그인하게 된다 — "계정이 이상하다" 싶을 때 쓰는 비상 버튼이라 현재 기기를 예외로
-     * 두지 않는 편이 사용자 기대에 맞는다.
+     * 기기도 예외 없이 끊는다. "계정이 이상하다" 싶을 때 쓰는 비상 버튼이라 현재 기기를
+     * 예외로 두지 않는 편이 사용자 기대에 맞는다.
      *
      * <p>지금은 desk 세션만 끊는다. SSO·hr 은 아직 안 끊긴다 — SSO 가 로그아웃 이벤트를
      * 내려 전 서비스가 함께 끊기는 건 다음 단계에서 잇는다.
      */
     @Transactional
     public void revokeAll(Long userRowId) {
-        sessionRepository.findAllByUserRowIdAndIsDeleted(userRowId, YNType.N)
-                .forEach(UserSsoSession::revoke);
+        sessionRepository.findAllByUserRowIdAndIsDeleted(userRowId, YNType.N).forEach(this::kill);
+    }
+
+    /**
+     * 세션을 끊는다 — 행을 지우고 폐기 표식을 남긴다. <b>둘은 항상 같이 간다.</b>
+     *
+     * <p>행만 지우면 이미 발급된 access token 에는 아무 영향이 없다. 무상태 JWT 라 서명과 exp
+     * 만으로 계속 통과하고, {@code JwtAuthenticationFilter} 의 갱신 경로가 세션을 보지 않고
+     * 재서명하므로 만료 전에 한 번만 쓰면 수명이 무기한 늘어난다. 표식이 그걸 막는 유일한
+     * 수단이라 폐기 경로를 이 한 자리로 모았다 — 경로가 늘어날 때 빠뜨리기 어렵게.
+     *
+     * <p>{@link #refresh} 안의 사망 경로들도 여기를 지난다. 그쪽은 access token 이 이미 만료된
+     * 상태에서만 도달하지만, <b>같은 세션의 다른 사본</b>은 갱신을 받아 아직 살아 있을 수 있다
+     * (갱신은 같은 jti 로 재서명한다). SSO 가 권한을 회수했는데 그 사본만 한 시간 더 도는 일을
+     * 막는다.
+     */
+    private void kill(UserSsoSession session) {
+        session.revoke();
+        markRevoked(session.getSessionId());
+    }
+
+    /**
+     * 폐기 표식을 남긴다.
+     *
+     * <p>수명은 access token 수명과 같다. 그 시각 뒤의 토큰은 서명 검증에서 만료로 떨어지므로
+     * 표식을 더 들고 있을 이유가 없다.
+     */
+    private void markRevoked(String sessionId) {
+        revocationStore.revoke(sessionId, jwtProperties.getAccessTokenExpiration() / 1000);
     }
 
     /**
