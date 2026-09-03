@@ -2,6 +2,11 @@ package com.porest.desk.export.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.porest.desk.dataimport.service.FileParser;
+import com.porest.desk.dataimport.service.ImportColumnMapper;
+import com.porest.desk.dataimport.service.ParsedFile;
+import com.porest.desk.dataimport.service.StandardRow;
+import com.porest.desk.dataimport.type.ImportSource;
 import com.porest.desk.export.controller.dto.ExportApiDto;
 import com.porest.desk.export.type.ExportFormat;
 import com.porest.desk.export.type.ExportPeriod;
@@ -18,6 +23,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -277,6 +283,102 @@ class ExportServiceImplTest {
                 + "\"a\"\"b\"\r\n"
                 + "\"x,y\"\r\n"
                 + "\"p\nq\"\r\n");
+        }
+
+        @Test
+        @DisplayName("CSV 수식 주입 — = + - @ TAB CR 로 시작하는 셀에 공백 접두(인용·이중화와 함께)")
+        void csvGuardsFormulaInjection() throws Exception {
+            givenResolvedRange();
+            given(dataService.buildTable(eq(ExportType.EXPENSE), eq(USER_ID), eq(START), eq(END), eq(false)))
+                .willReturn(table(ExportType.EXPENSE, List.of("거래처", "금액"),
+                    List.of(
+                        List.of("=HYPERLINK(\"http://evil\",\"x\")", "1000"),
+                        List.of("@SUM(A1)", "-50000"),
+                        List.of("+1+1", "0"),
+                        List.of("-3+2", "0"),
+                        List.of("\tTAB", "1"),
+                        List.of("\rCR", "1"))));
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            sut.writeExport(out, exportReq(ExportFormat.CSV, false, ExportType.EXPENSE), USER_ID);
+
+            String csv = out.toString(StandardCharsets.UTF_8);
+            assertThat(csv).isEqualTo(
+                "\uFEFF"
+                + "\"거래처\",\"금액\"\r\n"
+                // 접두는 따옴표 안쪽 — 인용 전에 붙어야 셀이 깨지지 않는다.
+                + "\" =HYPERLINK(\"\"http://evil\"\",\"\"x\"\")\",\"1000\"\r\n"
+                // 금액 -50000 은 순수 숫자라 접두 대상이 아니다(음수 잔액 보존).
+                + "\" @SUM(A1)\",\"-50000\"\r\n"
+                + "\" +1+1\",\"0\"\r\n"
+                + "\" -3+2\",\"0\"\r\n"
+                + "\" \tTAB\",\"1\"\r\n"
+                + "\" \rCR\",\"1\"\r\n");
+        }
+
+        @Test
+        @DisplayName("CSV 수식 가드 — 순수 십진수(음수 잔액 포함)는 접두 없이 숫자로 남는다")
+        void csvKeepsPlainNumbersUnprefixed() throws Exception {
+            givenResolvedRange();
+            // 부채 계열(LOAN·CREDIT_CARD) 잔액은 항상 음수 → 여기에 접두가 붙으면 금액 열이 통째로 텍스트가 된다.
+            given(dataService.buildTable(eq(ExportType.ASSET), eq(USER_ID), eq(START), eq(END), eq(false)))
+                .willReturn(table(ExportType.ASSET, List.of("잔액"),
+                    List.of(List.of("-5000000"), List.of("+1000"), List.of("-1.5"), List.of("0"))));
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            sut.writeExport(out, exportReq(ExportFormat.CSV, false, ExportType.ASSET), USER_ID);
+
+            assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "\uFEFF"
+                + "\"잔액\"\r\n"
+                + "\"-5000000\"\r\n"
+                + "\"+1000\"\r\n"
+                + "\"-1.5\"\r\n"
+                + "\"0\"\r\n");
+        }
+
+        @Test
+        @DisplayName("내보낸 CSV 재업로드 왕복 — 공백 접두는 가져오기 trim 이 벗겨 원래 값이 복원된다")
+        void csvFormulaGuardSurvivesImportRoundTrip() throws Exception {
+            givenResolvedRange();
+            given(dataService.buildTable(eq(ExportType.EXPENSE), eq(USER_ID), eq(START), eq(END), eq(false)))
+                .willReturn(table(ExportType.EXPENSE, List.of("날짜", "유형", "금액", "설명", "거래처"),
+                    List.of(List.of("2026-06-01 09:22", "EXPENSE", "1000", "=1+1", "@SUM(A1)"))));
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            sut.writeExport(out, exportReq(ExportFormat.CSV, false, ExportType.EXPENSE), USER_ID);
+
+            // 내보낸 바이트를 그대로 다시 업로드한다(가져오기가 하는 일과 같은 경로).
+            ParsedFile parsed = FileParser.parse(
+                new MockMultipartFile("file", "porest-expense.csv", "text/csv", out.toByteArray()));
+            var mapping = ImportColumnMapper.suggest(ImportSource.POREST, parsed.headers());
+            StandardRow row = ImportColumnMapper.mapRow(mapping, parsed.rows().get(0), 2);
+
+            assertThat(row.memo()).isEqualTo("=1+1");
+            assertThat(row.merchant()).isEqualTo("@SUM(A1)");
+            assertThat(row.amount()).isEqualTo(1000L);
+            assertThat(row.date()).isEqualTo(java.time.LocalDateTime.of(2026, 6, 1, 9, 22));
+            assertThat(row.error()).isNull();
+        }
+
+        @Test
+        @DisplayName("수식 가드는 CSV 전용 — JSON·xlsx 는 값 그대로(문자열 셀이라 수식으로 평가되지 않는다)")
+        void formulaGuardIsCsvOnly() throws Exception {
+            givenResolvedRange();
+            given(dataService.buildTable(eq(ExportType.EXPENSE), eq(USER_ID), eq(START), eq(END), eq(false)))
+                .willReturn(table(ExportType.EXPENSE, List.of("거래처"), List.of(List.of("=1+1"))));
+
+            // 가드를 cell() 로 옮기면 미리보기 API 응답까지 오염된다 — 자리는 CSV writer 하나뿐이어야 한다.
+            ByteArrayOutputStream json = new ByteArrayOutputStream();
+            sut.writeExport(json, exportReq(ExportFormat.JSON, false, ExportType.EXPENSE), USER_ID);
+            assertThat(new ObjectMapper().readTree(json.toByteArray()).get(0).get("거래처").asText())
+                .isEqualTo("=1+1");
+
+            ByteArrayOutputStream xlsx = new ByteArrayOutputStream();
+            sut.writeExport(xlsx, exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE), USER_ID);
+            try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(xlsx.toByteArray()))) {
+                assertThat(wb.getSheetAt(0).getRow(1).getCell(0).getStringCellValue()).isEqualTo("=1+1");
+            }
         }
 
         @Test

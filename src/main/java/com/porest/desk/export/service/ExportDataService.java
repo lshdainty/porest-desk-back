@@ -1,6 +1,8 @@
 package com.porest.desk.export.service;
 
+import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
+import com.porest.core.util.TimeUtils;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
@@ -25,6 +27,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -40,6 +44,12 @@ import java.util.Map;
  * 금융 민감필드(잔액·금액·신용한도·기관)를 "****" 로 가린다.
  *
  * <p>건수는 현재 목록 size 기반(MVP). 대용량 거래의 전용 COUNT 쿼리는 후속 최적화.
+ *
+ * <p><b>일시 컬럼 규칙</b> — 어느 기준인지는 porest-sql 컬럼 COMMENT 의 {@code [UTC]}/{@code [userClock]}
+ * 표기로 판단한다. {@code [userClock]}(거래일·일정 시작/종료)은 이미 사용자 벽시계라 변환하지 않고
+ * ({@link #wallClock}), {@code [UTC]}(메모 생성일·할 일 완료일)만 {@link TimeUtils#toUserZone} 으로
+ * 사용자 타임존으로 바꾼다({@link #utcAt}). 벽시계를 또 변환하면 자정 근처 날짜가 하루 밀린다.
+ * 출력 형식은 전 파일 {@code yyyy-MM-dd HH:mm}, 날짜 전용 열(할 일 마감일)은 {@code yyyy-MM-dd}.
  */
 @Service
 @RequiredArgsConstructor
@@ -56,6 +66,7 @@ public class ExportDataService {
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
     private final ExportCountRepository exportCountRepository;
+    private final UserClock userClock;
 
     /** 전체 행을 담은 표. */
     public ExportTable buildTable(ExportType type, Long userRowId, LocalDate start, LocalDate end, boolean mask) {
@@ -89,7 +100,7 @@ public class ExportDataService {
         expenseRepository.findByDateRange(userRowId, start, end).forEach(e -> {
             ExpenseServiceDto.ExpenseInfo i = ExpenseServiceDto.ExpenseInfo.from(e);
             rows.add(List.of(
-                cell(i.expenseDate()),
+                wallClock(i.expenseDate()),
                 cell(i.expenseType()),
                 cell(i.categoryName()),
                 cell(i.assetName()),
@@ -163,13 +174,14 @@ public class ExportDataService {
     private ExportTable memoTable(Long userRowId) {
         List<String> headers = List.of("제목", "내용", "고정", "생성일");
         List<List<String>> rows = new ArrayList<>();
+        ZoneId zone = userClock.zoneOf(userRowId);
         memoRepository.findAllByUser(userRowId, null, null).forEach(m -> {
             MemoServiceDto.MemoInfo i = MemoServiceDto.MemoInfo.from(m);
             rows.add(List.of(
                 cell(i.title()),
                 cell(i.content()),
                 yn(i.isPinned()),
-                cell(i.createAt())
+                utcAt(i.createAt(), zone)
             ));
         });
         return new ExportTable(ExportType.MEMO, headers, rows);
@@ -184,8 +196,8 @@ public class ExportDataService {
             CalendarEventServiceDto.EventInfo i = CalendarEventServiceDto.EventInfo.from(e);
             rows.add(List.of(
                 cell(i.title()),
-                cell(i.startDate()),
-                cell(i.endDate()),
+                wallClock(i.startDate()),
+                wallClock(i.endDate()),
                 yn(i.isAllDay()),
                 cell(i.eventType()),
                 cell(i.labelName()),
@@ -200,6 +212,7 @@ public class ExportDataService {
     private ExportTable todoTable(Long userRowId, LocalDate start, LocalDate end, boolean mask) {
         List<String> headers = List.of("제목", "유형", "상태", "우선순위", "카테고리", "마감일", "완료일", "내용");
         List<List<String>> rows = new ArrayList<>();
+        ZoneId zone = userClock.zoneOf(userRowId);
         todoRepository.findByUserAndDueDateBetween(userRowId, start, end).forEach(t -> {
             TodoServiceDto.TodoInfo i = TodoServiceDto.TodoInfo.from(t);
             rows.add(List.of(
@@ -209,7 +222,7 @@ public class ExportDataService {
                 cell(i.priority()),
                 cell(i.category()),
                 cell(i.dueDate()),
-                cell(i.completedAt()),
+                utcAt(i.completedAt(), zone),
                 cell(i.content())
             ));
         });
@@ -222,6 +235,23 @@ public class ExportDataService {
         if (o == null) return "";
         if (o instanceof Enum<?> e) return e.name();
         return String.valueOf(o);
+    }
+
+    /** 내보내기 공통 일시 형식 — 전 파일·전 열 동일. */
+    private static final DateTimeFormatter EXPORT_TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+    /**
+     * {@code [userClock]} 벽시계 열 — 변환하지 않고 형식만 통일한다.
+     * (LocalDateTime.toString() 은 초·나노가 0 이면 생략해 같은 열에서 자릿수가 들쭉날쭉했다.)
+     */
+    private static String wallClock(LocalDateTime v) {
+        return v == null ? "" : v.format(EXPORT_TS);
+    }
+
+    /** {@code [UTC]} 시스템 열 — 사용자 타임존으로 바꾼 뒤 형식 통일. zone 은 UserClock 이 폴백까지 마친 값. */
+    private static String utcAt(LocalDateTime utc, ZoneId zone) {
+        if (utc == null) return "";
+        return TimeUtils.toUserZone(utc, zone.getId()).format(EXPORT_TS);
     }
 
     /** 금융 민감 금액 — 마스킹 ON 이면 가린다. */
