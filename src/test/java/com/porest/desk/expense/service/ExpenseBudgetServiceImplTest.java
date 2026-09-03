@@ -143,4 +143,39 @@ class ExpenseBudgetServiceImplTest {
                 new ExpenseBudgetServiceDto.UpdateCommand(0L)))
                 .isInstanceOf(InvalidValueException.class);
     }
+
+    @Test
+    @DisplayName("createBudget — 100억 초과는 불가(스케줄러·가져오기처럼 컨트롤러를 안 거치는 경로 방어)")
+    void createRejectsOverLimit() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var cmd = new ExpenseBudgetServiceDto.CreateCommand(USER_ID, null, 10_000_000_001L, 2026, 6);
+
+        assertThatThrownBy(() -> sut.createBudget(cmd))
+                .isInstanceOf(InvalidValueException.class);
+        verify(expenseBudgetRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createBudget — 정확히 100억(경계)은 통과")
+    void createAcceptsAmountAtLimit() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var info = sut.createBudget(
+                new ExpenseBudgetServiceDto.CreateCommand(USER_ID, null, 10_000_000_000L, 2026, 6));
+
+        assertThat(info.budgetAmount()).isEqualTo(10_000_000_000L);
+    }
+
+    @Test
+    @DisplayName("updateBudget — 100억 초과는 불가")
+    void updateRejectsOverLimit() {
+        ExpenseBudget budget = mock(ExpenseBudget.class);
+        given(budget.getUser()).willReturn(user(USER_ID));
+        given(expenseBudgetRepository.findById(5L)).willReturn(Optional.of(budget));
+
+        assertThatThrownBy(() -> sut.updateBudget(5L, USER_ID,
+                new ExpenseBudgetServiceDto.UpdateCommand(10_000_000_001L)))
+                .isInstanceOf(InvalidValueException.class);
+    }
 }

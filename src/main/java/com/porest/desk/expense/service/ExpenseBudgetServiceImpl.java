@@ -4,6 +4,7 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
@@ -169,9 +170,17 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         }
     }
 
-    /** 예산 금액은 0보다 커야 한다 — 0/음수는 알림 스케줄러의 0 나눗셈·잘못된 사용률을 유발. */
+    /**
+     * 예산 금액은 1원 이상 100억원 이하여야 한다.
+     *
+     * <p>0/음수는 알림 스케줄러의 0 나눗셈·잘못된 사용률을 유발한다. 상한은 거래와 같은 층인데
+     * 종전엔 없어서 999억 예산이 저장됐다(QA 2026-09-03 #48).
+     *
+     * <p>DTO 에 같은 범위를 걸어 컨트롤러에서 먼저 400 이 나가지만 이 검증은 <b>지우지 않는다</b> —
+     * 스케줄러·가져오기처럼 컨트롤러를 안 거치고 서비스를 직접 부르는 경로가 있다.
+     */
     private void validateBudgetAmount(Long amount) {
-        if (amount == null || amount <= 0) {
+        if (amount == null || amount <= 0 || amount > AmountLimits.MAX_TX_AMOUNT) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_BUDGET_INVALID_AMOUNT);
         }
     }

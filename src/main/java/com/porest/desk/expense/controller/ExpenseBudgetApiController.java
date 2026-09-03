@@ -6,6 +6,7 @@ import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.expense.controller.dto.ExpenseBudgetApiDto;
 import com.porest.desk.expense.service.ExpenseBudgetService;
 import com.porest.desk.expense.service.dto.ExpenseBudgetServiceDto;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +29,7 @@ public class ExpenseBudgetApiController {
     @PostMapping("/expense/budget")
     public ApiResponse<ExpenseBudgetApiDto.Response> createBudget(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody ExpenseBudgetApiDto.CreateRequest request) {
+            @Valid @RequestBody ExpenseBudgetApiDto.CreateRequest request) {
         ExpenseBudgetServiceDto.BudgetInfo info = expenseBudgetService.createBudget(new ExpenseBudgetServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.categoryRowId(),
@@ -63,7 +64,7 @@ public class ExpenseBudgetApiController {
     public ApiResponse<ExpenseBudgetApiDto.Response> updateBudget(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody ExpenseBudgetApiDto.UpdateRequest request) {
+            @Valid @RequestBody ExpenseBudgetApiDto.UpdateRequest request) {
         ExpenseBudgetServiceDto.BudgetInfo info = expenseBudgetService.updateBudget(
             id, loginUser.getRowId(),
             new ExpenseBudgetServiceDto.UpdateCommand(request.budgetAmount())

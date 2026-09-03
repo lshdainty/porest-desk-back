@@ -5,7 +5,10 @@ import com.porest.desk.asset.type.HoldingType;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.common.validation.AmountLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -13,11 +16,31 @@ import java.util.List;
 
 public class AssetApiDto {
 
+    /*
+     * 잔액·한도 상한은 AmountLimits.MAX_BALANCE(1,000억원)다. 거래(100억)와 자리수가 다른 건
+     * 의도다 — 잔액은 예금·대출 원금이라 거래 한 건보다 크다. 종전엔 상한이 없어 99조가 그대로
+     * 저장됐다(QA 2026-09-03 #17).
+     *
+     * 하한을 −1,000억으로 두는 이유: 부호는 AssetSignPolicy 가 정하므로 여기서는 크기만 본다.
+     * 마이너스 통장·대출이 음수로 들어오는 걸 400 으로 막으면 안 된다.
+     */
+
     // === Asset ===
     public record CreateAssetRequest(
         String assetName,
         AssetType assetType,
+        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
         Long balance,
+        /**
+         * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
+         * {@code BANK_ACCOUNT} + 음수 잔액). 화면은 "사용 중인 금액" 을 양수로 받고
+         * 부호는 서버가 씌운다.
+         *
+         * <p>안 보내면(옛 클라이언트) 보낸 부호를 그대로 존중한다 — 여기서 abs() 를 강제하면
+         * 옛 앱이 마이너스 통장을 열어 저장만 해도 부호가 뒤집힌다.
+         */
+        Boolean isOverdraft,
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
         java.math.BigDecimal exchangeRate,
@@ -27,6 +50,9 @@ public class AssetApiDto {
         Integer sortOrder,
         YNType isIncludedInTotal,
         Long cardCatalogRowId,
+        /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
+        @Min(value = 0, message = "한도는 0원 이상이어야 합니다")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있습니다")
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
@@ -37,7 +63,18 @@ public class AssetApiDto {
     public record UpdateAssetRequest(
         String assetName,
         AssetType assetType,
+        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
         Long balance,
+        /**
+         * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
+         * {@code BANK_ACCOUNT} + 음수 잔액). 화면은 "사용 중인 금액" 을 양수로 받고
+         * 부호는 서버가 씌운다.
+         *
+         * <p>안 보내면(옛 클라이언트) 보낸 부호를 그대로 존중한다 — 여기서 abs() 를 강제하면
+         * 옛 앱이 마이너스 통장을 열어 저장만 해도 부호가 뒤집힌다.
+         */
+        Boolean isOverdraft,
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
         java.math.BigDecimal exchangeRate,
@@ -46,6 +83,9 @@ public class AssetApiDto {
         String memo,
         YNType isIncludedInTotal,
         Long cardCatalogRowId,
+        /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
+        @Min(value = 0, message = "한도는 0원 이상이어야 합니다")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있습니다")
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,

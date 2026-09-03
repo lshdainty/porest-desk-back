@@ -186,5 +186,22 @@ class RecurringTransactionServiceImplTest {
             assertThatThrownBy(() -> sut.updateRecurring(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
         }
+
+        @Test
+        @DisplayName("100억 초과도 막는다 — 반복 설정이 거래 상한을 우회하는 경로였다(QA #54)")
+        void rejectsOverTxLimit() {
+            assertThatThrownBy(() -> sut.createRecurring(cmdAmount(10_000_000_001L)))
+                .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("수정에서도 100억 초과를 막는다")
+        void rejectsOverTxLimitOnUpdate() {
+            var cmd = new RecurringTransactionServiceDto.UpdateCommand(
+                1L, null, ExpenseType.EXPENSE, 10_000_000_001L,
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
+            assertThatThrownBy(() -> sut.updateRecurring(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class);
+        }
     }
 }

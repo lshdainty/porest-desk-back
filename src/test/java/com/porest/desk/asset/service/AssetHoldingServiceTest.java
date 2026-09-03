@@ -100,14 +100,14 @@ class AssetHoldingServiceTest {
     private AssetServiceDto.CreateAssetCommand createCommand(
             AssetType type, List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.CreateAssetCommand(
-            USER_ID, "토스증권", type, 0L, "KRW",
+            USER_ID, "토스증권", type, 0L, null, "KRW",
             null, null, null, null, 0,
             YNType.Y, null, null, null, null, holdings);
     }
 
     private AssetServiceDto.UpdateAssetCommand updateCommand(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
-            null, null, null, null,
+            null, null, null, null, null,
             null, null, null, null, null, null, null, null, null, holdings);
     }
 
