@@ -186,4 +186,52 @@ class AssetApiControllerTest {
 
         verify(assetService, never()).createAsset(any());
     }
+
+    // === 별칭 길이 (QA #65) ===
+
+    @Test
+    @DisplayName("POST /asset — 별칭 31자는 400 (종전엔 그대로 저장)")
+    void createRejectsOversizedAssetName() throws Exception {
+        mockMvc.perform(post("/api/v1/asset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"assetName\":\"" + "가".repeat(31) + "\",\"assetType\":\"BANK_ACCOUNT\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(assetService, never()).createAsset(any());
+    }
+
+    @Test
+    @DisplayName("POST /asset — 별칭 30자(경계)는 통과")
+    void createAcceptsAssetNameAtLimit() throws Exception {
+        given(assetService.createAsset(any())).willReturn(sampleAsset());
+
+        mockMvc.perform(post("/api/v1/asset")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"assetName\":\"" + "가".repeat(30) + "\",\"assetType\":\"BANK_ACCOUNT\"}"))
+                .andExpect(status().isOk());
+
+        verify(assetService).createAsset(any());
+    }
+
+    @Test
+    @DisplayName("PUT /asset/{id} — 별칭 31자는 400")
+    void updateRejectsOversizedAssetName() throws Exception {
+        mockMvc.perform(put("/api/v1/asset/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"assetName\":\"" + "가".repeat(31) + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(assetService, never()).updateAsset(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("PUT /asset/{id} — 별칭을 안 보내면 검증 대상이 아니다(이름 무변경 수정)")
+    void updateWithoutAssetNameStillPasses() throws Exception {
+        given(assetService.updateAsset(any(Long.class), any(Long.class), any())).willReturn(sampleAsset());
+
+        mockMvc.perform(put("/api/v1/asset/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"balance\":1000}"))
+                .andExpect(status().isOk());
+    }
 }
