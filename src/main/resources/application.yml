@@ -130,6 +130,13 @@ app:
   # 미설정이면 로그인은 되지만 SSO 세션이 저장되지 않아 무음 재인증만 조용히 꺼진다.
   security:
     encryption-key: ${APP_ENCRYPTION_KEY:}
+  # 로그아웃한 세션의 폐기 표식 저장 위치: redis(기본) | memory
+  # desk access token 은 무상태 JWT 라 로그아웃해도 만료까지 통한다. 이 표식을 필터가 확인해
+  # 즉시 막는다. 인스턴스가 여럿이면 반드시 redis 다 — memory 로 두면 로그아웃을 받은
+  # 인스턴스만 알고 나머지는 그 토큰을 계속 통과시켜, 로그아웃이 "가끔 먹는" 기능이 된다.
+  # 테스트만 memory 로 내린다(Redis 를 띄우지 않는다).
+  session-revocation:
+    store: ${SESSION_REVOCATION_STORE:redis}
   # 증권사 연동 공통. 인증정보는 서버 공용 키가 아니라 사용자가 등록한 본인 키(암호화 저장)를 쓴다.
   securities:
     # 액세스 토큰 캐시 위치: redis(기본) | memory

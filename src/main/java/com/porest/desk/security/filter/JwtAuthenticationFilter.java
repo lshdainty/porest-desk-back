@@ -6,6 +6,7 @@ import com.porest.desk.security.jwt.JwtTokenProvider;
 import com.porest.desk.security.principal.JwtClaimsPrincipal;
 import com.porest.desk.security.principal.JwtUserPrincipal;
 import com.porest.desk.security.service.TokenExchangeService;
+import com.porest.desk.security.session.store.SessionRevocationStore;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -44,6 +45,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * 왔을 때 꺼내 쓰므로, 그때는 컨텍스트가 이미 다 올라와 있다.
      */
     private final ObjectProvider<TokenExchangeService> tokenExchangeServiceProvider;
+    /**
+     * 로그아웃한 세션의 표식 저장소.
+     *
+     * <p>위 ObjectProvider 와 달리 직접 주입해도 된다 — 이 빈이 끌고 오는 것은
+     * {@code StringRedisTemplate} 뿐이고(메모리 구현은 의존이 아예 없다) JPA 를 건드리지 않는다.
+     */
+    private final SessionRevocationStore sessionRevocationStore;
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final long RENEWAL_THRESHOLD_MS = 600_000L;
@@ -60,20 +68,29 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(token)) {
             if (jwtTokenProvider.isTokenValid(token)) {
                 JwtClaimsPrincipal claims = jwtTokenProvider.validateAndGetClaims(token);
-                authenticate(claims);
+                // 로그아웃한 세션의 토큰은 서명과 exp 가 멀쩡해도 통과시키지 않는다. 인증을
+                // 세우지 않고 그대로 흘려보내면 뒤에서 401 이 된다 — 여기서 예외를 던지면
+                // 인증이 필요 없는 엔드포인트까지 같이 막힌다.
+                //
+                // 갱신도 같이 건너뛴다(아래 블록에 못 들어간다). 이게 이 검사의 절반이다 —
+                // 갱신 경로는 세션을 보지 않고 claims 만으로 재서명하므로, 여기서 안 막으면
+                // 복사된 쿠키를 만료 전에 한 번 쓰는 것만으로 수명이 무기한 연장된다.
+                if (!isRevokedSession(claims)) {
+                    authenticate(claims);
 
-                // 임베드 토큰(typ=embed)은 단명 컨텍스트 전용이라 쿠키 갱신 대상에서 제외한다.
-                // 60초 < RENEWAL_THRESHOLD 라 항상 갱신 트리거되는 부작용을 막고,
-                // 임베드용 토큰이 access cookie 로 승격되지 않도록 보장한다.
-                if (!claims.isEmbed()) {
-                    long remainingMs = jwtTokenProvider.getRemainingExpiration(token);
-                    if (remainingMs > 0 && remainingMs < RENEWAL_THRESHOLD_MS) {
-                        String newToken = jwtTokenProvider.createAccessToken(
-                            claims.userId(), claims.userName(),
-                            claims.userEmail(), claims.userRowId(), claims.sessionId()
-                        );
-                        renewAccessTokenCookie(response, newToken);
-                        log.debug("Token renewed for user: {}", claims.userId());
+                    // 임베드 토큰(typ=embed)은 단명 컨텍스트 전용이라 쿠키 갱신 대상에서 제외한다.
+                    // 60초 < RENEWAL_THRESHOLD 라 항상 갱신 트리거되는 부작용을 막고,
+                    // 임베드용 토큰이 access cookie 로 승격되지 않도록 보장한다.
+                    if (!claims.isEmbed()) {
+                        long remainingMs = jwtTokenProvider.getRemainingExpiration(token);
+                        if (remainingMs > 0 && remainingMs < RENEWAL_THRESHOLD_MS) {
+                            String newToken = jwtTokenProvider.createAccessToken(
+                                claims.userId(), claims.userName(),
+                                claims.userEmail(), claims.userRowId(), claims.sessionId()
+                            );
+                            renewAccessTokenCookie(response, newToken);
+                            log.debug("Token renewed for user: {}", claims.userId());
+                        }
                     }
                 }
             } else {
@@ -94,6 +111,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      */
     private void trySilentReauth(String token, HttpServletResponse response) {
         JwtClaimsPrincipal expired = jwtTokenProvider.parseExpiredClaims(token);
+        // 폐기 표식을 여기서 또 보지 않는다. 이 경로는 결국 SsoSessionService.refresh 를 타는데,
+        // 그쪽은 살아 있는 세션 행(is_deleted='N')을 찾지 못하면 재발급을 거절한다 — DB 가
+        // 표식보다 강한 근거이고, 표식이 TTL 로 사라진 뒤에도 계속 막힌다.
+        //
         // 만료가 아닌 이유로 못 읽었거나(위조·형식 오류), 세션에 속하지 않는 토큰(임베드,
         // 세션 도입 前 발급분)은 재발급 대상이 아니다.
         if (expired == null || expired.isEmbed() || !expired.hasSession()) {
@@ -115,6 +136,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         authenticate(jwtTokenProvider.validateAndGetClaims(newToken));
         renewAccessTokenCookie(response, newToken);
         log.debug("무음 재인증 완료. userId={}", expired.userId());
+    }
+
+    /**
+     * 세션에 속하지 않는 토큰(임베드, 세션 도입 前 발급분)은 조회 자체를 건너뛴다 — 폐기할
+     * 세션이 없으니 표식도 있을 수 없고, 요청마다 헛조회를 하게 된다.
+     */
+    private boolean isRevokedSession(JwtClaimsPrincipal claims) {
+        return claims.hasSession() && sessionRevocationStore.isRevoked(claims.sessionId());
     }
 
     private void authenticate(JwtClaimsPrincipal claims) {
