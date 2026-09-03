@@ -9,6 +9,7 @@ import com.porest.desk.todo.service.dto.TodoServiceDto;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,7 +35,7 @@ public class TodoApiController {
     @PostMapping("/todo")
     public ApiResponse<TodoApiDto.Response> createTodo(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody TodoApiDto.CreateRequest request) {
+            @Valid @RequestBody TodoApiDto.CreateRequest request) {
         TodoServiceDto.TodoInfo info = todoService.createTodo(new TodoServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.title(),
@@ -76,7 +77,7 @@ public class TodoApiController {
     public ApiResponse<TodoApiDto.Response> updateTodo(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody TodoApiDto.UpdateRequest request) {
+            @Valid @RequestBody TodoApiDto.UpdateRequest request) {
         TodoServiceDto.TodoInfo info = todoService.updateTodo(id, loginUser.getRowId(), new TodoServiceDto.UpdateCommand(
             request.title(),
             request.content(),

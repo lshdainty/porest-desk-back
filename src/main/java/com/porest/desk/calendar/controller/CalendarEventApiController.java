@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.CalendarEventService;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,7 +31,7 @@ public class CalendarEventApiController {
     @PostMapping("/calendar/event")
     public ApiResponse<CalendarEventApiDto.Response> createEvent(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody CalendarEventApiDto.CreateRequest request) {
+            @Valid @RequestBody CalendarEventApiDto.CreateRequest request) {
         CalendarEventServiceDto.EventInfo info = calendarEventService.createEvent(new CalendarEventServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.title(),
@@ -64,7 +65,7 @@ public class CalendarEventApiController {
     public ApiResponse<CalendarEventApiDto.Response> updateEvent(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody CalendarEventApiDto.UpdateRequest request) {
+            @Valid @RequestBody CalendarEventApiDto.UpdateRequest request) {
         CalendarEventServiceDto.EventInfo info = calendarEventService.updateEvent(id, loginUser.getRowId(), new CalendarEventServiceDto.UpdateCommand(
             request.title(),
             request.description(),

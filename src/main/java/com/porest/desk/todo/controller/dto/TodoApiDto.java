@@ -1,11 +1,13 @@
 package com.porest.desk.todo.controller.dto;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -15,9 +17,12 @@ public class TodoApiDto {
 
     @Schema(name = "TodoCreateRequest")
     public record CreateRequest(
+        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있습니다")
         String title,
+        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있습니다")
         String content,
         TodoPriority priority,
+        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있습니다")
         String category,
         LocalDate dueDate,
         Long parentRowId,
@@ -27,9 +32,12 @@ public class TodoApiDto {
 
     @Schema(name = "TodoUpdateRequest")
     public record UpdateRequest(
+        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있습니다")
         String title,
+        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있습니다")
         String content,
         TodoPriority priority,
+        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있습니다")
         String category,
         LocalDate dueDate,
         List<Long> tagIds

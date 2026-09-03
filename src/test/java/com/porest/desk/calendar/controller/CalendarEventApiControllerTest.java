@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -155,5 +156,102 @@ class CalendarEventApiControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /calendar/event — 존재하지 않는 시작일(2026-02-30)은 400 (종전엔 500)")
+    void createEventRejectsImpossibleStartDate() throws Exception {
+        String body = """
+                {"title":"회의","eventType":"WORK",
+                 "startDate":"2026-02-30T09:00:00","endDate":"2026-07-03T10:00:00","isAllDay":"N"}
+                """;
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(calendarEventService, never()).createEvent(any());
+    }
+
+    @Test
+    @DisplayName("POST /calendar/event — 제목 201자는 400 (종전엔 DB 제약에 걸려 500)")
+    void createEventRejectsLongTitle() throws Exception {
+        String body = """
+                {"title":"%s","eventType":"PERSONAL",
+                 "startDate":"2026-07-03T09:00:00","endDate":"2026-07-03T10:00:00","isAllDay":"N"}
+                """.formatted("가".repeat(201));
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(calendarEventService, never()).createEvent(any());
+    }
+
+    @Test
+    @DisplayName("POST /calendar/event — 제목 200자(경계)는 통과")
+    void createEventAcceptsTitleAtLimit() throws Exception {
+        given(calendarEventService.createEvent(any())).willReturn(sampleInfo());
+
+        String body = """
+                {"title":"%s","eventType":"PERSONAL",
+                 "startDate":"2026-07-03T09:00:00","endDate":"2026-07-03T10:00:00","isAllDay":"N"}
+                """.formatted("가".repeat(200));
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(calendarEventService).createEvent(any());
+    }
+
+    @Test
+    @DisplayName("PUT /calendar/event/{id} — 제목 201자는 400")
+    void updateEventRejectsLongTitle() throws Exception {
+        String body = """
+                {"title":"%s","eventType":"PERSONAL"}
+                """.formatted("가".repeat(201));
+
+        mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(calendarEventService, never()).updateEvent(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("POST /calendar/event — 설명 10,001자는 400 (공통 상한 10,000)")
+    void createEventRejectsOversizedDescription() throws Exception {
+        String body = "{\"title\":\"회의\",\"eventType\":\"WORK\","
+                + "\"startDate\":\"2026-07-03T09:00:00\",\"endDate\":\"2026-07-03T10:00:00\","
+                + "\"isAllDay\":\"N\",\"description\":\"" + "가".repeat(10_001) + "\"}";
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(calendarEventService, never()).createEvent(any());
+    }
+
+    @Test
+    @DisplayName("POST /calendar/event — 설명 10,000자(경계)는 통과")
+    void createEventAcceptsDescriptionAtLimit() throws Exception {
+        given(calendarEventService.createEvent(any())).willReturn(sampleInfo());
+
+        String body = "{\"title\":\"회의\",\"eventType\":\"WORK\","
+                + "\"startDate\":\"2026-07-03T09:00:00\",\"endDate\":\"2026-07-03T10:00:00\","
+                + "\"isAllDay\":\"N\",\"description\":\"" + "가".repeat(10_000) + "\"}";
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(calendarEventService).createEvent(any());
     }
 }

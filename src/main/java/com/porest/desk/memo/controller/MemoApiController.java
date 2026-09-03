@@ -6,6 +6,7 @@ import com.porest.desk.memo.service.MemoService;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +30,7 @@ public class MemoApiController {
     @PostMapping("/memo")
     public ApiResponse<MemoApiDto.Response> createMemo(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody MemoApiDto.CreateRequest request) {
+            @Valid @RequestBody MemoApiDto.CreateRequest request) {
         MemoServiceDto.MemoInfo info = memoService.createMemo(new MemoServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.folderId(),
@@ -64,7 +65,7 @@ public class MemoApiController {
     public ApiResponse<MemoApiDto.Response> updateMemo(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody MemoApiDto.UpdateRequest request) {
+            @Valid @RequestBody MemoApiDto.UpdateRequest request) {
         MemoServiceDto.MemoInfo info = memoService.updateMemo(id, loginUser.getRowId(), new MemoServiceDto.UpdateCommand(
             request.folderId(),
             request.title(),
