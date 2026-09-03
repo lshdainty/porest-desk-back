@@ -15,21 +15,21 @@ public class CalendarEventApiDto {
 
     @Schema(name = "CalendarEventCreateRequest")
     public record CreateRequest(
-        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
-        @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있어요")
         String description,
         CalendarEventType eventType,
         // calendar_event.color 는 varchar(20).
-        @Size(max = 20, message = "색상 값이 너무 깁니다")
+        @Size(max = 20, message = "색상 값이 너무 길어요")
         String color,
         LocalDateTime startDate,
         LocalDateTime endDate,
         YNType isAllDay,
         Long labelRowId,
-        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "장소는 500자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "장소는 500자까지 입력할 수 있어요")
         String location,
-        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "반복 규칙이 너무 깁니다")
+        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "반복 규칙이 너무 길어요")
         String rrule,
         List<Integer> reminderMinutes,
         Long calendarRowId
@@ -37,21 +37,21 @@ public class CalendarEventApiDto {
 
     @Schema(name = "CalendarEventUpdateRequest")
     public record UpdateRequest(
-        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
-        @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있어요")
         String description,
         CalendarEventType eventType,
         // calendar_event.color 는 varchar(20).
-        @Size(max = 20, message = "색상 값이 너무 깁니다")
+        @Size(max = 20, message = "색상 값이 너무 길어요")
         String color,
         LocalDateTime startDate,
         LocalDateTime endDate,
         YNType isAllDay,
         Long labelRowId,
-        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "장소는 500자까지 입력할 수 있습니다")
+        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "장소는 500자까지 입력할 수 있어요")
         String location,
-        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "반복 규칙이 너무 깁니다")
+        @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "반복 규칙이 너무 길어요")
         String rrule,
         List<Integer> reminderMinutes,
         Long calendarRowId

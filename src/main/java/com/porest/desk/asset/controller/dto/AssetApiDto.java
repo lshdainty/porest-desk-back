@@ -6,9 +6,11 @@ import com.porest.core.type.YNType;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.common.validation.AmountLimits;
+import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -23,14 +25,19 @@ public class AssetApiDto {
      *
      * 하한을 −1,000억으로 두는 이유: 부호는 AssetSignPolicy 가 정하므로 여기서는 크기만 본다.
      * 마이너스 통장·대출이 음수로 들어오는 걸 400 으로 막으면 안 된다.
+     *
+     * 별칭(assetName)은 FieldLimits.ALIAS_MAX(30자)다. 컬럼은 varchar(100) 이라 DB 는 안 막아
+     * 웹·앱 입력칸에만 있던 상한이었고, API 를 직접 부르면 31자가 그대로 저장됐다
+     * (QA 2026-09-03 #65).
      */
 
     // === Asset ===
     public record CreateAssetRequest(
+        @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
         String assetName,
         AssetType assetType,
-        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
+        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
         Long balance,
         /**
          * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
@@ -51,8 +58,8 @@ public class AssetApiDto {
         YNType isIncludedInTotal,
         Long cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
-        @Min(value = 0, message = "한도는 0원 이상이어야 합니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있습니다")
+        @Min(value = 0, message = "한도는 0원 이상이어야 해요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있어요")
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
@@ -61,10 +68,11 @@ public class AssetApiDto {
     ) {}
 
     public record UpdateAssetRequest(
+        @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
         String assetName,
         AssetType assetType,
-        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있습니다")
+        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
         Long balance,
         /**
          * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
@@ -84,8 +92,8 @@ public class AssetApiDto {
         YNType isIncludedInTotal,
         Long cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
-        @Min(value = 0, message = "한도는 0원 이상이어야 합니다")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있습니다")
+        @Min(value = 0, message = "한도는 0원 이상이어야 해요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있어요")
         Long creditLimit,
         Integer paymentDay,
         Long paymentAssetRowId,
