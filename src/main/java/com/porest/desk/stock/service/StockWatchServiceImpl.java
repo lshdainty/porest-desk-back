@@ -4,6 +4,8 @@ import com.porest.core.exception.DuplicateException;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.util.NameNormalizer;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.domain.StockWatchGroup;
 import com.porest.desk.stock.domain.StockWatchItem;
@@ -13,6 +15,7 @@ import com.porest.desk.stock.service.dto.StockWatchServiceDto;
 import com.porest.desk.stock.type.StockMarket;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,7 +66,7 @@ public class StockWatchServiceImpl implements StockWatchService {
         if (groupRepository.countActiveByUser(userRowId) >= MAX_GROUPS_PER_USER) {
             throw new InvalidValueException(DeskErrorCode.STOCK_WATCH_GROUP_LIMIT_EXCEEDED);
         }
-        if (groupRepository.existsActiveByUserAndName(userRowId, name)) {
+        if (groupRepository.existsActiveByUserAndName(userRowId, name, null)) {
             throw new DuplicateException(DeskErrorCode.STOCK_WATCH_GROUP_NAME_DUPLICATE);
         }
 
@@ -72,6 +75,7 @@ public class StockWatchServiceImpl implements StockWatchService {
             .max()
             .orElse(-1) + 1;
         StockWatchGroup group = groupRepository.save(StockWatchGroup.create(userRowId, name, nextOrder));
+        flushOrRejectDuplicate();
         log.info("관심목록 그룹 생성 완료: userRowId={}, groupRowId={}", userRowId, group.getRowId());
         return StockWatchServiceDto.GroupInfo.of(group, List.of());
     }
@@ -83,10 +87,14 @@ public class StockWatchServiceImpl implements StockWatchService {
         String name = normalizeGroupName(groupName);
         StockWatchGroup group = findOwnedGroup(userRowId, groupRowId);
 
-        if (!group.getGroupName().equals(name) && groupRepository.existsActiveByUserAndName(userRowId, name)) {
+        // 자기 자신 제외는 DB 로 내린다. 종전엔 자바 equals(대소문자 구분)로 먼저 걸러
+        // DB 검사(콜레이션 _ci, 대소문자 무시)를 건너뛰었는데, 그래서 'tech' → 'TECH' 개명이
+        // 자기 자신에 걸려 409 로 막혔다 — 사용자가 자기 그룹 이름의 대소문자를 못 바꿨다.
+        if (groupRepository.existsActiveByUserAndName(userRowId, name, groupRowId)) {
             throw new DuplicateException(DeskErrorCode.STOCK_WATCH_GROUP_NAME_DUPLICATE);
         }
         group.rename(name);
+        flushOrRejectDuplicate();
 
         List<StockWatchServiceDto.ItemInfo> items = itemRepository.findAllActiveByUserWithStock(userRowId).stream()
             .filter(row -> groupRowId.equals(row.item().getGroupRowId()))
@@ -179,11 +187,21 @@ public class StockWatchServiceImpl implements StockWatchService {
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.STOCK_NOT_FOUND));
     }
 
+    /**
+     * 이름 정규화는 이제 {@link NameNormalizer} 한 곳에 있다 — 여기 있던 구현을 그리로 올렸고
+     * 나머지 일곱 도메인이 같은 규칙을 쓴다(다섯 중 정규화를 가진 건 여기뿐이었다).
+     * 동작은 그대로다: trim · 빈 이름과 50자 초과는 {@code COMMON_400}.
+     */
     private String normalizeGroupName(String groupName) {
-        String name = groupName == null ? "" : groupName.trim();
-        if (name.isEmpty() || name.length() > 50) {
-            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        return NameNormalizer.require(groupName, FieldLimits.NAME_MAX);
+    }
+
+    /** 조회 검사를 빠져나간 동시 저장 경쟁을 409 로 받는다 — flush 가 없으면 위반이 커밋 시점에 터져 못 잡는다. */
+    private void flushOrRejectDuplicate() {
+        try {
+            groupRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new DuplicateException(DeskErrorCode.STOCK_WATCH_GROUP_NAME_DUPLICATE, e);
         }
-        return name;
     }
 }

@@ -11,5 +11,7 @@ public interface TodoTagRepository {
     boolean existsActiveByUserAndName(Long userRowId, String tagName, Long excludeRowId);
     List<TodoTag> findAllByIds(List<Long> ids);
     TodoTag save(TodoTag tag);
+    /** 활성 이름 UNIQUE 위반을 서비스 안에서 잡기 위한 즉시 반영 — EventLabelRepository.flush() 와 같은 이유. */
+    void flush();
     void delete(TodoTag tag);
 }

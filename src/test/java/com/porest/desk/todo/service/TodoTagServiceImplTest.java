@@ -14,12 +14,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -74,5 +79,42 @@ class TodoTagServiceImplTest {
 
         assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "일상", "#fff")))
                 .isInstanceOf(InvalidValueException.class);
+    }
+    @Test
+    @DisplayName("createTag — 이름 앞뒤 공백은 저장 전에 잘린다(선행공백이 DB 판정과 어긋나던 자리)")
+    void createTrimsName() {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        var info = sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "  일상 ", "#fff"));
+
+        assertThat(info.tagName()).isEqualTo("일상");
+        verify(todoTagRepository).existsActiveByUserAndName(USER_ID, "일상", null);
+    }
+
+    @Test
+    @DisplayName("createTag — 빈 이름·공백뿐인 이름은 400 으로 거절한다")
+    void createRejectsBlankName() {
+        assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, " ", "#fff")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("createTag — 유니크 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+    void translatesConstraintViolation() {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(todoTagRepository.existsActiveByUserAndName(USER_ID, "일상", null)).willReturn(false);
+        willThrow(new DataIntegrityViolationException("UK_todo_tag_user_active_name"))
+                .given(todoTagRepository).flush();
+
+        assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "일상", "#fff")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.TODO_TAG_DUPLICATE_NAME);
     }
 }

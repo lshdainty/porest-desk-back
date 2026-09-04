@@ -4,6 +4,8 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.util.NameNormalizer;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
@@ -15,10 +17,14 @@ import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Set;
@@ -29,7 +35,6 @@ import com.porest.desk.expense.domain.RecurringTransaction;
 import java.util.Objects;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
@@ -40,10 +45,90 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     private final RecurringTransactionRepository recurringTransactionRepository;
     private final UserRepository userRepository;
 
+    /**
+     * 확보 시도 하나마다 <b>새 트랜잭션</b>을 여는 템플릿 — {@link #findOrCreateCategory} 전용.
+     *
+     * <p>{@code @RequiredArgsConstructor} 를 버리고 생성자를 손으로 쓴 이유가 이것 하나다.
+     * 예산({@code ExpenseBudgetServiceImpl})이 같은 자리에서 같은 이유로 먼저 세워 둔 모양이다.
+     */
+    private final TransactionTemplate newTransaction;
+
+    public ExpenseCategoryServiceImpl(ExpenseCategoryRepository expenseCategoryRepository,
+                                      ExpenseBudgetRepository expenseBudgetRepository,
+                                      ExpenseRepository expenseRepository,
+                                      ExpenseSplitRepository expenseSplitRepository,
+                                      RecurringTransactionRepository recurringTransactionRepository,
+                                      UserRepository userRepository,
+                                      PlatformTransactionManager transactionManager) {
+        this.expenseCategoryRepository = expenseCategoryRepository;
+        this.expenseBudgetRepository = expenseBudgetRepository;
+        this.expenseRepository = expenseRepository;
+        this.expenseSplitRepository = expenseSplitRepository;
+        this.recurringTransactionRepository = recurringTransactionRepository;
+        this.userRepository = userRepository;
+        this.newTransaction = new TransactionTemplate(transactionManager);
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
     @Override
     @Transactional
     public ExpenseCategoryServiceDto.CategoryInfo createCategory(ExpenseCategoryServiceDto.CreateCommand command) {
-        log.debug("지출 카테고리 등록 시작: userRowId={}, categoryName={}", command.userRowId(), command.categoryName());
+        String categoryName = NameNormalizer.require(command.categoryName(), FieldLimits.NAME_MAX);
+        try {
+            return createCategoryInternal(command, categoryName);
+        } catch (DataIntegrityViolationException e) {
+            // 조회 검사와 저장 사이는 원자적이지 않다 — 같은 이름의 두 요청이 동시에 들어오면
+            // 둘 다 "없다" 를 보고 둘 다 INSERT 한다. 활성 이름 UNIQUE 가 진 쪽을 여기서 잡는다.
+            // 답은 재조회가 아니라 409 다: 사용자가 원한 건 "이 이름의 새 카테고리" 였고 그 이름은 이미 있다.
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME, e);
+        }
+    }
+
+    /**
+     * 같은 자리에 그 이름의 활성 카테고리를 확보한다 — 없으면 만들고 있으면 그 행을 돌려준다.
+     *
+     * <p>가져오기 전용 진입점이다. 왜 {@link #createCategory} 로는 안 되는지는 인터페이스 주석에 있다.
+     *
+     * <h4>왜 새 트랜잭션인가</h4>
+     * 제약 위반이 난 하이버네이트 세션은 더 못 쓴다 — 이어서 조회·flush 하면
+     * {@code AssertionFailure ... null identifier} 로 죽는다. 게다가 MariaDB 기본 격리수준
+     * (REPEATABLE READ)에서는 같은 트랜잭션의 재조회가 처음 뜬 스냅샷을 그대로 보므로
+     * 상대가 <b>그 뒤에</b> 커밋한 행은 애초에 보이지도 않는다. 그래서 시도 하나를 트랜잭션
+     * 하나로 감싸고, 위반이 나면 새 트랜잭션으로 <b>한 번만</b> 다시 돈다(무한 루프 금지).
+     */
+    @Override
+    // 재시도가 성립하려면 이 메서드가 트랜잭션을 들고 있으면 안 된다. 클래스 기본값
+    // (readOnly = true) 이 걸리는 것도 막는다.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public ExpenseCategoryServiceDto.CategoryInfo findOrCreateCategory(ExpenseCategoryServiceDto.CreateCommand command) {
+        String categoryName = NameNormalizer.require(command.categoryName(), FieldLimits.NAME_MAX);
+        try {
+            return newTransaction.execute(status -> resolveOrCreateCategory(command, categoryName));
+        } catch (DataIntegrityViolationException e) {
+            log.info("카테고리 확보 경쟁 감지 — 새 트랜잭션으로 재조회 후 재사용: userRowId={}, parentRowId={}, name={}",
+                command.userRowId(), command.parentRowId(), categoryName);
+            return newTransaction.execute(status -> resolveOrCreateCategory(command, categoryName));
+        }
+    }
+
+    /** 확보 시도 한 번 — {@link #newTransaction} 안에서만 부른다(조회를 밖에 두면 재시도가 옛 스냅샷을 물려받는다). */
+    private ExpenseCategoryServiceDto.CategoryInfo resolveOrCreateCategory(
+            ExpenseCategoryServiceDto.CreateCommand command, String categoryName) {
+        return expenseCategoryRepository.findActiveByUserAndParentAndTypeAndName(
+                command.userRowId(), command.parentRowId(), command.expenseType(), categoryName)
+            .map(ExpenseCategoryServiceDto.CategoryInfo::from)
+            .orElseGet(() -> createCategoryInternal(command, categoryName));
+    }
+
+    /**
+     * 등록 본체 — 이름은 이미 정규화된 값을 받는다.
+     *
+     * <p>제약 위반을 <b>번역하지 않고</b> 그대로 올린다. 부르는 쪽이 둘인데 답이 다르기 때문이다:
+     * {@link #createCategory} 는 409 로 바꾸고, {@link #findOrCreateCategory} 는 재조회·재사용으로 간다.
+     */
+    private ExpenseCategoryServiceDto.CategoryInfo createCategoryInternal(
+            ExpenseCategoryServiceDto.CreateCommand command, String categoryName) {
+        log.debug("지출 카테고리 등록 시작: userRowId={}, categoryName={}", command.userRowId(), categoryName);
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
@@ -65,15 +150,17 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             validateCanBecomeParent(parent.getRowId());
         }
 
-        // 같은 위치(부모)·같은 타입 내 활성 카테고리명 중복 금지 (삭제된 같은 이름은 재사용 허용)
+        // 같은 위치(부모)·같은 타입 내 활성 카테고리명 중복 금지 (삭제된 같은 이름은 재사용 허용).
+        // parentRowId 가 null(최상위)인 경우를 리포지토리 두 구현 모두 `parent IS NULL` 로 갈라 놨다 —
+        // `= null` 로 비교하면 아무것도 안 잡혀 최상위만 중복이 무제한 허용된다.
         if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
-                command.userRowId(), command.parentRowId(), command.expenseType(), command.categoryName(), null)) {
+                command.userRowId(), command.parentRowId(), command.expenseType(), categoryName, null)) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
         }
 
         ExpenseCategory category = ExpenseCategory.createCategory(
             user,
-            command.categoryName(),
+            categoryName,
             command.icon(),
             command.color(),
             command.expenseType(),
@@ -81,6 +168,9 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         );
 
         expenseCategoryRepository.save(category);
+        // INSERT 를 지금 내보낸다 — 안 그러면 UNIQUE 위반이 커밋 시점(이 메서드가 반환한 뒤)에
+        // 터져 부르는 쪽의 try/catch 가 닿지 않는다.
+        expenseCategoryRepository.flush();
         log.info("지출 카테고리 등록 완료: categoryId={}, userRowId={}", category.getRowId(), command.userRowId());
 
         return ExpenseCategoryServiceDto.CategoryInfo.from(category);
@@ -108,6 +198,18 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         new String[]{"부수입", "trending-up", "#9a6536"}
     );
 
+    /**
+     * 여기는 활성 이름 UNIQUE 를 위반할 수 없다 — 그래서 방어를 두지 않는다(확인한 근거를 남긴다).
+     *
+     * <p>① 심는 이름이 서로 겹치지 않는다: 지출 8개·수입 3개가 각 타입 안에서 전부 다른 이름이고
+     * 부모는 전부 null 이다. ② 같은 사용자에게 두 번 심을 수 없다: 호출처가 <b>신규 {@code users}
+     * INSERT 직후 같은 트랜잭션</b> 한 곳뿐이고({@code TokenExchangeService}), 동시 최초 로그인은
+     * {@code desk.users} 의 {@code UNIQUE KEY UK_users_user_id} 에서 먼저 갈린다 — 설령 그 UK 가
+     * 없더라도 진 쪽은 <b>다른 user_row_id</b> 로 심으므로 카테고리 키가 겹치지 않는다.
+     *
+     * <p><b>이 자리에 409 를 던지면 로그인이 죽는다.</b> 같은 트랜잭션이라 시딩이 터지면 사용자
+     * 생성까지 롤백된다. 그래서 여기에는 아무 변환도 두지 않고, 위반이 불가능하다는 것을 근거로 남긴다.
+     */
     @Override
     @Transactional
     public void seedDefaults(Long userRowId) {
@@ -157,6 +259,8 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     @Transactional
     public ExpenseCategoryServiceDto.CategoryInfo updateCategory(Long categoryId, Long userRowId, ExpenseCategoryServiceDto.UpdateCommand command) {
         log.debug("지출 카테고리 수정 시작: categoryId={}", categoryId);
+
+        String categoryName = NameNormalizer.require(command.categoryName(), FieldLimits.NAME_MAX);
 
         ExpenseCategory category = findCategoryOrThrow(categoryId);
         validateCategoryOwnership(category, userRowId);
@@ -208,18 +312,19 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
 
         // 변경 후 위치(부모)·타입 기준 활성 카테고리명 중복 금지 (자기 자신 제외)
         if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
-                userRowId, command.parentRowId(), targetType, command.categoryName(), categoryId)) {
+                userRowId, command.parentRowId(), targetType, categoryName, categoryId)) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
         }
 
         category.updateCategory(
-            command.categoryName(),
+            categoryName,
             command.icon(),
             command.color(),
             command.sortOrder()
         );
         category.changeExpenseType(targetType);
         category.moveParent(targetParent);
+        flushOrRejectDuplicate();
 
         log.info("지출 카테고리 수정 완료: categoryId={}", categoryId);
 
@@ -231,6 +336,8 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
     @Transactional
     public ExpenseCategoryServiceDto.MoveResult moveTransactionsToNewChild(
             Long categoryId, String childName, String icon, String color, Long userRowId) {
+        String name = NameNormalizer.require(childName, FieldLimits.NAME_MAX);
+
         ExpenseCategory source = findCategoryOrThrow(categoryId);
         validateCategoryOwnership(source, userRowId);
 
@@ -243,7 +350,7 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
         }
         if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
-                userRowId, categoryId, source.getExpenseType(), childName, null)) {
+                userRowId, categoryId, source.getExpenseType(), name, null)) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
         }
 
@@ -251,12 +358,13 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         // 전부 옮기므로 커밋 시점엔 부모에 직접 거래가 남지 않는다. createCategory 를 쓰면
         // 그 검증에 걸려 이 교착을 영영 풀 수 없다.
         ExpenseCategory child = ExpenseCategory.createCategory(
-            source.getUser(), childName, icon, color, source.getExpenseType(), source);
+            source.getUser(), name, icon, color, source.getExpenseType(), source);
         expenseCategoryRepository.save(child);
+        flushOrRejectDuplicate();
 
         ExpenseCategoryServiceDto.MoveResult moved = moveAllReferences(categoryId, child);
         log.info("카테고리 하위 생성 + 거래 이동: {} → 신규 자식 '{}', 거래 {}건 / 반복 {}건 / 분할 {}건",
-            categoryId, childName, moved.expenses(), moved.recurring(), moved.splits());
+            categoryId, name, moved.expenses(), moved.recurring(), moved.splits());
         return moved;
     }
 
@@ -345,13 +453,12 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             Long currentParentRowId = category.getParent() != null ? category.getParent().getRowId() : null;
             boolean parentChanged = !java.util.Objects.equals(newParentRowId, currentParentRowId);
             if (parentChanged) {
-                if (newParentRowId == null) {
-                    category.moveParent(null);
-                } else {
+                ExpenseCategory newParent = null;
+                if (newParentRowId != null) {
                     if (newParentRowId.equals(category.getRowId())) {
                         throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
                     }
-                    ExpenseCategory newParent = findCategoryOrThrow(newParentRowId);
+                    newParent = findCategoryOrThrow(newParentRowId);
                     validateCategoryOwnership(newParent, userRowId);
                     if (newParent.getParent() != null) {
                         throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
@@ -363,13 +470,43 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
                     if (expenseCategoryRepository.hasChildren(category.getRowId())) {
                         throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
                     }
-                    category.moveParent(newParent);
                 }
+                // 옮겨 갈 자리의 형제 중 같은 이름이 있으면 막는다.
+                // 종전엔 이 자리에 검사가 아예 없어 정렬 API 로 중복을 만들 수 있었다 — 등록·수정은
+                // 막는데 이동만 뚫려 있던 구멍이다. 최상위 승격(newParentRowId == null)도 같은
+                // 자리에서 본다: 리포지토리가 null 을 `parent IS NULL` 로 갈라 형제를 정확히 센다.
+                if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                        userRowId, newParentRowId, category.getExpenseType(),
+                        category.getCategoryName(), category.getRowId())) {
+                    throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
+                }
+                category.moveParent(newParent);
             }
             category.updateSortOrder(item.sortOrder());
         }
+        // 한 요청 안에서 여러 건이 같은 부모로 몰릴 수 있다 — 위 검사는 앞 항목의 이동까지
+        // 보지만(쿼리 직전 자동 flush), 마지막 그물로 UNIQUE 위반도 409 로 받는다.
+        flushOrRejectDuplicate();
 
         log.info("지출 카테고리 정렬 변경 완료: userRowId={}", userRowId);
+    }
+
+    /**
+     * 더티 체킹으로 나가는 UPDATE 를 지금 내보내고, 활성 이름 UNIQUE 위반을 409 로 바꾼다.
+     *
+     * <p>수정·이동 경로는 특히 이 flush 가 없으면 못 잡는다 — 위반이 커밋 시점(서비스 메서드가
+     * 반환한 뒤, 트랜잭션 인터셉터 안)에 터져 try/catch 가 닿지 않기 때문이다.
+     *
+     * <p>여기서 재조회하지 않는 이유는 답이 409 라서다(제약 위반 뒤의 세션은 더 못 쓴다).
+     * 재조회·재사용으로 수렴해야 하는 자리는 {@link #findOrCreateCategory} 하나이고, 그건
+     * 새 트랜잭션으로 돈다.
+     */
+    private void flushOrRejectDuplicate() {
+        try {
+            expenseCategoryRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME, e);
+        }
     }
 
     private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {

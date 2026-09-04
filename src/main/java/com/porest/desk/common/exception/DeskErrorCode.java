@@ -99,6 +99,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_TYPE_CATEGORY_MISMATCH("EXP_020", "error.expense.type.category.mismatch", HttpStatus.BAD_REQUEST),
     EXPENSE_INVALID_AMOUNT("EXP_021", "error.expense.invalid.amount", HttpStatus.BAD_REQUEST),
     EXPENSE_AUTO_GENERATED_READONLY("EXP_022", "error.expense.auto.generated.readonly", HttpStatus.BAD_REQUEST),
+    EXPENSE_TEMPLATE_DUPLICATE_NAME("EXP_023", "error.duplicate.expense.template", HttpStatus.CONFLICT),
     ASSET_TRANSFER_AUTO_GENERATED_READONLY("AST_030", "error.asset.transfer.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_PAYMENT_READONLY("AST_031", "error.asset.transfer.card.payment.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_REFUND_READONLY("AST_032", "error.asset.transfer.card.refund.readonly", HttpStatus.BAD_REQUEST),
@@ -122,6 +123,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // Saving Goal
     SAVING_GOAL_NOT_FOUND("SAVING_001", "error.notfound.saving.goal", HttpStatus.NOT_FOUND),
     SAVING_GOAL_ACCESS_DENIED("SAVING_002", "error.saving.goal.access.denied", HttpStatus.FORBIDDEN),
+    SAVING_GOAL_DUPLICATE_NAME("SAVING_003", "error.duplicate.saving.goal", HttpStatus.CONFLICT),
 
     // Dutch Pay
     DUTCH_PAY_NOT_FOUND("DUTCH_001", "error.notfound.dutch.pay", HttpStatus.NOT_FOUND),

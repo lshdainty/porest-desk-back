@@ -41,4 +41,23 @@ public interface FieldLimits {
      * 상한보다 긴 이름을 가진 자산은 아무것도 안 고쳐도 400 이 된다.
      */
     int ALIAS_MAX = 30;
+
+    /**
+     * 사용자가 붙이는 <b>이름</b> 중 varchar(50) 층.
+     * expense_category.category_name · event_label.label_name · todo_tag.tag_name ·
+     * stock_watch_group.group_name 이 여기다.
+     *
+     * <p>{@link com.porest.desk.common.util.NameNormalizer} 가 이 값을 상한으로 쓴다.
+     * <b>컬럼 폭 그대로라 기존 데이터를 막지 않는다</b> — 화면(웹·앱)이 12자에서 끊는 것과는
+     * 별개다. 화면 상한을 서버에 그대로 옮기면 그보다 긴 이름을 가진 기존 행은 이름을
+     * 그대로 다시 보내는 수정 저장조차 400 이 된다({@link #ALIAS_MAX} 가 겪은 함정).
+     */
+    int NAME_MAX = 50;
+
+    /**
+     * 같은 이름 층의 varchar(100) 쪽.
+     * expense_template.template_name · saving_goal.title · memo_folder.folder_name ·
+     * dutch_pay_participant.participant_name 이 여기다.
+     */
+    int WIDE_NAME_MAX = 100;
 }

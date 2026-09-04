@@ -50,4 +50,9 @@ public class DutchPayQueryDslRepository implements DutchPayRepository {
     public void delete(DutchPay entity) {
         entityManager.remove(entity);
     }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

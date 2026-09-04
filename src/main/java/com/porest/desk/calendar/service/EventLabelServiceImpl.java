@@ -7,10 +7,13 @@ import com.porest.desk.calendar.domain.EventLabel;
 import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.service.dto.EventLabelServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.util.NameNormalizer;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,19 +33,23 @@ public class EventLabelServiceImpl implements EventLabelService {
     public EventLabelServiceDto.LabelInfo createLabel(EventLabelServiceDto.CreateCommand command) {
         log.debug("일정 라벨 생성 시작: userRowId={}", command.userRowId());
 
+        // 저장 전에 이름을 한 번 다듬는다 — 검사와 저장이 같은 값을 보게 만드는 자리다.
+        String labelName = NameNormalizer.require(command.labelName(), FieldLimits.NAME_MAX);
+
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
         // 활성(미삭제) 라벨 중 동일 이름 중복 금지 (soft-delete 된 같은 이름은 재사용 허용)
-        if (eventLabelRepository.existsActiveByUserAndName(command.userRowId(), command.labelName(), null)) {
+        if (eventLabelRepository.existsActiveByUserAndName(command.userRowId(), labelName, null)) {
             throw new InvalidValueException(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME);
         }
 
         List<EventLabel> existing = eventLabelRepository.findAllByUser(command.userRowId());
         int nextOrder = existing.size();
 
-        EventLabel label = EventLabel.createLabel(user, command.labelName(), command.color(), nextOrder);
+        EventLabel label = EventLabel.createLabel(user, labelName, command.color(), nextOrder);
         eventLabelRepository.save(label);
+        flushOrRejectDuplicate();
 
         log.info("일정 라벨 생성 완료: labelId={}", label.getRowId());
         return EventLabelServiceDto.LabelInfo.from(label);
@@ -70,12 +77,15 @@ public class EventLabelServiceImpl implements EventLabelService {
                 return new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND);
             });
         validateLabelOwnership(label, userRowId);
+
+        String labelName = NameNormalizer.require(command.labelName(), FieldLimits.NAME_MAX);
         // 이름 변경 시 자기 자신을 제외한 활성 라벨과 중복 금지
-        if (eventLabelRepository.existsActiveByUserAndName(userRowId, command.labelName(), labelId)) {
+        if (eventLabelRepository.existsActiveByUserAndName(userRowId, labelName, labelId)) {
             throw new InvalidValueException(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME);
         }
 
-        label.updateLabel(command.labelName(), command.color());
+        label.updateLabel(labelName, command.color());
+        flushOrRejectDuplicate();
         log.info("일정 라벨 수정 완료: labelId={}", labelId);
         return EventLabelServiceDto.LabelInfo.from(label);
     }
@@ -94,6 +104,30 @@ public class EventLabelServiceImpl implements EventLabelService {
 
         label.deleteLabel();
         log.info("일정 라벨 삭제 완료: labelId={}", labelId);
+    }
+
+    /**
+     * 위 조회 검사를 <b>동시 저장 경쟁</b>이 빠져나간 경우까지 409 로 받는다.
+     *
+     * <p>조회와 저장 사이에는 락이 없다 — 같은 이름의 두 요청이 동시에 들어오면 둘 다
+     * "없다" 를 보고 둘 다 INSERT 한다. 활성 이름 UNIQUE 가 DB 에 붙으면 진 쪽이
+     * {@link DataIntegrityViolationException} 으로 터지는데, 그대로 두면 500 이다.
+     *
+     * <p><b>flush 를 명시하는 이유</b>: 안 하면 위반이 커밋 시점 — 서비스 메서드가 반환한
+     * 뒤, 트랜잭션 인터셉터 안 — 에 터져 이 try/catch 가 닿지 않는다. 수정 경로는 더티
+     * 체킹이라 특히 그렇다(UPDATE 자체가 커밋 때 나간다).
+     *
+     * <p>여기서 <b>재조회하지 않는</b> 것은 답이 409 이기 때문이다. 제약 위반 뒤의 하이버네이트
+     * 세션은 더 쓸 수 없어 같은 트랜잭션에서 조회·수정을 이어갈 수 없다. 상대 행을 다시 찾아
+     * 이어가야 하는 자리는 가져오기의 카테고리 확보 한 곳뿐이고, 그건 새 트랜잭션으로 돈다
+     * ({@code ExpenseCategoryService.findOrCreateCategory}).
+     */
+    private void flushOrRejectDuplicate() {
+        try {
+            eventLabelRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new InvalidValueException(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME, e);
+        }
     }
 
     private void validateLabelOwnership(EventLabel label, Long userRowId) {

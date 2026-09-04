@@ -110,4 +110,20 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     public void updateAmount(Long amount) {
         this.amount = amount;
     }
+
+    /**
+     * 이름을 <b>한 트랜잭션 안에서만</b> 쓰는 임시값으로 비켜 둔다 — 밖으로 새지 않는다.
+     *
+     * <p>한 정산 안의 활성 참가자 이름이 DB UNIQUE 로 묶이면, 두 참가자의 이름을 서로 맞바꾸는
+     * 저장(A↔B)이 중간 상태에서 제약에 걸린다 — UPDATE 는 한 문장씩 나가므로 순서를 어떻게
+     * 잡아도 잠깐 같은 이름 둘이 된다. 최종 이름을 쓰기 전에 바뀌는 행을 전부 이 자리로
+     * 비켜 두면 그 순간이 사라진다.
+     *
+     * <p>임시값이 진짜 이름과 부딪히지 않는 근거는 <b>앞공백</b>이다. 저장되는 이름은 전부
+     * {@code NameNormalizer} 를 지나 trim 되므로 공백으로 시작할 수 없다. 행마다 다른 값이어야
+     * 임시값끼리도 안 부딪히므로 {@code row_id} 를 붙인다.
+     */
+    public void parkNameForRename() {
+        this.participantName = " tmp:" + this.rowId;
+    }
 }

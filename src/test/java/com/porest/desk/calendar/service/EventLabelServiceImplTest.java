@@ -13,6 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -22,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -88,5 +91,41 @@ class EventLabelServiceImplTest {
 
         assertThatThrownBy(() -> sut.deleteLabel(5L, USER_ID))
                 .isInstanceOf(ForbiddenException.class);
+    }
+    @Test
+    @DisplayName("createLabel — 이름 앞뒤 공백은 저장 전에 잘린다(선행공백이 DB 판정과 어긋나던 자리)")
+    void createTrimsName() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.findAllByUser(USER_ID)).willReturn(List.of());
+
+        var info = sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "  업무 ", "#f00"));
+
+        assertThat(info.labelName()).isEqualTo("업무");
+        // 중복 검사도 다듬은 값으로 본다 — 안 그러면 ' 업무' 와 '업무' 가 나란히 통과한다.
+        verify(eventLabelRepository).existsActiveByUserAndName(USER_ID, "업무", null);
+    }
+
+    @Test
+    @DisplayName("createLabel — 빈 이름·공백뿐인 이름은 400 으로 거절한다")
+    void createRejectsBlankName() {
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "   ", "#f00")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("createLabel — 유니크 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+    void translatesConstraintViolation() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.existsActiveByUserAndName(USER_ID, "업무", null)).willReturn(false);
+        given(eventLabelRepository.findAllByUser(USER_ID)).willReturn(List.of());
+        willThrow(new DataIntegrityViolationException("UK_event_label_user_active_name"))
+                .given(eventLabelRepository).flush();
+
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "업무", "#f00")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME);
     }
 }

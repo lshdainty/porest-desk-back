@@ -50,4 +50,22 @@ public class ExpenseTemplateQueryDslRepository implements ExpenseTemplateReposit
     public void delete(ExpenseTemplate entity) {
         entity.deleteTemplate();
     }
+
+    @Override
+    public boolean existsActiveByUserAndName(Long userRowId, String templateName, Long excludeRowId) {
+        return queryFactory.selectOne()
+            .from(template)
+            .where(
+                template.user.rowId.eq(userRowId),
+                template.templateName.eq(templateName),
+                template.isDeleted.eq(YNType.N),
+                excludeRowId != null ? template.rowId.ne(excludeRowId) : null
+            )
+            .fetchFirst() != null;
+    }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

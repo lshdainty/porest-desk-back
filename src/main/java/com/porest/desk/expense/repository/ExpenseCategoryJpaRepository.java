@@ -78,4 +78,29 @@ public class ExpenseCategoryJpaRepository implements ExpenseCategoryRepository {
         }
         return query.getSingleResult() > 0;
     }
+
+    @Override
+    public Optional<ExpenseCategory> findActiveByUserAndParentAndTypeAndName(
+            Long userRowId, Long parentRowId,
+            com.porest.desk.expense.type.ExpenseType expenseType, String categoryName) {
+        String jpql = "SELECT c FROM ExpenseCategory c WHERE c.user.rowId = :userRowId"
+            + " AND c.categoryName = :categoryName AND c.expenseType = :expenseType AND c.isDeleted = :isDeleted"
+            + (parentRowId != null ? " AND c.parent.rowId = :parentRowId" : " AND c.parent IS NULL")
+            + " ORDER BY c.rowId ASC";
+        var query = entityManager.createQuery(jpql, ExpenseCategory.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("categoryName", categoryName)
+            .setParameter("expenseType", expenseType)
+            .setParameter("isDeleted", YNType.N);
+        if (parentRowId != null) {
+            query.setParameter("parentRowId", parentRowId);
+        }
+        // 정리 전 데이터에 활성 중복이 남아 있어도 예외 없이 첫 행을 쓴다(QueryDSL 구현과 같은 이유).
+        return query.getResultStream().findFirst();
+    }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

@@ -47,4 +47,22 @@ public class SavingGoalQueryDslRepository implements SavingGoalRepository {
     public void delete(SavingGoal entity) {
         entity.deleteSavingGoal();
     }
+
+    @Override
+    public boolean existsActiveByUserAndTitle(Long userRowId, String title, Long excludeRowId) {
+        return queryFactory.selectOne()
+            .from(savingGoal)
+            .where(
+                savingGoal.user.rowId.eq(userRowId),
+                savingGoal.title.eq(title),
+                savingGoal.isDeleted.eq(YNType.N),
+                excludeRowId != null ? savingGoal.rowId.ne(excludeRowId) : null
+            )
+            .fetchFirst() != null;
+    }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

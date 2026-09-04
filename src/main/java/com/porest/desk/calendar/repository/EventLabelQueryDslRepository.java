@@ -83,4 +83,9 @@ public class EventLabelQueryDslRepository implements EventLabelRepository {
     public void delete(EventLabel entity) {
         entity.deleteLabel();
     }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

@@ -67,4 +67,9 @@ public class TodoTagQueryDslRepository implements TodoTagRepository {
     public void delete(TodoTag entity) {
         entity.deleteTag();
     }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

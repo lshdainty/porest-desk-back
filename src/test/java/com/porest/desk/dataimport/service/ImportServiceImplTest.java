@@ -139,7 +139,7 @@ class ImportServiceImplTest {
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
             ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
@@ -149,7 +149,7 @@ class ImportServiceImplTest {
         assertThat(r.imported()).isEqualTo(2);
         assertThat(r.failed()).isZero();
         assertThat(capturedCommands()).hasSize(2);
-        verify(expenseCategoryService, times(2)).createCategory(any()); // 식비(지출)·급여(수입)
+        verify(expenseCategoryService, times(2)).findOrCreateCategory(any()); // 식비(지출)·급여(수입)
         // 묻지 않고 만들었으면 무엇을 만들었는지는 알려줘야 한다.
         assertThat(r.createdCategories()).containsExactly("식비", "급여");
         assertThat(r.createdCategoryCount()).isEqualTo(2);
@@ -162,7 +162,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
             ImportSource.POREST, List.of("날짜", "유형", "카테고리", "자산", "금액", "설명"));
@@ -211,7 +211,7 @@ class ImportServiceImplTest {
         assertThat(capturedCommands()).extracting(ExpenseServiceDto.CreateCommand::categoryRowId)
             .containsExactly(2L, 4L);
         // 이미 있는 카테고리라 새로 만들지 않는다.
-        verify(expenseCategoryService, never()).createCategory(any());
+        verify(expenseCategoryService, never()).findOrCreateCategory(any());
     }
 
     @Test
@@ -230,7 +230,7 @@ class ImportServiceImplTest {
 
         assertThat(capturedCommands()).singleElement()
             .extracting(ExpenseServiceDto.CreateCommand::categoryRowId).isEqualTo(9L);
-        verify(expenseCategoryService, never()).createCategory(any());
+        verify(expenseCategoryService, never()).findOrCreateCategory(any());
     }
 
     @Test
@@ -238,7 +238,7 @@ class ImportServiceImplTest {
     void autoCreatesParentAndChild() {
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any()))
+        given(expenseCategoryService.findOrCreateCategory(any()))
             .willReturn(categoryInfo(100L), categoryInfo(101L));
 
         String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
@@ -255,7 +255,7 @@ class ImportServiceImplTest {
 
         ArgumentCaptor<ExpenseCategoryServiceDto.CreateCommand> captor =
             ArgumentCaptor.forClass(ExpenseCategoryServiceDto.CreateCommand.class);
-        verify(expenseCategoryService, times(2)).createCategory(captor.capture());
+        verify(expenseCategoryService, times(2)).findOrCreateCategory(captor.capture());
         // 부모(관리비) 먼저, 그 다음 자식(전기비)이 부모를 가리켜야 한다.
         assertThat(captor.getAllValues().get(0).categoryName()).isEqualTo("관리비");
         assertThat(captor.getAllValues().get(0).parentRowId()).isNull();
@@ -270,7 +270,7 @@ class ImportServiceImplTest {
         // 예전엔 같은 이름의 최상위를 또 만들려다 EXP_019(이름 중복)로 행이 통째로 실패했다.
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any()))
+        given(expenseCategoryService.findOrCreateCategory(any()))
             .willReturn(categoryInfo(100L), categoryInfo(101L), categoryInfo(102L));
 
         String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
@@ -288,7 +288,7 @@ class ImportServiceImplTest {
         // 만들어진 카테고리: 식비(부모) → 아침(자식) → 미분류(자식). 식비를 두 번 만들지 않는다.
         ArgumentCaptor<ExpenseCategoryServiceDto.CreateCommand> captor =
             ArgumentCaptor.forClass(ExpenseCategoryServiceDto.CreateCommand.class);
-        verify(expenseCategoryService, times(3)).createCategory(captor.capture());
+        verify(expenseCategoryService, times(3)).findOrCreateCategory(captor.capture());
         assertThat(captor.getAllValues()).extracting(ExpenseCategoryServiceDto.CreateCommand::categoryName)
             .containsExactly("식비", "아침", "미분류");
         assertThat(captor.getAllValues().get(2).parentRowId()).isEqualTo(100L);
@@ -301,7 +301,7 @@ class ImportServiceImplTest {
         // 실패로 집계하면 진짜 오류(카테고리·금액 문제)와 구분이 안 된다.
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
             + "2026-05-28,체크카드,식비,아침,김밥,5000,지출\n"
@@ -342,7 +342,7 @@ class ImportServiceImplTest {
         // 청크째 실패로 끝내면 멀쩡한 행까지 버려져 부분 성공 보장이 깨진다.
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
         willThrow(new RuntimeException("청크 실패")).given(expenseService).createExpensesChunk(any());
         // 재시도에서 두 번째 행만 실패
         willReturn(null).willThrow(new RuntimeException("행 실패"))
@@ -400,7 +400,7 @@ class ImportServiceImplTest {
         assertThat(r.newCategories()).containsExactly("싟비");
         assertThat(r.newCategoryCount()).isEqualTo(1);
         // analyze 는 읽기 전용이다 — 예고하려다 만들어 버리면 결함이 그대로다.
-        verify(expenseCategoryService, never()).createCategory(any());
+        verify(expenseCategoryService, never()).findOrCreateCategory(any());
     }
 
     @Test
@@ -433,7 +433,7 @@ class ImportServiceImplTest {
         // '여행' 을 두 번 세면 "새 카테고리 4개" 라고 겁을 주게 된다.
         assertThat(r.newCategories()).containsExactly("여행", "여행 > 기타", "여행 > 숙박");
         assertThat(r.newCategoryCount()).isEqualTo(3);
-        verify(expenseCategoryService, never()).createCategory(any());
+        verify(expenseCategoryService, never()).findOrCreateCategory(any());
     }
 
     @Test
@@ -454,7 +454,7 @@ class ImportServiceImplTest {
         assertThat(r.newCategories()).hasSize(50);
         assertThat(r.newCategories().get(0)).isEqualTo("가게1");
         assertThat(r.newCategoryCount()).isEqualTo(120);
-        verify(expenseCategoryService, never()).createCategory(any());
+        verify(expenseCategoryService, never()).findOrCreateCategory(any());
     }
 
     @Test
@@ -529,7 +529,7 @@ class ImportServiceImplTest {
         verify(expenseService, never()).createExpensesChunk(any());
         verify(expenseService, never()).createExpense(any(), anyBoolean());
         // 저장도 안 될 행 때문에 카테고리가 생기면 안 된다.
-        verify(expenseCategoryService, never()).createCategory(any());
+        verify(expenseCategoryService, never()).findOrCreateCategory(any());
     }
 
     @Test
@@ -539,7 +539,7 @@ class ImportServiceImplTest {
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = "날짜,유형,카테고리,자산,금액,설명\n"
             + "2026-05-28 13:20,EXPENSE,식비,체크카드,5700,편의점\n";
@@ -564,7 +564,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = "날짜,유형,카테고리,자산,금액,설명,거래처\n"
             + "2026-05-28 10:00,EXPENSE,식비,체크카드,500,,QA 임포트 신규\n";
@@ -586,7 +586,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = "날짜,유형,카테고리,자산,금액,설명,거래처\n"
             + "2026-05-28 10:00,EXPENSE,QA신규카테고리,체크카드,500,,같은 가게\n";
@@ -608,7 +608,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = "날짜,유형,카테고리,자산,금액,설명,거래처\n"
             + "2026-05-28 10:00,EXPENSE,식비,체크카드,500,,같은 가게\n";
@@ -632,7 +632,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = "날짜,자산,대분류,소분류,내용,금액,유형\n"
             + "2026-05-28,체크카드,식비,아침,김밥,5000,지출\n";
@@ -654,7 +654,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(List.of(existingRow));
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         String content = POREST_CSV + "2026-05-26,EXPENSE,식비,체크카드,abc,금액오류\n";
         Map<ImportField, Integer> mapping = ImportColumnMapper.suggest(
@@ -680,7 +680,7 @@ class ImportServiceImplTest {
         given(expenseRepository.findByDateRange(any(), any(), any())).willReturn(existingRows);
         given(expenseCategoryRepository.findAllByUser(1L)).willReturn(List.of());
         given(assetRepository.findByUser(1L)).willReturn(List.of());
-        given(expenseCategoryService.createCategory(any())).willReturn(categoryInfo(10L));
+        given(expenseCategoryService.findOrCreateCategory(any())).willReturn(categoryInfo(10L));
 
         StringBuilder sb = new StringBuilder("날짜,유형,카테고리,자산,금액,설명\n");
         for (int i = 1; i <= 60; i++) {

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -75,7 +77,7 @@ class StockWatchServiceImplTest {
     @DisplayName("그룹 생성 — 같은 이름의 활성 그룹이 있으면 거부한다")
     void createGroup_rejectsDuplicateName() {
         given(groupRepository.countActiveByUser(USER)).willReturn(1L);
-        given(groupRepository.existsActiveByUserAndName(USER, "관심")).willReturn(true);
+        given(groupRepository.existsActiveByUserAndName(USER, "관심", null)).willReturn(true);
 
         assertThatThrownBy(() -> service.createGroup(USER, " 관심 "))
             .isInstanceOf(DuplicateException.class);
@@ -85,7 +87,7 @@ class StockWatchServiceImplTest {
     @DisplayName("그룹 생성 — 이름을 trim 하고 기존 최대 sortOrder 다음 순서로 저장한다")
     void createGroup_trimsNameAndAppendsOrder() {
         given(groupRepository.countActiveByUser(USER)).willReturn(1L);
-        given(groupRepository.existsActiveByUserAndName(USER, "미국 기술주")).willReturn(false);
+        given(groupRepository.existsActiveByUserAndName(USER, "미국 기술주", null)).willReturn(false);
         given(groupRepository.findAllActiveByUser(USER)).willReturn(List.of(ownedGroup()));
         given(groupRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
@@ -216,14 +218,43 @@ class StockWatchServiceImplTest {
     void renameGroup_checksDuplicateExceptSelf() {
         StockWatchGroup group = ownedGroup();
         given(groupRepository.findActiveByIdAndUser(10L, USER)).willReturn(Optional.of(group));
-        given(groupRepository.existsActiveByUserAndName(USER, "미국 기술주")).willReturn(true);
+        given(groupRepository.existsActiveByUserAndName(USER, "미국 기술주", 10L)).willReturn(true);
 
         assertThatThrownBy(() -> service.renameGroup(USER, 10L, "미국 기술주"))
             .isInstanceOf(DuplicateException.class);
 
-        // 자기 이름 그대로 저장은 중복 검사를 건너뛴다.
+        // 자기 이름 그대로 저장은 자기 자신을 뺀 검사를 통과한다.
         given(itemRepository.findAllActiveByUserWithStock(USER)).willReturn(List.of());
         StockWatchServiceDto.GroupInfo info = service.renameGroup(USER, 10L, "관심");
         assertThat(info.groupName()).isEqualTo("관심");
+    }
+
+    @Test
+    @DisplayName("그룹 이름 변경 — 대소문자만 바꾸는 개명이 통과한다(자기 자신 제외를 DB 로 내린 결과)")
+    void renameGroup_allowsCaseOnlyRename() {
+        StockWatchGroup group = StockWatchGroup.create(USER, "tech", 0);
+        given(groupRepository.findActiveByIdAndUser(10L, USER)).willReturn(Optional.of(group));
+        // 자기 자신을 뺀 검사라 false — 종전엔 자바 equals(대소문자 구분)가 "이름이 바뀌었다" 로
+        // 통과시킨 뒤 DB 검사(콜레이션 _ci)가 자기 자신을 찾아 409 를 던졌다.
+        given(groupRepository.existsActiveByUserAndName(USER, "TECH", 10L)).willReturn(false);
+        given(itemRepository.findAllActiveByUserWithStock(USER)).willReturn(List.of());
+
+        StockWatchServiceDto.GroupInfo info = service.renameGroup(USER, 10L, "TECH");
+
+        assertThat(info.groupName()).isEqualTo("TECH");
+    }
+
+    @Test
+    @DisplayName("그룹 생성 — 유니크 제약 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+    void createGroup_translatesConstraintViolation() {
+        given(groupRepository.countActiveByUser(USER)).willReturn(1L);
+        given(groupRepository.existsActiveByUserAndName(USER, "관심", null)).willReturn(false);
+        given(groupRepository.findAllActiveByUser(USER)).willReturn(List.of());
+        given(groupRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        willThrow(new DataIntegrityViolationException("UK_stock_watch_group_user_active_name"))
+            .given(groupRepository).flush();
+
+        assertThatThrownBy(() -> service.createGroup(USER, "관심"))
+            .isInstanceOf(DuplicateException.class);
     }
 }

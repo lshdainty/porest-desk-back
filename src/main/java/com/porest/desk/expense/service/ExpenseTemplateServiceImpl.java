@@ -7,6 +7,8 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.util.NameNormalizer;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.domain.ExpenseTemplate;
@@ -19,6 +21,7 @@ import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +44,15 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     public ExpenseTemplateServiceDto.TemplateInfo createTemplate(ExpenseTemplateServiceDto.CreateCommand command) {
         // 저장소를 건드리기 전에 금액부터 가린다 — 잘못된 금액이면 조회 없이 바로 거절한다.
         Long amount = resolveAmount(command.amount(), command.lockAmount());
-        log.debug("경비 템플릿 생성 시작: userRowId={}, templateName={}", command.userRowId(), command.templateName());
+        String templateName = NameNormalizer.require(command.templateName(), FieldLimits.WIDE_NAME_MAX);
+        log.debug("경비 템플릿 생성 시작: userRowId={}, templateName={}", command.userRowId(), templateName);
+
+        // 활성(미삭제) 프리셋 중 같은 이름 금지 (지운 이름은 다시 쓸 수 있다).
+        // 종전엔 서버에 검사가 아예 없어 화면 목록 캐시가 비면 그대로 통과했다 —
+        // 앱·웹 주석이 "최종 게이트는 서버다" 라고 적어 두고도 그 게이트가 없던 자리다.
+        if (expenseTemplateRepository.existsActiveByUserAndName(command.userRowId(), templateName, null)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME);
+        }
 
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
@@ -69,13 +80,14 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         }
 
         ExpenseTemplate template = ExpenseTemplate.createTemplate(
-            user, command.templateName(), category, asset,
+            user, templateName, category, asset,
             command.expenseType(), amount, command.description(),
             command.merchant(), command.paymentMethod(), command.sortOrder(),
             command.lockAmount()
         );
 
         expenseTemplateRepository.save(template);
+        flushOrRejectDuplicate();
         log.info("경비 템플릿 생성 완료: templateId={}", template.getRowId());
 
         return ExpenseTemplateServiceDto.TemplateInfo.from(template);
@@ -94,10 +106,16 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     @Transactional
     public ExpenseTemplateServiceDto.TemplateInfo updateTemplate(Long templateId, Long userRowId, ExpenseTemplateServiceDto.UpdateCommand command) {
         Long amount = resolveAmount(command.amount(), command.lockAmount());
+        String templateName = NameNormalizer.require(command.templateName(), FieldLimits.WIDE_NAME_MAX);
         log.debug("경비 템플릿 수정 시작: templateId={}", templateId);
 
         ExpenseTemplate template = findTemplateOrThrow(templateId);
         validateTemplateOwnership(template, userRowId);
+
+        // 자기 자신은 뺀다 — 안 빼면 이름을 그대로 두고 금액만 고치는 저장이 영영 막힌다.
+        if (expenseTemplateRepository.existsActiveByUserAndName(userRowId, templateName, templateId)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME);
+        }
 
         ExpenseCategory category = null;
         if (command.categoryRowId() != null) {
@@ -121,11 +139,12 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         }
 
         template.updateTemplate(
-            command.templateName(), category, asset,
+            templateName, category, asset,
             command.expenseType(), amount, command.description(),
             command.merchant(), command.paymentMethod(),
             command.lockAmount()
         );
+        flushOrRejectDuplicate();
 
         log.info("경비 템플릿 수정 완료: templateId={}", templateId);
 
@@ -197,6 +216,20 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             log.warn("경비 템플릿 소유권 검증 실패 - templateId={}, ownerRowId={}, requestUserRowId={}",
                 template.getRowId(), template.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
+        }
+    }
+
+    /**
+     * 조회 검사를 빠져나간 동시 저장 경쟁을 409 로 받는다.
+     *
+     * <p>flush 를 명시하지 않으면 위반이 커밋 시점에 터져 try/catch 가 닿지 않는다 —
+     * 수정은 더티 체킹이라 UPDATE 자체가 커밋 때 나가므로 특히 그렇다.
+     */
+    private void flushOrRejectDuplicate() {
+        try {
+            expenseTemplateRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME, e);
         }
     }
 

@@ -52,6 +52,11 @@ public class MemoFolderQueryDslRepository implements MemoFolderRepository {
     }
 
     @Override
+    public void flush() {
+        entityManager.flush();
+    }
+
+    @Override
     public boolean existsActiveByUserAndParentAndName(Long userRowId, Long parentRowId, String folderName, Long excludeRowId) {
         return queryFactory.selectOne()
             .from(memoFolder)

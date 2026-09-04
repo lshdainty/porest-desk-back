@@ -65,4 +65,9 @@ public class MemoFolderJpaRepository implements MemoFolderRepository {
     public void delete(MemoFolder entity) {
         entity.deleteFolder();
     }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

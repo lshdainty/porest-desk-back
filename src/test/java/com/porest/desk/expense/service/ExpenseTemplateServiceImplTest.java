@@ -4,6 +4,7 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.domain.ExpenseTemplate;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
@@ -32,7 +34,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -274,6 +278,101 @@ class ExpenseTemplateServiceImplTest {
                 null, null, null, YNType.Y);
             assertThatThrownBy(() -> sut.updateTemplate(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("이름 중복 — 서버가 마지막 게이트다")
+    class DuplicateName {
+
+        @Test
+        @DisplayName("createTemplate — 활성 프리셋 중 같은 이름이 있으면 409(중복 이름)")
+        void createRejectsDuplicateActiveName() {
+            given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", null))
+                    .willReturn(true);
+
+            assertThatThrownBy(() -> sut.createTemplate(createCmd(10L)))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME);
+            verify(expenseTemplateRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("createTemplate — 이름 앞뒤 공백은 저장 전에 잘린다")
+        void createTrimsName() {
+            User u = user(USER_ID);
+            ExpenseCategory leaf = category(10L, u);
+            given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", null))
+                    .willReturn(false);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            given(expenseTemplateRepository.save(any(ExpenseTemplate.class)))
+                    .willAnswer(inv -> inv.getArgument(0));
+
+            var info = sut.createTemplate(new ExpenseTemplateServiceDto.CreateCommand(
+                    USER_ID, "  점심 템플릿 ", 10L, null, ExpenseType.EXPENSE, 10_000L,
+                    null, null, null, null, null));
+
+            assertThat(info.templateName()).isEqualTo("점심 템플릿");
+        }
+
+        @Test
+        @DisplayName("updateTemplate — 자기 자신은 중복 검사에서 뺀다(이름을 그대로 두는 저장이 막히면 안 된다)")
+        void updateExcludesSelf() {
+            User u = user(USER_ID);
+            ExpenseTemplate t = ExpenseTemplate.createTemplate(
+                    u, "점심 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
+                    null, null, null, null, YNType.N);
+            given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
+            given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", 5L))
+                    .willReturn(false);
+
+            assertThatCode(() -> sut.updateTemplate(5L, USER_ID,
+                    new ExpenseTemplateServiceDto.UpdateCommand(
+                            "점심 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
+                            null, null, null, null)))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("updateTemplate — 다른 프리셋과 이름이 겹치면 409")
+        void updateRejectsDuplicateActiveName() {
+            User u = user(USER_ID);
+            ExpenseTemplate t = ExpenseTemplate.createTemplate(
+                    u, "저녁 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
+                    null, null, null, null, YNType.N);
+            given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
+            given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", 5L))
+                    .willReturn(true);
+
+            assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID,
+                    new ExpenseTemplateServiceDto.UpdateCommand(
+                            "점심 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
+                            null, null, null, null)))
+                    .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("유니크 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+        void translatesConstraintViolation() {
+            User u = user(USER_ID);
+            ExpenseCategory leaf = category(10L, u);
+            given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", null))
+                    .willReturn(false);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            given(expenseTemplateRepository.save(any(ExpenseTemplate.class)))
+                    .willAnswer(inv -> inv.getArgument(0));
+            willThrow(new DataIntegrityViolationException("UK_expense_template_active_name"))
+                    .given(expenseTemplateRepository).flush();
+
+            assertThatThrownBy(() -> sut.createTemplate(createCmd(10L)))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME);
         }
     }
 }

@@ -72,8 +72,12 @@ class StockWatchRepositoryTest {
         assertThat(groups).extracting(StockWatchGroup::getGroupName)
             .containsExactly("미국 기술주", "관심");
         assertThat(groupRepository.countActiveByUser(1L)).isEqualTo(2);
-        assertThat(groupRepository.existsActiveByUserAndName(1L, "관심")).isTrue();
-        assertThat(groupRepository.existsActiveByUserAndName(1L, "삭제됨")).isFalse();
+        assertThat(groupRepository.existsActiveByUserAndName(1L, "관심", null)).isTrue();
+        assertThat(groupRepository.existsActiveByUserAndName(1L, "삭제됨", null)).isFalse();
+        // 개명 검사가 자기 자신을 찾지 않는다 — 대소문자만 바꾸는 개명이 막히던 자리다.
+        Long keepRowId = groups.stream().filter(g -> g.getGroupName().equals("관심"))
+            .findFirst().orElseThrow().getRowId();
+        assertThat(groupRepository.existsActiveByUserAndName(1L, "관심", keepRowId)).isFalse();
     }
 
     @Test
