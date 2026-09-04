@@ -849,4 +849,84 @@ class StockTradeScenarioTest {
             assertThat(netWorth()).isEqualTo(before);
         }
     }
+
+    @Nested
+    @DisplayName("종목 식별자 정규화 — 한 종목이 두 행으로 갈라지지 않게")
+    class HoldingKeyNormalization {
+
+        private CreateTradeCommand withKey(TradeType type, String key, Boolean linked,
+                                           String qty, long amount, int day) {
+            return new CreateTradeCommand(USER_ID, ASSET_ID, type, HoldingType.STOCK,
+                null, key, linked,
+                new BigDecimal(qty), amount, 0L, LocalDateTime.of(2026, 8, day, 10, 0), null, null);
+        }
+
+        @Test
+        @DisplayName("대소문자만 다른 매수는 기존 보유에 붙는다 — 새 행이 생기지 않는다")
+        void lowercaseSymbolAttachesToExistingHolding() {
+            deposit(10_000_000L);
+            sut.createTrade(withKey(TradeType.BUY, "AAPL", true, "10", 1_000_000L, 3));
+            assertThat(holdings).hasSize(1);
+
+            // DB 콜레이션(utf8mb4_unicode_ci)은 "aapl" 과 "AAPL" 을 같은 값으로 본다. 자바만
+            // 대소문자를 가리면 여기서 새 행이 생기고, 유일성이 붙는 순간 이 매수가 통째로 실패한다.
+            sut.createTrade(withKey(TradeType.BUY, " aapl ", true, "5", 500_000L, 4));
+
+            assertThat(holdings).hasSize(1);
+            AssetHolding held = holdings.get(0);
+            assertThat(held.getSymbol()).isEqualTo("AAPL");
+            assertThat(held.getQuantity()).isEqualByComparingTo("15");
+            assertThat(held.getTotalCost()).isEqualTo(1_500_000L);
+        }
+
+        @Test
+        @DisplayName("종목코드는 대문자·앞뒤공백을 뗀 채로 저장된다")
+        void symbolStoredNormalized() {
+            deposit(10_000_000L);
+
+            sut.createTrade(withKey(TradeType.BUY, "  tsla ", true, "1", 300_000L, 3));
+
+            assertThat(holdings.get(0).getSymbol()).isEqualTo("TSLA");
+            assertThat(trades.get(0).getHoldingKey()).isEqualTo("TSLA");
+        }
+
+        @Test
+        @DisplayName("미연동 항목명은 앞뒤공백만 떼고 대소문자는 사용자가 친 그대로 남는다")
+        void manualNameKeepsCase() {
+            deposit(10_000_000L);
+
+            sut.createTrade(withKey(TradeType.BUY, "  Gold Bar ", false, "1", 300_000L, 3));
+
+            assertThat(holdings.get(0).getHoldingName()).isEqualTo("Gold Bar");
+            // 저장은 그대로여도 비교는 콜레이션과 같이 대소문자를 안 가려야 한다.
+            sut.createTrade(withKey(TradeType.BUY, "gold bar", false, "1", 300_000L, 4));
+            assertThat(holdings).hasSize(1);
+            assertThat(holdings.get(0).getQuantity()).isEqualByComparingTo("2");
+        }
+
+        @Test
+        @DisplayName("연동 매매인데 종목코드가 비면 400 — 식별자 없는 보유는 유일성이 안 걸린다")
+        void rejectsLinkedTradeWithoutSymbol() {
+            deposit(10_000_000L);
+
+            assertThatThrownBy(() -> sut.createTrade(withKey(TradeType.BUY, "   ", true, "1", 100_000L, 3)))
+                .isInstanceOf(InvalidValueException.class);
+            assertThatThrownBy(() -> sut.createTrade(withKey(TradeType.BUY, null, true, "1", 100_000L, 3)))
+                .isInstanceOf(InvalidValueException.class);
+
+            assertThat(holdings).isEmpty();
+            verify(holdingRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("미연동 매매도 항목명이 비면 보유를 만들지 않는다")
+        void rejectsManualTradeWithoutName() {
+            deposit(10_000_000L);
+
+            assertThatThrownBy(() -> sut.createTrade(withKey(TradeType.BUY, "  ", false, "1", 100_000L, 3)))
+                .isInstanceOf(InvalidValueException.class);
+
+            assertThat(holdings).isEmpty();
+        }
+    }
 }

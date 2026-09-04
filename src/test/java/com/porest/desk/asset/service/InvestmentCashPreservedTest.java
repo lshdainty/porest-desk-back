@@ -157,10 +157,13 @@ class InvestmentCashPreservedTest {
 
         sut.updateAsset(ASSET_ID, USER_ID, command(null, List.of(sent)));
 
+        // rowId 를 안 실어 보내도 같은 종목이면 그 행을 제자리에서 고친다 — 새 행을 만들면
+        // row_id 가 바뀌어 거래(asset_trade) 연결이 끊기고, 한 자산에 같은 종목이 두 줄로 남는다.
+        verify(assetHoldingRepository, never()).save(any());
         // 원가가 0 으로 날아가면 다음 매도에서 대금 전액이 이익으로 잡힌다.
-        ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
-        verify(assetHoldingRepository).save(captor.capture());
-        assertThat(captor.getValue().getTotalCost()).isEqualTo(7_000_000L);
+        assertThat(existing.getTotalCost()).isEqualTo(7_000_000L);
+        assertThat(existing.getHoldingValue()).isEqualTo(8_500_000L);
+        assertThat(existing.getIsDeleted()).isEqualTo(YNType.N);
     }
 
     @Test
