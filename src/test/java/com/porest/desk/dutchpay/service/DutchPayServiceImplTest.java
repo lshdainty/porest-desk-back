@@ -19,9 +19,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,6 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willAnswer;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -312,6 +317,179 @@ class DutchPayServiceImplTest {
                 new DutchPayServiceDto.ParticipantCommand(null, null, "김철수", 100_000L, true))));
 
             assertThat(gone.getIsDeleted()).isEqualTo(YNType.Y);
+        }
+
+        /**
+         * 한 정산 안의 활성 참가자 이름이 DB UNIQUE 로 묶이면 이 순서가 정합성의 전부다 —
+         * 하이버네이트는 한 플러시에서 INSERT 를 UPDATE 보다 먼저 낸다.
+         */
+        @Test
+        @DisplayName("빠진 사람 자리에 같은 이름을 새로 넣는다 — 삭제가 INSERT 보다 먼저 나간다")
+        void removalIsFlushedBeforeInsert() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant gone = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            ReflectionTestUtils.setField(gone, "rowId", 78L);
+            dp.addParticipant(gone);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            List<List<String>> activeNamesPerFlush = new ArrayList<>();
+            willAnswer(inv -> {
+                activeNamesPerFlush.add(dp.getActiveParticipants().stream()
+                    .map(DutchPayParticipant::getParticipantName).toList());
+                return null;
+            }).given(dutchPayRepository).flush();
+
+            // 같은 이름으로 다시 넣는다(rowId 없음 = 신규).
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(null, null, "김철수", 100_000L, true))));
+
+            assertThat(gone.getIsDeleted()).isEqualTo(YNType.Y);
+            // 첫 flush 시점엔 옛 '김철수' 는 이미 지워졌고 새 행은 아직 없다 — 겹치는 순간이 없다.
+            assertThat(activeNamesPerFlush.get(0)).isEmpty();
+            assertThat(activeNamesPerFlush.get(1)).containsExactly("김철수");
+        }
+
+        @Test
+        @DisplayName("두 사람 이름 맞바꾸기 — 최종 이름을 쓰기 전에 임시값으로 비켜 둔다")
+        void swappingNamesParksBeforeApplying() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant a = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant b = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(a, "rowId", 81L);
+            ReflectionTestUtils.setField(b, "rowId", 82L);
+            dp.addParticipant(a);
+            dp.addParticipant(b);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            List<List<String>> namesPerFlush = new ArrayList<>();
+            willAnswer(inv -> {
+                namesPerFlush.add(dp.getActiveParticipants().stream()
+                    .map(DutchPayParticipant::getParticipantName).toList());
+                return null;
+            }).given(dutchPayRepository).flush();
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(81L, null, "박영희", 50_000L, true),
+                new DutchPayServiceDto.ParticipantCommand(82L, null, "김철수", 50_000L, false))));
+
+            // 첫 flush 에서는 둘 다 임시값이라 서로 부딪히지 않는다.
+            assertThat(namesPerFlush.get(0)).containsExactly(" tmp:81", " tmp:82");
+            assertThat(namesPerFlush.get(1)).containsExactly("박영희", "김철수");
+            assertThat(a.getParticipantName()).isEqualTo("박영희");
+            assertThat(b.getParticipantName()).isEqualTo("김철수");
+        }
+
+        @Test
+        @DisplayName("이름을 안 바꾸는 저장은 임시값을 거치지 않는다 — 쓸데없는 UPDATE 를 만들지 않는다")
+        void unchangedNameIsNotParked() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant a = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            ReflectionTestUtils.setField(a, "rowId", 91L);
+            dp.addParticipant(a);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            List<String> nameAtFirstFlush = new ArrayList<>();
+            willAnswer(inv -> {
+                if (nameAtFirstFlush.isEmpty()) nameAtFirstFlush.add(a.getParticipantName());
+                return null;
+            }).given(dutchPayRepository).flush();
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(91L, null, "김철수", 40_000L, true))));
+
+            assertThat(nameAtFirstFlush).containsExactly("김철수");
+            assertThat(a.getAmount()).isEqualTo(40_000L);
+        }
+    }
+
+    @Nested
+    @DisplayName("참가자 이름 중복 — 스코프는 사용자가 아니라 정산 건이다")
+    class ParticipantDuplicateName {
+
+        private DutchPayServiceDto.CreateCommand createCmd(
+                List<DutchPayServiceDto.ParticipantCommand> participants) {
+            return new DutchPayServiceDto.CreateCommand(
+                    USER_ID, null, "점심", null, 10_000L, "KRW", SplitMethod.CUSTOM,
+                    LocalDate.of(2026, 6, 1), participants);
+        }
+
+        /** 종전엔 userRowId 유무로 검사 갈래가 갈려 이 조합이 <b>둘 다 통과</b>했다. */
+        @Test
+        @DisplayName("등록 사용자 참가자와 이름만 참가자가 같은 이름이면 거부 — 갈라진 검사가 만든 구멍")
+        void rejectsRegisteredAndNameOnlyWithSameName() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            assertThatThrownBy(() -> sut.createDutchPay(createCmd(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, 50L, "철수", 5_000L, true),
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "철수", 5_000L, false)))))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_DUPLICATE_PARTICIPANT);
+        }
+
+        @Test
+        @DisplayName("끝공백·대소문자만 다른 이름도 거부 — DB 콜레이션은 같은 값으로 본다")
+        void rejectsNamesThatDifferOnlyBySpacingOrCase() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            assertThatThrownBy(() -> sut.createDutchPay(createCmd(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "철수", 5_000L, true),
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "철수 ", 5_000L, false)))))
+                    .isInstanceOf(InvalidValueException.class);
+
+            assertThatThrownBy(() -> sut.createDutchPay(createCmd(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "Kim", 5_000L, true),
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "kim", 5_000L, false)))))
+                    .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("이름 앞뒤 공백은 저장 전에 잘린다 — 저장 값의 대소문자는 그대로 둔다")
+        void trimsNamesButKeepsCase() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            var info = sut.createDutchPay(createCmd(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "  Kim 철수 ", 10_000L, true))));
+
+            assertThat(info.participants()).extracting(p -> p.participantName())
+                    .containsExactly("Kim 철수");
+        }
+
+        @Test
+        @DisplayName("빈 참가자 이름은 400 으로 거절한다 — NOT NULL 위반 500 이 아니라")
+        void rejectsBlankParticipantName() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            assertThatThrownBy(() -> sut.createDutchPay(createCmd(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, 50L, "  ", 5_000L, true)))))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.INVALID_INPUT);
+        }
+
+        @Test
+        @DisplayName("유니크 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+        void translatesConstraintViolation() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+            willThrow(new DataIntegrityViolationException("UK_dutch_pay_participant_pay_active_name"))
+                    .given(dutchPayRepository).flush();
+
+            assertThatThrownBy(() -> sut.createDutchPay(createCmd(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "철수", 10_000L, true)))))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_DUPLICATE_PARTICIPANT);
         }
     }
 
