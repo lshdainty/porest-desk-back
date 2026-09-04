@@ -16,10 +16,14 @@ import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.core.time.UserClock;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import com.porest.desk.expense.domain.ExpenseAggregates;
@@ -29,7 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
@@ -39,11 +42,81 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
 
+    /**
+     * 등록 시도 하나마다 <b>새 트랜잭션</b>을 여는 템플릿.
+     *
+     * <p>{@code @RequiredArgsConstructor} 를 버리고 생성자를 손으로 쓴 이유가 이것 하나다 —
+     * 여기서 {@code REQUIRES_NEW} 를 못 박아야 {@link #createBudget} 의 재시도가 성립한다.
+     * 자세한 이유는 {@code createBudget} 주석에 있다.
+     */
+    private final TransactionTemplate newTransaction;
+
+    public ExpenseBudgetServiceImpl(ExpenseBudgetRepository expenseBudgetRepository,
+                                    UserClock userClock,
+                                    ExpenseCategoryRepository expenseCategoryRepository,
+                                    ExpenseRepository expenseRepository,
+                                    UserRepository userRepository,
+                                    PlatformTransactionManager transactionManager) {
+        this.expenseBudgetRepository = expenseBudgetRepository;
+        this.userClock = userClock;
+        this.expenseCategoryRepository = expenseCategoryRepository;
+        this.expenseRepository = expenseRepository;
+        this.userRepository = userRepository;
+        this.newTransaction = new TransactionTemplate(transactionManager);
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
+
+    /**
+     * 예산 등록 — 같은 <b>(사용자 · 카테고리 · 연월)</b> 에는 행이 하나만 있는다.
+     *
+     * <p>없으면 만들고, 있으면 그 행의 금액을 고친다(QA 2026-09-03 #77 ①). 종전엔 무조건
+     * {@code save(new)} 라 같은 달 같은 카테고리로 두 번 POST 하면 둘 다 저장됐다. 예산 알림
+     * 스케줄러는 <b>예산 행마다</b> 돌고 중복 방지도 {@code referenceRowId = 예산 행 아이디} 로
+     * 걸려 있어, 행이 둘이면 같은 상황을 두 번 알렸다. 행을 하나로 접으면 알림도 하나가 된다.
+     *
+     * <p>수정은 {@code merge} 가 아니라 <b>더티 체킹</b>이다(QA #78 ④) — 조회한 엔티티의 필드를
+     * 바꾸면 트랜잭션이 끝날 때 UPDATE 가 나간다. 생성이든 수정이든 응답은 같다(200 + 행).
+     *
+     * <h4>동시 저장 경쟁</h4>
+     * 조회와 저장 사이는 원자적이지 않다. 두 요청이 같이 들어오면 둘 다 "없다" 를 보고 둘 다
+     * INSERT 하는데, DB UK 가 걸리면 진 쪽이 {@link DataIntegrityViolationException} 으로 터진다.
+     * 그때는 상대가 넣은 행을 다시 찾아 수정하는 것이 맞는 답이다 — 사용자가 원한 것은
+     * "이 달 예산을 이 금액으로" 였지 "새 행" 이 아니기 때문이다.
+     *
+     * <p><b>그 복구를 같은 트랜잭션에서 하면 안 된다.</b> 제약 위반이 난 하이버네이트 세션은
+     * 더 못 쓴다 — 이어서 조회·flush 하면
+     * {@code AssertionFailure: ... has a null identifier (this can happen if the session is
+     * flushed after an exception occurs)} 로 죽는다(H2 로 직접 확인). 게다가 MariaDB 기본
+     * 격리수준(REPEATABLE READ)에서는 같은 트랜잭션의 재조회가 처음 뜬 스냅샷을 그대로 보므로
+     * 상대가 <b>그 뒤에</b> 커밋한 행은 애초에 보이지도 않는다.
+     *
+     * <p>그래서 시도 하나를 트랜잭션 하나로 감싸고({@link #newTransaction}), 위반이 나면
+     * <b>새 트랜잭션으로 한 번만</b> 다시 돈다. 새 트랜잭션은 세션도 스냅샷도 새것이라
+     * 이번 조회는 상대 행을 보고 수정 경로로 수렴한다. 재시도는 1회다 — 두 번째도 위반이면
+     * 우리가 모르는 상황이므로 그대로 올린다(무한 루프 금지).
+     */
     @Override
-    @Transactional
+    // 재시도가 성립하려면 이 메서드가 트랜잭션을 들고 있으면 안 된다. 클래스 기본값
+    // (readOnly = true) 이 걸리는 것도 막는다.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ExpenseBudgetServiceDto.BudgetInfo createBudget(ExpenseBudgetServiceDto.CreateCommand command) {
         log.debug("예산 등록 시작: userRowId={}, year={}, month={}", command.userRowId(), command.budgetYear(), command.budgetMonth());
+        try {
+            return newTransaction.execute(status -> upsertBudget(command));
+        } catch (DataIntegrityViolationException e) {
+            log.info("예산 등록 경쟁 감지 — 새 트랜잭션으로 재조회 후 수정: userRowId={}, categoryRowId={}, {}-{}",
+                command.userRowId(), command.categoryRowId(), command.budgetYear(), command.budgetMonth());
+            return newTransaction.execute(status -> upsertBudget(command));
+        }
+    }
 
+    /**
+     * 등록 시도 한 번 — <b>{@link #newTransaction} 안에서만</b> 부른다.
+     *
+     * <p>검증부터 저장까지 전부 여기에 둔다. 재시도가 이 메서드를 통째로 다시 도는 방식이라,
+     * 조회를 밖에 두면 두 번째 시도가 첫 번째의 스냅샷을 물려받아 아무것도 못 고친다.
+     */
+    private ExpenseBudgetServiceDto.BudgetInfo upsertBudget(ExpenseBudgetServiceDto.CreateCommand command) {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
@@ -58,6 +131,20 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
             if (category.getParent() != null) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_BUDGET_CATEGORY_NOT_ROOT);
             }
+        }
+
+        // categoryRowId 가 null 인 "전체 예산" 이 있다. 리포지토리 두 구현 모두 null 을
+        // `category IS NULL` 로 갈라 놓았다 — `= null` 로 비교하면 아무것도 안 잡혀
+        // 전체 예산만 계속 중복된다.
+        ExpenseBudget existing = expenseBudgetRepository.findByUserAndCategory(
+            command.userRowId(), command.categoryRowId(),
+            command.budgetYear(), command.budgetMonth()).orElse(null);
+
+        if (existing != null) {
+            existing.updateBudget(command.budgetAmount());
+            log.info("예산 등록 — 기존 행 수정: budgetId={}, userRowId={}, amount={}",
+                existing.getRowId(), command.userRowId(), command.budgetAmount());
+            return ExpenseBudgetServiceDto.BudgetInfo.from(existing);
         }
 
         ExpenseBudget budget = ExpenseBudget.createBudget(
