@@ -2,9 +2,12 @@ package com.porest.desk.savingGoal.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.util.NameNormalizer;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.savingGoal.domain.SavingGoal;
 import com.porest.desk.savingGoal.repository.SavingGoalRepository;
 import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
@@ -12,6 +15,7 @@ import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,14 +35,22 @@ public class SavingGoalServiceImpl implements SavingGoalService {
     public SavingGoalServiceDto.GoalInfo createSavingGoal(SavingGoalServiceDto.CreateCommand command) {
         log.debug("저축 목표 생성 시작: userRowId={}, title={}", command.userRowId(), command.title());
 
+        String title = NameNormalizer.require(command.title(), FieldLimits.WIDE_NAME_MAX);
+
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+
+        // 활성(미삭제) 목표 중 같은 이름 금지 (지운 이름은 다시 쓸 수 있다).
+        // 종전엔 서버 검사가 아예 없어 화면 목록 캐시가 비면 그대로 통과했다.
+        if (savingGoalRepository.existsActiveByUserAndTitle(command.userRowId(), title, null)) {
+            throw new InvalidValueException(DeskErrorCode.SAVING_GOAL_DUPLICATE_NAME);
+        }
 
         Asset linkedAsset = resolveLinkedAsset(command.linkedAssetRowId(), command.userRowId());
 
         SavingGoal goal = SavingGoal.createSavingGoal(
             user,
-            command.title(),
+            title,
             command.description(),
             command.targetAmount(),
             command.currency(),
@@ -50,6 +62,7 @@ public class SavingGoalServiceImpl implements SavingGoalService {
         );
 
         savingGoalRepository.save(goal);
+        flushOrRejectDuplicate();
         log.info("저축 목표 생성 완료: savingGoalId={}, userRowId={}", goal.getRowId(), command.userRowId());
 
         return SavingGoalServiceDto.GoalInfo.from(goal);
@@ -82,10 +95,16 @@ public class SavingGoalServiceImpl implements SavingGoalService {
         SavingGoal goal = findOrThrow(savingGoalId);
         validateOwnership(goal, userRowId);
 
+        String title = NameNormalizer.require(command.title(), FieldLimits.WIDE_NAME_MAX);
+        // 자기 자신은 뺀다 — 안 빼면 이름을 그대로 두고 금액만 고치는 저장이 영영 막힌다.
+        if (savingGoalRepository.existsActiveByUserAndTitle(userRowId, title, savingGoalId)) {
+            throw new InvalidValueException(DeskErrorCode.SAVING_GOAL_DUPLICATE_NAME);
+        }
+
         Asset linkedAsset = resolveLinkedAsset(command.linkedAssetRowId(), userRowId);
 
         goal.updateSavingGoal(
-            command.title(),
+            title,
             command.description(),
             command.targetAmount(),
             command.deadlineDate(),
@@ -93,6 +112,8 @@ public class SavingGoalServiceImpl implements SavingGoalService {
             command.color(),
             linkedAsset
         );
+
+        flushOrRejectDuplicate();
 
         log.info("저축 목표 수정 완료: savingGoalId={}", savingGoalId);
         return SavingGoalServiceDto.GoalInfo.from(goal);
@@ -164,6 +185,20 @@ public class SavingGoalServiceImpl implements SavingGoalService {
                 log.warn("저축 목표 조회 실패 - 존재하지 않는 목표: savingGoalId={}", savingGoalId);
                 return new EntityNotFoundException(DeskErrorCode.SAVING_GOAL_NOT_FOUND);
             });
+    }
+
+    /**
+     * 조회 검사를 빠져나간 동시 저장 경쟁을 409 로 받는다.
+     *
+     * <p>flush 를 명시하지 않으면 위반이 커밋 시점에 터져 try/catch 가 닿지 않는다 —
+     * 수정은 더티 체킹이라 UPDATE 자체가 커밋 때 나가므로 특히 그렇다.
+     */
+    private void flushOrRejectDuplicate() {
+        try {
+            savingGoalRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw new InvalidValueException(DeskErrorCode.SAVING_GOAL_DUPLICATE_NAME, e);
+        }
     }
 
     private void validateOwnership(SavingGoal goal, Long userRowId) {
