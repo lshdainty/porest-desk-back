@@ -116,6 +116,46 @@ public class AssetHolding extends AuditingFieldsWithIp {
         return isLinked() ? symbol : holdingName;
     }
 
+    /**
+     * 한 자산 안에서 이 보유를 유일하게 만드는 키 — <b>DB {@code UNIQUE} 와 정확히 같은 판정</b>이다.
+     *
+     * <p>{@link #holdingKey()} 를 자바에서 그냥 {@code equals} 로 비교하면 DB 와 어긋난다.
+     * 이름·종목코드 컬럼의 콜레이션이 {@code utf8mb4_unicode_ci}(PAD SPACE) 라 DB 는
+     * {@code "aapl"} 과 {@code "AAPL"}, {@code "금괴"} 와 {@code "금괴 "} 를 <b>같은 값</b>으로 본다.
+     * 자바만 대소문자를 가리면 "코드는 없다고 하는데 DB 는 있다고 하는" 상태가 되어, 새 행을 만들려다
+     * 유일성 위반으로 터진다. 그래서 비교 전에 대문자·앞뒤공백 제거로 두 판정을 겹친다.
+     *
+     * <p>연동 여부를 접두사로 앞에 붙이는 이유는 {@code holdingKey()} 가 <b>연동이면 종목코드,
+     * 아니면 항목명</b>이라는 조건부 값이기 때문이다. 접두사가 없으면 골드바(수동 {@code "GOLD"})와
+     * 금광 주식(연동 {@code "GOLD"})이 한 행으로 접힌다 — 서로 다른 자산인데 하나가 사라진다.
+     *
+     * @return 키를 만들 수 없으면(종목코드·항목명이 비었으면) null
+     */
+    public String uniquenessKey() {
+        return uniquenessKey(isLinked(), holdingKey());
+    }
+
+    /** @see #uniquenessKey() */
+    public static String uniquenessKey(boolean linked, String rawKey) {
+        String normalized = normalizeKey(rawKey);
+        return normalized == null ? null : (linked ? "L:" : "M:") + normalized;
+    }
+
+    /**
+     * 저장·비교용으로 다듬은 종목 식별자 — 앞뒤 공백을 떼고 대문자로 올린다. 비면 null.
+     *
+     * <p>종목코드는 이 값을 <b>그대로 저장</b>한다(사용자가 고른 이름이 아니라 시장이 정한 코드라
+     * 대소문자에 뜻이 없다). 항목명은 사용자가 친 대소문자를 살려야 하므로 저장은
+     * {@code NameNormalizer} 로 trim 만 하고, 비교할 때만 이 값을 쓴다.
+     */
+    public static String normalizeKey(String rawKey) {
+        if (rawKey == null) {
+            return null;
+        }
+        String trimmed = rawKey.trim();
+        return trimmed.isEmpty() ? null : trimmed.toUpperCase(java.util.Locale.ROOT);
+    }
+
     /** 평단가 — 총원가 / 수량. 수량이 없으면 없다. 평단가를 직접 들면 부분 매도마다 오차가 쌓인다. */
     public BigDecimal avgPrice() {
         if (quantity == null || quantity.signum() == 0 || totalCost == null) {

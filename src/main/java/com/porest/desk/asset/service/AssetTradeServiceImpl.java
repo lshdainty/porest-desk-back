@@ -84,7 +84,12 @@ public class AssetTradeServiceImpl implements AssetTradeService {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRADE_INVALID_AMOUNT);
         }
 
-        AssetHolding holding = findHolding(asset.getRowId(), command.holdingRowId(), command.holdingKey());
+        // 종목 식별자도 보유 편집과 같은 규칙으로 다듬는다 — 연동은 대문자·앞뒤공백 제거, 미연동은 trim.
+        // 안 다듬으면 "aapl" 매수가 기존 "AAPL" 보유를 못 찾아 같은 종목이 새 행으로 생기고,
+        // DB 유일성(콜레이션이 대소문자를 안 가린다)에 걸려 매수 자체가 실패한다.
+        String holdingKey = normalizeHoldingKey(command.linked(), command.holdingKey());
+
+        AssetHolding holding = findHolding(asset.getRowId(), command.holdingRowId(), holdingKey);
         BigDecimal quantityDelta;
         long costDelta;
         Long realized = null;
@@ -123,14 +128,14 @@ public class AssetTradeServiceImpl implements AssetTradeService {
 
         AssetTrade trade = AssetTrade.create(user, asset, settlement, type,
             command.holdingType() != null ? command.holdingType() : HoldingType.STOCK,
-            command.holdingKey(),
+            holdingKey,
             Boolean.TRUE.equals(command.linked()) ? YNType.Y : YNType.N,
             quantity, amount, fee, quantityDelta, costDelta,
             command.tradeDate() != null ? command.tradeDate() : userClock.now(command.userRowId()),
             command.description());
         tradeRepository.save(trade);
 
-        AssetHolding applied = applyToHolding(asset, command, holding, quantityDelta, costDelta);
+        AssetHolding applied = applyToHolding(asset, command, holdingKey, holding, quantityDelta, costDelta);
         // 이 거래가 어느 보유를 건드렸는지 id 로 남긴다 — 이름이 바뀌어도 안 끊긴다.
         if (applied != null && applied.getRowId() != null) {
             trade.linkHolding(applied.getRowId());
@@ -171,14 +176,14 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         // 과거 날짜 거래를 뒤늦게 넣으면 그 뒤 매도들의 원가·손익이 달라진다 — 맨 뒤에
         // 붙은 게 아니면 그 종목을 다시 쌓는다(맨 뒤면 방금 계산한 값이 이미 맞다).
         if (isBackdated(asset, trade)) {
-            replayHolding(asset, trade.getHoldingRowId(), command.holdingKey());
+            replayHolding(asset, trade.getHoldingRowId(), holdingKey);
         }
         // 보유가 확정된 뒤에 평가금액을 맞춘다 — 안 하면 예수금만 빠지고 산 물건 값이
         // 어디에도 안 잡혀 순자산이 매수금액만큼 증발한다.
         syncHoldingValuation(asset, trade.getTradeDate());
 
         log.info("투자 거래 등록: assetId={}, type={}, key={}, qty={}, amount={}, realized={}",
-            asset.getRowId(), type, command.holdingKey(), quantity, amount, realized);
+            asset.getRowId(), type, holdingKey, quantity, amount, realized);
         return AssetTradeServiceDto.TradeInfo.from(trade);
     }
 
@@ -384,6 +389,8 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         long soldCost = 0L;
         Long realized = null;
         if (command.tradeType() == TradeType.SELL) {
+            // 미리보기는 다듬지 않은 값을 그대로 넘긴다 — findHolding 이 콜레이션과 같은 판정으로
+            // 비교하므로 결과는 같고, 아직 종목을 안 고른 폼에 400 을 돌려주지 않는다.
             AssetHolding holding = findHolding(asset.getRowId(), command.holdingRowId(), command.holdingKey());
             BigDecimal held = holding != null && holding.getQuantity() != null
                 ? holding.getQuantity() : BigDecimal.ZERO;
@@ -447,13 +454,36 @@ public class AssetTradeServiceImpl implements AssetTradeService {
                 return byId;
             }
         }
-        if (holdingKey == null) {
+        String key = AssetHolding.normalizeKey(holdingKey);
+        if (key == null) {
             return null;
         }
+        // 대소문자·앞뒤공백을 무시하고 비교한다 — DB 의 utf8mb4_unicode_ci 와 같은 판정이어야
+        // "코드는 없다고 하는데 DB 는 있다고 하는" 상태가 안 생긴다. 연동 여부는 여기서 보지 않는다:
+        // 손으로 넣어 둔 항목을 나중에 종목으로 연동하는 경로가 이 매칭에 기대고 있다.
         return active.stream()
-            .filter(h -> holdingKey.equals(h.holdingKey()))
+            .filter(h -> key.equals(AssetHolding.normalizeKey(h.holdingKey())))
             .findFirst()
             .orElse(null);
+    }
+
+    /**
+     * 거래가 가리키는 종목 식별자를 저장 전에 다듬는다 — 보유 편집({@code AssetServiceImpl}) 과 같은 규칙.
+     *
+     * <p>연동 매매인데 종목코드가 비어 있으면 거절한다. 그대로 두면 종목코드가 NULL 인 보유가
+     * 생기는데, 그런 행은 유일성 키가 통째로 비어(DB 도 NULL 은 서로 다른 값으로 본다) 같은 종목이
+     * 몇 줄이든 쌓이고 다음 매수·매도가 어느 행에 붙을지 알 수 없게 된다.
+     */
+    private static String normalizeHoldingKey(Boolean linked, String rawKey) {
+        if (Boolean.TRUE.equals(linked)) {
+            String symbol = AssetHolding.normalizeKey(rawKey);
+            if (symbol == null) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
+            return symbol;
+        }
+        // 미연동은 사용자가 붙인 이름이라 친 대소문자를 살린다(비교할 때만 대문자로 올린다).
+        return rawKey == null || rawKey.isBlank() ? null : rawKey.trim();
     }
 
     /** 판 만큼의 원가 — 총원가 × (판 수량 / 보유 수량). 마지막 한 주까지 팔면 잔여 원가가 0 이 된다. */
@@ -472,16 +502,21 @@ public class AssetTradeServiceImpl implements AssetTradeService {
     }
 
     private AssetHolding applyToHolding(Asset asset, AssetTradeServiceDto.CreateTradeCommand command,
-                                        AssetHolding holding, BigDecimal quantityDelta, long costDelta) {
+                                        String holdingKey, AssetHolding holding,
+                                        BigDecimal quantityDelta, long costDelta) {
         if (holding == null) {
+            // 식별자 없이 보유를 만들면 어떤 조회에도 안 잡히고 유일성 키도 비어 같은 종목이 계속 쌓인다.
+            if (holdingKey == null) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
             boolean linked = Boolean.TRUE.equals(command.linked());
             AssetHolding created = AssetHolding.create(asset,
                 command.holdingType() != null ? command.holdingType() : HoldingType.STOCK,
                 linked ? YNType.Y : YNType.N,
-                linked ? stockMasterResolver.confirmMarketCode(null, command.holdingKey()) : null,
-                linked ? command.holdingKey() : null,
+                linked ? stockMasterResolver.confirmMarketCode(null, holdingKey) : null,
+                linked ? holdingKey : null,
                 quantityDelta,
-                linked ? null : command.holdingKey(),
+                linked ? null : holdingKey,
                 null, costDelta, nextSortOrder(asset.getRowId()));
             holdingRepository.save(created);
             return created;

@@ -19,6 +19,8 @@ import com.porest.desk.card.domain.CardBilling;
 import com.porest.desk.card.repository.CardBillingRepository;
 import com.porest.desk.card.repository.CardCatalogRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.util.NameNormalizer;
+import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.subscription.service.SubscriptionEntitlementService;
 import com.porest.desk.securities.service.SecuritiesCredentialService;
 import com.porest.desk.securities.service.SecuritiesPriceProvider;
@@ -48,6 +50,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
@@ -87,6 +90,9 @@ public class AssetServiceImpl implements AssetService {
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
         validateHoldings(command.assetType(), command.holdings());
+        // 저장 전에 한 번 다듬는다 — 종목코드는 대문자·앞뒤공백 제거, 항목명은 trim,
+        // 그리고 같은 종목이 두 줄로 온 요청은 여기서 한 줄로 접힌다.
+        List<AssetServiceDto.HoldingCommand> holdingCommands = normalizeHoldings(command.holdings());
 
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
         Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), command.userRowId());
@@ -104,9 +110,9 @@ public class AssetServiceImpl implements AssetService {
             : AssetSignPolicy.normalizeBalance(command.assetType(), command.isOverdraft(), command.balance());
         Long holdingValuation = null;
         if (command.assetType() == AssetType.INVESTMENT
-            && command.holdings() != null && !command.holdings().isEmpty()) {
-            Long computed = computeInvestmentBalance(command.userRowId(), command.holdings());
-            holdingValuation = computed != null ? computed : manualHoldingsSum(command.holdings());
+            && holdingCommands != null && !holdingCommands.isEmpty()) {
+            Long computed = computeInvestmentBalance(command.userRowId(), holdingCommands);
+            holdingValuation = computed != null ? computed : manualHoldingsSum(holdingCommands);
             balance = 0L; // 예수금은 비어서 시작 — 증권계좌에 넣은 돈은 이체로 들어온다
         }
 
@@ -129,7 +135,7 @@ public class AssetServiceImpl implements AssetService {
         );
 
         assetRepository.save(asset);
-        List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, command.holdings());
+        List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, holdingCommands);
         // 잔액 이력: 초기 예수금 절대 앵커 + (보유가 있으면) 평가금액 앵커
         LocalDateTime createdAt = userClock.now(command.userRowId());
         balanceHistoryService.recordInit(asset, createdAt);
@@ -238,17 +244,25 @@ public class AssetServiceImpl implements AssetService {
         // 갱신 대상은 HOLDING 채널이다. 예수금은 건드리지 않으므로, 이 자산으로 들어온
         // 이체는 평가액을 몇 번 다시 계산하든 그대로 남는다.
         // 빈 리스트도 받는다 — 보유를 전부 지우면 평가금액이 0 이 돼야 한다.
-        boolean investHoldings = command.holdings() != null
-            && (command.assetType() != null ? command.assetType() : asset.getAssetType()) == AssetType.INVESTMENT;
+        AssetType effectiveType = command.assetType() != null ? command.assetType() : asset.getAssetType();
+        // 검증·정규화를 자산 필드 수정보다 앞에 둔다. 뒤에 두면 잘못된 보유 입력이 자산 이름·종류만
+        // 고쳐 놓고 실패해서, 한 번의 저장이 절반만 반영된 상태로 남는다.
+        // (종전에는 아래 asset.updateAsset(...) 뒤에서 검사했다 — 판정에 쓰는 종류는 그때도
+        //  '이번 요청이 정하는 종류' 라 effectiveType 과 같다.)
+        validateHoldings(effectiveType, command.holdings());
+        // 생성 경로와 같은 자리에서 다듬고 접는다. 평가액 산정도 접은 목록을 봐야
+        // 같은 종목이 두 줄로 오면 평가액이 두 번 더해지는 일이 없다.
+        List<AssetServiceDto.HoldingCommand> holdingCommands = normalizeHoldings(command.holdings());
+        boolean investHoldings = holdingCommands != null && effectiveType == AssetType.INVESTMENT;
         // 보유가 남아 있는지 — 빈 리스트(전량 매도·전부 삭제)와 구분해야 한다.
-        boolean hasHoldings = investHoldings && !command.holdings().isEmpty();
+        boolean hasHoldings = investHoldings && !holdingCommands.isEmpty();
         // 지금 잔액은 이력에서 집계한다 — 캐시 컬럼은 낡을 수 있고, 앵커를 찍을지
         // 말지를 낡은 값으로 판단하면 멀쩡한 입력이 버려지거나 헛 앵커가 쌓인다.
         AssetBalanceHistoryService.Split current =
             balanceHistoryService.balanceAt(asset, userClock.now(userRowId));
         Long holdingValuation = null;
         if (investHoldings) {
-            Long computed = computeInvestmentBalance(userRowId, command.holdings());
+            Long computed = computeInvestmentBalance(userRowId, holdingCommands);
             holdingValuation = computed != null ? computed : current.holding();
         }
         Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
@@ -299,13 +313,12 @@ public class AssetServiceImpl implements AssetService {
             balanceHistoryService.relinkCheckCardHistory(asset, asset.getPaymentAsset());
         }
 
-        // 보유 동기화 — null=무변경, 리스트=rowId 로 맞춘다(있으면 제자리 수정, 없으면 신규,
-        // 안 온 건 삭제). 통째로 갈아끼우면 row_id 가 매번 바뀌어 거래(asset_trade)를
-        // 이름으로 묶을 수밖에 없고, 종목명을 고치는 순간 원가와 이력이 끊긴다.
+        // 보유 동기화 — null=무변경, 리스트=rowId(없으면 종목 식별자)로 맞춘다.
+        // 있으면 제자리 수정, 없으면 신규, 안 온 건 삭제. 통째로 갈아끼우면 row_id 가 매번 바뀌어
+        // 거래(asset_trade)를 이름으로 묶을 수밖에 없고, 종목명을 고치는 순간 원가와 이력이 끊긴다.
         List<AssetServiceDto.HoldingInfo> holdings;
-        if (command.holdings() != null) {
-            validateHoldings(asset.getAssetType(), command.holdings());
-            holdings = syncHoldings(asset, command.holdings());
+        if (holdingCommands != null) {
+            holdings = syncHoldings(asset, holdingCommands);
         } else {
             holdings = activeHoldingInfos(assetId);
         }
@@ -395,6 +408,70 @@ public class AssetServiceImpl implements AssetService {
         asset.unlinkSecurities();
         log.info("자산 토스 연결 해제 완료: assetId={}", assetId);
         return AssetServiceDto.AssetInfo.from(asset);
+    }
+
+    /**
+     * 보유 입력을 <b>저장 전에 한 자리에서</b> 다듬고, 같은 종목이 두 줄로 온 것을 한 줄로 접는다.
+     *
+     * <h4>왜 정규화가 먼저인가</h4>
+     * 한 자산 안의 종목 유일성은 DB {@code UNIQUE} 로 내려간다. 그 컬럼의 콜레이션은
+     * {@code utf8mb4_unicode_ci} 라 {@code "aapl"} 과 {@code "AAPL"} 을 같은 값으로 보는데,
+     * 자바 쪽 판정({@code holdingKey().equals(...)})은 대소문자를 가린다. 다듬지 않으면
+     * "코드는 없다고 하는데 DB 는 있다고 하는" 상태가 되어 멀쩡한 편집 저장이 통째로 실패한다.
+     * <ul>
+     *   <li><b>종목코드</b>는 시장이 정한 코드라 대소문자에 뜻이 없다 → 대문자로 <b>저장까지</b> 맞춘다.</li>
+     *   <li><b>항목명</b>은 사용자가 붙인 이름이라 친 대로 남아야 한다 → {@code trim} 만 하고
+     *       (다른 이름 여덟 곳과 같은 {@code NameNormalizer}), 비교할 때만 대문자로 올린다.</li>
+     * </ul>
+     *
+     * <h4>왜 접는가</h4>
+     * 편집 폼은 같은 종목을 두 줄로 만들 수 있고, 지금은 그 배열을 그대로 순회하며 만들기 때문에
+     * <b>두 행</b>이 생긴다. 그러면 목록에 같은 종목이 두 번 보이고, 매수·매도는 그중 한 행에만
+     * 붙어 평가액과 원가가 갈라진다. 여기서 접어 두면 그 아래 계산(평가액 산정·행 저장)이
+     * 전부 한 줄만 본다.
+     *
+     * <p>겹칠 때 <b>뒤엣것이 이긴다</b> — 같은 {@code rowId} 를 두 줄로 보내면 지금도 뒤엣값으로
+     * 덮어쓰기 때문에(같은 행에 {@code updateHolding} 을 두 번 부른다) 규칙을 하나로 맞춘 것이다.
+     *
+     * @return 입력이 null 이면 null — "보유 무변경" 과 "전부 삭제(빈 리스트)" 는 다른 뜻이다.
+     */
+    private List<AssetServiceDto.HoldingCommand> normalizeHoldings(List<AssetServiceDto.HoldingCommand> holdings) {
+        if (holdings == null) {
+            return null;
+        }
+        Map<String, AssetServiceDto.HoldingCommand> folded = new LinkedHashMap<>();
+        for (int i = 0; i < holdings.size(); i++) {
+            AssetServiceDto.HoldingCommand hc = holdings.get(i);
+            boolean linked = Boolean.TRUE.equals(hc.linked());
+            String symbol = AssetHolding.normalizeKey(hc.symbol());
+            String holdingName = hc.holdingName() == null
+                ? null : NameNormalizer.require(hc.holdingName(), FieldLimits.WIDE_NAME_MAX);
+            // 연동인데 종목코드가 비면 유일성 키가 통째로 비어, 같은 종목이 몇 줄이든 들어온다
+            // (DB 도 NULL 은 서로 다른 값으로 본다). 저장 전에 끊는다.
+            if (linked && symbol == null) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
+            AssetServiceDto.HoldingCommand normalized = new AssetServiceDto.HoldingCommand(
+                hc.rowId(), hc.holdingType(), hc.linked(), hc.marketCode(), symbol,
+                hc.quantity(), holdingName, hc.holdingValue(), hc.totalCost());
+            String key = AssetHolding.uniquenessKey(linked, linked ? symbol : holdingName);
+            // 키를 못 만드는 입력(미연동인데 항목명이 없다)은 접지 않고 자리만 지킨다 —
+            // 접으면 validateHoldings 가 거절할 입력이 조용히 사라진다. "?" 로 시작하는 자리표는
+            // 실제 키("L:"·"M:" 로 시작)와 절대 겹치지 않는다.
+            folded.merge(key != null ? key : "?" + i, normalized, AssetServiceImpl::mergeDuplicateHolding);
+        }
+        return List.copyOf(folded.values());
+    }
+
+    /** 같은 종목으로 접힌 두 줄을 하나로 — 값은 뒤엣것, 행 식별자는 앞엣것. */
+    private static AssetServiceDto.HoldingCommand mergeDuplicateHolding(
+            AssetServiceDto.HoldingCommand first, AssetServiceDto.HoldingCommand later) {
+        // rowId 만 앞엣것을 살린다. 뒤엣줄이 rowId 없이 왔다고 새 행을 만들면 기존 행이 삭제되고
+        // 새 행이 생겨 거래(asset_trade)가 가리키던 보유가 끊긴다.
+        return new AssetServiceDto.HoldingCommand(
+            first.rowId() != null ? first.rowId() : later.rowId(),
+            later.holdingType(), later.linked(), later.marketCode(), later.symbol(),
+            later.quantity(), later.holdingName(), later.holdingValue(), later.totalCost());
     }
 
     /**
@@ -507,10 +584,16 @@ public class AssetServiceImpl implements AssetService {
     }
 
     /**
-     * 보유 목록을 rowId 로 맞춘다 — 있으면 제자리 수정, 없으면 신규, 안 온 건 삭제.
+     * 보유 목록을 맞춘다 — 있으면 제자리 수정, 없으면 신규, 안 온 건 삭제.
      *
-     * <p>row_id 가 유지돼야 거래(asset_trade)가 보유를 안정적으로 가리킬 수 있다. 통째로
-     * 갈아끼우면 id 가 매번 바뀌어 이름으로 묶게 되고, 종목명을 고치는 순간 끊긴다.
+     * <p>짝을 찾는 순서는 <b>rowId → 종목 식별자</b> 다. row_id 가 유지돼야 거래(asset_trade)가
+     * 보유를 안정적으로 가리킬 수 있다. 통째로 갈아끼우면 id 가 매번 바뀌어 이름으로 묶게 되고,
+     * 종목명을 고치는 순간 끊긴다.
+     *
+     * <p>식별자로 한 번 더 찾는 이유: 편집 폼이 rowId 를 안 실어 보내는 경로(가져오기·구버전 앱·
+     * 폼이 줄을 다시 그린 경우)가 있고, 그때 같은 종목을 새 행으로 만들면 한 자산에 같은 종목이
+     * 두 줄로 남는다. 입력은 이미 {@link #normalizeHoldings} 가 접어 놓았으므로 여기 들어오는
+     * 목록에는 같은 식별자가 두 번 나오지 않는다.
      */
     private List<AssetServiceDto.HoldingInfo> syncHoldings(Asset asset,
                                                            List<AssetServiceDto.HoldingCommand> holdings) {
@@ -521,8 +604,18 @@ public class AssetServiceImpl implements AssetService {
         // 원가는 매수·매도가 쌓은 값이고 편집 폼이 늘 보내오지는 않는다. rowId 로 못 찾는
         // 신규 행이면 종목 식별자로라도 이어 붙인다 — 안 그러면 다음 매도에서 대금 전액이 이익이 된다.
         Map<String, Long> costByKey = existing.stream()
-            .filter(h -> h.holdingKey() != null && h.getTotalCost() != null)
-            .collect(Collectors.toMap(AssetHolding::holdingKey, AssetHolding::getTotalCost, (a, b) -> a));
+            .filter(h -> h.uniquenessKey() != null && h.getTotalCost() != null)
+            .collect(Collectors.toMap(AssetHolding::uniquenessKey, AssetHolding::getTotalCost, (a, b) -> a));
+        // 원가만이 아니라 <b>행 자체</b>를 이어 붙일 자리. rowId 를 안 실어 보내는 요청
+        // (가져오기·구버전 앱·폼이 줄을 다시 그린 경우)이 오면 종전에는 같은 종목이 새 행으로
+        // 생기고 옛 행은 삭제됐다 — row_id 가 바뀌어 거래 연결이 끊기고, 삭제가 커밋되기 전에
+        // 새 행이 먼저 들어가면 DB 유일성에 걸려 저장 전체가 실패한다.
+        Map<String, AssetHolding> byKey = new LinkedHashMap<>();
+        for (AssetHolding h : existing) {
+            if (h.uniquenessKey() != null) {
+                byKey.putIfAbsent(h.uniquenessKey(), h);
+            }
+        }
 
         List<AssetServiceDto.HoldingInfo> result = new ArrayList<>(holdings.size());
         Set<AssetHolding> kept = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -530,6 +623,18 @@ public class AssetServiceImpl implements AssetService {
             AssetServiceDto.HoldingCommand hc = holdings.get(i);
             boolean linked = Boolean.TRUE.equals(hc.linked());
             AssetHolding found = hc.rowId() != null ? byId.get(hc.rowId()) : null;
+            // 같은 행을 두 줄이 가져가면(같은 rowId 를 두 번 보낸 요청) 뒤엣줄은 못 찾은 것으로 본다 —
+            // 한 행에 두 줄을 겹쳐 쓰면 응답에는 두 줄인데 DB 에는 한 행만 남는다.
+            if (found != null && kept.contains(found)) {
+                found = null;
+            }
+            if (found == null) {
+                AssetHolding sameKey = byKey.get(
+                    AssetHolding.uniquenessKey(linked, linked ? hc.symbol() : hc.holdingName()));
+                if (sameKey != null && !kept.contains(sameKey)) {
+                    found = sameKey;
+                }
+            }
             if (found != null) {
                 found.updateHolding(
                     hc.holdingType() != null ? hc.holdingType() : HoldingType.STOCK,
@@ -577,8 +682,8 @@ public class AssetServiceImpl implements AssetService {
         // 그걸 입력받지 않으므로, 안 보내오면 종목 식별자로 이어 붙인다 — 안 그러면 편집을
         // 저장하는 순간 원가가 0 이 되고 다음 매도에서 대금 전액이 이익으로 잡힌다.
         Map<String, Long> costByKey = assetHoldingRepository.findActiveByAsset(asset.getRowId()).stream()
-            .filter(h -> h.holdingKey() != null && h.getTotalCost() != null)
-            .collect(Collectors.toMap(AssetHolding::holdingKey, AssetHolding::getTotalCost, (a, b) -> a));
+            .filter(h -> h.uniquenessKey() != null && h.getTotalCost() != null)
+            .collect(Collectors.toMap(AssetHolding::uniquenessKey, AssetHolding::getTotalCost, (a, b) -> a));
         List<AssetServiceDto.HoldingInfo> result = new ArrayList<>(holdings.size());
         for (int i = 0; i < holdings.size(); i++) {
             AssetServiceDto.HoldingCommand hc = holdings.get(i);
@@ -618,7 +723,8 @@ public class AssetServiceImpl implements AssetService {
         if (hc.totalCost() != null) {
             return hc.totalCost();
         }
-        String key = Boolean.TRUE.equals(hc.linked()) ? hc.symbol() : hc.holdingName();
+        boolean linked = Boolean.TRUE.equals(hc.linked());
+        String key = AssetHolding.uniquenessKey(linked, linked ? hc.symbol() : hc.holdingName());
         return key != null ? costByKey.get(key) : null;
     }
 
