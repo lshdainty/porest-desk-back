@@ -21,6 +21,7 @@ import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.notification.service.NotificationMessages;
 import com.porest.desk.notification.service.NotificationService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
 import com.porest.desk.notification.type.NotificationType;
@@ -55,6 +56,7 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final ExpenseSplitRepository expenseSplitRepository;
     private final ExpenseSplitService expenseSplitService;
     private final NotificationService notificationService;
+    private final NotificationMessages notificationMessages;
     private final UserService userService;
     private final AssetRepository assetRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
@@ -873,29 +875,28 @@ public class ExpenseServiceImpl implements ExpenseService {
                 long overScaled = limit * 100L;          // 100% = 초과
                 long warnScaled = limit * warnPercent;
 
-                String categoryName = bCatId == null ? "전체" : budget.getCategory().getCategoryName();
+                // 문구는 번들에서 온다 — 같은 알림을 매일 09:00 배치도 만들기 때문이다
+                // (NotificationTriggerScheduler). 종전엔 두 곳이 각자 문장을 만들어 갈렸다(QA #76).
+                String categoryName = bCatId == null
+                    ? notificationMessages.budgetCategoryAll() : budget.getCategory().getCategoryName();
 
                 if (beforeScaled < overScaled && afterScaled >= overScaled) {
                     notificationService.createNotification(new NotificationServiceDto.CreateCommand(
                         userRowId,
                         NotificationType.BUDGET_ALERT,
-                        String.format("%s 예산 초과", categoryName),
-                        String.format("%s 예산 %s원을 초과했어요 (현재 %s원).",
-                            categoryName, formatKRW(limit), formatKRW(afterSpent)),
+                        notificationMessages.budgetOverTitle(categoryName),
+                        notificationMessages.budgetOverMessage(categoryName, limit, afterSpent),
                         ReferenceType.EXPENSE_BUDGET,
                         budget.getRowId()
                     ));
                 } else if (beforeScaled < warnScaled && afterScaled >= warnScaled) {
-                    // WARN 분기는 정의상 초과가 아니다. 반올림이 100 이 되어 '100% 사용' 으로
-                    // 오표기되지 않도록 99 로 cap (초과는 위 OVER 분기가 담당).
-                    // 정수 반올림: (a*100 + limit/2) / limit == round(a/limit*100)
-                    int pct = (int) Math.min(99L, (afterScaled + limit / 2) / limit);
+                    // WARN 분기는 정의상 초과가 아니다 — 표시 % 의 반올림·99 cap 은 usagePercent 가 맡는다.
+                    int pct = NotificationMessages.usagePercent(afterSpent, limit);
                     notificationService.createNotification(new NotificationServiceDto.CreateCommand(
                         userRowId,
                         NotificationType.BUDGET_ALERT,
-                        String.format("%s 예산 %d%% 사용", categoryName, pct),
-                        String.format("%s 예산의 %d%%를 사용했어요 (%s / %s원).",
-                            categoryName, pct, formatKRW(afterSpent), formatKRW(limit)),
+                        notificationMessages.budgetWarnTitle(categoryName, pct),
+                        notificationMessages.budgetWarnMessage(categoryName, pct, afterSpent, limit),
                         ReferenceType.EXPENSE_BUDGET,
                         budget.getRowId()
                     ));
@@ -904,10 +905,6 @@ public class ExpenseServiceImpl implements ExpenseService {
         } catch (Exception ex) {
             log.warn("예산 임계 알림 처리 실패: {}", ex.getMessage());
         }
-    }
-
-    private static String formatKRW(long v) {
-        return String.format("%,d", v);
     }
 
     /**
