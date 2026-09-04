@@ -56,13 +56,14 @@ public class StockWatchGroupQueryDslRepository implements StockWatchGroupReposit
     }
 
     @Override
-    public boolean existsActiveByUserAndName(Long userRowId, String groupName) {
+    public boolean existsActiveByUserAndName(Long userRowId, String groupName, Long excludeRowId) {
         Long found = queryFactory.select(group.rowId)
             .from(group)
             .where(
                 group.userRowId.eq(userRowId),
                 group.groupName.eq(groupName),
-                group.isDeleted.eq(YNType.N)
+                group.isDeleted.eq(YNType.N),
+                excludeRowId != null ? group.rowId.ne(excludeRowId) : null
             )
             .fetchFirst();
         return found != null;
@@ -72,5 +73,10 @@ public class StockWatchGroupQueryDslRepository implements StockWatchGroupReposit
     public StockWatchGroup save(StockWatchGroup entity) {
         entityManager.persist(entity);
         return entity;
+    }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
     }
 }
