@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.type.CalendarEventType;
 import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -31,7 +32,11 @@ public class CalendarEventApiDto {
         String location,
         @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "반복 규칙이 너무 길어요")
         String rrule,
-        List<Integer> reminderMinutes,
+        /**
+         * 알림 사전분 목록. 원소가 null 이면 {@code minutes_before}(NOT NULL) 에 그대로 내려가
+         * 500 이 났다 — 여기서 400 으로 끊는다. 같은 값이 두 번 담겨 와도 서버가 하나로 접는다.
+         */
+        List<@NotNull(message = "알림 시각이 비어 있어요") Integer> reminderMinutes,
         Long calendarRowId
     ) {}
 
@@ -53,7 +58,11 @@ public class CalendarEventApiDto {
         String location,
         @Size(max = FieldLimits.SHORT_NOTE_MAX, message = "반복 규칙이 너무 길어요")
         String rrule,
-        List<Integer> reminderMinutes,
+        /**
+         * 알림 사전분 목록. 원소가 null 이면 {@code minutes_before}(NOT NULL) 에 그대로 내려가
+         * 500 이 났다 — 여기서 400 으로 끊는다. 같은 값이 두 번 담겨 와도 서버가 하나로 접는다.
+         */
+        List<@NotNull(message = "알림 시각이 비어 있어요") Integer> reminderMinutes,
         Long calendarRowId
     ) {}
 

@@ -25,8 +25,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -41,6 +44,13 @@ public class CalendarEventServiceImpl implements CalendarEventService {
     private final UserCalendarService userCalendarService;
     private final UserRepository userRepository;
     private final CalendarMembershipValidator calendarMembershipValidator;
+
+    /**
+     * 지금 서버가 만드는 유일한 알림 종류. {@code event_reminder.reminder_type} 은 컬럼으로 남아 있고
+     * 유일성도 이 값을 낀 조합(event_row_id, reminder_type, minutes_before)으로 잡는다 —
+     * 나중에 "10분 전 푸시 + 10분 전 메일" 을 넣을 자리를 지금 막지 않기 위해서다.
+     */
+    private static final String DEFAULT_REMINDER_TYPE = "NOTIFICATION";
 
     @Override
     @Transactional
@@ -90,12 +100,10 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         calendarEventRepository.save(event);
 
         List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
-        if (command.reminderMinutes() != null && !command.reminderMinutes().isEmpty()) {
-            for (Integer minutes : command.reminderMinutes()) {
-                EventReminder reminder = EventReminder.create(event, "NOTIFICATION", minutes);
-                eventReminderRepository.save(reminder);
-                reminderInfos.add(EventReminderServiceDto.ReminderInfo.from(reminder));
-            }
+        for (Integer minutes : distinctReminderMinutes(command.reminderMinutes())) {
+            EventReminder reminder = EventReminder.create(event, DEFAULT_REMINDER_TYPE, minutes);
+            eventReminderRepository.save(reminder);
+            reminderInfos.add(EventReminderServiceDto.ReminderInfo.from(reminder));
         }
 
         log.info("캘린더 이벤트 등록 완료: eventId={}, userRowId={}", event.getRowId(), command.userRowId());
@@ -172,17 +180,11 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             event.setCalendar(calendar);
         }
 
-        List<EventReminderServiceDto.ReminderInfo> reminderInfos = new ArrayList<>();
+        List<EventReminderServiceDto.ReminderInfo> reminderInfos;
         if (command.reminderMinutes() != null) {
-            eventReminderRepository.deleteByEventId(eventId);
-            for (Integer minutes : command.reminderMinutes()) {
-                EventReminder reminder = EventReminder.create(event, "NOTIFICATION", minutes);
-                eventReminderRepository.save(reminder);
-                reminderInfos.add(EventReminderServiceDto.ReminderInfo.from(reminder));
-            }
+            reminderInfos = syncReminders(event, command.reminderMinutes());
         } else {
-            List<EventReminder> existing = eventReminderRepository.findByEventId(eventId);
-            reminderInfos = existing.stream()
+            reminderInfos = eventReminderRepository.findByEventId(eventId).stream()
                 .map(EventReminderServiceDto.ReminderInfo::from)
                 .toList();
         }
@@ -202,6 +204,74 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         eventReminderRepository.deleteByEventId(eventId);
 
         log.info("캘린더 이벤트 삭제 완료: eventId={}", eventId);
+    }
+
+    /**
+     * 요청이 보낸 알림 분(分) 목록을 <b>저장할 수 있는 형태</b>로 접는다 — null 을 걷어내고 중복을 없앤다.
+     *
+     * <p>중복을 409 로 되돌리지 않는 이유: "10분 전을 두 번 알려 달라" 는 표현할 수 있는 의도가 아니다.
+     * 라벨·태그의 이름 중복은 사용자가 고쳐야 할 입력이지만, 같은 알림 두 개는 요청이 잘못됐다기보다
+     * 화면이 같은 줄을 두 번 담은 것에 가깝다. 조용히 하나로 접는 게 사용자가 기대하는 결과다.
+     *
+     * <p>null 원소를 걷어내는 것도 여기다. {@code minutes_before} 는 DB·엔티티 모두 NOT NULL 이라
+     * {@code [null]} 이 그대로 내려가면 500 이 됐다. 컨트롤러 DTO 가 {@code @NotNull} 로 먼저 막지만,
+     * 서비스를 직접 부르는 경로(가져오기·집계)까지 덮으려면 이 자리에도 있어야 한다.
+     *
+     * <p>순서는 요청이 보낸 순서를 유지한다({@link LinkedHashSet}) — 응답의 알림 순서가 요청과
+     * 어긋나면 화면이 방금 저장한 줄을 못 찾는다.
+     */
+    private static List<Integer> distinctReminderMinutes(List<Integer> reminderMinutes) {
+        if (reminderMinutes == null || reminderMinutes.isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(new LinkedHashSet<>(
+            reminderMinutes.stream().filter(Objects::nonNull).toList()));
+    }
+
+    /**
+     * 알림 세트를 요청대로 맞춘다 — <b>있으면 그 행을 두고, 없는 것만 만들고, 빠진 것만 지운다.</b>
+     *
+     * <p>종전에는 {@code deleteByEventId} 로 전량을 지우고 다시 넣었다. 결과 세트는 같지만 두 가지가
+     * 무너진다.
+     * <ul>
+     *   <li><b>이미 보낸 알림이 다시 간다.</b> 새로 만든 행은 {@code is_sent='N'} 이라, 일정 제목만
+     *       고쳐도 어제 울린 알림이 오늘 또 울린다.</li>
+     *   <li><b>row_id 가 매번 바뀐다.</b> 지금은 참조하는 곳이 없지만, 알림 읽음 표시처럼 행을
+     *       가리키는 것이 하나라도 붙는 순간 끊긴다.</li>
+     * </ul>
+     * 지운 알림은 소프트 삭제가 아니라 <b>실제 DELETE</b> 다 — 이 테이블에는 삭제 플래그가 없다.
+     */
+    private List<EventReminderServiceDto.ReminderInfo> syncReminders(CalendarEvent event, List<Integer> reminderMinutes) {
+        List<Integer> wanted = distinctReminderMinutes(reminderMinutes);
+        // 같은 (타입, 분) 이 이미 여러 행으로 들어와 있을 수 있다(DB UNIQUE 가 붙기 전에 쌓인 것).
+        // 첫 행만 남기고 나머지는 여기서 정리된다 — 두 번째부터는 byMinutes 에 안 담겨 삭제 대상이 된다.
+        List<EventReminder> existing = eventReminderRepository.findByEventId(event.getRowId());
+        Map<Integer, EventReminder> byMinutes = new LinkedHashMap<>();
+        List<EventReminder> stale = new ArrayList<>();
+        for (EventReminder reminder : existing) {
+            boolean sameType = DEFAULT_REMINDER_TYPE.equals(reminder.getReminderType());
+            if (sameType && reminder.getMinutesBefore() != null
+                && byMinutes.putIfAbsent(reminder.getMinutesBefore(), reminder) == null) {
+                continue;
+            }
+            stale.add(reminder);
+        }
+
+        List<EventReminderServiceDto.ReminderInfo> result = new ArrayList<>(wanted.size());
+        for (Integer minutes : wanted) {
+            EventReminder reminder = byMinutes.remove(minutes);
+            if (reminder == null) {
+                reminder = EventReminder.create(event, DEFAULT_REMINDER_TYPE, minutes);
+                eventReminderRepository.save(reminder);
+            }
+            result.add(EventReminderServiceDto.ReminderInfo.from(reminder));
+        }
+        // 요청에서 빠진 것 + 타입이 다르거나 중복이라 못 담은 것
+        stale.addAll(byMinutes.values());
+        for (EventReminder reminder : stale) {
+            eventReminderRepository.deleteById(reminder.getRowId());
+        }
+        return result;
     }
 
     /**
