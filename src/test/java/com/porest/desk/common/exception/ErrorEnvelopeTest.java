@@ -43,6 +43,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * GET  /api/v1/nope                     404 {"success":false,"code":"COMMON_404","message":"존재하지 않는 리소스입니다.","data":null}
  * DELETE /api/v1/expense/budget/abc     400 {"success":false,"code":"COMMON_400","message":"'id' 파라미터의 값이 유효하지 않습니다.","data":null}
  * </pre>
+ *
+ * <p>QA 2026-09-04 #75 — 여기에 <b>내부 파라미터 이름이 응답에 안 나오는지</b>도 함께 건다.
+ * 고치기 전 실측(2026-09-04, 이 테스트가 부르는 그 경로들):
+ * <pre>
+ * DELETE /api/v1/expense/budget/abc          400 "id 값이 올바르지 않아요"        / en "Invalid value for id"
+ * GET    /api/v1/expense/budgets?year=abc    400 "year 값이 올바르지 않아요"
+ * GET    /api/v1/expenses/summary/daily      400 "필수 요청 파라미터가 빠졌어요: date"
+ *                                                / en "Required request parameter is missing: date"
+ * </pre>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
@@ -85,6 +94,10 @@ class ErrorEnvelopeTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> body(Res res) {
         return objectMapper.readValue(res.body(), Map.class);
+    }
+
+    private String message(Res res) {
+        return (String) body(res).get("message");
     }
 
     /** 본문이 공통 봉투 4개 필드 그대로인지 — 필드가 더 있거나 빠지면 클라이언트 파싱이 갈린다. */
@@ -141,16 +154,52 @@ class ErrorEnvelopeTest {
     }
 
     @Test
-    @DisplayName("파라미터 타입 불일치 400 — 번들 문구 (종전: core 하드코딩 `'id' … 유효하지 않습니다.`)")
-    void parameterTypeMismatchSpeaksProductTone() {
+    @DisplayName("파라미터 타입 불일치 400 — 내부 이름(id·year)이 응답에 없다")
+    void parameterTypeMismatchHidesTheParameterName() {
+        // QA 2026-09-04 #75. 고치기 전 실측: "id 값이 올바르지 않아요" / "year 값이 올바르지 않아요".
+        // `id`·`year` 는 코드 이름이라 쓰는 사람에겐 뜻이 없고 API 구조만 드러낸다.
         Res path = call(HttpMethod.DELETE, "/api/v1/expense/budget/abc", login(), "ko", null);
         assertThat(path.status()).isEqualTo(400);
-        assertEnvelope(path, "COMMON_400", "id 값이 올바르지 않아요");
+        assertEnvelope(path, "COMMON_400", "요청 값이 올바르지 않아요");
+        assertThat(message(path)).doesNotContain("id");
 
         // 쿼리 파라미터도 같은 자리로 온다.
         Res query = call(HttpMethod.GET, "/api/v1/expense/budgets?year=abc", login(), "ko", null);
         assertThat(query.status()).isEqualTo(400);
-        assertEnvelope(query, "COMMON_400", "year 값이 올바르지 않아요");
+        assertEnvelope(query, "COMMON_400", "요청 값이 올바르지 않아요");
+        assertThat(message(query)).doesNotContain("year");
+    }
+
+    @Test
+    @DisplayName("필수 파라미터 누락 400 — 내부 이름(date·endDate)이 응답에 없다")
+    void missingParameterHidesTheParameterName() {
+        // 고치기 전 실측: "필수 요청 파라미터가 빠졌어요: date" / "… : endDate".
+        // core 의 GlobalExceptionHandler 가 답하던 자리다 — 이제 desk advice 가 먼저 잡는다.
+        Res missing = call(HttpMethod.GET, "/api/v1/expenses/summary/daily", login(), "ko", null);
+        assertThat(missing.status()).isEqualTo(400);
+        assertEnvelope(missing, "COMMON_400", "요청에 빠진 값이 있어요");
+        assertThat(message(missing)).doesNotContain("date");
+
+        // 두 개 중 하나만 빠져도 남은 하나의 이름이 새면 안 된다.
+        Res partial = call(HttpMethod.GET, "/api/v1/expenses/summary/range?startDate=2026-01-01",
+                login(), "ko", null);
+        assertThat(partial.status()).isEqualTo(400);
+        assertEnvelope(partial, "COMMON_400", "요청에 빠진 값이 있어요");
+        assertThat(message(partial)).doesNotContain("endDate").doesNotContain("startDate");
+    }
+
+    @Test
+    @DisplayName("영어 번들에서도 이름이 안 나온다 — 말투와 별개로 이름 노출을 없앤 결정이다")
+    void parameterNamesAreHiddenInEnglishToo() {
+        // 고치기 전 실측: "Invalid value for id" / "Required request parameter is missing: date".
+        Res mismatch = call(HttpMethod.DELETE, "/api/v1/expense/budget/abc", login(), "en", null);
+        assertThat(mismatch.status()).isEqualTo(400);
+        assertEnvelope(mismatch, "COMMON_400", "That request value is not valid");
+
+        Res missing = call(HttpMethod.GET, "/api/v1/expenses/summary/daily", login(), "en", null);
+        assertThat(missing.status()).isEqualTo(400);
+        assertEnvelope(missing, "COMMON_400", "A required value is missing from the request");
+        assertThat(message(missing)).doesNotContain("date");
     }
 
     @Test
