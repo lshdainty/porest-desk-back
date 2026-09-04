@@ -10,6 +10,7 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.ExpenseService;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.repository.NotificationRepository;
+import com.porest.desk.notification.service.NotificationMessages;
 import com.porest.desk.notification.service.NotificationService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
 import com.porest.desk.notification.type.NotificationType;
@@ -37,6 +38,7 @@ import java.util.Map;
 @Slf4j
 public class NotificationTriggerScheduler {
     private final NotificationService notificationService;
+    private final NotificationMessages notificationMessages;
     private final NotificationRepository notificationRepository;
     private final EventReminderRepository eventReminderRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
@@ -68,8 +70,8 @@ public class NotificationTriggerScheduler {
                 NotificationServiceDto.CreateCommand command = new NotificationServiceDto.CreateCommand(
                     reminder.getEvent().getUser().getRowId(),
                     NotificationType.EVENT_REMINDER,
-                    reminder.getEvent().getTitle() + " 알림",
-                    reminder.getMinutesBefore() + "분 전 알림",
+                    notificationMessages.eventReminderTitle(reminder.getEvent().getTitle()),
+                    notificationMessages.eventReminderMessage(minutesBefore),
                     ReferenceType.CALENDAR_EVENT,
                     reminder.getEvent().getRowId()
                 );
@@ -138,21 +140,32 @@ public class NotificationTriggerScheduler {
                         TimeUtils.toUtc(startDate.atStartOfDay(), serviceClock.zone().getId()));
 
                     if (!alreadyNotified) {
-                        long percentage = (totalSpending * 100) / budget.getBudgetAmount();
+                        long limit = budget.getBudgetAmount();
                         String categoryName = budget.getCategory() != null
-                            ? budget.getCategory().getCategoryName() : "전체";
+                            ? budget.getCategory().getCategoryName()
+                            : notificationMessages.budgetCategoryAll();
+
+                        // 문구는 거래 저장 직후 알림(ExpenseServiceImpl)과 같은 키를 쓴다.
+                        // 종전엔 같은 상황을 두 문장·두 말투로 알렸다(QA 2026-09-04 #76) —
+                        //   여기  "식비 예산 초과 경고" / "식비 카테고리 예산의 90%를 사용했습니다."
+                        //   거기  "식비 예산 90% 사용" / "식비 예산의 90%를 사용했어요 (…)."
+                        // 임계는 넘었지만 아직 초과가 아닌 구간까지 "초과 경고" 라 부르던 것도 여기서 갈린다.
+                        boolean over = totalSpending >= limit;
+                        int pct = NotificationMessages.usagePercent(totalSpending, limit);
 
                         NotificationServiceDto.CreateCommand command = new NotificationServiceDto.CreateCommand(
                             userRowId,
                             NotificationType.BUDGET_ALERT,
-                            categoryName + " 예산 초과 경고",
-                            categoryName + " 카테고리 예산의 " + percentage + "%를 사용했습니다.",
+                            over ? notificationMessages.budgetOverTitle(categoryName)
+                                 : notificationMessages.budgetWarnTitle(categoryName, pct),
+                            over ? notificationMessages.budgetOverMessage(categoryName, limit, totalSpending)
+                                 : notificationMessages.budgetWarnMessage(categoryName, pct, totalSpending, limit),
                             ReferenceType.EXPENSE_BUDGET,
                             budget.getRowId()
                         );
                         notificationService.createNotification(command);
-                        log.info("예산 알림 전송 완료: userRowId={}, budgetId={}, percentage={}%",
-                            userRowId, budget.getRowId(), percentage);
+                        log.info("예산 알림 전송 완료: userRowId={}, budgetId={}, spent={}, limit={}, over={}",
+                            userRowId, budget.getRowId(), totalSpending, limit, over);
                     }
                 }
             } catch (Exception e) {
@@ -181,9 +194,7 @@ public class NotificationTriggerScheduler {
                     TimeUtils.toUtc(today.atStartOfDay(), serviceClock.zone().getId()));
 
                 if (!alreadyNotified) {
-                    String message = todo.getDueDate().equals(today)
-                        ? "오늘 마감인 할일이 있습니다."
-                        : "내일 마감인 할일이 있습니다.";
+                    String message = notificationMessages.todoDueMessage(todo.getDueDate().equals(today));
 
                     NotificationServiceDto.CreateCommand command = new NotificationServiceDto.CreateCommand(
                         userRowId,

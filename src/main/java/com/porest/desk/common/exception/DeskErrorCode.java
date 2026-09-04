@@ -21,6 +21,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // 쿼리·경로 파라미터의 타입이 안 맞는 자리(QA 2026-09-03 #74). core 가 이 문구를 코드에
     // 박아 두고 있어(격식체) 번들로 끌어낸다 — 코드는 COMMON_400 그대로다.
     INVALID_PARAMETER_VALUE("COMMON_400", "error.common.invalid.parameter.value", HttpStatus.BAD_REQUEST),
+    // 필수 파라미터 누락(QA 2026-09-04 #75). 코드도 메시지 키도 core 가 답하던 것과 같다 —
+    // 바뀐 건 문구뿐이고, 여기 상수를 두는 이유는 파라미터 이름을 로그에 남기는 책임을
+    // 이 레포가 갖기 위해서다(RequestValueExceptionHandler 주석 참고).
+    MISSING_PARAMETER("COMMON_400", "error.common.missing.parameter", HttpStatus.BAD_REQUEST),
 
     // Auth
     AUTH_INVALID_TOKEN("AUTH_001", "error.auth.invalid.token", HttpStatus.UNAUTHORIZED),

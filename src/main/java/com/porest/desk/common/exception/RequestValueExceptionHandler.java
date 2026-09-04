@@ -8,6 +8,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -80,6 +81,11 @@ public class RequestValueExceptionHandler {
      * (번들 · {@code ~어요})와 타입 불일치(하드코딩 · {@code ~습니다})에 두 말투로 답했다. 여기서
      * 가로채 번들 문구로 바꾼다. 코드는 {@code COMMON_400} 그대로다.
      *
+     * <p><b>파라미터 이름은 응답에 싣지 않는다</b>(QA 2026-09-04 #75). {@code id}·{@code year} 는
+     * 코드 이름이라 쓰는 사람에게 뜻이 없고 API 구조만 드러낸다. 그래서 번들 문구에서 {@code {0}} 을
+     * 빼고 인자도 넘기지 않는다 — 이름은 아래 {@code log.warn} 에만 남는다. 디버깅에 필요한 정보를
+     * 잃지 않으려면 <b>이 로그를 지우면 안 된다</b>.
+     *
      * <p><b>{@code BindException} 은 일부러 안 잡는다.</b> {@code MethodArgumentNotValidException} 이
      * 그 하위 타입이라, 여기에 {@code BindException} 핸들러를 두면 {@code @Valid} 실패까지 이 advice 가
      * 먼저 먹는다(Spring 은 advice 를 순서대로 훑다 처음 매칭에서 멈춘다) — DTO 마다 다른 필드 메시지가
@@ -90,10 +96,27 @@ public class RequestValueExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         log.warn("파라미터 타입 불일치: name={}, required={}", e.getName(), e.getRequiredType());
 
-        DeskErrorCode code = DeskErrorCode.INVALID_PARAMETER_VALUE;
-        return ResponseEntity
-                .status(code.getHttpStatus())
-                .body(ApiResponse.error(code.getCode(), messageResolver.getMessage(code, e.getName())));
+        return badRequest(DeskErrorCode.INVALID_PARAMETER_VALUE);
+    }
+
+    /**
+     * 필수 요청 파라미터가 없다 — {@code GET /api/v1/expenses/summary/daily}({@code date} 누락).
+     *
+     * <p><b>core 도 이 예외를 잡는다.</b> 상태코드({@code 400})도 코드({@code COMMON_400})도 메시지 키
+     * ({@code error.common.missing.parameter})도 같게 두고 여기서 가로채는 이유는 하나다 — 문구에서
+     * 파라미터 이름을 빼고 나면 <b>이름이 어디에 남는지를 이 레포가 책임져야</b> 하기 때문이다
+     * (QA 2026-09-04 #75). core 는 별도 레포·별도 배포라 그 {@code log.warn} 이 언제 사라져도
+     * 이쪽은 컴파일도 테스트도 통과하면서 조용히 디버깅 정보를 잃는다.
+     *
+     * <p>덤으로 core 가 넘기던 {@code {0}} 인자도 끊긴다. 인자를 넘기면 Spring 이 값을
+     * {@code MessageFormat} 에 태우는데, 그러면 번역에 작은따옴표가 하나 섞이는 순간 문구가
+     * 인용부호로 먹혀 사라진다.
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMissingParameter(MissingServletRequestParameterException e) {
+        log.warn("필수 파라미터 누락: name={}, type={}", e.getParameterName(), e.getParameterType());
+
+        return badRequest(DeskErrorCode.MISSING_PARAMETER);
     }
 
     private ResponseEntity<ApiResponse<Void>> badRequest(DeskErrorCode code) {

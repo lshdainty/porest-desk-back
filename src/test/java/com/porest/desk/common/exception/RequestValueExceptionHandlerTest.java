@@ -3,6 +3,10 @@ package com.porest.desk.common.exception;
 import com.porest.core.controller.ApiResponse;
 import com.porest.core.controller.GlobalExceptionHandler;
 import com.porest.core.util.MessageResolver;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,11 +18,18 @@ import org.springframework.core.annotation.OrderUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.slf4j.LoggerFactory;
 
 import java.time.format.DateTimeParseException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * 요청값 오류가 500 이 아니라 400 으로 변환되는지 검증(QA 2026-09-03 #8 #25 #33).
@@ -85,6 +96,61 @@ class RequestValueExceptionHandlerTest {
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(res.getBody()).isNotNull();
         assertThat(res.getBody().getMessage()).isEqualTo("요청 형식이 올바르지 않아요");
+    }
+
+    @Test
+    @DisplayName("필수 파라미터 누락 → 400 + 이름 없는 문구 (QA 2026-09-04 #75)")
+    void missingParameterAnswersWithoutTheName() {
+        given(messageResolver.getMessage(DeskErrorCode.MISSING_PARAMETER))
+                .willReturn("요청에 빠진 값이 있어요");
+
+        ResponseEntity<ApiResponse<Void>> res = sut.handleMissingParameter(
+                new MissingServletRequestParameterException("date", "LocalDate"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(res.getBody()).isNotNull();
+        // 코드는 core 가 답하던 것과 같다 — 바뀐 건 문구뿐이다.
+        assertThat(res.getBody().getCode()).isEqualTo("COMMON_400");
+        assertThat(res.getBody().getMessage()).isEqualTo("요청에 빠진 값이 있어요");
+        // 인자를 넘기면 Spring 이 값을 MessageFormat 에 태운다 — 따옴표 하나에 문구가 사라진다.
+        verify(messageResolver, never()).getMessage(any(DeskErrorCode.class), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("파라미터 이름은 로그에만 남는다 — 이 로그를 지우면 디버깅 정보가 사라진다")
+    void parameterNamesSurviveInTheLog() {
+        given(messageResolver.getMessage(DeskErrorCode.MISSING_PARAMETER)).willReturn("요청에 빠진 값이 있어요");
+        given(messageResolver.getMessage(DeskErrorCode.INVALID_PARAMETER_VALUE)).willReturn("요청 값이 올바르지 않아요");
+
+        ListAppender<ILoggingEvent> appender = attachAppender();
+        try {
+            sut.handleMissingParameter(new MissingServletRequestParameterException("endDate", "LocalDate"));
+            // 실물 생성자는 MethodParameter 를 요구한다 — 이름만 필요하므로 mock 으로 세운다
+            // (실물 예외로 도는 경로는 ErrorEnvelopeTest 가 HTTP 로 건다).
+            MethodArgumentTypeMismatchException mismatch = mock(MethodArgumentTypeMismatchException.class);
+            given(mismatch.getName()).willReturn("id");
+            sut.handleTypeMismatch(mismatch);
+
+            assertThat(appender.list)
+                    .extracting(e -> e.getFormattedMessage())
+                    .anySatisfy(m -> assertThat(m).contains("endDate"))
+                    .anySatisfy(m -> assertThat(m).contains("id"));
+        } finally {
+            detachAppender(appender);
+        }
+    }
+
+    private static ListAppender<ILoggingEvent> attachAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(RequestValueExceptionHandler.class);
+        logger.setLevel(Level.WARN);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private static void detachAppender(ListAppender<ILoggingEvent> appender) {
+        ((Logger) LoggerFactory.getLogger(RequestValueExceptionHandler.class)).detachAppender(appender);
     }
 
     @Test

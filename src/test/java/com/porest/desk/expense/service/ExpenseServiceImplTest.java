@@ -19,8 +19,10 @@ import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.notification.service.NotificationMessages;
 import com.porest.desk.notification.service.NotificationService;
 import com.porest.desk.notification.service.dto.NotificationServiceDto;
+import com.porest.desk.support.message.TestMessages;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -35,11 +37,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -83,6 +87,8 @@ class ExpenseServiceImplTest {
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
+    // 알림 문구는 DB 에 굳는다 — mock 을 주면 저장되는 문장을 아무것도 안 지킨다. 실물 번들을 읽는다.
+    @Spy private NotificationMessages notificationMessages = TestMessages.notificationMessages();
 
     @InjectMocks private ExpenseServiceImpl sut;
 
@@ -423,6 +429,77 @@ class ExpenseServiceImplTest {
                 ArgumentCaptor.forClass(NotificationServiceDto.CreateCommand.class);
         verify(notificationService).createNotification(captor.capture());
         assertThat(captor.getValue().title()).contains("99%").doesNotContain("100%");
+    }
+
+    @Test
+    @DisplayName("createExpense — WARN 알림에 저장되는 문장(번들·`~어요`, 스케줄러와 같은 키)")
+    void createWarnStoresTheSharedSentence() {
+        // QA 2026-09-04 #76. 고치기 전 실측: "전체 예산 90% 사용" / "전체 예산의 90%를 사용했어요 (9,000 / 10,000원)."
+        // 같은 상황을 스케줄러는 "전체 예산 초과 경고" / "…카테고리 예산의 90%를 사용했습니다." 로 알렸다.
+        LocaleContextHolder.resetLocaleContext();
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        givenOverallBudget(10_000L, 85, u, leaf, 9_000L);
+
+        sut.createExpense(createCmdAmount(10L, 9_000L));
+
+        ArgumentCaptor<NotificationServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(NotificationServiceDto.CreateCommand.class);
+        verify(notificationService).createNotification(captor.capture());
+        // 카테고리 없는(월 전체) 예산의 이름도 번들에서 온다 — 코드에 박혀 있던 "전체" 였다.
+        assertThat(captor.getValue().title()).isEqualTo("전체 예산 90% 사용");
+        assertThat(captor.getValue().message()).isEqualTo("전체 예산의 90%를 사용했어요 (9,000 / 10,000원)");
+    }
+
+    @Test
+    @DisplayName("createExpense — OVER 알림에 저장되는 문장(번들, 스케줄러와 같은 키)")
+    void createOverStoresTheSharedSentence() {
+        // 고치기 전 실측: "전체 예산 초과" / "전체 예산 10,000원을 초과했어요 (현재 10,000원)."
+        LocaleContextHolder.resetLocaleContext();
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        givenOverallBudget(10_000L, 85, u, leaf, 10_000L);
+
+        sut.createExpense(createCmdAmount(10L, 10_000L));
+
+        ArgumentCaptor<NotificationServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(NotificationServiceDto.CreateCommand.class);
+        verify(notificationService).createNotification(captor.capture());
+        assertThat(captor.getValue().title()).isEqualTo("전체 예산 초과");
+        assertThat(captor.getValue().message()).isEqualTo("전체 예산 10,000원을 초과했어요 (현재 10,000원)");
+    }
+
+    @Test
+    @DisplayName("createExpense — 요청 로케일이 en 이면 그 언어로 굳는다(알림은 저장 시점 언어다)")
+    void createStoresTheNotificationInTheRequestLocale() {
+        // 알림은 DB 에 문자열로 굳어 나중에 다시 렌더할 수 없다 — 그래서 "저장 시점의 언어" 가 전부다.
+        // 요청 경로에서는 그 언어가 Accept-Language 다(스케줄러엔 없다 — NotificationMessages 주석 참고).
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        try {
+            User u = user(USER_ID);
+            ExpenseCategory leaf = category(10L, u);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            givenOverallBudget(10_000L, 85, u, leaf, 10_000L);
+
+            sut.createExpense(createCmdAmount(10L, 10_000L));
+
+            ArgumentCaptor<NotificationServiceDto.CreateCommand> captor =
+                    ArgumentCaptor.forClass(NotificationServiceDto.CreateCommand.class);
+            verify(notificationService).createNotification(captor.capture());
+            assertThat(captor.getValue().title()).isEqualTo("All budget exceeded");
+            assertThat(captor.getValue().message())
+                    .isEqualTo("You went over the All budget of 10,000 won (now 10,000 won)");
+        } finally {
+            LocaleContextHolder.resetLocaleContext();
+        }
     }
 
     @Test
