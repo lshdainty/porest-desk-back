@@ -19,6 +19,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -28,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,6 +54,10 @@ class ExpenseCategoryServiceImplTest {
     @Mock private ExpenseSplitRepository expenseSplitRepository;
     @Mock private RecurringTransactionRepository recurringTransactionRepository;
     @Mock private UserRepository userRepository;
+    // findOrCreateCategory 는 시도마다 새 트랜잭션을 연다(TransactionTemplate). mock 매니저는
+    // getTransaction 이 null 을 주고 commit/rollback 이 no-op 이라, 템플릿은 콜백만 그대로 실행하고
+    // 예외는 그대로 올린다 — 예산(ExpenseBudgetServiceImplTest)이 쓰는 것과 같은 수법이다.
+    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks private ExpenseCategoryServiceImpl sut;
 
@@ -314,6 +321,153 @@ class ExpenseCategoryServiceImplTest {
             assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
                     new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
                     .isInstanceOf(InvalidValueException.class);
+        }
+
+        @Test
+        @DisplayName("옮겨 갈 부모 아래에 같은 이름의 형제가 있으면 거부 — 등록·수정은 막는데 이동만 뚫려 있던 구멍")
+        void rejectDuplicateNameOnParentMove() {
+            User u = user(USER_ID);
+            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory newParent = category(2L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(newParent));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, 2L, ExpenseType.EXPENSE, "식비", 10L)).willReturn(true);
+
+            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
+                    .isInstanceOf(InvalidValueException.class);
+            assertThat(cat.getParent()).isSameAs(oldParent);
+        }
+
+        @Test
+        @DisplayName("최상위로 올릴 때도 같은 이름의 최상위가 있으면 거부 — parent NULL 을 `IS NULL` 로 갈라 본다")
+        void rejectDuplicateNameOnPromoteToTopLevel() {
+            User u = user(USER_ID);
+            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", 10L)).willReturn(true);
+
+            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, null))))
+                    .isInstanceOf(InvalidValueException.class);
+            assertThat(cat.getParent()).isSameAs(oldParent);
+        }
+
+        @Test
+        @DisplayName("이름이 겹치지 않으면 최상위로 승격된다 — 검사가 정상 이동까지 막지는 않는다")
+        void allowsPromoteWhenNameIsFree() {
+            User u = user(USER_ID);
+            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", 10L)).willReturn(false);
+
+            sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 2, null)));
+
+            assertThat(cat.getParent()).isNull();
+            assertThat(cat.getSortOrder()).isEqualTo(2);
+        }
+    }
+
+    @Nested
+    @DisplayName("이름 유일성이 DB 로 내려간 뒤 — 제약 위반을 500 으로 흘리지 않는다")
+    class ConstraintRecovery {
+
+        private ExpenseCategoryServiceDto.CreateCommand command(String name) {
+            return new ExpenseCategoryServiceDto.CreateCommand(
+                    USER_ID, name, "utensils", "#fff", ExpenseType.EXPENSE, null);
+        }
+
+        @Test
+        @DisplayName("createCategory — 유니크 위반(동시 저장 경쟁)은 409(중복 이름)로 바뀐다")
+        void createTranslatesConstraintViolation() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
+            willThrow(new DataIntegrityViolationException("UK_expense_category_active_name"))
+                    .given(expenseCategoryRepository).flush();
+
+            assertThatThrownBy(() -> sut.createCategory(command("식비")))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
+        }
+
+        @Test
+        @DisplayName("createCategory — 이름 앞뒤 공백은 저장 전에 잘린다(선행공백이 DB 판정과 어긋나던 자리)")
+        void createTrimsName() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
+
+            var info = sut.createCategory(command("  식비 "));
+
+            assertThat(info.categoryName()).isEqualTo("식비");
+        }
+
+        @Test
+        @DisplayName("findOrCreateCategory — 이미 있으면 만들지 않고 그 행을 돌려준다")
+        void findOrCreateReusesExisting() {
+            ExpenseCategory existing = category(77L, user(USER_ID), null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비")).willReturn(Optional.of(existing));
+
+            var info = sut.findOrCreateCategory(command("식비"));
+
+            assertThat(info.rowId()).isEqualTo(77L);
+            verify(expenseCategoryRepository, never()).save(any());
+        }
+
+        /**
+         * 가져오기가 이 PR 에서 가장 위험한 자리다 — 여기서 409 가 나가면 그 카테고리를 쓰는
+         * 파일의 뒤 행이 전부 같은 자리에서 다시 실패한다. 위반이 나면 새 트랜잭션으로
+         * 재조회해 상대가 넣은 행을 재사용하는지 고정한다.
+         */
+        @Test
+        @DisplayName("findOrCreateCategory — 유니크 위반이 나면 재조회해서 상대가 넣은 행을 재사용한다")
+        void findOrCreateRetriesAndReusesAfterConstraintViolation() {
+            User u = user(USER_ID);
+            ExpenseCategory winner = category(88L, u, null, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비"))
+                    .willReturn(Optional.empty(), Optional.of(winner));
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
+            willThrow(new DataIntegrityViolationException("UK_expense_category_active_name"))
+                    .given(expenseCategoryRepository).flush();
+
+            var info = sut.findOrCreateCategory(command("식비"));
+
+            assertThat(info.rowId()).isEqualTo(88L);
+            verify(expenseCategoryRepository, times(2))
+                    .findActiveByUserAndParentAndTypeAndName(USER_ID, null, ExpenseType.EXPENSE, "식비");
+        }
+
+        @Test
+        @DisplayName("findOrCreateCategory — 두 번째 시도도 위반이면 그대로 올린다(무한 루프 금지)")
+        void findOrCreateGivesUpAfterOneRetry() {
+            User u = user(USER_ID);
+            given(expenseCategoryRepository.findActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비")).willReturn(Optional.empty());
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
+            willThrow(new DataIntegrityViolationException("UK_expense_category_active_name"))
+                    .given(expenseCategoryRepository).flush();
+
+            assertThatThrownBy(() -> sut.findOrCreateCategory(command("식비")))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            verify(expenseCategoryRepository, times(2))
+                    .findActiveByUserAndParentAndTypeAndName(USER_ID, null, ExpenseType.EXPENSE, "식비");
         }
     }
 

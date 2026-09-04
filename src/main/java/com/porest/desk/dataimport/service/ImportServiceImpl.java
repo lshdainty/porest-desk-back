@@ -542,7 +542,12 @@ public class ImportServiceImpl implements ImportService {
             if (dryRun) {
                 return -(long) createdCount;
             }
-            var info = expenseCategoryService.createCategory(new ExpenseCategoryServiceDto.CreateCommand(
+            // findOrCreate 다 — createCategory 가 아니다. 캐시가 빗나가 이미 있는 이름을 다시
+            // 만들려 하면(선행공백·로케일 대소문자 차이, 동시 가져오기) createCategory 는 409 를
+            // 던지고, 그러면 캐시에 rowId 가 안 들어가 같은 카테고리를 쓰는 뒤의 모든 행이 같은
+            // 자리에서 다시 실패한다. 카테고리 하나가 파일의 절반을 차지하면 그 절반이 통째로
+            // 실패로 센다. 여기서 "있으면 그걸 쓴다" 로 받으면 그 연쇄가 끊긴다.
+            var info = expenseCategoryService.findOrCreateCategory(new ExpenseCategoryServiceDto.CreateCommand(
                 userRowId, name, DEFAULT_ICON, DEFAULT_COLOR, type, parentRowId));
             return info.rowId();
         }

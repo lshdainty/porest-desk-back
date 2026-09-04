@@ -79,4 +79,30 @@ public class ExpenseCategoryQueryDslRepository implements ExpenseCategoryReposit
             )
             .fetchFirst() != null;
     }
+
+    @Override
+    public Optional<ExpenseCategory> findActiveByUserAndParentAndTypeAndName(
+            Long userRowId, Long parentRowId,
+            com.porest.desk.expense.type.ExpenseType expenseType, String categoryName) {
+        // fetchOne 이 아니라 fetchFirst 다 — 유니크가 붙기 전 데이터에 같은 자리 활성 행이
+        // 둘 있으면 fetchOne 은 NonUniqueResultException 을 던지고, 그러면 가져오기가
+        // 정리되지 않은 계정에서 통째로 막힌다.
+        return Optional.ofNullable(
+            queryFactory.selectFrom(expenseCategory)
+                .where(
+                    expenseCategory.user.rowId.eq(userRowId),
+                    expenseCategory.categoryName.eq(categoryName),
+                    expenseCategory.expenseType.eq(expenseType),
+                    expenseCategory.isDeleted.eq(YNType.N),
+                    parentRowId != null ? expenseCategory.parent.rowId.eq(parentRowId) : expenseCategory.parent.isNull()
+                )
+                .orderBy(expenseCategory.rowId.asc())
+                .fetchFirst()
+        );
+    }
+
+    @Override
+    public void flush() {
+        entityManager.flush();
+    }
 }

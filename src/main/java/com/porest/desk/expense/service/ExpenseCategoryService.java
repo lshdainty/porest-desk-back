@@ -8,6 +8,22 @@ public interface ExpenseCategoryService {
     ExpenseCategoryServiceDto.CategoryInfo createCategory(ExpenseCategoryServiceDto.CreateCommand command);
 
     /**
+     * 같은 자리(사용자 · 타입 · 부모)에 그 이름의 카테고리를 <b>확보</b>한다 — 없으면 만들고
+     * 있으면 그 행을 돌려준다. 가져오기(dataimport)의 카테고리 자동 생성 전용 진입점이다.
+     *
+     * <p><b>왜 createCategory 로는 안 되는가.</b> 가져오기는 파일의 행마다 카테고리를 해석하고
+     * 결과를 캐시에 담는다. {@code createCategory} 가 이름 중복으로 409 를 던지면 캐시가 안 채워져
+     * <b>같은 카테고리를 쓰는 뒤의 모든 행이 같은 자리에서 다시 실패한다</b> — 카테고리 하나가
+     * 파일의 절반을 차지하면 그 절반이 통째로 실패로 센다. 여기서 "있으면 그걸 쓴다" 로 받으면
+     * 그 연쇄가 끊긴다.
+     *
+     * <p>활성 이름 UNIQUE 가 DB 에 붙으면 동시 가져오기 두 개가 같은 이름을 만들려다 한쪽이
+     * 제약 위반으로 진다. 구현은 그때 <b>새 트랜잭션으로 한 번 더</b> 돌아 상대가 넣은 행을
+     * 재조회해 돌려준다(1회 재시도 — 두 번째도 위반이면 우리가 모르는 상황이라 그대로 올린다).
+     */
+    ExpenseCategoryServiceDto.CategoryInfo findOrCreateCategory(ExpenseCategoryServiceDto.CreateCommand command);
+
+    /**
      * 신규 사용자에게 기본 지출·수입 카테고리 세트를 만들어 준다.
      *
      * <p>카테고리가 하나도 없으면 거래 시트의 저장이 조용히 비활성이라 신규
