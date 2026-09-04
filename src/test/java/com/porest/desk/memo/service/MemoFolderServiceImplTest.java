@@ -12,14 +12,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.porest.desk.memo.service.dto.MemoServiceDto;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -128,5 +133,52 @@ class MemoFolderServiceImplTest {
 
         assertThatThrownBy(() -> sut.updateFolder(5L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
+    }
+    @Test
+    @DisplayName("createFolder — 루트(부모 없음)에서도 같은 이름을 막는다 — NULL 을 `IS NULL` 로 갈라 보는 자리")
+    void createRejectsDuplicateAtRoot() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(memoFolderRepository.existsActiveByUserAndParentAndName(USER_ID, null, "업무", null))
+                .willReturn(true);
+
+        assertThatThrownBy(() -> sut.createFolder(new MemoServiceDto.FolderCreateCommand(USER_ID, null, "업무")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.MEMO_FOLDER_DUPLICATE_NAME);
+    }
+
+    @Test
+    @DisplayName("createFolder — 이름 앞뒤 공백은 저장 전에 잘린다")
+    void createTrimsName() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        var info = sut.createFolder(new MemoServiceDto.FolderCreateCommand(USER_ID, null, "  업무 "));
+
+        assertThat(info.folderName()).isEqualTo("업무");
+        verify(memoFolderRepository).existsActiveByUserAndParentAndName(USER_ID, null, "업무", null);
+    }
+
+    @Test
+    @DisplayName("createFolder — 빈 이름·공백뿐인 이름은 400 으로 거절한다")
+    void createRejectsBlankName() {
+        assertThatThrownBy(() -> sut.createFolder(new MemoServiceDto.FolderCreateCommand(USER_ID, null, "  ")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("createFolder — 유니크 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+    void translatesConstraintViolation() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(memoFolderRepository.existsActiveByUserAndParentAndName(USER_ID, null, "업무", null))
+                .willReturn(false);
+        willThrow(new DataIntegrityViolationException("UK_memo_folder_user_parent_active_name"))
+                .given(memoFolderRepository).flush();
+
+        assertThatThrownBy(() -> sut.createFolder(new MemoServiceDto.FolderCreateCommand(USER_ID, null, "업무")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.MEMO_FOLDER_DUPLICATE_NAME);
     }
 }
