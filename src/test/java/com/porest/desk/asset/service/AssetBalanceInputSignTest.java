@@ -1,5 +1,6 @@
 package com.porest.desk.asset.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
@@ -92,8 +93,8 @@ class AssetBalanceInputSignTest {
 
     private AssetServiceDto.UpdateAssetCommand updateCommand(Long balance, Boolean isOverdraft) {
         return new AssetServiceDto.UpdateAssetCommand(
-            null, null, balance, isOverdraft, null, null,
-            null, null, null, null, null, null, null, null, null);
+            Patch.absent(), Patch.absent(), Patch.set(balance), Patch.set(isOverdraft), Patch.absent(), Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
     }
 
     /** 생성 경로 — 저장된 자산(initial_balance) 을 잡아 부호를 본다. */

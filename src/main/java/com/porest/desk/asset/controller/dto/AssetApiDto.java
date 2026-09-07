@@ -11,6 +11,7 @@ import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -18,6 +19,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public class AssetApiDto {
 
@@ -71,13 +73,32 @@ public class AssetApiDto {
         List<HoldingRequest> holdings
     ) {}
 
+    /**
+     * 수정 본문 — <b>실린 칸만 바꾼다</b>(QA #96, 사용자 결정 2026-09-07).
+     *
+     * <p>{@code Optional} 참조가 {@code null} 이면 키가 없었던 것(유지),
+     * {@code Optional.empty()} 면 {@code null} 이 실린 것(지움)이다
+     * ({@code AbsentAwareOptionalModule}). 종전엔 안 보낸 {@code institution}·{@code memo}·
+     * {@code color} 가 null 로 덮여 사라졌다.
+     *
+     * <p>NOT NULL 칸({@code assetName}·{@code assetType}·{@code currency}·
+     * {@code isIncludedInTotal})은 "지운다" 가 성립하지 않아 명시적 {@code null} 을 400 으로 끊는다.
+     * 안 보내면 지금 값을 지킨다(종전과 같다).
+     *
+     * <p>{@code balance} 는 지우는 칸이 아니다 — 잔액은 이력에서 집계하고 이 값은 "앵커를 찍어
+     * 달라" 는 요청이다. 안 보내거나 {@code null} 이면 앵커를 안 찍는다(종전과 같다).
+     *
+     * <p>{@code holdings} 만 {@code Optional} 이 아니다 — 종전부터 "{@code null}=무변경,
+     * 리스트=전체 교체" 였고 그 계약을 그대로 둔다.
+     */
     public record UpdateAssetRequest(
-        @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
-        String assetName,
-        AssetType assetType,
-        @Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
-        Long balance,
+        Optional<@NotBlank(message = "자산 이름을 입력해 주세요")
+                 @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
+                 String> assetName,
+        Optional<@NotNull(message = "자산 종류를 골라 주세요") AssetType> assetType,
+        Optional<@Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
+                 @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
+                 Long> balance,
         /**
          * 마이너스 통장 여부 — true 면 잔액을 <b>음수로</b> 저장한다(새 AssetType 없이
          * {@code BANK_ACCOUNT} + 음수 잔액). 화면은 "사용 중인 금액" 을 양수로 받고
@@ -86,22 +107,22 @@ public class AssetApiDto {
          * <p>안 보내면(옛 클라이언트) 보낸 부호를 그대로 존중한다 — 여기서 abs() 를 강제하면
          * 옛 앱이 마이너스 통장을 열어 저장만 해도 부호가 뒤집힌다.
          */
-        Boolean isOverdraft,
-        String currency,
+        Optional<Boolean> isOverdraft,
+        Optional<@NotBlank(message = "통화를 골라 주세요") String> currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
-        java.math.BigDecimal exchangeRate,
-        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
-        String color,
-        String institution,
-        String memo,
-        YNType isIncludedInTotal,
-        Long cardCatalogRowId,
+        Optional<java.math.BigDecimal> exchangeRate,
+        Optional<@Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
+                 String> color,
+        Optional<String> institution,
+        Optional<String> memo,
+        Optional<@NotNull(message = "합계에 포함할지 골라 주세요") YNType> isIncludedInTotal,
+        Optional<Long> cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
-        @Min(value = 0, message = "한도는 0원 이상이어야 해요")
-        @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있어요")
-        Long creditLimit,
-        Integer paymentDay,
-        Long paymentAssetRowId,
+        Optional<@Min(value = 0, message = "한도는 0원 이상이어야 해요")
+                 @Max(value = AmountLimits.MAX_BALANCE, message = "한도는 1,000억원까지 입력할 수 있어요")
+                 Long> creditLimit,
+        Optional<Integer> paymentDay,
+        Optional<Long> paymentAssetRowId,
         // 투자 보유 목록 — null=무변경, 리스트=전체 교체
         List<HoldingRequest> holdings
     ) {}

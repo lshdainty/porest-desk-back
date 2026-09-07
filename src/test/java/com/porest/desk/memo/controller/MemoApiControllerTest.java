@@ -3,6 +3,7 @@ package com.porest.desk.memo.controller;
 import com.porest.core.type.YNType;
 import com.porest.core.util.MessageResolver;
 import com.porest.desk.common.config.web.WebConfig;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.memo.service.MemoService;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
@@ -145,10 +146,34 @@ class MemoApiControllerTest {
 
         var captor = ArgumentCaptor.forClass(MemoServiceDto.UpdateCommand.class);
         verify(memoService).updateMemo(eq(5L), eq(1L), captor.capture());
-        assertThat(captor.getValue().title()).isEqualTo("수정제목");
-        assertThat(captor.getValue().content()).isEqualTo("수정내용");
-        assertThat(captor.getValue().tag()).isEqualTo("수정태그");
-        assertThat(captor.getValue().color()).isEqualTo("#000000");
+        assertThat(captor.getValue().title()).isEqualTo(Patch.set("수정제목"));
+        assertThat(captor.getValue().content()).isEqualTo(Patch.set("수정내용"));
+        assertThat(captor.getValue().tag()).isEqualTo(Patch.set("수정태그"));
+        assertThat(captor.getValue().color()).isEqualTo(Patch.set("#000000"));
+    }
+
+    /**
+     * QA #96 — 본문에 <b>실린 키만</b> 명령으로 옮긴다. 키가 없으면 "안 왔다",
+     * {@code null} 이면 "지워라" 로 서로 다르게 도착해야 한다. 이 구분은
+     * {@code AbsentAwareOptionalModule} 이 만든다 — 모듈이 빠지면 둘 다 "지워라" 가 된다.
+     */
+    @Test
+    @DisplayName("PUT /memo/{id} — 안 보낸 키는 absent, null 은 지움으로 도착한다")
+    void updateMemoCarriesAbsenceAndNullApart() throws Exception {
+        given(memoService.updateMemo(eq(5L), eq(1L), any())).willReturn(sampleInfo());
+
+        mockMvc.perform(put("/api/v1/memo/{id}", 5L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":null}"""))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(MemoServiceDto.UpdateCommand.class);
+        verify(memoService).updateMemo(eq(5L), eq(1L), captor.capture());
+        assertThat(captor.getValue().content()).isEqualTo(Patch.set(null));
+        assertThat(captor.getValue().title()).isEqualTo(Patch.absent());
+        assertThat(captor.getValue().tag()).isEqualTo(Patch.absent());
+        assertThat(captor.getValue().color()).isEqualTo(Patch.absent());
     }
 
     @Test

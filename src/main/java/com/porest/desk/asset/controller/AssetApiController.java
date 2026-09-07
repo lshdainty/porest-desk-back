@@ -2,6 +2,7 @@ package com.porest.desk.asset.controller;
 
 import com.porest.core.controller.ApiResponse;
 import com.porest.desk.asset.controller.dto.AssetApiDto;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
@@ -68,11 +69,15 @@ public class AssetApiController {
             @PathVariable Long id,
             @Valid @RequestBody AssetApiDto.UpdateAssetRequest request) {
         AssetServiceDto.AssetInfo info = assetService.updateAsset(id, loginUser.getRowId(), new AssetServiceDto.UpdateAssetCommand(
-            request.assetName(), request.assetType(), request.balance(), request.isOverdraft(),
-            request.currency(), request.exchangeRate(), request.color(),
-            request.institution(), request.memo(), request.isIncludedInTotal(),
-            request.cardCatalogRowId(),
-            request.creditLimit(), request.paymentDay(), request.paymentAssetRowId(),
+            Patch.from(request.assetName()), Patch.from(request.assetType()),
+            Patch.from(request.balance()), Patch.from(request.isOverdraft()),
+            Patch.from(request.currency()), Patch.from(request.exchangeRate()),
+            Patch.from(request.color()),
+            Patch.from(request.institution()), Patch.from(request.memo()),
+            Patch.from(request.isIncludedInTotal()),
+            Patch.from(request.cardCatalogRowId()),
+            Patch.from(request.creditLimit()), Patch.from(request.paymentDay()),
+            Patch.from(request.paymentAssetRowId()),
             AssetApiDto.HoldingRequest.toCommands(request.holdings())
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));

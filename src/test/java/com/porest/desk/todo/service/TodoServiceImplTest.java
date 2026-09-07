@@ -1,5 +1,6 @@
 package com.porest.desk.todo.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
 import com.porest.core.exception.EntityNotFoundException;
@@ -326,7 +327,7 @@ class TodoServiceImplTest {
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
-                "고친제목", "내용", null, "업무", LocalDate.of(2026, 6, 20), null));
+                Patch.set("고친제목"), Patch.set("내용"), Patch.absent(), Patch.set("업무"), Patch.set(LocalDate.of(2026, 6, 20)), null));
 
         assertThat(info.priority()).isEqualTo(TodoPriority.HIGH);
         assertThat(info.title()).isEqualTo("고친제목");
@@ -463,7 +464,7 @@ class TodoServiceImplTest {
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
-                "t", null, null, "개인", null, null));
+                Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("개인"), Patch.absent(), null));
 
         verify(todoTagMappingRepository).deleteByTodoIdAndTagId(5L, 11L);
         assertThat(savedMappingTag().getRowId()).isEqualTo(12L);
@@ -484,7 +485,7 @@ class TodoServiceImplTest {
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
-                "t", null, null, "업무", null, null));
+                Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("업무"), Patch.absent(), null));
 
         verify(todoTagMappingRepository, never()).deleteByTodoIdAndTagId(anyLong(), anyLong());
         verify(todoTagMappingRepository, never()).save(any());
@@ -502,7 +503,7 @@ class TodoServiceImplTest {
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
-                "t", null, null, "업무", null, List.of(7L)));
+                Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("업무"), Patch.absent(), List.of(7L)));
 
         verify(todoTagService, never()).findOrCreateByName(anyLong(), anyString());
         verify(todoTagMappingRepository).deleteByTodoId(5L);

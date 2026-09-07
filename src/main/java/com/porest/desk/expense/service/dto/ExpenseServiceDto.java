@@ -1,5 +1,6 @@
 package com.porest.desk.expense.service.dto;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.type.ExpenseType;
 
@@ -34,27 +35,31 @@ public class ExpenseServiceDto {
         Long todoRowId
     ) {}
 
+    /**
+     * 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}).
+     * {@code splits} 만 종전 그대로다({@code null}=미변경, 리스트=교체).
+     */
     public record UpdateCommand(
-        Long categoryRowId,
-        Long assetRowId,
-        ExpenseType expenseType,
-        Long amount,
-        String description,
-        LocalDateTime expenseDate,
-        String merchant,
-        String paymentMethod,
+        Patch<Long> categoryRowId,
+        Patch<Long> assetRowId,
+        Patch<ExpenseType> expenseType,
+        Patch<Long> amount,
+        Patch<String> description,
+        Patch<LocalDateTime> expenseDate,
+        Patch<String> merchant,
+        Patch<String> paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
-        Integer installmentMonths,
+        Patch<Integer> installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). INCOME 이면서 이 값이 있으면 지출 상계로 집계. */
-        Long refundOfExpenseRowId,
+        Patch<Long> refundOfExpenseRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
-        java.math.BigDecimal originalAmount,
+        Patch<java.math.BigDecimal> originalAmount,
         /** 원 통화 (ISO 4217, 예: USD). */
-        String originalCurrency,
+        Patch<String> originalCurrency,
         /** 적용 환율 (원 통화 1단위당 원화). */
-        java.math.BigDecimal exchangeRate,
-        Long calendarEventRowId,
-        Long todoRowId,
+        Patch<java.math.BigDecimal> exchangeRate,
+        Patch<Long> calendarEventRowId,
+        Patch<Long> todoRowId,
         // 분할 내역 동시 수정. null = 분할 미변경(기존 유지), 비어있지 않은 리스트 = 새 분할로 교체.
         // 금액 변경으로 기존 분할 합이 어긋날 때 클라이언트가 맞춘 분할을 함께 전달하면 원자적으로 일치화.
         List<ExpenseSplitServiceDto.SplitCommand> splits

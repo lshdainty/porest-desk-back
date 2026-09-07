@@ -3,6 +3,7 @@ package com.porest.desk.todo.controller;
 import com.porest.core.controller.ApiResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.todo.controller.dto.TodoApiDto;
 import com.porest.desk.todo.service.TodoService;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
@@ -79,11 +80,11 @@ public class TodoApiController {
             @PathVariable Long id,
             @Valid @RequestBody TodoApiDto.UpdateRequest request) {
         TodoServiceDto.TodoInfo info = todoService.updateTodo(id, loginUser.getRowId(), new TodoServiceDto.UpdateCommand(
-            request.title(),
-            request.content(),
-            request.priority(),
-            request.category(),
-            request.dueDate(),
+            Patch.from(request.title()),
+            Patch.from(request.content()),
+            Patch.from(request.priority()),
+            Patch.from(request.category()),
+            Patch.from(request.dueDate()),
             request.tagIds()
         ));
         return ApiResponse.success(TodoApiDto.Response.from(info));

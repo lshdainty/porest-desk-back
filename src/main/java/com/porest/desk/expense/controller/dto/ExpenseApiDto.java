@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public class ExpenseApiDto {
 
@@ -71,36 +72,46 @@ public class ExpenseApiDto {
         Long todoRowId
     ) {}
 
+    /**
+     * 수정 본문 — <b>실린 칸만 바꾼다</b>(QA #96, 사용자 결정 2026-09-07).
+     *
+     * <p>{@code Optional} 참조가 {@code null} 이면 키가 없었던 것(유지),
+     * {@code Optional.empty()} 면 {@code null} 이 실린 것(지움)이다
+     * ({@code AbsentAwareOptionalModule}). 종전엔 안 보낸 {@code merchant}·{@code description}·
+     * {@code assetRowId} 가 null 로 덮여 사라졌다.
+     *
+     * <p>NOT NULL 칸({@code categoryRowId}·{@code expenseType}·{@code amount}·{@code expenseDate})은
+     * "지운다" 가 성립하지 않는다 — 제약을 {@code Optional} 안에 그대로 두어 <b>실렸을 때만</b>
+     * 검사한다. 안 보내면 지금 값을 지키고, 명시적 {@code null} 은 종전처럼 400 이다.
+     *
+     * <p>{@code splits} 만 {@code Optional} 이 아니다 — 이 칸은 종전부터
+     * "{@code null}=분할 미변경, 리스트=교체" 였고 그 계약을 그대로 둔다.
+     */
     @Schema(name = "ExpenseUpdateRequest")
     public record UpdateRequest(
-        @NotNull(message = "카테고리를 골라 주세요")
-        Long categoryRowId,
-        Long assetRowId,
-        @NotNull(message = "거래 종류를 골라 주세요")
-        ExpenseType expenseType,
-        @NotNull(message = "금액을 입력해 주세요")
-        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
-        Long amount,
-        @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
-        String description,
+        Optional<@NotNull(message = "카테고리를 골라 주세요") Long> categoryRowId,
+        Optional<Long> assetRowId,
+        Optional<@NotNull(message = "거래 종류를 골라 주세요") ExpenseType> expenseType,
+        Optional<@NotNull(message = "금액을 입력해 주세요")
+                 @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
+                 Long> amount,
+        Optional<@Size(max = 500, message = "설명은 500자까지 입력할 수 있어요") String> description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
-        @NotBlank(message = "거래 일시를 입력해 주세요")
-        String expenseDate,
-        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
-        String merchant,
-        String paymentMethod,
+        Optional<@NotBlank(message = "거래 일시를 입력해 주세요") String> expenseDate,
+        Optional<@Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요") String> merchant,
+        Optional<String> paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
-        Integer installmentMonths,
+        Optional<Integer> installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). */
-        Long refundOfExpenseRowId,
+        Optional<Long> refundOfExpenseRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
-        java.math.BigDecimal originalAmount,
+        Optional<java.math.BigDecimal> originalAmount,
         /** 원 통화 (ISO 4217, 예: USD). */
-        String originalCurrency,
+        Optional<String> originalCurrency,
         /** 적용 환율 (원 통화 1단위당 원화). */
-        java.math.BigDecimal exchangeRate,
-        Long calendarEventRowId,
-        Long todoRowId,
+        Optional<java.math.BigDecimal> exchangeRate,
+        Optional<Long> calendarEventRowId,
+        Optional<Long> todoRowId,
         // 분할 내역 동시 수정(선택). null = 분할 미변경, 리스트 = 새 분할로 교체(금액과 합 일치 필요).
         List<ExpenseSplitApiDto.SplitRequest> splits
     ) {}

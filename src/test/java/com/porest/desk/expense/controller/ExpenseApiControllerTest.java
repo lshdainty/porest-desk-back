@@ -1,5 +1,6 @@
 package com.porest.desk.expense.controller;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.util.MessageResolver;
 import com.porest.desk.common.config.web.WebConfig;
 import com.porest.desk.expense.service.ExpenseService;
@@ -193,7 +194,7 @@ class ExpenseApiControllerTest {
 
         var captor = ArgumentCaptor.forClass(ExpenseServiceDto.UpdateCommand.class);
         verify(expenseService).updateExpense(eq(10L), eq(1L), captor.capture());
-        assertThat(captor.getValue().amount()).isEqualTo(20000L);
+        assertThat(captor.getValue().amount()).isEqualTo(Patch.set(20000L));
         assertThat(captor.getValue().splits()).hasSize(2);
         assertThat(captor.getValue().splits().get(0).categoryRowId()).isEqualTo(7L);
         assertThat(captor.getValue().splits().get(0).amount()).isEqualTo(8000L);
@@ -217,21 +218,47 @@ class ExpenseApiControllerTest {
     }
 
     /**
-     * QA #81 — 돈이 걸린 화면에서 가장 오해가 큰 답을 고친 자리.
+     * QA #81 → #96 — <b>같은 자리의 답이 바뀌었다.</b>
      *
-     * <p>{@code expense_type}·{@code amount}·{@code expense_date} 는 셋 다 NOT NULL 이고 수정
-     * 경로도 받은 값을 그대로 덮는다. 종전엔 하나만 빠져도 DB 까지 내려가 <b>409 "다른 곳에서
-     * 먼저 수정됐어요"</b> 로 튕겼다 — 사용자는 남이 고친 줄 알고 새로고침만 반복한다.
+     * <p>{@code expense_type}·{@code amount}·{@code expense_date} 는 셋 다 NOT NULL 이다.
+     * 종전엔 수정 경로가 받은 값을 그대로 덮어써서, 하나만 빠져도 null 이 DB 까지 내려가
+     * <b>409 "다른 곳에서 먼저 수정됐어요"</b> 로 튕겼다. #81 은 그 자리를 {@code @NotBlank} 로
+     * 막아 400 을 줬다 — 덮어쓰는 한 그게 맞는 답이었다.
      *
-     * <p>되돌려 보는 법(네거티브 컨트롤): {@code ExpenseApiDto.UpdateRequest} 의
-     * {@code @NotBlank(expenseDate)} 를 지우면 아래가 200 으로 통과한다.
+     * <p>지금은 <b>안 보낸 칸을 덮지 않는다</b>(사용자 결정 2026-09-07). 그래서 빠진 일시는
+     * 거절할 이유가 없다 — 지금 값이 그대로 남는다. 거절해야 하는 것은 <b>명시적 {@code null}</b>
+     * 하나다(아래 {@code explicitNull} 테스트). 이 둘을 가르는 것이 이번 변경의 전부다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code AbsentAwareOptionalModule} 을 빼면 "키 없음" 이
+     * {@code Optional.empty()} 로 도착해 {@code @NotBlank} 에 걸리고, 아래가 400 으로 깨진다.
      */
     @Test
-    @DisplayName("PUT /expense/{id} — 거래 일시가 빠지면 400(409 가 아니다)")
-    void updateExpense_missingExpenseDate_returns400() throws Exception {
+    @DisplayName("PUT /expense/{id} — 거래 일시를 안 보내면 그 칸을 안 건드린다(400 이 아니다)")
+    void updateExpense_missingExpenseDate_isPartialUpdate() throws Exception {
+        given(expenseService.updateExpense(eq(10L), eq(1L), any())).willReturn(sampleInfo());
+
         mockMvc.perform(put("/api/v1/expense/{id}", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\":30000,\"expenseType\":\"EXPENSE\"}"))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(ExpenseServiceDto.UpdateCommand.class);
+        verify(expenseService).updateExpense(eq(10L), eq(1L), captor.capture());
+        assertThat(captor.getValue().expenseDate()).isEqualTo(Patch.absent());
+        assertThat(captor.getValue().categoryRowId()).isEqualTo(Patch.absent());
+        assertThat(captor.getValue().amount()).isEqualTo(Patch.set(30000L));
+    }
+
+    /**
+     * 명시적 {@code null} 은 "지워라" 인데 NOT NULL 칸에서는 성립하지 않는다 — 400 이다.
+     * 안 보낸 것과 <b>다른 답</b>이어야 한다(바로 위 테스트).
+     */
+    @Test
+    @DisplayName("PUT /expense/{id} — 거래 일시에 null 을 실으면 400")
+    void updateExpense_explicitNullExpenseDate_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/expense/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":30000,\"expenseType\":\"EXPENSE\",\"expenseDate\":null}"))
                 .andExpect(status().isBadRequest());
 
         verify(expenseService, never()).updateExpense(any(Long.class), any(Long.class), any());

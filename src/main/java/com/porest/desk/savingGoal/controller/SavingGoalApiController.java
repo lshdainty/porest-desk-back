@@ -1,6 +1,7 @@
 package com.porest.desk.savingGoal.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.savingGoal.controller.dto.SavingGoalApiDto;
 import com.porest.desk.savingGoal.service.SavingGoalService;
 import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
@@ -69,13 +70,13 @@ public class SavingGoalApiController {
         SavingGoalServiceDto.GoalInfo info = savingGoalService.updateSavingGoal(
             id, loginUser.getRowId(),
             new SavingGoalServiceDto.UpdateCommand(
-                request.title(),
-                request.description(),
-                request.targetAmount(),
-                request.deadlineDate(),
-                request.icon(),
-                request.color(),
-                request.linkedAssetRowId()
+                Patch.from(request.title()),
+                Patch.from(request.description()),
+                Patch.from(request.targetAmount()),
+                Patch.from(request.deadlineDate()),
+                Patch.from(request.icon()),
+                Patch.from(request.color()),
+                Patch.from(request.linkedAssetRowId())
             )
         );
         return ApiResponse.success(SavingGoalApiDto.SavingGoalResponse.from(info));

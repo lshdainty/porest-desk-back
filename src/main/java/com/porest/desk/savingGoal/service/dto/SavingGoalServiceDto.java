@@ -1,6 +1,7 @@
 package com.porest.desk.savingGoal.service.dto;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.savingGoal.domain.SavingGoal;
 
 import java.time.LocalDate;
@@ -21,14 +22,15 @@ public class SavingGoalServiceDto {
         Integer sortOrder
     ) {}
 
+    /** 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}). */
     public record UpdateCommand(
-        String title,
-        String description,
-        Long targetAmount,
-        LocalDate deadlineDate,
-        String icon,
-        String color,
-        Long linkedAssetRowId
+        Patch<String> title,
+        Patch<String> description,
+        Patch<Long> targetAmount,
+        Patch<LocalDate> deadlineDate,
+        Patch<String> icon,
+        Patch<String> color,
+        Patch<Long> linkedAssetRowId
     ) {}
 
     public record ContributeCommand(

@@ -73,7 +73,12 @@ public class MemoServiceImpl implements MemoService {
         Memo memo = findMemoOrThrow(memoId);
         validateMemoOwnership(memo, userRowId);
 
-        memo.updateMemo(command.title(), command.content(), command.tag(), command.color());
+        // 실린 칸만 바꾼다 — 안 온 칸은 지금 값을 그대로 넘긴다(QA #96).
+        memo.updateMemo(
+            command.title().orKeep(memo.getTitle()),
+            command.content().orKeep(memo.getContent()),
+            command.tag().orKeep(memo.getTag()),
+            command.color().orKeep(memo.getColor()));
 
         log.info("메모 수정 완료: memoId={}", memoId);
 

@@ -1,5 +1,6 @@
 package com.porest.desk.savingGoal.controller;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.type.YNType;
 import com.porest.core.util.MessageResolver;
 import com.porest.desk.common.config.web.WebConfig;
@@ -130,9 +131,9 @@ class SavingGoalApiControllerTest {
 
         var captor = ArgumentCaptor.forClass(SavingGoalServiceDto.UpdateCommand.class);
         verify(savingGoalService).updateSavingGoal(eq(100L), eq(1L), captor.capture());
-        assertThat(captor.getValue().title()).isEqualTo("수정 목표");
-        assertThat(captor.getValue().targetAmount()).isEqualTo(2000000L);
-        assertThat(captor.getValue().linkedAssetRowId()).isEqualTo(9L);
+        assertThat(captor.getValue().title()).isEqualTo(Patch.set("수정 목표"));
+        assertThat(captor.getValue().targetAmount()).isEqualTo(Patch.set(2000000L));
+        assertThat(captor.getValue().linkedAssetRowId()).isEqualTo(Patch.set(9L));
     }
 
     @Test

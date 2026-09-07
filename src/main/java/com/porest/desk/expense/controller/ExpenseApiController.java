@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import com.porest.desk.common.time.WallClockDateTimeParser;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.controller.dto.ExpenseApiDto;
 import com.porest.desk.expense.service.ExpenseService;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
@@ -83,19 +84,21 @@ public class ExpenseApiController {
                 .toList();
 
         ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, loginUser.getRowId(), new ExpenseServiceDto.UpdateCommand(
-            request.categoryRowId(),
-            request.assetRowId(),
-            request.expenseType(),
-            request.amount(),
-            request.description(),
-            parseExpenseDate(request.expenseDate()),
-            request.merchant(),
-            request.paymentMethod(),
-            request.installmentMonths(),
-            request.refundOfExpenseRowId(),
-            request.originalAmount(), request.originalCurrency(), request.exchangeRate(),
-            request.calendarEventRowId(),
-            request.todoRowId(),
+            Patch.from(request.categoryRowId()),
+            Patch.from(request.assetRowId()),
+            Patch.from(request.expenseType()),
+            Patch.from(request.amount()),
+            Patch.from(request.description()),
+            Patch.from(request.expenseDate()).map(ExpenseApiController::parseExpenseDate),
+            Patch.from(request.merchant()),
+            Patch.from(request.paymentMethod()),
+            Patch.from(request.installmentMonths()),
+            Patch.from(request.refundOfExpenseRowId()),
+            Patch.from(request.originalAmount()),
+            Patch.from(request.originalCurrency()),
+            Patch.from(request.exchangeRate()),
+            Patch.from(request.calendarEventRowId()),
+            Patch.from(request.todoRowId()),
             splits
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));

@@ -1,5 +1,6 @@
 package com.porest.desk.asset.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
@@ -98,9 +99,9 @@ class InvestmentCashPreservedTest {
     private AssetServiceDto.UpdateAssetCommand command(Long balance,
                                                        List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
-            "주식계좌", AssetType.INVESTMENT, balance, null, "KRW", null,
-            null, "삼성증권", null, YNType.Y,
-            null, null, null, null, holdings);
+            Patch.set("주식계좌"), Patch.set(AssetType.INVESTMENT), Patch.set(balance), Patch.absent(), Patch.set("KRW"), Patch.absent(),
+            Patch.absent(), Patch.set("삼성증권"), Patch.absent(), Patch.set(YNType.Y),
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
     }
 
     @Test

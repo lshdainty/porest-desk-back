@@ -1,5 +1,6 @@
 package com.porest.desk.expense.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
@@ -117,11 +118,11 @@ class ExpenseServiceImplTest {
 
     private ExpenseServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new ExpenseServiceDto.UpdateCommand(
-                categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null,
-            null,
-            null,
-            null, null, null, null);
+                Patch.set(categoryRowId), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.set("점심"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.set("식당"), Patch.set("CARD"), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), null);
     }
 
     @Test
@@ -210,11 +211,11 @@ class ExpenseServiceImplTest {
         given(assetRepository.findById(20L)).willReturn(Optional.of(othersAsset));
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
-                10L, 20L, ExpenseType.EXPENSE, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null,
-            null,
-            null,
-            null, null, null, null);
+                Patch.set(10L), Patch.set(20L), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.set("식당"), Patch.set("CARD"), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), null);
 
         assertThatThrownBy(() -> sut.updateExpense(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -313,11 +314,11 @@ class ExpenseServiceImplTest {
 
         // 1,000 → 9,900 으로 상향 수정
         var cmd = new ExpenseServiceDto.UpdateCommand(
-                10L, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
-            null,
-            null,
-            null, null, null, null);
+                Patch.set(10L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(9_900L),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), null);
 
         sut.updateExpense(5L, USER_ID, cmd);
 
@@ -538,11 +539,11 @@ class ExpenseServiceImplTest {
         given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(expense));
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
-                10L, null, ExpenseType.EXPENSE, 9_999L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
-            null,
-            null,
-            null, null, null, null);
+                Patch.set(10L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(9_999L),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), null);
         sut.updateExpense(5L, USER_ID, cmd);
 
         // before 0.99, after 0.9999: OVER(>=1.0) 거짓, WARN(이미 0.99>=0.85) 미돌파 → 알림 없음
@@ -569,11 +570,11 @@ class ExpenseServiceImplTest {
         given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(expense));
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
-                10L, null, ExpenseType.EXPENSE, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
-            null,
-            null,
-            null, null, null, null);
+                Patch.set(10L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), null);
         sut.updateExpense(5L, USER_ID, cmd);
 
         verify(notificationService, times(1)).createNotification(any()); // before 0.99<1.0, after 1.0>=1.0 → OVER
@@ -617,11 +618,11 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.UpdateCommand updateCmdWithSplits(
             long categoryRowId, long amount, List<ExpenseSplitServiceDto.SplitCommand> splits) {
         return new ExpenseServiceDto.UpdateCommand(
-                categoryRowId, null, ExpenseType.EXPENSE, amount,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
-            null,
-            null,
-            null, null, null, splits);
+                Patch.set(categoryRowId), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(amount),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), splits);
     }
 
     @Test
@@ -794,11 +795,11 @@ class ExpenseServiceImplTest {
         given(expenseSplitRepository.findByExpenseIds(any())).willReturn(List.of(), List.of(sp2, sp8));
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
-                8L, null, ExpenseType.EXPENSE, 10_000L,
-                "쿠팡", LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null,
-            null,
-            null,
-            null, null, null,
+                Patch.set(8L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.set("쿠팡"), Patch.set(LocalDateTime.of(2026, 6, 5, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(),
+            Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(),
                 List.of(new ExpenseSplitServiceDto.SplitCommand(
             null,2L, 4_000L, "식비", 0),
                         new ExpenseSplitServiceDto.SplitCommand(
@@ -900,9 +901,9 @@ class ExpenseServiceImplTest {
         @DisplayName("수정에서도 음수를 막는다 — 만든 뒤 뒤집는 경로를 남기지 않는다")
         void rejectsNegativeAmountOnUpdate() {
             ExpenseServiceDto.UpdateCommand cmd = new ExpenseServiceDto.UpdateCommand(
-                1L, null, ExpenseType.EXPENSE, -5_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
-                null, null, null, null, null, null);
+                Patch.set(1L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(-5_000L),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
             assertThatThrownBy(() -> sut.updateExpense(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
         }

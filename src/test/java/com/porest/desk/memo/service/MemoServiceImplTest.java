@@ -2,6 +2,7 @@ package com.porest.desk.memo.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.memo.domain.Memo;
 import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.user.domain.User;
@@ -111,11 +112,12 @@ class MemoServiceImplTest {
      * QA #81 — 수정에서 {@code title} 이 빠지면 <b>기존 제목을 지킨다</b>. {@code memo.title} 은
      * NOT NULL 이라 종전엔 null 을 덮어써 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다.
      *
-     * <p>지금은 DTO 의 {@code @NotBlank} 가 HTTP 앞단에서 먼저 끊지만, 검증은 애노테이션 하나가
-     * 지워지는 순간 사라진다. 엔티티가 자기 NOT NULL 을 지키는 쪽이 남는다.
+     * <p>지금은 DTO 의 {@code @NotBlank} 가 HTTP 앞단에서 먼저 끊고, 그 앞에 "안 실린 칸은
+     * 기존 값" 병합이 있다(QA #96). 그래도 이 자리를 남긴다 — 검증은 애노테이션 하나가
+     * 지워지는 순간 사라지고, 엔티티가 자기 NOT NULL 을 지키는 쪽이 남는다.
      *
-     * <p>되돌려 보는 법(네거티브 컨트롤): {@code Memo.updateMemo} 의 {@code if (title != null)}
-     * 가드를 빼면 아래가 null 을 만나 깨진다.
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code MemoServiceImpl} 의 {@code orKeep(...)} 을
+     * {@code command.title().value()} 로 바꾸면 아래가 null 제목을 만나 깨진다.
      */
     @Test
     @DisplayName("updateMemo — title 이 없으면 기존 제목을 지킨다")
@@ -125,7 +127,7 @@ class MemoServiceImplTest {
         given(memoRepository.findById(5L)).willReturn(Optional.of(memo));
 
         var info = sut.updateMemo(5L, USER_ID, new MemoServiceDto.UpdateCommand(
-                null, "고친본문", null, null));
+                Patch.absent(), Patch.set("고친본문"), Patch.absent(), Patch.absent()));
 
         assertThat(info.title()).isEqualTo("원제목");
         assertThat(info.content()).isEqualTo("고친본문");

@@ -232,19 +232,24 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
 
-        CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
-        // paymentAssetRowId 가 들어온 경우에만 로드 — null 이면 기존 연관 유지(partial update).
-        Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), userRowId);
+        // 실린 칸만 바꾼다 — 안 온 칸은 지금 값이 그대로 남는다(QA #96).
+        // 조회가 필요한 칸(카드 카탈로그·결제 계좌)은 실렸을 때만 찾는다.
+        CardCatalog cardCatalog = command.cardCatalogRowId()
+            .map(this::resolveCardCatalog)
+            .orKeep(asset.getCardCatalog());
+        Asset paymentAsset = command.paymentAssetRowId()
+            .map(rowId -> resolvePaymentAsset(rowId, userRowId))
+            .orKeep(asset.getPaymentAsset());
 
-        // 필수 필드(NOT NULL)는 null 이면 기존 값 유지 — partial update 허용.
-        // 선택 필드(color/institution/memo) 는 null 을 clear 로 간주.
+        // 필수 필드(NOT NULL)는 명시적 null 을 DTO 제약이 400 으로 끊는다 — 여기 오는 값은 안전하다.
+        // 선택 필드(color/institution/memo/한도/결제일/결제 계좌)는 명시적 null 이 clear 다.
         // 보유를 함께 보낸 투자 자산은 평가액을 서버가 산정한다(클라이언트 계산값 불신).
         // 연동 시세를 못 구하면 기존 평가금액을 유지한다 — 부분합으로 덮어쓰지 않기 위해서다.
         //
         // 갱신 대상은 HOLDING 채널이다. 예수금은 건드리지 않으므로, 이 자산으로 들어온
         // 이체는 평가액을 몇 번 다시 계산하든 그대로 남는다.
         // 빈 리스트도 받는다 — 보유를 전부 지우면 평가금액이 0 이 돼야 한다.
-        AssetType effectiveType = command.assetType() != null ? command.assetType() : asset.getAssetType();
+        AssetType effectiveType = command.assetType().orKeep(asset.getAssetType());
         // 검증·정규화를 자산 필드 수정보다 앞에 둔다. 뒤에 두면 잘못된 보유 입력이 자산 이름·종류만
         // 고쳐 놓고 실패해서, 한 번의 저장이 절반만 반영된 상태로 남는다.
         // (종전에는 아래 asset.updateAsset(...) 뒤에서 검사했다 — 판정에 쓰는 종류는 그때도
@@ -268,17 +273,17 @@ public class AssetServiceImpl implements AssetService {
         Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
             ? asset.getPaymentAsset().getRowId() : null;
         asset.updateAsset(
-            command.assetName() != null ? command.assetName() : asset.getAssetName(),
-            command.assetType() != null ? command.assetType() : asset.getAssetType(),
-            command.currency()  != null ? command.currency()  : asset.getCurrency(),
-            command.exchangeRate() != null ? command.exchangeRate() : asset.getExchangeRate(),
-            command.color(),
-            command.institution(),
-            command.memo(),
-            command.isIncludedInTotal(),
+            command.assetName().orKeep(asset.getAssetName()),
+            effectiveType,
+            command.currency().orKeep(asset.getCurrency()),
+            command.exchangeRate().orKeep(asset.getExchangeRate()),
+            command.color().orKeep(asset.getColor()),
+            command.institution().orKeep(asset.getInstitution()),
+            command.memo().orKeep(asset.getMemo()),
+            command.isIncludedInTotal().orKeep(asset.getIsIncludedInTotal()),
             cardCatalog,
-            command.creditLimit(),
-            command.paymentDay(),
+            command.creditLimit().orKeep(asset.getCreditLimit()),
+            command.paymentDay().orKeep(asset.getPaymentDay()),
             paymentAsset
         );
 
@@ -298,8 +303,11 @@ public class AssetServiceImpl implements AssetService {
         // 바뀐' 요청에서 앵커가 한 번 더 찍히고, 반대로 정규화 뒤 같은 값이 되는 요청에서
         // 헛 앵커가 남는다. 유형은 이 시점의 asset 것을 본다 — 이번 요청에서 종류를 바꿨으면
         // 새 종류가 부호를 정하는 게 맞다.
-        Long newBalance = command.balance() == null ? null
-            : AssetSignPolicy.normalizeBalance(asset.getAssetType(), command.isOverdraft(), command.balance());
+        // 잔액은 "지운다" 가 없는 칸이다 — 잔액은 이력에서 집계하고 이 값은 "앵커를 찍어 달라" 는
+        // 요청이다. 안 보내도(키 없음) 보낸 값이 null 이어도 앵커를 안 찍는다(종전과 같다).
+        Long requestedBalance = command.balance().value();
+        Long newBalance = requestedBalance == null ? null
+            : AssetSignPolicy.normalizeBalance(asset.getAssetType(), command.isOverdraft().value(), requestedBalance);
         if (!hasHoldings && newBalance != null
             && !Objects.equals(current.cash(), newBalance)) {
             balanceHistoryService.recordManual(asset, newBalance, userClock.now(userRowId));

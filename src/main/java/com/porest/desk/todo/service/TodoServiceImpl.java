@@ -128,16 +128,21 @@ public class TodoServiceImpl implements TodoService {
         // ★ todo.updateTodo(...) 가 category 를 덮으므로 옛 값을 그 줄 앞에서 잡는다.
         String previousCategory = todo.getCategory();
 
+        // 실린 칸만 바꾼다 — 안 온 칸은 지금 값이 그대로 남는다(QA #96).
+        String title = command.title().orKeep(todo.getTitle());
+        String content = command.content().orKeep(todo.getContent());
+        TodoPriority priority = command.priority().orKeep(todo.getPriority());
+        String category = blankToNull(command.category().orKeep(todo.getCategory()));
+        LocalDate dueDate = command.dueDate().orKeep(todo.getDueDate());
+
         if (command.tagIds() != null) {
             // 태그를 명시한 요청이 이긴다 — 빈 목록은 "태그 없음" 이라는 뜻이다.
             List<TodoTag> tags = resolveOwnedTags(command.tagIds(), userRowId);
-            todo.updateTodo(command.title(), command.content(), command.priority(),
-                blankToNull(command.category()), command.dueDate());
+            todo.updateTodo(title, content, priority, category, dueDate);
             replaceMappings(todo, tags);
         } else {
-            syncCategoryBridge(todo, userRowId, previousCategory, command.category());
-            todo.updateTodo(command.title(), command.content(), command.priority(),
-                blankToNull(command.category()), command.dueDate());
+            syncCategoryBridge(todo, userRowId, previousCategory, category);
+            todo.updateTodo(title, content, priority, category, dueDate);
         }
 
         log.info("할일 수정 완료: todoId={}", todoId);
