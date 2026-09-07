@@ -33,7 +33,6 @@ public class MemoApiController {
             @Valid @RequestBody MemoApiDto.CreateRequest request) {
         MemoServiceDto.MemoInfo info = memoService.createMemo(new MemoServiceDto.CreateCommand(
             loginUser.getRowId(),
-            request.folderId(),
             request.title(),
             request.content(),
             request.tag(),
@@ -45,10 +44,9 @@ public class MemoApiController {
     @GetMapping("/memos")
     public ApiResponse<MemoApiDto.ListResponse> getMemos(
             @LoginUser UserPrincipal loginUser,
-            @RequestParam(required = false) Long folderId,
             @RequestParam(required = false) String search) {
         List<MemoServiceDto.MemoInfo> infos = memoService.getMemos(
-            loginUser.getRowId(), folderId, search
+            loginUser.getRowId(), search
         );
         return ApiResponse.success(MemoApiDto.ListResponse.from(infos));
     }
@@ -67,7 +65,6 @@ public class MemoApiController {
             @PathVariable Long id,
             @Valid @RequestBody MemoApiDto.UpdateRequest request) {
         MemoServiceDto.MemoInfo info = memoService.updateMemo(id, loginUser.getRowId(), new MemoServiceDto.UpdateCommand(
-            request.folderId(),
             request.title(),
             request.content(),
             request.tag(),

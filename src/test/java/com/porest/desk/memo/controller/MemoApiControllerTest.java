@@ -62,7 +62,7 @@ class MemoApiControllerTest {
 
     private MemoServiceDto.MemoInfo sampleInfo() {
         return new MemoServiceDto.MemoInfo(
-                100L, 1L, 10L, "제목", "내용", "태그", "#fff",
+                100L, 1L, "제목", "내용", "태그", "#fff",
                 YNType.N, LocalDateTime.of(2026, 7, 1, 9, 0), LocalDateTime.of(2026, 7, 1, 9, 0));
     }
 
@@ -72,7 +72,7 @@ class MemoApiControllerTest {
         given(memoService.createMemo(any())).willReturn(sampleInfo());
 
         String body = """
-                {"folderId":10,"title":"제목","content":"내용","tag":"태그","color":"#fff"}
+                {"title":"제목","content":"내용","tag":"태그","color":"#fff"}
                 """;
 
         mockMvc.perform(post("/api/v1/memo")
@@ -85,7 +85,6 @@ class MemoApiControllerTest {
         var captor = ArgumentCaptor.forClass(MemoServiceDto.CreateCommand.class);
         verify(memoService).createMemo(captor.capture());
         assertThat(captor.getValue().userRowId()).isEqualTo(1L);
-        assertThat(captor.getValue().folderId()).isEqualTo(10L);
         assertThat(captor.getValue().title()).isEqualTo("제목");
         assertThat(captor.getValue().content()).isEqualTo("내용");
         assertThat(captor.getValue().tag()).isEqualTo("태그");
@@ -93,29 +92,28 @@ class MemoApiControllerTest {
     }
 
     @Test
-    @DisplayName("GET /memos — 로그인 사용자·folderId·search 쿼리로 목록 조회")
+    @DisplayName("GET /memos — 로그인 사용자·search 쿼리로 목록 조회")
     void getMemos() throws Exception {
-        given(memoService.getMemos(1L, 10L, "keyword")).willReturn(List.of(sampleInfo()));
+        given(memoService.getMemos(1L, "keyword")).willReturn(List.of(sampleInfo()));
 
         mockMvc.perform(get("/api/v1/memos")
-                        .param("folderId", "10")
                         .param("search", "keyword"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.memos.length()").value(1))
                 .andExpect(jsonPath("$.data.memos[0].rowId").value(100));
 
-        verify(memoService).getMemos(1L, 10L, "keyword");
+        verify(memoService).getMemos(1L, "keyword");
     }
 
     @Test
-    @DisplayName("GET /memos — 쿼리 없으면 folderId·search null 로 위임")
+    @DisplayName("GET /memos — 쿼리 없으면 search null 로 위임")
     void getMemosWithoutParams() throws Exception {
-        given(memoService.getMemos(1L, null, null)).willReturn(List.of());
+        given(memoService.getMemos(1L, null)).willReturn(List.of());
 
         mockMvc.perform(get("/api/v1/memos"))
                 .andExpect(status().isOk());
 
-        verify(memoService).getMemos(1L, null, null);
+        verify(memoService).getMemos(1L, null);
     }
 
     @Test
@@ -136,7 +134,7 @@ class MemoApiControllerTest {
         given(memoService.updateMemo(eq(5L), eq(1L), any())).willReturn(sampleInfo());
 
         String body = """
-                {"folderId":20,"title":"수정제목","content":"수정내용","tag":"수정태그","color":"#000"}
+                {"title":"수정제목","content":"수정내용","tag":"수정태그","color":"#000"}
                 """;
 
         mockMvc.perform(put("/api/v1/memo/{id}", 5L)
@@ -147,7 +145,6 @@ class MemoApiControllerTest {
 
         var captor = ArgumentCaptor.forClass(MemoServiceDto.UpdateCommand.class);
         verify(memoService).updateMemo(eq(5L), eq(1L), captor.capture());
-        assertThat(captor.getValue().folderId()).isEqualTo(20L);
         assertThat(captor.getValue().title()).isEqualTo("수정제목");
         assertThat(captor.getValue().content()).isEqualTo("수정내용");
         assertThat(captor.getValue().tag()).isEqualTo("수정태그");

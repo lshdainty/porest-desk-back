@@ -18,7 +18,6 @@ public class MemoApiDto {
      */
     @Schema(name = "MemoCreateRequest")
     public record CreateRequest(
-        Long folderId,
         @NotBlank(message = "메모 제목을 입력해 주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
@@ -33,7 +32,6 @@ public class MemoApiDto {
 
     @Schema(name = "MemoUpdateRequest")
     public record UpdateRequest(
-        Long folderId,
         @NotBlank(message = "메모 제목을 입력해 주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
@@ -50,7 +48,6 @@ public class MemoApiDto {
     public record Response(
         Long rowId,
         Long userRowId,
-        Long folderId,
         String title,
         String content,
         String tag,
@@ -63,7 +60,6 @@ public class MemoApiDto {
             return new Response(
                 info.rowId(),
                 info.userRowId(),
-                info.folderId(),
                 info.title(),
                 info.content(),
                 info.tag(),
@@ -84,50 +80,6 @@ public class MemoApiDto {
                 .map(Response::from)
                 .toList();
             return new ListResponse(responses);
-        }
-    }
-
-    public record FolderCreateRequest(
-        Long parentId,
-        String folderName
-    ) {}
-
-    public record FolderUpdateRequest(
-        Long parentId,
-        String folderName,
-        Integer sortOrder
-    ) {}
-
-    public record FolderResponse(
-        Long rowId,
-        Long userRowId,
-        Long parentId,
-        String folderName,
-        Integer sortOrder,
-        LocalDateTime createAt,
-        LocalDateTime modifyAt
-    ) {
-        public static FolderResponse from(MemoServiceDto.FolderInfo info) {
-            return new FolderResponse(
-                info.rowId(),
-                info.userRowId(),
-                info.parentId(),
-                info.folderName(),
-                info.sortOrder(),
-                info.createAt(),
-                info.modifyAt()
-            );
-        }
-    }
-
-    public record FolderListResponse(
-        List<FolderResponse> folders
-    ) {
-        public static FolderListResponse from(List<MemoServiceDto.FolderInfo> infos) {
-            List<FolderResponse> responses = infos.stream()
-                .map(FolderResponse::from)
-                .toList();
-            return new FolderListResponse(responses);
         }
     }
 }

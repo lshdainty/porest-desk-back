@@ -56,7 +56,7 @@ public interface FieldLimits {
 
     /**
      * 같은 이름 층의 varchar(100) 쪽.
-     * expense_template.template_name · saving_goal.title · memo_folder.folder_name ·
+     * expense_template.template_name · saving_goal.title ·
      * dutch_pay_participant.participant_name 이 여기다.
      */
     int WIDE_NAME_MAX = 100;

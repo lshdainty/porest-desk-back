@@ -175,7 +175,7 @@ public class ExportDataService {
         List<String> headers = List.of("제목", "내용", "고정", "생성일");
         List<List<String>> rows = new ArrayList<>();
         ZoneId zone = userClock.zoneOf(userRowId);
-        memoRepository.findAllByUser(userRowId, null, null).forEach(m -> {
+        memoRepository.findAllByUser(userRowId, null).forEach(m -> {
             MemoServiceDto.MemoInfo i = MemoServiceDto.MemoInfo.from(m);
             rows.add(List.of(
                 cell(i.title()),

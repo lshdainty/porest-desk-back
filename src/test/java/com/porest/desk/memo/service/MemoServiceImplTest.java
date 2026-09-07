@@ -3,8 +3,6 @@ package com.porest.desk.memo.service;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
 import com.porest.desk.memo.domain.Memo;
-import com.porest.desk.memo.domain.MemoFolder;
-import com.porest.desk.memo.repository.MemoFolderRepository;
 import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
@@ -32,7 +30,6 @@ import static org.mockito.Mockito.mock;
 class MemoServiceImplTest {
 
     @Mock private MemoRepository memoRepository;
-    @Mock private MemoFolderRepository memoFolderRepository;
     @Mock private UserRepository userRepository;
     @Mock private com.porest.desk.constellation.service.StarlightService starlightService;
 
@@ -82,33 +79,16 @@ class MemoServiceImplTest {
                 .isInstanceOf(ForbiddenException.class);
     }
 
-    @Test
-    @DisplayName("updateMemo — 남의 폴더로 이동 불가(소유권 검증 누락 보강)")
-    void updateRejectsOthersFolder() {
-        Memo m = mock(Memo.class);
-        given(m.getUser()).willReturn(user(USER_ID));
-        given(memoRepository.findById(5L)).willReturn(Optional.of(m));
-        MemoFolder othersFolder = mock(MemoFolder.class);
-        given(othersFolder.getUser()).willReturn(user(999L));
-        given(memoFolderRepository.findById(20L)).willReturn(Optional.of(othersFolder));
-
-        var cmd = new MemoServiceDto.UpdateCommand(20L, "수정", "내용", null, null);
-
-        assertThatThrownBy(() -> sut.updateMemo(5L, USER_ID, cmd))
-                .isInstanceOf(ForbiddenException.class);
-    }
-
     // ── 정상 CRUD 결과 정확성 ─────────────────────────────
     @Test
-    @DisplayName("createMemo — isPinned=N·필드 1:1 매핑, folder 없으면 folderId=null")
+    @DisplayName("createMemo — isPinned=N·필드 1:1 매핑")
     void createMemoDefaults() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
 
-        var cmd = new MemoServiceDto.CreateCommand(USER_ID, null, "회의록", "본문", "work", "#FF0000");
+        var cmd = new MemoServiceDto.CreateCommand(USER_ID, "회의록", "본문", "work", "#FF0000");
         MemoServiceDto.MemoInfo info = sut.createMemo(cmd);
 
         assertThat(info.userRowId()).isEqualTo(USER_ID);
-        assertThat(info.folderId()).isNull();
         assertThat(info.title()).isEqualTo("회의록");
         assertThat(info.content()).isEqualTo("본문");
         assertThat(info.tag()).isEqualTo("work");
@@ -119,7 +99,7 @@ class MemoServiceImplTest {
     @Test
     @DisplayName("togglePin — N→Y, 한 번 더 Y→N")
     void togglePinFlips() {
-        Memo memo = Memo.createMemo(user(USER_ID), null, "old", "body", "tag", "#000000");
+        Memo memo = Memo.createMemo(user(USER_ID), "old", "body", "tag", "#000000");
         ReflectionTestUtils.setField(memo, "rowId", 202L);
         given(memoRepository.findById(202L)).willReturn(Optional.of(memo));
 
@@ -140,12 +120,12 @@ class MemoServiceImplTest {
     @Test
     @DisplayName("updateMemo — title 이 없으면 기존 제목을 지킨다")
     void updateKeepsExistingTitleWhenAbsent() {
-        Memo memo = Memo.createMemo(user(USER_ID), null, "원제목", "본문", null, null);
+        Memo memo = Memo.createMemo(user(USER_ID), "원제목", "본문", null, null);
         ReflectionTestUtils.setField(memo, "rowId", 5L);
         given(memoRepository.findById(5L)).willReturn(Optional.of(memo));
 
         var info = sut.updateMemo(5L, USER_ID, new MemoServiceDto.UpdateCommand(
-                null, null, "고친본문", null, null));
+                null, "고친본문", null, null));
 
         assertThat(info.title()).isEqualTo("원제목");
         assertThat(info.content()).isEqualTo("고친본문");

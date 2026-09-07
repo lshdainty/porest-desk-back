@@ -37,10 +37,6 @@ public class Memo extends AuditingFieldsWithIp {
     @JoinColumn(name = "user_row_id")
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "folder_row_id")
-    private MemoFolder folder;
-
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
@@ -61,11 +57,10 @@ public class Memo extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Memo createMemo(User user, MemoFolder folder, String title, String content,
+    public static Memo createMemo(User user, String title, String content,
                                   String tag, String color) {
         Memo memo = new Memo();
         memo.user = user;
-        memo.folder = folder;
         memo.title = title;
         memo.content = content;
         memo.tag = tag;
@@ -80,9 +75,8 @@ public class Memo extends AuditingFieldsWithIp {
      * 종전엔 null 을 그대로 덮어써 저장이 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다(QA #81).
      * 나머지 칸은 널 허용이므로 그대로 덮는다(null = 지운다).
      */
-    public void updateMemo(MemoFolder folder, String title, String content, String tag, String color) {
+    public void updateMemo(String title, String content, String tag, String color) {
         if (title != null) this.title = title;
-        this.folder = folder;
         this.content = content;
         this.tag = tag;
         this.color = color;
