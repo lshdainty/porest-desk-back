@@ -1,5 +1,6 @@
 package com.porest.desk.asset.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
@@ -107,8 +108,8 @@ class AssetHoldingServiceTest {
 
     private AssetServiceDto.UpdateAssetCommand updateCommand(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
-            null, null, null, null, null,
-            null, null, null, null, null, null, null, null, null, holdings);
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
     }
 
     private static AssetServiceDto.HoldingCommand linkedHolding(String symbol, Long qty) {

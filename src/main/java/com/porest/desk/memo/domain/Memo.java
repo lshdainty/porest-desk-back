@@ -71,8 +71,11 @@ public class Memo extends AuditingFieldsWithIp {
     }
 
     /**
-     * 수정. <b>{@code title} 은 NOT NULL 이라 값이 오지 않으면 기존 제목을 지킨다</b> —
-     * 종전엔 null 을 그대로 덮어써 저장이 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다(QA #81).
+     * 수정 — 받은 값을 그대로 쓴다.
+     *
+     * <p><b>"안 보낸 칸은 유지" 판단은 서비스가 한다</b>(QA #96) — 여기 오는 값은 이미
+     * 병합이 끝난 값이다. {@code title} 의 null 가드는 그대로 둔다: NOT NULL 컬럼이라
+     * 어떤 경로로든 null 이 오면 저장이 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다(QA #81).
      * 나머지 칸은 널 허용이므로 그대로 덮는다(null = 지운다).
      */
     public void updateMemo(String title, String content, String tag, String color) {

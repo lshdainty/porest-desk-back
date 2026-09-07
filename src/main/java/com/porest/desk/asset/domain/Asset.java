@@ -156,11 +156,14 @@ public class Asset extends AuditingFieldsWithIp {
         this.color = color;
         this.institution = institution;
         this.memo = memo;
+        // NOT NULL 칸의 마지막 가드 — 병합은 서비스가 끝냈고(QA #96) 명시적 null 은 DTO 가 끊는다.
         this.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : this.isIncludedInTotal;
         this.cardCatalog = cardCatalog;
-        this.creditLimit = creditLimit != null ? creditLimit : this.creditLimit;
-        this.paymentDay = paymentDay != null ? paymentDay : this.paymentDay;
-        this.paymentAsset = paymentAsset != null ? paymentAsset : this.paymentAsset;
+        // 널 허용 칸은 받은 값을 그대로 쓴다 — null 이면 "지운다" 는 뜻이다. 종전엔 여기서
+        // null 을 무시해, 한도·결제일·결제 계좌를 <b>지울 방법이 아예 없었다</b>.
+        this.creditLimit = creditLimit;
+        this.paymentDay = paymentDay;
+        this.paymentAsset = paymentAsset;
     }
 
     /**

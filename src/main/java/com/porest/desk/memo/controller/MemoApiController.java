@@ -1,6 +1,7 @@
 package com.porest.desk.memo.controller;
 
 import com.porest.core.controller.ApiResponse;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.memo.controller.dto.MemoApiDto;
 import com.porest.desk.memo.service.MemoService;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
@@ -65,10 +66,10 @@ public class MemoApiController {
             @PathVariable Long id,
             @Valid @RequestBody MemoApiDto.UpdateRequest request) {
         MemoServiceDto.MemoInfo info = memoService.updateMemo(id, loginUser.getRowId(), new MemoServiceDto.UpdateCommand(
-            request.title(),
-            request.content(),
-            request.tag(),
-            request.color()
+            Patch.from(request.title()),
+            Patch.from(request.content()),
+            Patch.from(request.tag()),
+            Patch.from(request.color())
         ));
         return ApiResponse.success(MemoApiDto.Response.from(info));
     }

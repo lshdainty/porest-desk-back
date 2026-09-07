@@ -1,6 +1,7 @@
 package com.porest.desk.memo.service.dto;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.memo.domain.Memo;
 
 import java.time.LocalDateTime;
@@ -15,11 +16,12 @@ public class MemoServiceDto {
         String color
     ) {}
 
+    /** 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}). */
     public record UpdateCommand(
-        String title,
-        String content,
-        String tag,
-        String color
+        Patch<String> title,
+        Patch<String> content,
+        Patch<String> tag,
+        Patch<String> color
     ) {}
 
     public record MemoInfo(

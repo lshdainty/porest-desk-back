@@ -3,6 +3,7 @@ package com.porest.desk.asset.service.dto;
 import java.math.BigDecimal;
 import com.porest.desk.asset.type.HoldingType;
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.domain.AssetHolding;
@@ -45,28 +46,32 @@ public class AssetServiceDto {
         List<HoldingCommand> holdings
     ) {}
 
+    /**
+     * 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}).
+     * {@code holdings} 만 종전 그대로다({@code null}=무변경, 리스트=전체 교체).
+     */
     public record UpdateAssetCommand(
-        String assetName,
-        AssetType assetType,
-        Long balance,
+        Patch<String> assetName,
+        Patch<AssetType> assetType,
+        Patch<Long> balance,
         /**
          * 마이너스 통장 여부 — true 면 잔액을 음수로 저장한다({@code BANK_ACCOUNT} + 음수).
          *
          * <p>null 은 "이 필드를 모르는 클라이언트" 다. 그때는 보낸 부호를 그대로 존중한다 —
          * 무조건 abs() 를 걸면 옛 앱이 마이너스 통장을 저장만 해도 부호가 뒤집힌다.
          */
-        Boolean isOverdraft,
-        String currency,
-        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. null 이면 기존 값 유지·신규는 1. */
-        java.math.BigDecimal exchangeRate,
-        String color,
-        String institution,
-        String memo,
-        YNType isIncludedInTotal,
-        Long cardCatalogRowId,
-        Long creditLimit,
-        Integer paymentDay,
-        Long paymentAssetRowId,
+        Patch<Boolean> isOverdraft,
+        Patch<String> currency,
+        /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. 안 오면 기존 값 유지·신규는 1. */
+        Patch<java.math.BigDecimal> exchangeRate,
+        Patch<String> color,
+        Patch<String> institution,
+        Patch<String> memo,
+        Patch<YNType> isIncludedInTotal,
+        Patch<Long> cardCatalogRowId,
+        Patch<Long> creditLimit,
+        Patch<Integer> paymentDay,
+        Patch<Long> paymentAssetRowId,
         // 투자 보유 목록 — null=무변경, 리스트=전체 교체(빈 리스트=전부 삭제).
         List<HoldingCommand> holdings
     ) {}

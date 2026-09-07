@@ -96,21 +96,25 @@ public class SavingGoalServiceImpl implements SavingGoalService {
         SavingGoal goal = findOrThrow(savingGoalId);
         validateOwnership(goal, userRowId);
 
-        String title = NameNormalizer.require(command.title(), FieldLimits.WIDE_NAME_MAX);
+        // 실린 칸만 바꾼다 — 안 온 칸은 지금 값을 그대로 넘긴다(QA #96).
+        String title = NameNormalizer.require(command.title().orKeep(goal.getTitle()), FieldLimits.WIDE_NAME_MAX);
         // 자기 자신은 뺀다 — 안 빼면 이름을 그대로 두고 금액만 고치는 저장이 영영 막힌다.
         if (savingGoalRepository.existsActiveByUserAndTitle(userRowId, title, savingGoalId)) {
             throw new InvalidValueException(DeskErrorCode.SAVING_GOAL_DUPLICATE_NAME);
         }
 
-        Asset linkedAsset = resolveLinkedAsset(command.linkedAssetRowId(), userRowId);
+        // 연결 자산은 실렸을 때만 조회한다 — 안 실린 아이디를 조회하면 그 자체로 404 가 난다.
+        Asset linkedAsset = command.linkedAssetRowId()
+            .map(rowId -> resolveLinkedAsset(rowId, userRowId))
+            .orKeep(goal.getLinkedAsset());
 
         goal.updateSavingGoal(
             title,
-            command.description(),
-            command.targetAmount(),
-            command.deadlineDate(),
-            command.icon(),
-            command.color(),
+            command.description().orKeep(goal.getDescription()),
+            command.targetAmount().orKeep(goal.getTargetAmount()),
+            command.deadlineDate().orKeep(goal.getDeadlineDate()),
+            command.icon().orKeep(goal.getIcon()),
+            command.color().orKeep(goal.getColor()),
             linkedAsset
         );
 

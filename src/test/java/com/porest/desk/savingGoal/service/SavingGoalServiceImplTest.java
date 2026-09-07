@@ -1,5 +1,6 @@
 package com.porest.desk.savingGoal.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -145,7 +146,7 @@ class SavingGoalServiceImplTest {
         given(savingGoalRepository.existsActiveByUserAndTitle(USER_ID, "유럽 여행", 5L)).willReturn(false);
 
         assertThatCode(() -> sut.updateSavingGoal(5L, USER_ID, new SavingGoalServiceDto.UpdateCommand(
-                "유럽 여행", null, 2_000_000L, null, null, null, null)))
+                Patch.set("유럽 여행"), Patch.absent(), Patch.set(2_000_000L), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent())))
                 .doesNotThrowAnyException();
     }
 
@@ -158,7 +159,7 @@ class SavingGoalServiceImplTest {
         given(savingGoalRepository.existsActiveByUserAndTitle(USER_ID, "유럽 여행", 5L)).willReturn(true);
 
         assertThatThrownBy(() -> sut.updateSavingGoal(5L, USER_ID, new SavingGoalServiceDto.UpdateCommand(
-                "유럽 여행", null, 2_000_000L, null, null, null, null)))
+                Patch.set("유럽 여행"), Patch.absent(), Patch.set(2_000_000L), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent())))
                 .isInstanceOf(InvalidValueException.class);
     }
 

@@ -1,5 +1,6 @@
 package com.porest.desk.asset.service;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
@@ -118,8 +119,8 @@ class AssetHoldingUniquenessTest {
 
     private AssetServiceDto.UpdateAssetCommand updateCmd(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
-            null, null, null, null, null,
-            null, null, null, null, null, null, null, null, null, holdings);
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
     }
 
     private static AssetServiceDto.HoldingCommand linked(Long rowId, String symbol, String qty) {

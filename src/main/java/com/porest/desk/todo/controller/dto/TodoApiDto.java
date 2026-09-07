@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public class TodoApiDto {
 
@@ -45,16 +46,29 @@ public class TodoApiDto {
         TodoType type
     ) {}
 
+    /**
+     * 수정 본문 — <b>실린 칸만 바꾼다</b>(QA #96, 사용자 결정 2026-09-07).
+     *
+     * <p>{@code Optional} 참조가 {@code null} 이면 키가 없었던 것(유지),
+     * {@code Optional.empty()} 면 {@code null} 이 실린 것(지움)이다
+     * ({@code AbsentAwareOptionalModule}).
+     *
+     * <p><b>{@code tagIds} 만 {@code Optional} 이 아니다.</b> 이 칸은 종전부터
+     * "{@code null}=미변경 · 빈 배열=전부 해제" 라는 뜻이었고(QA #87 이 그 뜻을 확정했다),
+     * 그 계약을 그대로 둔다 — 목록을 통째로 갈아끼우는 칸에서 "지움" 과 "미변경" 을
+     * 다시 정의하면 이미 맞춰 둔 화면이 어긋난다.
+     */
     @Schema(name = "TodoUpdateRequest")
     public record UpdateRequest(
-        @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
-        String title,
-        @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있어요")
-        String content,
-        TodoPriority priority,
-        @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있어요")
-        String category,
-        LocalDate dueDate,
+        Optional<@NotBlank(message = "할 일 제목을 입력해 주세요")
+                 @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
+                 String> title,
+        Optional<@Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있어요")
+                 String> content,
+        Optional<TodoPriority> priority,
+        Optional<@Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있어요")
+                 String> category,
+        Optional<LocalDate> dueDate,
         List<Long> tagIds
     ) {}
 

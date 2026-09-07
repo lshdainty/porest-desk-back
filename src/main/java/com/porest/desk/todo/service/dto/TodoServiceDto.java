@@ -1,6 +1,7 @@
 package com.porest.desk.todo.service.dto;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
@@ -24,12 +25,16 @@ public class TodoServiceDto {
         TodoType type
     ) {}
 
+    /**
+     * 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}).
+     * {@code tagIds} 만 종전 그대로다({@code null}=미변경, 빈 목록=전부 해제).
+     */
     public record UpdateCommand(
-        String title,
-        String content,
-        TodoPriority priority,
-        String category,
-        LocalDate dueDate,
+        Patch<String> title,
+        Patch<String> content,
+        Patch<TodoPriority> priority,
+        Patch<String> category,
+        Patch<LocalDate> dueDate,
         List<Long> tagIds
     ) {}
 

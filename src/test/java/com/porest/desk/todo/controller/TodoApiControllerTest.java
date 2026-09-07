@@ -1,5 +1,6 @@
 package com.porest.desk.todo.controller;
 
+import com.porest.desk.common.patch.Patch;
 import com.porest.core.type.YNType;
 import com.porest.core.util.MessageResolver;
 import com.porest.desk.common.config.web.WebConfig;
@@ -160,8 +161,8 @@ class TodoApiControllerTest {
 
         var captor = ArgumentCaptor.forClass(TodoServiceDto.UpdateCommand.class);
         verify(todoService).updateTodo(eq(100L), eq(1L), captor.capture());
-        assertThat(captor.getValue().title()).isEqualTo("수정 제목");
-        assertThat(captor.getValue().priority()).isEqualTo(TodoPriority.LOW);
+        assertThat(captor.getValue().title()).isEqualTo(Patch.set("수정 제목"));
+        assertThat(captor.getValue().priority()).isEqualTo(Patch.set(TodoPriority.LOW));
         assertThat(captor.getValue().tagIds()).containsExactly(3L);
     }
 
