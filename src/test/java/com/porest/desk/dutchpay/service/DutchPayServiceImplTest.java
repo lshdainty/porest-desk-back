@@ -386,6 +386,297 @@ class DutchPayServiceImplTest {
             assertThat(b.getParticipantName()).isEqualTo("김철수");
         }
 
+        /**
+         * 활성 결제자가 DB UNIQUE 로 묶이면 <b>이 순서가 정합성의 전부다</b>. UPDATE 는 한 문장씩
+         * 나가므로 강등과 승격이 같은 플러시에 있으면 어느 쪽을 먼저 내도 잠깐 결제자가 둘이 된다.
+         *
+         * <p>H2 테스트 스키마에는 그 UNIQUE 가 없다(생성 컬럼을 낀 제약이라 JPA 로 선언할 수 없고,
+         * {@code ddl-auto: create-drop} 은 엔티티만 보고 만든다). 그래서 <b>실제 1062 를 낼 수 있는
+         * 테스트가 없다</b> — 대신 플러시마다 활성 결제자 Y 를 세어 중간 상태를 붙든다.
+         * 이름 파킹을 고정한 {@link #swappingNamesParksBeforeApplying} 와 같은 방식이다.
+         *
+         * <p>되돌려 보는 법(네거티브 컨트롤): 서비스 ② 의 {@code parkPayerForHandover()} 루프를
+         * 지우면 스냅샷이 {@code [0, 1]} 이 아니라 {@code [1, 1]} 이 되어 곧바로 깨진다.
+         */
+        @Test
+        @DisplayName("결제자를 다른 사람에게 넘겨도 중간에 둘이 되지 않는다 — [1명]→[0명]→[1명]")
+        void payerHandoverNeverHasTwoPayersAtOnce() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant oldPayer = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant newPayer = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(oldPayer, "rowId", 101L);
+            ReflectionTestUtils.setField(newPayer, "rowId", 102L);
+            dp.addParticipant(oldPayer);
+            dp.addParticipant(newPayer);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            List<Long> payerCountPerFlush = activePayerCountPerFlush(dp);
+
+            // "위 사람을 결제자로" — 화면에서 결제자 라디오만 옮긴 저장.
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 50_000L, false),
+                new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 50_000L, true))));
+
+            assertThat(payerCountPerFlush).containsExactly(0L, 1L);
+            assertThat(oldPayer.isPayer()).isFalse();
+            assertThat(newPayer.isPayer()).isTrue();
+        }
+
+        /** 승격 대상이 <b>신규 행</b>이어도 같다 — INSERT 는 강등 UPDATE 보다 먼저 나갈 수 있다. */
+        @Test
+        @DisplayName("신규 참가자를 결제자로 올려도 중간에 둘이 되지 않는다")
+        void promotingNewParticipantNeverHasTwoPayersAtOnce() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant oldPayer = DutchPayParticipant.create(dp, null, "김철수", 100_000L, true);
+            ReflectionTestUtils.setField(oldPayer, "rowId", 101L);
+            dp.addParticipant(oldPayer);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            List<Long> payerCountPerFlush = activePayerCountPerFlush(dp);
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 50_000L, false),
+                new DutchPayServiceDto.ParticipantCommand(null, null, "박영희", 50_000L, true))));
+
+            assertThat(payerCountPerFlush).containsExactly(0L, 1L);
+            assertThat(oldPayer.isPayer()).isFalse();
+            assertThat(dp.getPayer().getParticipantName()).isEqualTo("박영희");
+        }
+
+        /**
+         * QA #80 — <b>금액만 고쳤는데 결제자가 옮겨가던</b> 자리.
+         *
+         * <p>수정이 생성 경로의 폴백("표시가 없으면 첫 사람")을 그대로 쓰고 있었다. 참가자 순서는
+         * 클라이언트가 정하므로 정렬만 달라져도 결제자가 따라 움직였다.
+         *
+         * <p>되돌려 보는 법(네거티브 컨트롤): {@code resolveUpdatePayerIndex} 의 "기존 결제자 유지"
+         * 블록을 지워 {@code resolveCreatePayerIndex} 처럼 0 을 돌려주게 하면 곧바로 깨진다.
+         */
+        @Test
+        @DisplayName("결제자 표시 없이 금액만 고치면 결제자는 그대로다 — 첫 사람으로 옮기지 않는다")
+        void amountOnlyUpdateKeepsStoredPayer() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant first = DutchPayParticipant.create(dp, null, "김철수", 50_000L, false);
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "박영희", 50_000L, true);
+            ReflectionTestUtils.setField(first, "rowId", 101L);
+            ReflectionTestUtils.setField(payer, "rowId", 102L);
+            dp.addParticipant(first);
+            dp.addParticipant(payer);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            // isPayer 를 아예 안 실은 저장 — 금액 두 줄만 고쳤다.
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 40_000L, null),
+                new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 60_000L, null))));
+
+            assertThat(first.isPayer()).isFalse();
+            assertThat(payer.isPayer()).isTrue();
+            assertThat(first.getAmount()).isEqualTo(40_000L);
+            assertThat(payer.getAmount()).isEqualTo(60_000L);
+        }
+
+        /** 순서만 바꿔 보낸 저장도 마찬가지다 — 결제자는 목록 위치가 아니라 저장된 값이다. */
+        @Test
+        @DisplayName("참가자 순서만 바뀐 저장도 결제자를 옮기지 않는다")
+        void reorderingDoesNotMovePayer() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant other = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(payer, "rowId", 101L);
+            ReflectionTestUtils.setField(other, "rowId", 102L);
+            dp.addParticipant(payer);
+            dp.addParticipant(other);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            // 결제자가 두 번째로 내려간 목록 — 표시는 여전히 없다.
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 50_000L, null),
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 50_000L, null))));
+
+            assertThat(payer.isPayer()).isTrue();
+            assertThat(other.isPayer()).isFalse();
+        }
+
+        /**
+         * 지킬 결제자가 없어진 경우 — 생성과 같은 규칙으로 되돌아간다.
+         *
+         * <p>결제자를 0명으로 두면 {@code getDebtors()} 가 전원을 돌려줘 전체 정산이 결제자까지
+         * 납부 처리하고, 화면은 화면대로 첫 사람을 결제자처럼 그린다. 지킬 것이 없을 때는
+         * 추측이 아니라 규칙이다.
+         */
+        @Test
+        @DisplayName("기존 결제자가 목록에서 빠지고 표시도 없으면 첫 사람이 결제자가 된다")
+        void fallsBackToFirstWhenStoredPayerIsRemoved() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant other = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(payer, "rowId", 101L);
+            ReflectionTestUtils.setField(other, "rowId", 102L);
+            dp.addParticipant(payer);
+            dp.addParticipant(other);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            List<Long> payerCountPerFlush = activePayerCountPerFlush(dp);
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 100_000L, null))));
+
+            assertThat(payer.getIsDeleted()).isEqualTo(YNType.Y);
+            assertThat(other.isPayer()).isTrue();
+            // 지워진 행은 활성 집합에서 빠지므로 유일성에서도 빠진다 — 중간에 둘이 되지 않는다.
+            assertThat(payerCountPerFlush).containsExactly(0L, 1L);
+        }
+
+        /** 지워지는 행의 {@code is_payer} 는 그대로 둔다 — "누가 냈는지" 는 기록으로 남는다. */
+        @Test
+        @DisplayName("삭제된 결제자 행의 결제자 표시는 지우지 않는다")
+        void deletedPayerRowKeepsItsFlag() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "김철수", 100_000L, true);
+            ReflectionTestUtils.setField(payer, "rowId", 101L);
+            dp.addParticipant(payer);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(null, null, "박영희", 100_000L, true))));
+
+            assertThat(payer.getIsDeleted()).isEqualTo(YNType.Y);
+            assertThat(payer.getIsPayer()).isEqualTo(YNType.Y);
+        }
+
+        @Test
+        @DisplayName("수정에서도 결제자가 둘이면 거부한다")
+        void updateRejectsWhenMultiplePayersMarked() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant a = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant b = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(a, "rowId", 101L);
+            ReflectionTestUtils.setField(b, "rowId", 102L);
+            dp.addParticipant(a);
+            dp.addParticipant(b);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+
+            var cmd = updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 50_000L, true),
+                new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 50_000L, true)));
+
+            assertThatThrownBy(() -> sut.updateDutchPay(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.DUTCH_PAY_INVALID_PAYER);
+        }
+
+        /**
+         * 결제자 UNIQUE 가 걸렸을 때 <b>이름 중복이라고 답하지 않는다</b>.
+         *
+         * <p>한 테이블에 UNIQUE 가 둘이라(활성 이름·활성 결제자) 구분하지 않으면 결제자가 부딪힌
+         * 요청이 있지도 않은 "같은 참가자를 중복으로 추가할 수 없어요" 를 듣는다 — QA #81 이
+         * 공통 핸들러에서 잡은 것과 같은 종류의 오역이다.
+         *
+         * <p>되돌려 보는 법(네거티브 컨트롤): {@code flushOrRejectDuplicate} 의 제약 이름 분기를
+         * 지우면 DUTCH_007 이 DUTCH_005 로 바뀌어 깨진다.
+         */
+        @Test
+        @DisplayName("결제자 유일성 위반은 참가자 이름 중복이 아니라 결제자 충돌로 답한다")
+        void payerUniqueViolationIsNotReportedAsDuplicateName() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant a = DutchPayParticipant.create(dp, null, "김철수", 100_000L, true);
+            ReflectionTestUtils.setField(a, "rowId", 101L);
+            dp.addParticipant(a);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            // 첫 flush(③)는 통과하고 마지막 flush 에서 DB 가 거절하는 모양.
+            willAnswer(inv -> null).willThrow(
+                    ConstraintViolations.unique("UK_dutch_pay_participant_active_payer"))
+                .given(dutchPayRepository).flush();
+
+            var cmd = updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 100_000L, true)));
+
+            assertThatThrownBy(() -> sut.updateDutchPay(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_CONFLICT);
+        }
+
+        /** 같은 자리에서 <b>이름</b> UNIQUE 가 걸리면 답은 그대로 이름 중복이다. */
+        @Test
+        @DisplayName("이름 유일성 위반은 여전히 참가자 이름 중복으로 답한다")
+        void nameUniqueViolationStillReportsDuplicateName() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant a = DutchPayParticipant.create(dp, null, "김철수", 100_000L, true);
+            ReflectionTestUtils.setField(a, "rowId", 101L);
+            dp.addParticipant(a);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            willAnswer(inv -> null).willThrow(
+                    ConstraintViolations.unique("UK_dutch_pay_participant_active_name"))
+                .given(dutchPayRepository).flush();
+
+            var cmd = updateCmd(List.of(
+                new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 100_000L, true)));
+
+            assertThatThrownBy(() -> sut.updateDutchPay(1L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.DUTCH_PAY_DUPLICATE_PARTICIPANT);
+        }
+
+        /** participants 자체를 안 보낸 요청 — 서비스는 참가자를 손대지 않는다. */
+        @Test
+        @DisplayName("participants 가 null 이면 참가자를 건드리지 않는다")
+        void nullParticipantsLeavesEveryoneAlone() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant a = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant b = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(a, "rowId", 101L);
+            ReflectionTestUtils.setField(b, "rowId", 102L);
+            dp.addParticipant(a);
+            dp.addParticipant(b);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            sut.updateDutchPay(1L, USER_ID, updateCmd(null));
+
+            assertThat(dp.getActiveParticipants()).containsExactly(a, b);
+            assertThat(a.isPayer()).isTrue();
+        }
+
+        /** 플러시가 일어난 시점마다 활성 결제자(Y) 수를 찍어 둔다. */
+        private List<Long> activePayerCountPerFlush(DutchPay dp) {
+            List<Long> counts = new ArrayList<>();
+            willAnswer(inv -> {
+                counts.add(dp.getActiveParticipants().stream()
+                    .filter(DutchPayParticipant::isPayer).count());
+                return null;
+            }).given(dutchPayRepository).flush();
+            return counts;
+        }
+
         @Test
         @DisplayName("이름을 안 바꾸는 저장은 임시값을 거치지 않는다 — 쓸데없는 UPDATE 를 만들지 않는다")
         void unchangedNameIsNotParked() {

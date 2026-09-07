@@ -70,12 +70,16 @@ public class DutchPayApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @RequestBody DutchPayApiDto.UpdateRequest request) {
+        // participants 를 <b>안 보낸</b> 요청은 "참가자는 안 건드린다" 는 뜻이라 null 을 그대로 넘긴다.
+        // 여기서 List.of() 로 바꾸면 서비스가 "빈 목록으로 맞춰라" 로 읽어 **활성 참가자를 전원
+        // 삭제**한다 — 제목이나 금액 한 줄만 담아 PUT 한 요청이 누가 얼마를 냈는지를 통째로 지웠다.
+        // 비우고 싶으면 빈 배열을 명시해 보내면 된다. 그 둘은 서로 다른 요청이다.
         List<DutchPayServiceDto.ParticipantCommand> participants = request.participants() != null
             ? request.participants().stream()
                 .map(p -> new DutchPayServiceDto.ParticipantCommand(
                     p.rowId(), p.userRowId(), p.participantName(), p.amount(), p.isPayer()))
                 .toList()
-            : List.of();
+            : null;
 
         DutchPayServiceDto.DutchPayInfo info = dutchPayService.updateDutchPay(id, loginUser.getRowId(), new DutchPayServiceDto.UpdateCommand(
             request.title(),

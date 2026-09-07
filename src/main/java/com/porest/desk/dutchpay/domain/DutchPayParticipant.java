@@ -126,4 +126,19 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
     public void parkNameForRename() {
         this.participantName = " tmp:" + this.rowId;
     }
+
+    /**
+     * 결제자 자리를 <b>미리</b> 비운다 — 넘겨받을 사람에게 자리를 내주기 위한 것이다.
+     *
+     * <p>{@link #parkNameForRename()} 과 같은 이유로 있다. 한 정산의 활성 결제자가 DB UNIQUE 로
+     * 묶이면 "위 사람을 결제자로" 같은 저장이 중간 상태에서 걸린다 — UPDATE 는 한 문장씩 나가므로
+     * 승격을 먼저 내든 강등을 먼저 내든, 두 문장이 한 플러시 안에 있으면 잠깐 결제자가 둘이 되는
+     * 순간을 피할 수 없다. 넘겨줄 사람을 앞선 플러시에서 내려놓으면 그 순간이 사라진다.
+     *
+     * <p>이름과 달리 <b>임시값이 필요 없다</b>. {@code is_payer} 는 Y/N 뿐이고 N 은 "결제자가
+     * 아니다" 라는 정상값이라, 비켜 두는 값이 곧 최종값이다 — 되돌릴 것도 새어 나갈 것도 없다.
+     */
+    public void parkPayerForHandover() {
+        this.isPayer = YNType.N;
+    }
 }
