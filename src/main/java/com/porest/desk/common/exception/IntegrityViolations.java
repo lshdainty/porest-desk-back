@@ -105,20 +105,47 @@ public final class IntegrityViolations {
     }
 
     /**
+     * 위반한 제약의 이름. 못 읽으면 {@code null}.
+     *
+     * <p><b>사용자에게 보이는 자리에 쓰지 마라</b> — 제약 이름은 컬럼 이름 그 자체일 때가 있다
+     * (H2 실측: NOT NULL 위반의 제약 이름이 {@code "COLOR"}). QA #75 가 금지한 것이 그 노출이다.
+     *
+     * <p>쓰는 곳은 <b>한 테이블에 UNIQUE 가 둘 이상</b>이라 어느 쪽이 걸렸는지에 따라 답이
+     * 달라지는 자리다 — {@code dutch_pay_participant} 는 활성 이름과 활성 결제자 둘을 건다.
+     *
+     * <p><b>이름 전체를 같다고 비교하지 마라.</b> 돌아오는 값은 우리가 지은 키 이름 <b>그대로가
+     * 아니다</b>. 실측(2026-09-07, 이 레포 H2 슬라이스)에서 {@code UK_todo_tag} 위반이 낸 값은
+     * <pre>PUBLIC.UK_TODO_TAG INDEX PUBLIC.UK_TODO_TAG_INDEX_1</pre>
+     * 이었다 — 스키마가 앞에 붙고, 대문자로 접히고, 인덱스 이름이 뒤에 따라온다. MariaDB 는
+     * 드라이버 메시지({@code "Duplicate entry ... for key '...'"})에서 뽑으므로 또 다른 모양이다.
+     * 그러니 우리가 정한 <b>키 이름의 특징적인 조각</b>을 {@code toLowerCase} 후 포함 검사해라.
+     * {@link IntegrityViolationKindOnH2Test} 가 이 모양을 붙들고 있다.
+     *
+     * <p>드라이버 <b>메시지</b>를 뒤지는 것과는 다르다 — 제약 이름은 우리가 짓고, 바뀌면
+     * 마이그레이션에서 바뀐다. 메시지는 벤더가 말없이 바꾼다.
+     */
+    public static String constraintName(Throwable t) {
+        int depth = 0;
+        for (Throwable c = t; c != null && depth++ < MAX_DEPTH; c = c.getCause()) {
+            if (c instanceof ConstraintViolationException hibernate) {
+                String name = hibernate.getConstraintName();
+                if (name != null) return name;
+            }
+            if (c == c.getCause()) break;
+        }
+        return null;
+    }
+
+    /**
      * <b>로그 전용</b> 한 줄 요약. 제약 이름·SQLState·벤더 코드가 들어간다.
      *
-     * <p>절대 응답에 싣지 마라 — 제약 이름은 컬럼 이름 그 자체다(H2 실측: NOT NULL 위반의
-     * 제약 이름이 {@code "COLOR"}). 내부 이름을 사용자에게 흘리지 않는 것이 QA #75 다.
+     * <p>절대 응답에 싣지 마라 — 이유는 {@link #constraintName(Throwable)} 과 같다.
      */
     public static String describe(Throwable t) {
-        String constraint = null;
         String sqlState = null;
         Integer errorCode = null;
         int depth = 0;
         for (Throwable c = t; c != null && depth++ < MAX_DEPTH; c = c.getCause()) {
-            if (constraint == null && c instanceof ConstraintViolationException hibernate) {
-                constraint = hibernate.getConstraintName();
-            }
             if (sqlState == null && c instanceof SQLException sql) {
                 sqlState = sql.getSQLState();
                 errorCode = sql.getErrorCode();
@@ -126,7 +153,7 @@ public final class IntegrityViolations {
             if (c == c.getCause()) break;
         }
         return "kind=" + classify(t)
-                + ", constraint=" + constraint
+                + ", constraint=" + constraintName(t)
                 + ", sqlState=" + sqlState
                 + ", errorCode=" + errorCode;
     }

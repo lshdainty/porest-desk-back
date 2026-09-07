@@ -84,6 +84,34 @@ class IntegrityViolationKindOnH2Test {
         }).satisfies(t -> assertThat(IntegrityViolations.classify(t)).isEqualTo(IntegrityViolationKind.UNIQUE));
     }
 
+    /**
+     * 제약 <b>이름</b>이 실제로 읽히는지 — 한 테이블에 UNIQUE 가 둘 이상인 곳이 이걸로 갈린다.
+     *
+     * <p>{@code dutch_pay_participant} 가 그렇다(활성 참가자 이름·활성 결제자). 이름을 못 읽으면
+     * 결제자가 부딪힌 요청이 "같은 참가자를 중복으로 추가할 수 없어요" 를 듣는다.
+     *
+     * <p>정확히 같은지가 아니라 <b>포함</b>으로 보는 이유를 여기서 실측으로 붙든다. H2 가 실제로
+     * 돌려준 값은 {@code "PUBLIC.UK_TODO_TAG INDEX PUBLIC.UK_TODO_TAG_INDEX_1"} 이었다 —
+     * 우리가 지은 이름 앞에 스키마가 붙고, 대문자로 접히고, 뒤에 인덱스 이름이 따라온다.
+     * 같은지로 비교하는 코드는 여기서 조용히 빗나간다.
+     */
+    @Test
+    @DisplayName("제약 이름을 원인 사슬에서 읽어 낸다 — 앞에 뭐가 붙어도 우리가 지은 이름이 들어 있다")
+    void constraintNameIsReadable() {
+        User user = persistUser("k4");
+        Todo todo = em.persist(Todo.createTodo(user, "할일", null, TodoPriority.LOW, null, null, null, TodoType.TASK));
+        TodoTag tag = em.persist(TodoTag.createTag(user, "태그", "#111111"));
+        em.flush();
+        em.persist(TodoTagMapping.create(todo, tag));
+
+        assertThatThrownBy(() -> {
+            em.persist(TodoTagMapping.create(todo, tag));
+            em.flush();
+        }).satisfies(t -> assertThat(IntegrityViolations.constraintName(t))
+                .isNotNull()
+                .satisfies(name -> assertThat(name.toLowerCase()).contains("uk_todo_tag")));
+    }
+
     @Test
     @DisplayName("FK 위반은 FOREIGN_KEY 로 판정된다")
     void foreignKeyViolation() {

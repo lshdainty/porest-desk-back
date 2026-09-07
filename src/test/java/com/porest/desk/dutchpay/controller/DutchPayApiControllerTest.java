@@ -166,6 +166,56 @@ class DutchPayApiControllerTest {
         assertThat(captor.getValue().participants().get(0).participantName()).isEqualTo("김철수");
     }
 
+    /**
+     * participants 를 <b>안 보낸</b> PUT 과 <b>빈 배열</b>을 보낸 PUT 은 서로 다른 요청이다.
+     *
+     * <p>종전엔 컨트롤러가 {@code null} 을 {@code List.of()} 로 바꿔 넘겨 서비스가 "빈 목록으로
+     * 맞춰라" 로 읽었다 — 제목이나 금액 한 줄만 담아 보낸 요청이 <b>활성 참가자를 전원 삭제</b>했고,
+     * 그 행에 붙어 있던 금액·정산 완료 표시가 같이 사라졌다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 컨트롤러의 {@code : null} 을 {@code : List.of()} 로
+     * 되돌리면 이 테스트가 곧바로 깨진다.
+     */
+    @Test
+    @DisplayName("PUT /dutch-pay/{id} — participants 를 안 보내면 null 로 넘긴다(전원 삭제가 아니다)")
+    void updateWithoutParticipantsPassesNull() throws Exception {
+        given(dutchPayService.updateDutchPay(eq(100L), eq(1L), any())).willReturn(sampleDutchPay());
+
+        String body = """
+                {"title":"수정 정산","totalAmount":40000,"splitMethod":"CUSTOM","dutchPayDate":"2026-08-01"}
+                """;
+
+        mockMvc.perform(put("/api/v1/dutch-pay/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(DutchPayServiceDto.UpdateCommand.class);
+        verify(dutchPayService).updateDutchPay(eq(100L), eq(1L), captor.capture());
+        assertThat(captor.getValue().participants()).isNull();
+    }
+
+    /** 반대로 <b>빈 배열</b>은 "비워라" 라는 뜻이라 그대로 전달한다. */
+    @Test
+    @DisplayName("PUT /dutch-pay/{id} — participants 빈 배열은 빈 목록으로 그대로 넘긴다")
+    void updateWithEmptyParticipantsPassesEmptyList() throws Exception {
+        given(dutchPayService.updateDutchPay(eq(100L), eq(1L), any())).willReturn(sampleDutchPay());
+
+        String body = """
+                {"title":"수정 정산","totalAmount":40000,"splitMethod":"CUSTOM",
+                 "dutchPayDate":"2026-08-01","participants":[]}
+                """;
+
+        mockMvc.perform(put("/api/v1/dutch-pay/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(DutchPayServiceDto.UpdateCommand.class);
+        verify(dutchPayService).updateDutchPay(eq(100L), eq(1L), captor.capture());
+        assertThat(captor.getValue().participants()).isEmpty();
+    }
+
     @Test
     @DisplayName("DELETE /dutch-pay/{id} — id·로그인 사용자로 삭제 위임")
     void deleteDutchPay() throws Exception {

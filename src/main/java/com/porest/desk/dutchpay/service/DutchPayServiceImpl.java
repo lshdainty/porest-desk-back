@@ -34,6 +34,21 @@ import java.util.HashSet;
 @Slf4j
 @Transactional(readOnly = true)
 public class DutchPayServiceImpl implements DutchPayService {
+
+    /**
+     * 이 정산의 활성 결제자 UNIQUE 를 가리키는 키 이름 조각.
+     *
+     * <p>{@code dutch_pay_participant} 에는 UNIQUE 가 <b>둘</b> 붙는다 —
+     * {@code UK_dutch_pay_participant_active_name}(활성 참가자 이름, 마이그레이션
+     * {@code V2026.09.04_02__desk-back-311}) 과 활성 결제자 것이다. 어느 쪽이 걸렸는지
+     * 안 가리면 결제자가 부딪힌 요청이 <b>있지도 않은 이름 중복</b>을 이유로 거절당한다 —
+     * QA #81 이 공통 핸들러에서 잡은 것과 같은 종류의 오역이다.
+     *
+     * <p>이름 전체가 아니라 조각으로 보는 이유는 {@link IntegrityViolations#constraintName} 에 적었다.
+     * 두 키 이름 중 이 조각을 가진 것은 결제자 쪽뿐이다.
+     */
+    private static final String ACTIVE_PAYER_CONSTRAINT_MARK = "active_payer";
+
     private final DutchPayRepository dutchPayRepository;
     private final UserRepository userRepository;
     private final ExpenseRepository expenseRepository;
@@ -187,7 +202,6 @@ public class DutchPayServiceImpl implements DutchPayService {
             return;
         }
         List<String> names = validateNoDuplicateParticipants(participants);
-        int payerIndex = resolvePayerIndex(participants);
         List<DutchPayParticipant> existing = List.copyOf(dutchPay.getActiveParticipants());
         Map<Long, DutchPayParticipant> byId = existing.stream()
             .filter(pt -> pt.getRowId() != null)
@@ -214,17 +228,30 @@ public class DutchPayServiceImpl implements DutchPayService {
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         matched.stream().filter(java.util.Objects::nonNull).forEach(kept::add);
 
+        int payerIndex = resolveUpdatePayerIndex(participants, matched, dutchPay.getPayer());
+        DutchPayParticipant nextPayer = payerIndex >= 0 ? matched.get(payerIndex) : null;
+
         // ── ① 목록에서 빠진 참가자를 <b>먼저</b> 지운다. id 로 매칭되지 않은 것도 여기 걸린다.
         for (DutchPayParticipant pt : existing) {
             if (!kept.contains(pt)) {
                 pt.deleteParticipant();
             }
         }
-        // ── ② 이름이 바뀌는 기존 행을 임시값으로 비켜 둔다.
+        // ── ② 이름이 바뀌는 기존 행을 임시값으로 비켜 두고, 자리를 넘겨줄 결제자를 내려놓는다.
         for (int i = 0; i < participants.size(); i++) {
             DutchPayParticipant found = matched.get(i);
             if (found != null && !found.getParticipantName().equalsIgnoreCase(names.get(i))) {
                 found.parkNameForRename();
+            }
+        }
+        // 강등이 ④ 에 남아 있으면 승격과 같은 플러시에 들어가 활성 결제자 UNIQUE 에 걸린다 —
+        // UPDATE 는 한 문장씩 나가므로 어느 쪽을 먼저 내도 잠깐 결제자가 둘이 된다.
+        // 여기서 내려놓으면 DB 가 보는 상태는 [1명] → [0명] → [1명] 뿐이다.
+        // 이번에 지워진 행은 건드리지 않는다 — is_deleted='Y' 가 나가는 순간 활성 집합에서 빠지므로
+        // 유일성에 걸리지 않고, 지워진 행에 "누가 냈는지" 는 남겨 두는 편이 기록으로 낫다.
+        for (DutchPayParticipant pt : existing) {
+            if (kept.contains(pt) && pt.isPayer() && pt != nextPayer) {
+                pt.parkPayerForHandover();
             }
         }
         // ── ③ 여기서 한 번 내보낸다. 이 flush 가 없으면 아래 신규 INSERT 가 위 UPDATE 보다
@@ -249,7 +276,7 @@ public class DutchPayServiceImpl implements DutchPayService {
     private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
         if (participants == null) return;
         List<String> names = validateNoDuplicateParticipants(participants);
-        int payerIndex = resolvePayerIndex(participants);
+        int payerIndex = resolveCreatePayerIndex(participants);
         for (int i = 0; i < participants.size(); i++) {
             DutchPayServiceDto.ParticipantCommand pc = participants.get(i);
             // amount 는 not-null 컬럼 — null/0/음수는 정산 데이터를 오염시키므로 영속화 전에 차단.
@@ -269,17 +296,59 @@ public class DutchPayServiceImpl implements DutchPayService {
     }
 
     /**
-     * 결제자가 목록의 몇 번째인지 정한다. 한 정산에 결제자는 한 명이다.
+     * <b>생성</b>에서 결제자가 목록의 몇 번째인지 정한다. 한 정산에 결제자는 한 명이다.
      *
      * <p>아무도 표시돼 있지 않으면 <b>첫 사람</b>을 결제자로 본다. 이 필드를 모르는 구버전
      * 앱이 여전히 정산을 만들 수 있어야 해서다 — 앱은 사용자가 원할 때 올리는 거라 백엔드보다
      * 늦게 갱신되는 기간이 반드시 생긴다. 기존 데이터를 마이그레이션이 채운 규칙과 같다.
      *
      * <p>둘 이상이면 거부한다. 그건 클라이언트 버그이고, 넘어가면 화면마다 다른 사람을
-     * 결제자로 그리던 예전 증상으로 되돌아간다. MariaDB 에 조건부 UNIQUE 인덱스가 없어
-     * DB 가 못 막으므로 여기가 유일한 방어선이다.
+     * 결제자로 그리던 예전 증상으로 되돌아간다.
+     *
+     * <p><b>수정은 이 폴백을 쓰면 안 된다</b> — 지킬 값이 이미 있기 때문이다.
+     * {@link #resolveUpdatePayerIndex} 를 봐라.
      */
-    private int resolvePayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants) {
+    private int resolveCreatePayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants) {
+        int marked = markedPayerIndex(participants);
+        return marked >= 0 ? marked : 0;
+    }
+
+    /**
+     * <b>수정</b>에서 결제자가 목록의 몇 번째인지 정한다 — 표시가 없으면 <b>기존 결제자를 지킨다</b>.
+     *
+     * <p>여기서 생성 폴백("표시가 없으면 첫 사람")을 그대로 쓰면 금액 한 줄만 고치려고
+     * {@code isPayer} 없이 PUT 한 요청이 <b>저장된 결제자를 목록 첫 사람으로 조용히 옮긴다.</b>
+     * 참가자 순서는 클라이언트가 정하는 것이라 정렬만 바뀌어도 결제자가 따라 움직였고,
+     * 거기 걸린 "받을 돈" 집계까지 같이 틀어졌다. 그 순서 추측을 없애려고 만든 것이
+     * {@code is_payer} 컬럼인데 수정 경로가 다시 순서를 보고 있었던 것이다.
+     *
+     * <p>그래서 수정의 규칙은 <b>표시 없음 = 안 건드림</b> 이다. 생성 폴백은 구버전 앱을
+     * 위한 것이라 그 자리에 그대로 둔다 — 만들 때는 지킬 값이 아직 없어 무언가는 골라야 한다.
+     *
+     * <p>지킬 대상이 없을 때만 — 원래 결제자가 없었거나, 이번 요청에서 그 사람이 목록에서
+     * 빠졌을 때 — 생성과 같은 규칙으로 되돌아간다. 결제자를 0명으로 두면 {@code getDebtors()}
+     * 가 전원을 돌려줘 전체 정산이 결제자까지 납부 처리하고, 화면은 화면대로 첫 사람을
+     * 결제자처럼 그린다(서버·화면이 갈린다). 지킬 것이 없으면 추측이 아니라 규칙이다.
+     *
+     * @param matched 요청 i 번째에 대응하는 기존 행(없으면 신규라 {@code null})
+     * @param currentPayer 저장돼 있던 결제자. 없으면 {@code null}
+     * @return 결제자 인덱스. 목록이 비어 결제자를 정할 수 없으면 {@code -1}
+     */
+    private int resolveUpdatePayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants,
+                                        List<DutchPayParticipant> matched,
+                                        DutchPayParticipant currentPayer) {
+        int marked = markedPayerIndex(participants);
+        if (marked >= 0) return marked;
+        if (currentPayer != null) {
+            for (int i = 0; i < matched.size(); i++) {
+                if (matched.get(i) == currentPayer) return i;
+            }
+        }
+        return participants.isEmpty() ? -1 : 0;
+    }
+
+    /** 요청에 결제자로 표시된 사람의 인덱스. 아무도 없으면 -1, 둘 이상이면 거부(클라이언트 버그). */
+    private int markedPayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants) {
         List<Integer> marked = java.util.stream.IntStream.range(0, participants.size())
             .filter(i -> Boolean.TRUE.equals(participants.get(i).isPayer()))
             .boxed()
@@ -288,7 +357,7 @@ public class DutchPayServiceImpl implements DutchPayService {
             log.warn("더치페이 결제자 중복 - payerCount={}", marked.size());
             throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PAYER);
         }
-        return marked.isEmpty() ? 0 : marked.get(0);
+        return marked.isEmpty() ? -1 : marked.get(0);
     }
 
     /**
@@ -325,7 +394,7 @@ public class DutchPayServiceImpl implements DutchPayService {
         return names;
     }
 
-    /** 위 검사를 빠져나간 경쟁·중복을 409 로 받는다 — 정산 건 안의 활성 이름 UNIQUE 가 마지막 판정자다. */
+    /** 위 검사를 빠져나간 경쟁·중복을 409 로 받는다 — 정산 건 안의 UNIQUE 가 마지막 판정자다. */
     private void flushOrRejectDuplicate() {
         try {
             dutchPayRepository.flush();
@@ -334,6 +403,13 @@ public class DutchPayServiceImpl implements DutchPayService {
             // 답하면 값을 빼먹은 요청이 엉뚱한 이유를 듣는다(QA #81) — 그런 위반은 그대로 올려
             // DataIntegrityExceptionHandler 가 종류대로 답하게 둔다.
             if (!IntegrityViolations.isUnique(e)) throw e;
+            // 제약 이름은 로그에만 남긴다 — 응답에 실으면 내부 이름이 새어 나간다(QA #75).
+            log.warn("더치페이 유일성 위반 - {}", IntegrityViolations.describe(e));
+            String constraint = IntegrityViolations.constraintName(e);
+            if (constraint != null
+                    && constraint.toLowerCase(Locale.ROOT).contains(ACTIVE_PAYER_CONSTRAINT_MARK)) {
+                throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_PAYER_CONFLICT, e);
+            }
             throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_DUPLICATE_PARTICIPANT, e);
         }
     }
