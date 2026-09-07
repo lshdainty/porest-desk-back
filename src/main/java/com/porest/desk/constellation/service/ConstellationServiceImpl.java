@@ -39,14 +39,6 @@ public class ConstellationServiceImpl implements ConstellationService {
     private final ConstellationDailyRepository dailyRepository;
     private final ConstellationCollectionRepository collectionRepository;
     private final StarlightService starlightService;
-
-    @Override
-    public List<ConstellationServiceDto.ConstellationInfo> getCatalog() {
-        return constellationRepository.findAll().stream()
-            .map(ConstellationServiceDto.ConstellationInfo::from)
-            .toList();
-    }
-
     @Override
     @Transactional // 보호 정산(lazy settlement) 때문에 쓰기 트랜잭션
     public ConstellationServiceDto.TodayInfo getToday(Long userRowId) {

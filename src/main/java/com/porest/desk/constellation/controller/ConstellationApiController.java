@@ -23,11 +23,6 @@ public class ConstellationApiController {
 
     private final ConstellationService constellationService;
 
-    /** 별자리 마스터 카탈로그 (star_map 좌표 포함). */
-    @GetMapping("/constellations")
-    public ApiResponse<ConstellationApiDto.CatalogResponse> getCatalog() {
-        return ApiResponse.success(ConstellationApiDto.CatalogResponse.from(constellationService.getCatalog()));
-    }
 
     /** 오늘의 목표 별자리 + 내 별빛 현황(진행/스트릭/보호권/누적). */
     @GetMapping("/constellations/today")

@@ -88,7 +88,7 @@ public class RequestResponseLoggingFilter extends OncePerRequestFilter {
      * <p><b>desk 고유 키 — {@code clientId}/{@code client_id}.</b> core 기본 목록은 이 키를
      * 일부러 뺐다. SSO 에서는 {@code "desk"}·{@code "hr"} 라는 공개 식별자라 가리면 "누가 불렀나"가
      * 로그에서 사라지기 때문이다. 반면 desk 의
-     * {@code LegacyTossCredentialApiController.RegisterRequest(clientId, clientSecret)} 는
+     * 옛 토스 크리덴셜 요청 본문({@code clientId}/{@code clientSecret})은
      * <b>토스 크리덴셜</b>이라 시크릿과 같은 급이다. 그래서 여기서만 추가로 켠다.
      *
      * <p>인스턴스는 {@code static final} 로 한 번만 만든다. 키 목록이 정규식에 들어가지 않으므로

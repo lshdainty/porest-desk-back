@@ -46,33 +46,21 @@ class OpenApiContractTest {
     }
 
     @Nested
-    @DisplayName("증권사 크리덴셜 — 신규와 레거시가 다른 본문을 쓴다")
+    @DisplayName("증권사 크리덴셜 — 증권사별 경로 하나만 남는다")
     class CredentialBodies {
 
         @Test
-        @DisplayName("신규 등록은 apiKey/apiSecret 로 문서화된다")
+        @DisplayName("등록은 apiKey/apiSecret 로 문서화된다")
         void securitiesBody() {
             assertThat(props("SecuritiesCredentialRegisterRequest").fieldNames()).toIterable()
                 .containsExactlyInAnyOrder("apiKey", "apiSecret");
         }
 
         @Test
-        @DisplayName("레거시 토스 등록은 clientId/clientSecret 그대로다")
-        void legacyBody() {
-            assertThat(props("TossCredentialRegisterRequest").fieldNames()).toIterable()
-                .containsExactlyInAnyOrder("clientId", "clientSecret");
-        }
-
-        @Test
-        @DisplayName("두 경로가 서로 다른 스키마를 가리킨다 — 같은 $ref 를 쓰면 한쪽이 덮인다")
-        void pathsPointAtDifferentSchemas() {
-            assertThat(requestRef("/api/v1/users/me/securities-credentials/{broker}"))
-                .isNotEqualTo(requestRef("/api/v1/users/me/toss-credential"));
-        }
-
-        private String requestRef(String path) {
-            return doc.path("paths").path(path).path("post").path("requestBody")
-                .path("content").path("application/json").path("schema").path("$ref").asText();
+        @DisplayName("옛 토스 전용 경로는 문서에서 사라졌다 — 되살아나면 클라이언트가 둘 중 하나를 잘못 고른다")
+        void legacyPathIsGone() {
+            assertThat(doc.path("paths").has("/api/v1/users/me/toss-credential")).isFalse();
+            assertThat(doc.path("components").path("schemas").has("TossCredentialRegisterRequest")).isFalse();
         }
     }
 

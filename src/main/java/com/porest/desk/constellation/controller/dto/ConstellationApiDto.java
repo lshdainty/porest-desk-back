@@ -29,11 +29,6 @@ public class ConstellationApiDto {
         }
     }
 
-    public record CatalogResponse(List<ConstellationResponse> constellations) {
-        public static CatalogResponse from(List<ConstellationServiceDto.ConstellationInfo> infos) {
-            return new CatalogResponse(infos.stream().map(ConstellationResponse::from).toList());
-        }
-    }
 
     public record TodayResponse(
         ConstellationResponse constellation,

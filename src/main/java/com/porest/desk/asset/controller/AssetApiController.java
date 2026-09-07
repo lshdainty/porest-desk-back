@@ -86,25 +86,6 @@ public class AssetApiController {
         return ApiResponse.success();
     }
 
-    // 투자 자산 ↔ 토스 보유종목 연결/해제 (프로+토스 연결 사용자 전용).
-    @PutMapping("/asset/{id}/toss-link")
-    public ApiResponse<AssetApiDto.AssetResponse> linkTossSymbol(
-            @LoginUser UserPrincipal loginUser,
-            @PathVariable Long id,
-            @RequestBody AssetApiDto.TossLinkRequest request) {
-        AssetServiceDto.AssetInfo info = assetService.linkSymbol(
-            id, loginUser.getRowId(), request.marketCode(), request.symbol(), request.quantity());
-        return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
-    }
-
-    @DeleteMapping("/asset/{id}/toss-link")
-    public ApiResponse<AssetApiDto.AssetResponse> unlinkTossSymbol(
-            @LoginUser UserPrincipal loginUser,
-            @PathVariable Long id) {
-        AssetServiceDto.AssetInfo info = assetService.unlinkSymbol(id, loginUser.getRowId());
-        return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
-    }
-
     @GetMapping("/assets/summary")
     public ApiResponse<AssetApiDto.AssetSummaryResponse> getAssetSummary(
             @LoginUser UserPrincipal loginUser,

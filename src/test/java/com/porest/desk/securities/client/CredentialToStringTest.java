@@ -1,6 +1,5 @@
 package com.porest.desk.securities.client;
 
-import com.porest.desk.securities.controller.LegacyTossCredentialApiController;
 import com.porest.desk.securities.controller.dto.SecuritiesCredentialApiDto;
 import org.junit.jupiter.api.Test;
 
@@ -21,9 +20,6 @@ class CredentialToStringTest {
         String secret = "PLAIN-SECRET-1234567890";
 
         assertThat(new SecuritiesCredentialApiDto.RegisterRequest(key, secret).toString())
-            .doesNotContain(key)
-            .doesNotContain(secret);
-        assertThat(new LegacyTossCredentialApiController.RegisterRequest(key, secret).toString())
             .doesNotContain(key)
             .doesNotContain(secret);
         assertThat(new AbstractBrokerTokenManager.ApiCredential(key, secret).toString())
