@@ -184,7 +184,7 @@ class TodoServiceImplTest {
     }
 
     @Test
-    @DisplayName("toggleStatus — PENDING→COMPLETED, completedAt 세팅")
+    @DisplayName("changeStatus(null) — 본문 없는 옛 요청: PENDING→COMPLETED, completedAt 세팅")
     void toggleStatusToCompleted() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
                 LocalDate.of(2026, 6, 10), null, TodoType.TASK);
@@ -193,14 +193,14 @@ class TodoServiceImplTest {
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
-        var info = sut.toggleStatus(7L, USER_ID);
+        var info = sut.changeStatus(7L, USER_ID, null);
 
         assertThat(info.status()).isEqualTo(TodoStatus.COMPLETED);
         assertThat(info.completedAt()).isNotNull();
     }
 
     @Test
-    @DisplayName("toggleStatus — COMPLETED→PENDING, completedAt 클리어")
+    @DisplayName("changeStatus(null) — 본문 없는 옛 요청: COMPLETED→PENDING, completedAt 클리어")
     void toggleStatusBackToPending() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
                 LocalDate.of(2026, 6, 10), null, TodoType.TASK);
@@ -210,10 +210,86 @@ class TodoServiceImplTest {
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
-        var info = sut.toggleStatus(8L, USER_ID);
+        var info = sut.changeStatus(8L, USER_ID, null);
 
         assertThat(info.status()).isEqualTo(TodoStatus.PENDING);
         assertThat(info.completedAt()).isNull();
+    }
+
+    /**
+     * QA #93 — 종전엔 본문을 안 읽고 토글만 해서 "진행 중" 이 완료가 됐다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code changeStatus} 안에서 {@code todo.changeStatus(status)}
+     * 대신 {@code todo.toggleStatus()} 를 부르면(= 종전 동작) 상태가 COMPLETED 가 되어 깨진다.
+     */
+    @Test
+    @DisplayName("changeStatus(IN_PROGRESS) — 지정한 상태로 간다(완료로 튀지 않는다)")
+    void changeStatusToInProgress() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
+                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 9L);
+        given(todoRepository.findById(9L)).willReturn(Optional.of(todo));
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.changeStatus(9L, USER_ID, TodoStatus.IN_PROGRESS);
+
+        assertThat(info.status()).isEqualTo(TodoStatus.IN_PROGRESS);
+        assertThat(info.completedAt()).isNull();
+    }
+
+    /** 완료였던 할 일을 진행 중으로 되돌리면 완료 시각도 지워지고 별빛은 회수 경로로 간다. */
+    @Test
+    @DisplayName("changeStatus(IN_PROGRESS) — 완료였다면 completedAt 을 지운다")
+    void changeStatusFromCompletedToInProgressClearsCompletedAt() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
+                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 10L);
+        todo.toggleStatus(); // 먼저 COMPLETED 로
+        given(todoRepository.findById(10L)).willReturn(Optional.of(todo));
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.changeStatus(10L, USER_ID, TodoStatus.IN_PROGRESS);
+
+        assertThat(info.status()).isEqualTo(TodoStatus.IN_PROGRESS);
+        assertThat(info.completedAt()).isNull();
+    }
+
+    /**
+     * 같은 상태를 다시 보내면 완료 시각이 밀리면 안 된다 — 앱이 재시도하거나 두 번 눌렀을 때
+     * "언제 끝냈는지" 가 요청할 때마다 달라진다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code Todo.changeStatus} 의
+     * {@code next == this.status} 조기 반환을 빼면 completedAt 이 새로 찍혀 깨진다.
+     */
+    @Test
+    @DisplayName("changeStatus(COMPLETED) — 이미 완료면 completedAt 을 다시 찍지 않는다")
+    void changeStatusToSameStatusKeepsCompletedAt() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
+                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 11L);
+        todo.toggleStatus(); // COMPLETED
+        var completedAt = todo.getCompletedAt();
+        given(todoRepository.findById(11L)).willReturn(Optional.of(todo));
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.changeStatus(11L, USER_ID, TodoStatus.COMPLETED);
+
+        assertThat(info.status()).isEqualTo(TodoStatus.COMPLETED);
+        assertThat(info.completedAt()).isEqualTo(completedAt);
+    }
+
+    @Test
+    @DisplayName("changeStatus — 남의 할일 상태는 바꿀 수 없다")
+    void changeStatusRejectsOthers() {
+        Todo todo = mock(Todo.class);
+        given(todo.getUser()).willReturn(user(999L));
+        given(todoRepository.findById(12L)).willReturn(Optional.of(todo));
+
+        assertThatThrownBy(() -> sut.changeStatus(12L, USER_ID, TodoStatus.COMPLETED))
+                .isInstanceOf(ForbiddenException.class);
     }
 
     @Test

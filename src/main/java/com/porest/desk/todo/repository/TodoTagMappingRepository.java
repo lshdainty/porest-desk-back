@@ -13,4 +13,11 @@ public interface TodoTagMappingRepository {
     void deleteByTodoId(Long todoRowId);
     /** 매핑 하나만 걷는다 — category 가 바뀌었을 때 옛 이름의 태그를 떼는 자리. */
     void deleteByTodoIdAndTagId(Long todoRowId, Long tagRowId);
+    /**
+     * 그 태그의 매핑을 전부 걷는다 — 태그를 지우는 자리.
+     *
+     * <p>태그 삭제는 soft-delete 라 매핑은 남는다. 조회가 삭제된 태그를 걸러 주므로 화면에는
+     * 안 보이지만, "태그 없음으로 남아요" 라고 말해 놓고 연결은 그대로 두는 셈이다(QA #88).
+     */
+    void deleteByTagId(Long tagRowId);
 }

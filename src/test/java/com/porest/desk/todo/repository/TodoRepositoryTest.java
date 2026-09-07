@@ -333,4 +333,36 @@ class TodoRepositoryTest {
         assertThat(em.find(Todo.class, removed.getRowId()).getCategory()).isEqualTo("업무");
         assertThat(em.find(Todo.class, foreign.getRowId()).getCategory()).isEqualTo("업무");
     }
+
+    /**
+     * 태그를 지울 때 그 이름을 쓰던 할 일의 {@code category} 를 비운다(QA #88).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code clearCategory} 의 {@code setNull} 을
+     * {@code set(todo.category, category)} 로 바꾸면(= 아무것도 안 지우는 셈) 첫 두 단언이 깨지고,
+     * WHERE 의 사용자·삭제 조건을 빼면 남의 할 일·지운 할 일까지 비워 뒤의 단언이 깨진다.
+     */
+    @Test
+    @DisplayName("clearCategory — 그 사용자의 그 이름만 비운다(남의 할일·삭제된 할일·다른 이름 제외)")
+    void clearCategoryClearsOnlyOwnActiveRows() {
+        User owner = persistUser("owner2");
+        User other = persistUser("other2");
+        Todo a = persistTask(owner, "a", TodoPriority.MEDIUM, "업무", null, null);
+        Todo b = persistTask(owner, "b", TodoPriority.MEDIUM, "업무", null, null);
+        Todo keep = persistTask(owner, "keep", TodoPriority.MEDIUM, "개인", null, null);
+        Todo removed = persistTask(owner, "removed", TodoPriority.MEDIUM, "업무", null, null);
+        Todo foreign = persistTask(other, "foreign", TodoPriority.MEDIUM, "업무", null, null);
+        removed.deleteTodo();
+        em.flush();
+        em.clear();
+
+        long cleared = repository.clearCategory(owner.getRowId(), "업무");
+        em.clear();
+
+        assertThat(cleared).isEqualTo(2);
+        assertThat(em.find(Todo.class, a.getRowId()).getCategory()).isNull();
+        assertThat(em.find(Todo.class, b.getRowId()).getCategory()).isNull();
+        assertThat(em.find(Todo.class, keep.getRowId()).getCategory()).isEqualTo("개인");
+        assertThat(em.find(Todo.class, removed.getRowId()).getCategory()).isEqualTo("업무");
+        assertThat(em.find(Todo.class, foreign.getRowId()).getCategory()).isEqualTo("업무");
+    }
 }

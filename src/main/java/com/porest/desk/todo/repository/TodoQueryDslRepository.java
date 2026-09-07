@@ -200,6 +200,18 @@ public class TodoQueryDslRepository implements TodoRepository {
     }
 
     @Override
+    public long clearCategory(Long userRowId, String category) {
+        return queryFactory.update(todo)
+            .setNull(todo.category)
+            .where(
+                todo.user.rowId.eq(userRowId),
+                todo.category.eq(category),
+                todo.isDeleted.eq(YNType.N)
+            )
+            .execute();
+    }
+
+    @Override
     public List<Todo> findDueTodosForReminder(LocalDate startDate, LocalDate endDate) {
         return queryFactory.selectFrom(todo)
             .leftJoin(todo.user).fetchJoin()

@@ -64,4 +64,11 @@ public class TodoTagMappingQueryDslRepository implements TodoTagMappingRepositor
             .where(mapping.todo.rowId.eq(todoRowId), mapping.tag.rowId.eq(tagRowId))
             .execute();
     }
+
+    @Override
+    public void deleteByTagId(Long tagRowId) {
+        queryFactory.delete(mapping)
+            .where(mapping.tag.rowId.eq(tagRowId))
+            .execute();
+    }
 }

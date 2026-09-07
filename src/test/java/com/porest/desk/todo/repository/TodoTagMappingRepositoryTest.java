@@ -179,4 +179,33 @@ class TodoTagMappingRepositoryTest {
                 .extracting(m -> m.getTag().getTagName()).containsExactly("home");
         assertThat(repository.findByTodoId(todo2.getRowId())).hasSize(1);
     }
+
+    /**
+     * 태그 삭제는 soft-delete 라 매핑이 남는다 — 조회가 걸러 주니 화면엔 안 보이지만,
+     * "태그 없음으로 남아요" 라고 말해 놓고 연결은 남겨 두는 셈이다(QA #88).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code deleteByTagId} 의 {@code where} 를 빼면 다른
+     * 태그의 매핑까지 지워 마지막 단언이 깨진다.
+     */
+    @Test
+    @DisplayName("deleteByTagId — 그 태그의 매핑만 전부 걷고 다른 태그는 남긴다")
+    void deleteByTagId() {
+        User user = persistUser("u1");
+        Todo todo1 = persistTodo(user, "todo1");
+        Todo todo2 = persistTodo(user, "todo2");
+        TodoTag work = persistTag(user, "work");
+        TodoTag home = persistTag(user, "home");
+        persistMapping(todo1, work);
+        persistMapping(todo2, work);
+        persistMapping(todo1, home);
+        em.flush();
+        em.clear();
+
+        repository.deleteByTagId(work.getRowId());
+        em.clear();
+
+        assertThat(repository.findByTodoId(todo1.getRowId()))
+                .extracting(m -> m.getTag().getTagName()).containsExactly("home");
+        assertThat(repository.findByTodoId(todo2.getRowId())).isEmpty();
+    }
 }

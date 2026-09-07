@@ -45,6 +45,17 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
+    public long clearCategory(Long userRowId, String category) {
+        return entityManager.createQuery(
+                "UPDATE Todo t SET t.category = NULL "
+                    + "WHERE t.user.rowId = :userRowId AND t.category = :category AND t.isDeleted = :isDeleted")
+            .setParameter("userRowId", userRowId)
+            .setParameter("category", category)
+            .setParameter("isDeleted", YNType.N)
+            .executeUpdate();
+    }
+
+    @Override
     public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type) {
         StringBuilder jpql = new StringBuilder("SELECT t FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted");
         List<String> conditions = new ArrayList<>();

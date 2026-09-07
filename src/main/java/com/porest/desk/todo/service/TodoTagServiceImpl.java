@@ -9,6 +9,7 @@ import com.porest.desk.common.util.NameNormalizer;
 import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.todo.domain.TodoTag;
 import com.porest.desk.todo.repository.TodoRepository;
+import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.user.domain.User;
@@ -30,6 +31,7 @@ import java.util.Map;
 @Transactional(readOnly = true)
 public class TodoTagServiceImpl implements TodoTagService {
     private final TodoTagRepository todoTagRepository;
+    private final TodoTagMappingRepository todoTagMappingRepository;
     private final TodoRepository todoRepository;
     private final UserRepository userRepository;
 
@@ -42,10 +44,12 @@ public class TodoTagServiceImpl implements TodoTagService {
     private final TransactionTemplate newTransaction;
 
     public TodoTagServiceImpl(TodoTagRepository todoTagRepository,
+                              TodoTagMappingRepository todoTagMappingRepository,
                               TodoRepository todoRepository,
                               UserRepository userRepository,
                               PlatformTransactionManager transactionManager) {
         this.todoTagRepository = todoTagRepository;
+        this.todoTagMappingRepository = todoTagMappingRepository;
         this.todoRepository = todoRepository;
         this.userRepository = userRepository;
         this.newTransaction = new TransactionTemplate(transactionManager);
@@ -122,6 +126,20 @@ public class TodoTagServiceImpl implements TodoTagService {
         return TodoTagServiceDto.TagInfo.from(tag);
     }
 
+    /**
+     * 태그 삭제 — <b>태그 행만 지우면 다음 저장에서 되살아난다</b>(QA #88).
+     *
+     * <p>{@code todo.category} 는 태그 이름의 복사본이고, 웹·앱은 태그가 아니라 그 문자열을
+     * 보낸다. 그래서 태그만 soft-delete 하면 할 일에는 지운 이름이 그대로 남고, 그 할 일을
+     * 다음에 저장하는 순간 다리({@code TodoServiceImpl.resolveCategoryTag} → {@code findOrCreateByName})가
+     * <b>같은 이름의 태그를 색 없이 새로 만든다</b>. 저장할 때마다 하나씩 늘었다.
+     *
+     * <p>두 갈래 중 <b>이름을 비우는 쪽</b>을 골랐다 — 삭제 확인창이 이미
+     * "이 태그를 쓰는 할 일 N건은 태그 없음으로 남아요" 라고 약속하고 있으므로, 화면이 말한 결과를
+     * 데이터가 그대로 갖게 한다. 반대편(삭제된 이름은 자동 생성 금지)은 할 일에 지운 이름이
+     * 남아 목록·필터에 계속 보이면서 태그 목록에는 없는 상태를 만들고, "지운 이름은 다시 쓸 수
+     * 있어야 한다" 는 원칙과도 부딪힌다 — 사용자가 그 이름을 다시 적으면 그때는 만들어 줘야 한다.
+     */
     @Override
     @Transactional
     public void deleteTag(Long tagId, Long userRowId) {
@@ -129,9 +147,16 @@ public class TodoTagServiceImpl implements TodoTagService {
 
         TodoTag tag = findTagOrThrow(tagId);
         validateTagOwnership(tag, userRowId);
+
+        // 이 이름이 아래 clearCategory 의 WHERE 다 — 개명(updateTag)과 달리 삭제는 이름을
+        // 건드리지 않으므로 순서에 함정은 없지만, 읽는 자리를 한 곳으로 모아 둔다.
+        String tagName = tag.getTagName();
         tag.deleteTag();
 
-        log.info("태그 삭제 완료: tagId={}", tagId);
+        todoTagMappingRepository.deleteByTagId(tagId);
+        long cleared = todoRepository.clearCategory(userRowId, tagName);
+
+        log.info("태그 삭제 완료: tagId={}, 카테고리를 비운 할일={}", tagId, cleared);
     }
 
     /**
