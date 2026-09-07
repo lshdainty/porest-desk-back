@@ -108,10 +108,16 @@ public class Todo extends AuditingFieldsWithIp {
         return todo;
     }
 
+    /**
+     * 수정. <b>NOT NULL 두 칸({@code title}·{@code priority})은 값이 오지 않으면 기존 값을 지킨다</b> —
+     * 종전엔 null 을 그대로 덮어써 저장이 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다(QA #81).
+     * 널 허용 칸({@code content}·{@code category}·{@code dueDate})은 반대로 그대로 덮는다 —
+     * 거기서 null 은 "지운다" 는 뜻이고, 마감일을 지울 방법을 없애면 안 된다.
+     */
     public void updateTodo(String title, String content, TodoPriority priority, String category, LocalDate dueDate) {
-        this.title = title;
+        if (title != null) this.title = title;
+        if (priority != null) this.priority = priority;
         this.content = content;
-        this.priority = priority;
         this.category = category;
         this.dueDate = dueDate;
     }

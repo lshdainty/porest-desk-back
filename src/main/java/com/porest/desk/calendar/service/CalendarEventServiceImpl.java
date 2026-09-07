@@ -60,9 +60,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        if (command.startDate().isAfter(command.endDate())) {
-            throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
-        }
+        validateDateRange(command.startDate(), command.endDate());
 
         EventLabel label = null;
         if (command.labelRowId() != null) {
@@ -148,9 +146,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         CalendarEvent event = findEventOrThrow(eventId);
         validateEventOwnership(event, userRowId);
 
-        if (command.startDate().isAfter(command.endDate())) {
-            throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
-        }
+        validateDateRange(command.startDate(), command.endDate());
 
         EventLabel label = null;
         if (command.labelRowId() != null) {
@@ -292,6 +288,20 @@ public class CalendarEventServiceImpl implements CalendarEventService {
         // 캘린더 미소속 이벤트(이론상 없음): 생성자만 (생성자 불명이면 접근 거부)
         if (!userRowId.equals(ownerRowId)) {
             throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
+        }
+    }
+
+    /**
+     * 시작·종료가 있고 순서가 맞는지. <b>널 검사를 여기 두는 이유</b>는 종전에
+     * {@code command.startDate().isAfter(...)} 가 곧바로 NPE 를 내 <b>500</b> 이 나갔기 때문이다
+     * (QA #81). 날짜를 안 보낸 것은 요청 잘못이므로 400 이 맞다.
+     *
+     * <p>DTO 에도 {@code @NotNull} 을 걸었지만 그것과 별개로 여기를 지킨다 — 서비스는 컨트롤러
+     * 하나만 부르는 것이 아니고, 검증이 DTO 에만 있으면 그 애노테이션이 지워지는 날 다시 500 이 된다.
+     */
+    private static void validateDateRange(LocalDateTime startDate, LocalDateTime endDate) {
+        if (startDate == null || endDate == null || startDate.isAfter(endDate)) {
+            throw new InvalidValueException(DeskErrorCode.CALENDAR_INVALID_DATE_RANGE);
         }
     }
 

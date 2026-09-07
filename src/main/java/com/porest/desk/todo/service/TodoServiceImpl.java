@@ -54,7 +54,10 @@ public class TodoServiceImpl implements TodoService {
         }
 
         TodoType type = command.type() != null ? command.type() : TodoType.TASK;
-        TodoPriority priority = command.priority();
+        // priority 는 NOT NULL 이다. 안 보내면 종전엔 저장이 409 "다른 곳에서 먼저 수정됐어요" 로
+        // 튕겼는데, 앱의 하위 할 일 빠른 추가가 정확히 그 요청을 보낸다(제목만 보낸다) — 즉
+        // 지금 운영에서 안 되는 화면이 있다(QA #81). 안 보낸 것은 "보통" 이라는 뜻으로 읽는다.
+        TodoPriority priority = command.priority() != null ? command.priority() : TodoPriority.MEDIUM;
         if (type == TodoType.NOTE) {
             priority = TodoPriority.LOW;
         }

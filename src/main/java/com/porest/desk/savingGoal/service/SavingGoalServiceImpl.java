@@ -6,6 +6,7 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.exception.IntegrityViolations;
 import com.porest.desk.common.util.NameNormalizer;
 import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.savingGoal.domain.SavingGoal;
@@ -197,6 +198,10 @@ public class SavingGoalServiceImpl implements SavingGoalService {
         try {
             savingGoalRepository.flush();
         } catch (DataIntegrityViolationException e) {
+            // UNIQUE 위반만 이 도메인의 답으로 번역한다. NOT NULL·FK 를 여기서 "이름 중복" 이라고
+            // 답하면 값을 빼먹은 요청이 엉뚱한 이유를 듣는다(QA #81) — 그런 위반은 그대로 올려
+            // DataIntegrityExceptionHandler 가 종류대로 답하게 둔다.
+            if (!IntegrityViolations.isUnique(e)) throw e;
             throw new InvalidValueException(DeskErrorCode.SAVING_GOAL_DUPLICATE_NAME, e);
         }
     }

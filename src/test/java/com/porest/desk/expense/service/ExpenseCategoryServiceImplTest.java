@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.eq;
 import java.time.LocalDateTime;
 import com.porest.desk.expense.domain.Expense;
+import com.porest.desk.support.exception.ConstraintViolations;
 
 /**
  * 카테고리·예산 정책 로직 회귀 방지 단위 테스트.
@@ -391,13 +392,56 @@ class ExpenseCategoryServiceImplTest {
             given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
             given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
                     USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
-            willThrow(new DataIntegrityViolationException("UK_expense_category_active_name"))
+            willThrow(ConstraintViolations.unique("UK_expense_category_active_name"))
                     .given(expenseCategoryRepository).flush();
 
             assertThatThrownBy(() -> sut.createCategory(command("식비")))
                     .isInstanceOf(InvalidValueException.class)
                     .extracting(e -> ((InvalidValueException) e).getErrorCode())
                     .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
+        }
+        /**
+         * QA #81 — <b>UNIQUE 가 아닌 위반은 이 도메인이 손대지 않는다.</b>
+         *
+         * <p>되돌려 보는 법(네거티브 컨트롤): 서비스의
+         * {@code if (!IntegrityViolations.isUnique(e)) throw e;} 한 줄을 지우면 곧바로 깨진다.
+         */
+        @Test
+        @DisplayName("createCategory — NOT NULL 위반은 이름 중복으로 번역하지 않고 그대로 올린다")
+        void createDoesNotTranslateNonUniqueViolation() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
+            willThrow(ConstraintViolations.notNull("SORT_ORDER"))
+                    .given(expenseCategoryRepository).flush();
+
+            assertThatThrownBy(() -> sut.createCategory(command("식비")))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        /**
+         * 재시도는 UNIQUE 일 때만 뜻이 있다 — NOT NULL 은 몇 번을 다시 돌려도 같은 자리에서 같게 터진다.
+         * 되돌려 보는 법: {@code findOrCreateCategory} 의 {@code isUnique} 검사를 지우면
+         * {@code times(1)} 이 2 가 되어 깨진다.
+         */
+        @Test
+        @DisplayName("findOrCreateCategory — NOT NULL 위반이면 재시도하지 않고 그대로 올린다")
+        void findOrCreateDoesNotRetryOnNonUniqueViolation() {
+            User u = user(USER_ID);
+            given(expenseCategoryRepository.findActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비")).willReturn(Optional.empty());
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
+                    USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
+            willThrow(ConstraintViolations.notNull("SORT_ORDER"))
+                    .given(expenseCategoryRepository).flush();
+
+            assertThatThrownBy(() -> sut.findOrCreateCategory(command("식비")))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            verify(expenseCategoryRepository, times(1))
+                    .findActiveByUserAndParentAndTypeAndName(USER_ID, null, ExpenseType.EXPENSE, "식비");
         }
 
         @Test
@@ -442,7 +486,7 @@ class ExpenseCategoryServiceImplTest {
             given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
             given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
                     USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
-            willThrow(new DataIntegrityViolationException("UK_expense_category_active_name"))
+            willThrow(ConstraintViolations.unique("UK_expense_category_active_name"))
                     .given(expenseCategoryRepository).flush();
 
             var info = sut.findOrCreateCategory(command("식비"));
@@ -461,7 +505,7 @@ class ExpenseCategoryServiceImplTest {
             given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
             given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
                     USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(false);
-            willThrow(new DataIntegrityViolationException("UK_expense_category_active_name"))
+            willThrow(ConstraintViolations.unique("UK_expense_category_active_name"))
                     .given(expenseCategoryRepository).flush();
 
             assertThatThrownBy(() -> sut.findOrCreateCategory(command("식비")))

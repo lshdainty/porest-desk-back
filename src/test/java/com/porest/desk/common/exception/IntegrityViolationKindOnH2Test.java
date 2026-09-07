@@ -1,0 +1,100 @@
+package com.porest.desk.common.exception;
+
+import com.porest.desk.calendar.domain.EventLabel;
+import com.porest.desk.calendar.repository.EventLabelQueryDslRepository;
+import com.porest.desk.calendar.repository.EventLabelRepository;
+import com.porest.desk.common.config.QueryDslConfig;
+import com.porest.desk.common.config.database.JpaAuditingConfig;
+import com.porest.desk.common.config.database.LoginUserAuditorAware;
+import com.porest.desk.todo.domain.Todo;
+import com.porest.desk.todo.domain.TodoTag;
+import com.porest.desk.todo.domain.TodoTagMapping;
+import com.porest.desk.todo.type.TodoPriority;
+import com.porest.desk.todo.type.TodoType;
+import com.porest.desk.user.domain.User;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.dao.annotation.PersistenceExceptionTranslationPostProcessor;
+import org.springframework.test.context.ActiveProfiles;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * 판정이 <b>진짜 DB 예외</b>에도 서는지 — 손으로 만든 예외가 아니라 H2 가 실제로 던진 것으로 건다.
+ *
+ * <p>{@link IntegrityViolationsTest} 는 예외를 조립해 분기표를 고정하고, 여기서는 그 조립이
+ * 실물과 같은 모양인지를 확인한다. 둘 중 하나만 있으면 위험하다 — 조립 테스트만 있으면
+ * 하이버네이트가 사슬 모양을 바꾸는 날 조용히 통과하고, 실물 테스트만 있으면 H2 에 없는
+ * MariaDB 코드가 영영 안 걸린다.
+ *
+ * <p>{@code PersistenceExceptionTranslationPostProcessor} 를 명시적으로 들이는 이유는
+ * {@code @DataJpaTest} 슬라이스가 그것을 자동으로 안 붙이기 때문이다. 운영에서는 부트가
+ * 붙여 주고, 그래서 {@code @Repository} 의 flush 가 {@code DataIntegrityViolationException}
+ * 으로 나온다 — 서비스 열 곳의 catch 가 기대는 것이 바로 그 번역이다.
+ */
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import({QueryDslConfig.class, JpaAuditingConfig.class, LoginUserAuditorAware.class,
+        EventLabelQueryDslRepository.class, PersistenceExceptionTranslationPostProcessor.class})
+@ActiveProfiles("test")
+class IntegrityViolationKindOnH2Test {
+
+    @Autowired private TestEntityManager em;
+    @Autowired private EventLabelRepository eventLabelRepository;
+
+    private User persistUser(String id) {
+        User user = em.persist(User.createUser(null, id, "테스터", id + "@porest.com"));
+        em.flush();
+        return user;
+    }
+
+    @Test
+    @DisplayName("NOT NULL 위반은 NOT_NULL 로 판정된다 — 스프링 번역을 거쳐도 원인 사슬이 남는다")
+    void notNullViolation() {
+        User user = persistUser("k1");
+
+        // event_label.color 는 NOT NULL. QA #81 이 신고한 calendar_event.event_type 과 같은 부류다.
+        // IDENTITY 키라 INSERT 가 save 시점에 나간다 — 그래서 save 와 flush 를 함께 감싼다.
+        assertThatThrownBy(() -> {
+            eventLabelRepository.save(EventLabel.createLabel(user, "이름", null, 0));
+            eventLabelRepository.flush();
+        }).satisfies(t -> assertThat(IntegrityViolations.classify(t)).isEqualTo(IntegrityViolationKind.NOT_NULL));
+    }
+
+    @Test
+    @DisplayName("UNIQUE 위반은 UNIQUE 로 판정된다 — 이것만 409 로 나가야 한다")
+    void uniqueViolation() {
+        User user = persistUser("k2");
+        Todo todo = em.persist(Todo.createTodo(user, "할일", null, TodoPriority.LOW, null, null, null, TodoType.TASK));
+        TodoTag tag = em.persist(TodoTag.createTag(user, "태그", "#111111"));
+        em.flush();
+
+        // UK_todo_tag(todo_row_id, tag_row_id) — 엔티티에 선언된 유일성이라 H2 에도 실제로 만들어진다.
+        em.persist(TodoTagMapping.create(todo, tag));
+
+        assertThatThrownBy(() -> {
+            em.persist(TodoTagMapping.create(todo, tag));
+            em.flush();
+        }).satisfies(t -> assertThat(IntegrityViolations.classify(t)).isEqualTo(IntegrityViolationKind.UNIQUE));
+    }
+
+    @Test
+    @DisplayName("FK 위반은 FOREIGN_KEY 로 판정된다")
+    void foreignKeyViolation() {
+        User user = persistUser("k3");
+
+        // 없는 이벤트를 가리키는 댓글 — JPA 로는 만들 수 없어 네이티브로 넣는다.
+        assertThatThrownBy(() -> em.getEntityManager().createNativeQuery(
+                "insert into event_comment (event_row_id, user_row_id, content, is_deleted, version,"
+                        + " create_at, modify_at) values (999999, " + user.getRowId()
+                        + ", '내용', 'N', 0, current_timestamp, current_timestamp)")
+                .executeUpdate())
+                .satisfies(t -> assertThat(IntegrityViolations.classify(t)).isEqualTo(IntegrityViolationKind.FOREIGN_KEY));
+    }
+}

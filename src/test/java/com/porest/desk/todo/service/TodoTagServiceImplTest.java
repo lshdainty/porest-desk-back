@@ -14,8 +14,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.support.exception.ConstraintViolations;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -109,12 +110,34 @@ class TodoTagServiceImplTest {
         ReflectionTestUtils.setField(u, "rowId", USER_ID);
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
         given(todoTagRepository.existsActiveByUserAndName(USER_ID, "일상", null)).willReturn(false);
-        willThrow(new DataIntegrityViolationException("UK_todo_tag_user_active_name"))
+        willThrow(ConstraintViolations.unique("UK_todo_tag_user_active_name"))
                 .given(todoTagRepository).flush();
 
         assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "일상", "#fff")))
                 .isInstanceOf(InvalidValueException.class)
                 .extracting(e -> ((InvalidValueException) e).getErrorCode())
                 .isEqualTo(DeskErrorCode.TODO_TAG_DUPLICATE_NAME);
+    }
+    /**
+     * QA #81 — <b>UNIQUE 가 아닌 위반은 이 도메인이 손대지 않는다.</b>
+     *
+     * <p>종전엔 여기서 {@code DataIntegrityViolationException} 을 종류와 무관하게 전부
+     * "이름이 중복돼요" 로 번역했다. 그러면 값을 하나 빼먹고 보낸 요청이 <b>있지도 않은
+     * 중복</b>을 이유로 거절당한다. 그런 위반은 그대로 올려 공통 핸들러가 400 으로 답하게 둔다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 서비스의
+     * {@code if (!IntegrityViolations.isUnique(e)) throw e;} 한 줄을 지우면 곧바로 깨진다.
+     */
+    @Test
+    @DisplayName("createTag — NOT NULL 위반은 이름 중복으로 번역하지 않고 그대로 올린다")
+    void doesNotTranslateNonUniqueViolation() {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(todoTagRepository.existsActiveByUserAndName(USER_ID, "일상", null)).willReturn(false);
+        willThrow(ConstraintViolations.notNull("COLOR")).given(todoTagRepository).flush();
+
+        assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "일상", null)))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

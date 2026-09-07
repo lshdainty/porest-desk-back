@@ -5,6 +5,8 @@ import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -24,16 +26,25 @@ public class ExpenseApiDto {
      */
     public static final long MAX_AMOUNT = AmountLimits.MAX_TX_AMOUNT;
 
+    /**
+     * {@code expense_type} · {@code amount} · {@code expense_date} 는 셋 다 NOT NULL 이고,
+     * 수정 경로도 받은 값을 그대로 덮는다. 하나만 빠져도 종전엔 저장이 409 "다른 곳에서 먼저
+     * 수정됐어요" 로 튕겼다(QA #81) — 돈이 걸린 화면에서 가장 오해가 큰 답이다.
+     * 웹·앱 모두 생성·수정에서 셋을 항상 함께 보낸다(2026-09-07 양쪽 코드로 확인).
+     */
     @Schema(name = "ExpenseCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
         Long assetRowId,
+        @NotNull(message = "거래 종류를 골라 주세요")
         ExpenseType expenseType,
+        @NotNull(message = "금액을 입력해 주세요")
         @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
         @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
+        @NotBlank(message = "거래 일시를 입력해 주세요")
         String expenseDate,
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
@@ -56,12 +67,15 @@ public class ExpenseApiDto {
     public record UpdateRequest(
         Long categoryRowId,
         Long assetRowId,
+        @NotNull(message = "거래 종류를 골라 주세요")
         ExpenseType expenseType,
+        @NotNull(message = "금액을 입력해 주세요")
         @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
         @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
+        @NotBlank(message = "거래 일시를 입력해 주세요")
         String expenseDate,
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,

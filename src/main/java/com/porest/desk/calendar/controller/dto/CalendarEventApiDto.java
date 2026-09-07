@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.type.CalendarEventType;
 import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -16,6 +17,7 @@ public class CalendarEventApiDto {
 
     @Schema(name = "CalendarEventCreateRequest")
     public record CreateRequest(
+        @NotBlank(message = "일정 제목을 입력해 주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
         @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있어요")
@@ -24,7 +26,10 @@ public class CalendarEventApiDto {
         // calendar_event.color 는 varchar(20).
         @Size(max = 20, message = "색상 값이 너무 길어요")
         String color,
+        // 시작·종료는 NOT NULL 이고 서비스가 둘을 비교한다. 안 보내면 종전엔 NPE → 500 이었다(QA #81).
+        @NotNull(message = "시작 일시를 입력해 주세요")
         LocalDateTime startDate,
+        @NotNull(message = "종료 일시를 입력해 주세요")
         LocalDateTime endDate,
         YNType isAllDay,
         Long labelRowId,
@@ -50,7 +55,10 @@ public class CalendarEventApiDto {
         // calendar_event.color 는 varchar(20).
         @Size(max = 20, message = "색상 값이 너무 길어요")
         String color,
+        // 시작·종료는 NOT NULL 이고 서비스가 둘을 비교한다. 안 보내면 종전엔 NPE → 500 이었다(QA #81).
+        @NotNull(message = "시작 일시를 입력해 주세요")
         LocalDateTime startDate,
+        @NotNull(message = "종료 일시를 입력해 주세요")
         LocalDateTime endDate,
         YNType isAllDay,
         Long labelRowId,

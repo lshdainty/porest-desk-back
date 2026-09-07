@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.EventCommentService;
 import com.porest.desk.calendar.service.dto.EventCommentServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +29,7 @@ public class EventCommentApiController {
     public ApiResponse<EventCommentApiDto.Response> createComment(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long eventId,
-            @RequestBody EventCommentApiDto.CreateRequest request) {
+            @Valid @RequestBody EventCommentApiDto.CreateRequest request) {
         EventCommentServiceDto.CreateCommand command = new EventCommentServiceDto.CreateCommand(
             eventId,
             loginUser.getRowId(),
@@ -51,7 +52,7 @@ public class EventCommentApiController {
     public ApiResponse<EventCommentApiDto.Response> updateComment(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long commentId,
-            @RequestBody EventCommentApiDto.UpdateRequest request) {
+            @Valid @RequestBody EventCommentApiDto.UpdateRequest request) {
         EventCommentServiceDto.UpdateCommand command = new EventCommentServiceDto.UpdateCommand(
             commentId,
             request.content()

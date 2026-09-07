@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.UserCalendarService;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +29,7 @@ public class UserCalendarApiController {
     @PostMapping("/calendar/calendars")
     public ApiResponse<UserCalendarApiDto.Response> createCalendar(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody UserCalendarApiDto.CreateRequest request) {
+            @Valid @RequestBody UserCalendarApiDto.CreateRequest request) {
         UserCalendarServiceDto.CalendarInfo info = userCalendarService.createCalendar(new UserCalendarServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.calendarName(),
@@ -48,7 +49,7 @@ public class UserCalendarApiController {
     public ApiResponse<UserCalendarApiDto.Response> updateCalendar(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody UserCalendarApiDto.UpdateRequest request) {
+            @Valid @RequestBody UserCalendarApiDto.UpdateRequest request) {
         UserCalendarServiceDto.CalendarInfo info = userCalendarService.updateCalendar(id, loginUser.getRowId(), new UserCalendarServiceDto.UpdateCommand(
             request.calendarName(),
             request.color()
@@ -93,7 +94,7 @@ public class UserCalendarApiController {
     @PostMapping("/calendar/calendars/join")
     public ApiResponse<UserCalendarApiDto.Response> joinByInviteCode(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody UserCalendarApiDto.JoinRequest request) {
+            @Valid @RequestBody UserCalendarApiDto.JoinRequest request) {
         UserCalendarServiceDto.CalendarInfo info =
             userCalendarService.joinByInviteCode(loginUser.getRowId(), request.inviteCode());
         return ApiResponse.success(UserCalendarApiDto.Response.from(info));
@@ -113,7 +114,7 @@ public class UserCalendarApiController {
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
             @PathVariable Long memberId,
-            @RequestBody UserCalendarApiDto.ChangeRoleRequest request) {
+            @Valid @RequestBody UserCalendarApiDto.ChangeRoleRequest request) {
         userCalendarService.changeMemberRole(id, memberId, request.permission(), loginUser.getRowId());
         return ApiResponse.success();
     }

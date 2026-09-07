@@ -126,4 +126,28 @@ class MemoServiceImplTest {
         assertThat(sut.togglePin(202L, USER_ID).isPinned()).isEqualTo(YNType.Y); // N→Y
         assertThat(sut.togglePin(202L, USER_ID).isPinned()).isEqualTo(YNType.N); // Y→N
     }
+
+    /**
+     * QA #81 — 수정에서 {@code title} 이 빠지면 <b>기존 제목을 지킨다</b>. {@code memo.title} 은
+     * NOT NULL 이라 종전엔 null 을 덮어써 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다.
+     *
+     * <p>지금은 DTO 의 {@code @NotBlank} 가 HTTP 앞단에서 먼저 끊지만, 검증은 애노테이션 하나가
+     * 지워지는 순간 사라진다. 엔티티가 자기 NOT NULL 을 지키는 쪽이 남는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code Memo.updateMemo} 의 {@code if (title != null)}
+     * 가드를 빼면 아래가 null 을 만나 깨진다.
+     */
+    @Test
+    @DisplayName("updateMemo — title 이 없으면 기존 제목을 지킨다")
+    void updateKeepsExistingTitleWhenAbsent() {
+        Memo memo = Memo.createMemo(user(USER_ID), null, "원제목", "본문", null, null);
+        ReflectionTestUtils.setField(memo, "rowId", 5L);
+        given(memoRepository.findById(5L)).willReturn(Optional.of(memo));
+
+        var info = sut.updateMemo(5L, USER_ID, new MemoServiceDto.UpdateCommand(
+                null, null, "고친본문", null, null));
+
+        assertThat(info.title()).isEqualTo("원제목");
+        assertThat(info.content()).isEqualTo("고친본문");
+    }
 }

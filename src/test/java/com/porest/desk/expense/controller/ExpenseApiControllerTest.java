@@ -180,7 +180,7 @@ class ExpenseApiControllerTest {
         given(expenseService.updateExpense(eq(10L), eq(1L), any())).willReturn(sampleInfo());
 
         String body = """
-                {"categoryRowId":5,"amount":20000,"expenseType":"EXPENSE",
+                {"categoryRowId":5,"amount":20000,"expenseType":"EXPENSE","expenseDate":"2026-07-03",
                  "splits":[{"categoryRowId":7,"amount":8000,"label":"커피","sortOrder":0},
                            {"categoryRowId":8,"amount":12000,"label":"밥","sortOrder":1}]}
                 """;
@@ -206,12 +206,44 @@ class ExpenseApiControllerTest {
 
         mockMvc.perform(put("/api/v1/expense/{id}", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"amount\":30000}"))
+                        .content("{\"amount\":30000,\"expenseType\":\"EXPENSE\",\"expenseDate\":\"2026-07-03\"}"))
                 .andExpect(status().isOk());
 
         var captor = ArgumentCaptor.forClass(ExpenseServiceDto.UpdateCommand.class);
         verify(expenseService).updateExpense(eq(10L), eq(1L), captor.capture());
         assertThat(captor.getValue().splits()).isNull();
+    }
+
+    /**
+     * QA #81 — 돈이 걸린 화면에서 가장 오해가 큰 답을 고친 자리.
+     *
+     * <p>{@code expense_type}·{@code amount}·{@code expense_date} 는 셋 다 NOT NULL 이고 수정
+     * 경로도 받은 값을 그대로 덮는다. 종전엔 하나만 빠져도 DB 까지 내려가 <b>409 "다른 곳에서
+     * 먼저 수정됐어요"</b> 로 튕겼다 — 사용자는 남이 고친 줄 알고 새로고침만 반복한다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code ExpenseApiDto.UpdateRequest} 의
+     * {@code @NotBlank(expenseDate)} 를 지우면 아래가 200 으로 통과한다.
+     */
+    @Test
+    @DisplayName("PUT /expense/{id} — 거래 일시가 빠지면 400(409 가 아니다)")
+    void updateExpense_missingExpenseDate_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/expense/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":30000,\"expenseType\":\"EXPENSE\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).updateExpense(any(Long.class), any(Long.class), any());
+    }
+
+    @Test
+    @DisplayName("POST /expense — 금액이 빠지면 400")
+    void createExpense_missingAmount_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"expenseType\":\"EXPENSE\",\"expenseDate\":\"2026-07-03\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).createExpense(any());
     }
 
     @Test

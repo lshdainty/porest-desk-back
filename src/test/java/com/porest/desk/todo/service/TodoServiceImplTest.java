@@ -142,6 +142,38 @@ class TodoServiceImplTest {
         assertThat(info.priority()).isEqualTo(TodoPriority.LOW); // 입력 HIGH 무시
     }
 
+    /**
+     * QA #81 — {@code todo.priority} 는 NOT NULL 인데 앱의 <b>하위 할 일 빠른 추가</b>가
+     * 제목만 보낸다({@code todo_edit_dialog.dart} 의 {@code repo.create(title: title)}).
+     * 그래서 그 화면은 지금 운영에서 저장이 안 되고, 받는 답은 "다른 곳에서 먼저 수정됐어요" 다.
+     *
+     * <p>답은 거절이 아니라 기본값이다 — 안 보낸 중요도는 "보통" 으로 읽는다. 그래서 DTO 에
+     * {@code @NotNull} 을 걸지 않았다(걸면 그 화면이 400 으로 계속 막힌다).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TodoServiceImpl.createTodo} 의
+     * {@code command.priority() != null ? ... : MEDIUM} 을 {@code command.priority()} 로
+     * 되돌리면 아래가 null 을 만나 깨진다.
+     */
+    @Test
+    @DisplayName("createTodo — priority 가 없으면 MEDIUM 으로 저장한다(앱의 하위 할 일 빠른 추가)")
+    void createTodoDefaultsPriorityToMedium() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(todoRepository.save(any(Todo.class))).willAnswer(inv -> {
+            Todo t = inv.getArgument(0);
+            ReflectionTestUtils.setField(t, "rowId", 102L);
+            return t;
+        });
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var cmd = new TodoServiceDto.CreateCommand(
+                USER_ID, "장보기", null, null, null, null, null, null, null);
+        var info = sut.createTodo(cmd);
+
+        assertThat(info.priority()).isEqualTo(TodoPriority.MEDIUM);
+        assertThat(info.type()).isEqualTo(TodoType.TASK);
+    }
+
     @Test
     @DisplayName("toggleStatus — PENDING→COMPLETED, completedAt 세팅")
     void toggleStatusToCompleted() {
@@ -187,5 +219,31 @@ class TodoServiceImplTest {
 
         assertThatThrownBy(() -> sut.reorderTodos(USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    /**
+     * QA #81 — 수정에서 {@code priority} 가 빠지면 <b>기존 값을 지킨다</b>. 종전엔 null 을 그대로
+     * 덮어써 NOT NULL 위반 → 409 "다른 곳에서 먼저 수정됐어요" 였다. 생성처럼 기본값(MEDIUM)을
+     * 씌우지 않는 이유는 이미 사용자가 정한 값이 있기 때문이다 — 씌우면 HIGH 로 둔 할 일이
+     * 제목만 고쳤는데 보통으로 내려앉는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code Todo.updateTodo} 의 {@code if (priority != null)}
+     * 가드를 빼면 아래가 null 을 만나 깨진다.
+     */
+    @Test
+    @DisplayName("updateTodo — priority 가 없으면 기존 값을 지킨다(기본값으로 덮지 않는다)")
+    void updateKeepsExistingPriorityWhenAbsent() {
+        Todo todo = Todo.createTodo(user(USER_ID), "원제목", "내용", TodoPriority.HIGH, "업무",
+                LocalDate.of(2026, 6, 20), null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 5L);
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
+                "고친제목", "내용", null, "업무", LocalDate.of(2026, 6, 20), null));
+
+        assertThat(info.priority()).isEqualTo(TodoPriority.HIGH);
+        assertThat(info.title()).isEqualTo("고친제목");
     }
 }

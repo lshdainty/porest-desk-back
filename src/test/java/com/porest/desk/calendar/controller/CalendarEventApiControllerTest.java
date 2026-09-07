@@ -124,7 +124,8 @@ class CalendarEventApiControllerTest {
                 .willReturn(sampleInfo());
 
         String body = """
-                {"title":"수정회의","eventType":"PERSONAL","isAllDay":"Y"}
+                {"title":"수정회의","eventType":"PERSONAL","isAllDay":"Y",
+                 "startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}
                 """;
 
         mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L)
@@ -138,6 +139,69 @@ class CalendarEventApiControllerTest {
         assertThat(captor.getValue().title()).isEqualTo("수정회의");
         assertThat(captor.getValue().eventType()).isEqualTo(CalendarEventType.PERSONAL);
         assertThat(captor.getValue().isAllDay()).isEqualTo(YNType.Y);
+    }
+
+    /**
+     * QA #81 — 값이 빠진 요청의 답이 <b>400</b> 이어야 한다.
+     *
+     * <p>종전엔 이 요청이 서비스까지 내려가 {@code calendar_event.start_date} NOT NULL 앞에서
+     * 터졌다 — 정확히는 {@code command.startDate().isAfter(...)} 에서 NPE 가 나 500 이었다.
+     * 되돌려 보는 법(네거티브 컨트롤): DTO 의 {@code @NotNull(startDate)} 를 지우면
+     * 아래가 200 으로 통과해 버린다(서비스는 mock 이라 NPE 도 안 난다).
+     */
+    @Test
+    @DisplayName("POST /calendar/event — 시작 일시가 빠지면 400(409 도 500 도 아니다)")
+    void createEvent_missingStartDate_returns400() throws Exception {
+        String body = """
+                {"title":"회의","eventType":"WORK","endDate":"2026-07-03T11:00:00"}
+                """;
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(calendarEventService, never()).createEvent(any());
+    }
+
+    @Test
+    @DisplayName("POST /calendar/event — 제목이 비면 400")
+    void createEvent_blankTitle_returns400() throws Exception {
+        String body = """
+                {"title":"  ","eventType":"WORK",
+                 "startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}
+                """;
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        verify(calendarEventService, never()).createEvent(any());
+    }
+
+    /**
+     * {@code eventType} 은 <b>안 막는다</b> — 기본값이 있는 값이라 없다고 거절할 일이 아니다.
+     * 여기서 400 을 내면 QA #81 을 고치면서 새 400 을 만드는 셈이다. 기본값을 씌우는 자리는
+     * 엔티티({@code CalendarEvent.createEvent})이고, 그건 {@code CalendarEventServiceImplTest} 가 지킨다.
+     */
+    @Test
+    @DisplayName("POST /calendar/event — eventType 이 없어도 통과한다(서버가 기본값을 정한다)")
+    void createEvent_withoutEventType_passesThrough() throws Exception {
+        given(calendarEventService.createEvent(any())).willReturn(sampleInfo());
+
+        String body = """
+                {"title":"회의","startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}
+                """;
+
+        mockMvc.perform(post("/api/v1/calendar/event")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(CalendarEventServiceDto.CreateCommand.class);
+        verify(calendarEventService).createEvent(captor.capture());
+        assertThat(captor.getValue().eventType()).isNull();
     }
 
     @Test

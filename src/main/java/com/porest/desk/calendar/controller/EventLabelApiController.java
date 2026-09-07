@@ -6,6 +6,7 @@ import com.porest.desk.calendar.service.EventLabelService;
 import com.porest.desk.calendar.service.dto.EventLabelServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +28,7 @@ public class EventLabelApiController {
     @PostMapping("/calendar/label")
     public ApiResponse<EventLabelApiDto.Response> createLabel(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody EventLabelApiDto.CreateRequest request) {
+            @Valid @RequestBody EventLabelApiDto.CreateRequest request) {
         EventLabelServiceDto.LabelInfo info = eventLabelService.createLabel(new EventLabelServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.labelName(),
@@ -47,7 +48,7 @@ public class EventLabelApiController {
     public ApiResponse<EventLabelApiDto.Response> updateLabel(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody EventLabelApiDto.UpdateRequest request) {
+            @Valid @RequestBody EventLabelApiDto.UpdateRequest request) {
         EventLabelServiceDto.LabelInfo info = eventLabelService.updateLabel(id, loginUser.getRowId(), new EventLabelServiceDto.UpdateCommand(
             request.labelName(),
             request.color()

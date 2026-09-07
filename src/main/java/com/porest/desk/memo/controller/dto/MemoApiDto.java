@@ -4,6 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -11,9 +12,14 @@ import java.util.List;
 
 public class MemoApiDto {
 
+    /**
+     * {@code memo.title} 은 NOT NULL — 빠뜨리면 종전엔 409 "다른 곳에서 먼저 수정됐어요" 였다(QA #81).
+     * 웹·앱 모두 편집기에서 빈 제목을 이미 막고 있어 필수로 걸어도 쓰던 화면이 막히지 않는다.
+     */
     @Schema(name = "MemoCreateRequest")
     public record CreateRequest(
         Long folderId,
+        @NotBlank(message = "메모 제목을 입력해 주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
         @Size(max = FieldLimits.CONTENT_MAX, message = "본문은 10,000자까지 입력할 수 있어요")
@@ -28,6 +34,7 @@ public class MemoApiDto {
     @Schema(name = "MemoUpdateRequest")
     public record UpdateRequest(
         Long folderId,
+        @NotBlank(message = "메모 제목을 입력해 주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
         @Size(max = FieldLimits.CONTENT_MAX, message = "본문은 10,000자까지 입력할 수 있어요")

@@ -4,6 +4,7 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.exception.IntegrityViolations;
 import com.porest.desk.common.util.NameNormalizer;
 import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.expense.domain.ExpenseBudget;
@@ -80,6 +81,8 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             // 조회 검사와 저장 사이는 원자적이지 않다 — 같은 이름의 두 요청이 동시에 들어오면
             // 둘 다 "없다" 를 보고 둘 다 INSERT 한다. 활성 이름 UNIQUE 가 진 쪽을 여기서 잡는다.
             // 답은 재조회가 아니라 409 다: 사용자가 원한 건 "이 이름의 새 카테고리" 였고 그 이름은 이미 있다.
+            // UNIQUE 가 아닌 위반(NOT NULL·FK)은 이름 중복이 아니므로 그대로 올린다(QA #81).
+            if (!IntegrityViolations.isUnique(e)) throw e;
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME, e);
         }
     }
@@ -105,6 +108,10 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         try {
             return newTransaction.execute(status -> resolveOrCreateCategory(command, categoryName));
         } catch (DataIntegrityViolationException e) {
+            // 재시도가 뜻을 갖는 건 UNIQUE 위반뿐이다 — 상대가 넣은 행을 다시 찾아 쓰면 되기 때문이다.
+            // NOT NULL·FK 는 몇 번을 다시 돌려도 같은 자리에서 같게 터진다. 두 번째 위반을 그대로
+            // 올리는 것과 결과는 같지만, 쓸모없는 트랜잭션을 한 번 더 열지 않고 원인도 안 갈린다(QA #81).
+            if (!IntegrityViolations.isUnique(e)) throw e;
             log.info("카테고리 확보 경쟁 감지 — 새 트랜잭션으로 재조회 후 재사용: userRowId={}, parentRowId={}, name={}",
                 command.userRowId(), command.parentRowId(), categoryName);
             return newTransaction.execute(status -> resolveOrCreateCategory(command, categoryName));
@@ -505,6 +512,10 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         try {
             expenseCategoryRepository.flush();
         } catch (DataIntegrityViolationException e) {
+            // UNIQUE 위반만 이 도메인의 답으로 번역한다. NOT NULL·FK 를 여기서 "이름 중복" 이라고
+            // 답하면 값을 빼먹은 요청이 엉뚱한 이유를 듣는다(QA #81) — 그런 위반은 그대로 올려
+            // DataIntegrityExceptionHandler 가 종류대로 답하게 둔다.
+            if (!IntegrityViolations.isUnique(e)) throw e;
             throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME, e);
         }
     }
