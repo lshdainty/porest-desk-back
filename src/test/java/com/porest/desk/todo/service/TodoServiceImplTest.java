@@ -2,7 +2,10 @@ package com.porest.desk.todo.service;
 
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
+import com.porest.core.exception.EntityNotFoundException;
 import com.porest.desk.todo.domain.Todo;
+import com.porest.desk.todo.domain.TodoTag;
+import com.porest.desk.todo.domain.TodoTagMapping;
 import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
@@ -15,6 +18,7 @@ import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -29,8 +33,12 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
 
@@ -45,6 +53,7 @@ class TodoServiceImplTest {
     @Mock private TodoTagMappingRepository todoTagMappingRepository;
     @Mock private UserRepository userRepository;
     @Mock private com.porest.desk.constellation.service.StarlightService starlightService;
+    @Mock private TodoTagService todoTagService;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
@@ -245,5 +254,182 @@ class TodoServiceImplTest {
 
         assertThat(info.priority()).isEqualTo(TodoPriority.HIGH);
         assertThat(info.title()).isEqualTo("고친제목");
+    }
+
+    // ── QA #79 — 서버가 category ↔ 태그 다리를 놓는다 ─────────────────────────
+    // 웹·앱 어느 쪽도 tagIds 를 보내지 않는다(보내는 것은 category 문자열 하나다).
+    // 그래서 매핑 테이블이 비고, 매핑으로 세는 사용 수도 0 이 된다.
+
+    private TodoTag tag(long rowId, String name, long ownerRowId) {
+        TodoTag t = TodoTag.createTag(user(ownerRowId), name, "#fff");
+        ReflectionTestUtils.setField(t, "rowId", rowId);
+        return t;
+    }
+
+    private void stubTodoSave(long rowId) {
+        given(todoRepository.save(any(Todo.class))).willAnswer(inv -> {
+            Todo t = inv.getArgument(0);
+            ReflectionTestUtils.setField(t, "rowId", rowId);
+            return t;
+        });
+        given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+    }
+
+    private TodoTag savedMappingTag() {
+        ArgumentCaptor<TodoTagMapping> captor = ArgumentCaptor.forClass(TodoTagMapping.class);
+        verify(todoTagMappingRepository).save(captor.capture());
+        return captor.getValue().getTag();
+    }
+
+    /**
+     * QA #79 — 클라이언트를 고치지 않고도 매핑이 차게 만드는 자리.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TodoServiceImpl.resolveTagsForWrite} 에서
+     * {@code resolveCategoryTag(...)} 줄을 지우고 {@code List.of()} 를 돌려주면 매핑이 하나도
+     * 안 남아 아래 {@code verify(...).save(...)} 가 깨진다.
+     */
+    @Test
+    @DisplayName("createTodo — tagIds 가 없으면 category 로 태그를 확보해 매핑을 남긴다")
+    void createBridgesCategoryToTag() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        stubTodoSave(200L);
+        given(todoTagService.findOrCreateByName(USER_ID, "업무")).willReturn(42L);
+        given(todoTagRepository.findById(42L)).willReturn(Optional.of(tag(42L, "업무", USER_ID)));
+
+        sut.createTodo(new TodoServiceDto.CreateCommand(
+                USER_ID, "기획서", null, TodoPriority.MEDIUM, "업무", null, null, null, TodoType.TASK));
+
+        assertThat(savedMappingTag().getRowId()).isEqualTo(42L);
+    }
+
+    @Test
+    @DisplayName("createTodo — category 가 비었으면 태그를 만들지 않는다")
+    void createDoesNotCreateTagForBlankCategory() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        stubTodoSave(201L);
+
+        sut.createTodo(new TodoServiceDto.CreateCommand(
+                USER_ID, "장보기", null, null, "   ", null, null, null, null));
+
+        verify(todoTagService, never()).findOrCreateByName(anyLong(), anyString());
+        verify(todoTagMappingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTodo — tagIds 를 명시하면 category 다리보다 그쪽이 이긴다")
+    void explicitTagIdsWinOverCategory() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        stubTodoSave(202L);
+        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(tag(7L, "리뷰", USER_ID)));
+
+        sut.createTodo(new TodoServiceDto.CreateCommand(
+                USER_ID, "코드 리뷰", null, null, "업무", null, null, List.of(7L), null));
+
+        verify(todoTagService, never()).findOrCreateByName(anyLong(), anyString());
+        assertThat(savedMappingTag().getRowId()).isEqualTo(7L);
+    }
+
+    /**
+     * QA #79 — <b>응답 유출</b>. {@code findAllByIds} 에 소유권 검사가 없어 남의 {@code tagId} 를
+     * 실으면 그 태그의 이름·색이 내 할 일 응답 {@code tags[]} 로 나갔다. 캘린더 라벨과 같은
+     * 모양으로 막는다({@code CalendarEventServiceImpl.validateLabelOwnership}).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code resolveOwnedTags} 의
+     * {@code validateTagOwnership(tag, userRowId)} 루프를 지우면 예외 없이 남의 태그가 매핑된다.
+     */
+    @Test
+    @DisplayName("createTodo — 남의 태그를 지목하면 403 이고 매핑도 남지 않는다")
+    void rejectsForeignTagIds() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(tag(7L, "남의태그", 999L)));
+
+        assertThatThrownBy(() -> sut.createTodo(new TodoServiceDto.CreateCommand(
+                USER_ID, "훔쳐보기", null, null, null, null, null, List.of(7L), null)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(todoTagMappingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTags — 없는(또는 지워진) 태그를 지목하면 404 로 답한다")
+    void rejectsUnknownTagIds() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, null, null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 5L);
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of());
+
+        assertThatThrownBy(() -> sut.updateTags(5L, USER_ID, List.of(7L)))
+                .isInstanceOf(EntityNotFoundException.class);
+        verify(todoTagMappingRepository, never()).save(any());
+    }
+
+    /**
+     * QA #79 — category 를 바꾸면 <b>옛 이름의 태그 매핑을 걷는다</b>. 안 걷으면 사용 수가
+     * 옛 태그에 계속 잡혀 "지금 아무도 안 쓰는 태그" 가 사용 중으로 보인다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TodoServiceImpl.updateTodo} 의
+     * {@code String previousCategory = todo.getCategory();} 를 {@code todo.updateTodo(...)}
+     * 아래로 옮기면 옛 이름이 이미 "개인" 이라 아래 {@code deleteByTodoIdAndTagId(5,11)} 이
+     * 불리지 않아 깨진다.
+     */
+    @Test
+    @DisplayName("updateTodo — category 가 바뀌면 옛 태그 매핑을 걷고 새 태그를 붙인다")
+    void updateMovesMappingWhenCategoryChanges() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, "업무",
+                null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 5L);
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        given(todoTagService.findOrCreateByName(USER_ID, "개인")).willReturn(12L);
+        given(todoTagRepository.findById(12L)).willReturn(Optional.of(tag(12L, "개인", USER_ID)));
+        given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무"))
+                .willReturn(Optional.of(tag(11L, "업무", USER_ID)));
+        given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
+                "t", null, null, "개인", null, null));
+
+        verify(todoTagMappingRepository).deleteByTodoIdAndTagId(5L, 11L);
+        assertThat(savedMappingTag().getRowId()).isEqualTo(12L);
+    }
+
+    @Test
+    @DisplayName("updateTodo — category 가 그대로고 이미 매핑돼 있으면 아무것도 만들지 않는다")
+    void updateKeepsExistingMappingWhenCategoryUnchanged() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, "업무",
+                null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 5L);
+        TodoTag work = tag(11L, "업무", USER_ID);
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        given(todoTagService.findOrCreateByName(USER_ID, "업무")).willReturn(11L);
+        given(todoTagRepository.findById(11L)).willReturn(Optional.of(work));
+        given(todoTagMappingRepository.findByTodoId(5L))
+                .willReturn(List.of(TodoTagMapping.create(todo, work)));
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
+                "t", null, null, "업무", null, null));
+
+        verify(todoTagMappingRepository, never()).deleteByTodoIdAndTagId(anyLong(), anyLong());
+        verify(todoTagMappingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTodo — tagIds 를 명시하면 매핑을 통째로 갈아 끼운다(다리는 타지 않는다)")
+    void updateWithExplicitTagIdsReplacesMappings() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, "업무",
+                null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 5L);
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(tag(7L, "리뷰", USER_ID)));
+        given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
+                "t", null, null, "업무", null, List.of(7L)));
+
+        verify(todoTagService, never()).findOrCreateByName(anyLong(), anyString());
+        verify(todoTagMappingRepository).deleteByTodoId(5L);
+        assertThat(savedMappingTag().getRowId()).isEqualTo(7L);
     }
 }

@@ -301,4 +301,36 @@ class TodoRepositoryTest {
         assertThat(result).extracting(Todo::getTitle)
                 .containsExactlyInAnyOrder("a1대기", "a2진행-end경계", "b1대기-start경계");
     }
+
+    /**
+     * QA #79 — 태그를 개명하면 {@code todo.category} 에 남은 옛 이름도 따라 옮긴다.
+     * 목록 필터·내보내기가 이 문자열을 쓰므로, 안 옮기면 개명한 태그로는 아무것도 안 걸린다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): WHERE 의 {@code todo.user.rowId.eq(userRowId)} 를 빼면
+     * 남의 할 일까지 옮겨 아래 마지막 단언이 깨지고, {@code isDeleted} 조건을 빼면 지운 행까지 옮긴다.
+     */
+    @Test
+    @DisplayName("renameCategory — 그 사용자의 옛 이름만 옮긴다(남의 할일·삭제된 할일·다른 이름 제외)")
+    void renameCategoryMovesOnlyOwnActiveRows() {
+        User owner = persistUser("owner");
+        User other = persistUser("other");
+        Todo a = persistTask(owner, "a", TodoPriority.MEDIUM, "업무", null, null);
+        Todo b = persistTask(owner, "b", TodoPriority.MEDIUM, "업무", null, null);
+        Todo keep = persistTask(owner, "keep", TodoPriority.MEDIUM, "개인", null, null);
+        Todo removed = persistTask(owner, "removed", TodoPriority.MEDIUM, "업무", null, null);
+        Todo foreign = persistTask(other, "foreign", TodoPriority.MEDIUM, "업무", null, null);
+        removed.deleteTodo();
+        em.flush();
+        em.clear();
+
+        long moved = repository.renameCategory(owner.getRowId(), "업무", "회사");
+        em.clear();
+
+        assertThat(moved).isEqualTo(2);
+        assertThat(em.find(Todo.class, a.getRowId()).getCategory()).isEqualTo("회사");
+        assertThat(em.find(Todo.class, b.getRowId()).getCategory()).isEqualTo("회사");
+        assertThat(em.find(Todo.class, keep.getRowId()).getCategory()).isEqualTo("개인");
+        assertThat(em.find(Todo.class, removed.getRowId()).getCategory()).isEqualTo("업무");
+        assertThat(em.find(Todo.class, foreign.getRowId()).getCategory()).isEqualTo("업무");
+    }
 }

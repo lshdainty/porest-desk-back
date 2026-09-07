@@ -113,4 +113,70 @@ class TodoTagMappingRepositoryTest {
         assertThat(repository.findByTodoId(todo1.getRowId())).isEmpty();
         assertThat(repository.findByTodoId(todo2.getRowId())).hasSize(1);
     }
+
+    /**
+     * QA #79 — 태그 삭제는 soft-delete 이고 매핑은 남는다. 거르지 않으면 사용자가 지운 태그가
+     * 할 일 응답 {@code tags[]} 에 계속 실린다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 리포의 {@code tag.isDeleted.eq(YNType.N)} 조건을 빼면
+     * 아래가 삭제된 "gone" 까지 받아 깨진다.
+     */
+    @Test
+    @DisplayName("findByTodoId — soft-delete 된 태그의 매핑은 빠진다")
+    void findByTodoIdExcludesDeletedTag() {
+        User user = persistUser("u1");
+        Todo todo = persistTodo(user, "todo1");
+        TodoTag alive = persistTag(user, "alive");
+        TodoTag gone = persistTag(user, "gone");
+        persistMapping(todo, alive);
+        persistMapping(todo, gone);
+        gone.deleteTag();
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findByTodoId(todo.getRowId()))
+                .extracting(m -> m.getTag().getTagName())
+                .containsExactly("alive");
+    }
+
+    @Test
+    @DisplayName("findByTodoIds — soft-delete 된 태그의 매핑은 배치 조회에서도 빠진다")
+    void findByTodoIdsExcludesDeletedTag() {
+        User user = persistUser("u1");
+        Todo todo1 = persistTodo(user, "todo1");
+        Todo todo2 = persistTodo(user, "todo2");
+        TodoTag alive = persistTag(user, "alive");
+        TodoTag gone = persistTag(user, "gone");
+        persistMapping(todo1, alive);
+        persistMapping(todo2, gone);
+        gone.deleteTag();
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findByTodoIds(List.of(todo1.getRowId(), todo2.getRowId())))
+                .extracting(m -> m.getTag().getTagName())
+                .containsExactly("alive");
+    }
+
+    @Test
+    @DisplayName("deleteByTodoIdAndTagId — 지목한 태그의 매핑만 걷고 나머지는 남긴다")
+    void deleteByTodoIdAndTagId() {
+        User user = persistUser("u1");
+        Todo todo1 = persistTodo(user, "todo1");
+        Todo todo2 = persistTodo(user, "todo2");
+        TodoTag work = persistTag(user, "work");
+        TodoTag home = persistTag(user, "home");
+        persistMapping(todo1, work);
+        persistMapping(todo1, home);
+        persistMapping(todo2, work); // 다른 할 일의 같은 태그는 남아야 한다
+        em.flush();
+        em.clear();
+
+        repository.deleteByTodoIdAndTagId(todo1.getRowId(), work.getRowId());
+        em.clear();
+
+        assertThat(repository.findByTodoId(todo1.getRowId()))
+                .extracting(m -> m.getTag().getTagName()).containsExactly("home");
+        assertThat(repository.findByTodoId(todo2.getRowId())).hasSize(1);
+    }
 }

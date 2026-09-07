@@ -143,4 +143,42 @@ class OpenApiContractTest {
                 .contains("KRX").contains("NXT").contains("UNT").doesNotContain("KOSPI");
         }
     }
+
+    /**
+     * 할 일 — {@code tags[]} 를 진실로 삼되 {@code category} 는 계속 나간다.
+     *
+     * <p>여기에 검증이 <b>하나도 없었다</b>. 웹·앱은 이 문서를 읽고 손으로 짜는데, 할 일은 두
+     * 클라이언트가 모두 {@code category} 문자열만 보내고 {@code tagIds} 는 아무도 안 보낸다.
+     * 서버가 그 문자열로 태그를 확보해 매핑을 남기는 다리를 놓았으므로(QA #79), 이제
+     * <b>둘 다 계약</b>이다 — 어느 한쪽이 문서에서 사라지면 나머지 한쪽만 보고 짠 클라이언트가
+     * 조용히 틀린다. 특히 {@code category} 를 걷어내는 다음 라운드는 여기서 먼저 걸려야 한다.
+     */
+    @Nested
+    @DisplayName("할 일 — category 와 tags 가 함께 문서화된다")
+    class TodoTagContract {
+
+        @Test
+        @DisplayName("응답은 category 와 tags 를 함께 싣는다")
+        void responseCarriesBoth() {
+            assertThat(props("TodoResponse").has("category")).isTrue();
+            assertThat(props("TodoResponse").has("tags")).isTrue();
+        }
+
+        @Test
+        @DisplayName("등록·수정 요청은 category 와 tagIds 를 모두 받는다고 밝힌다")
+        void requestsDocumentBothInputs() {
+            assertThat(props("TodoCreateRequest").has("category")).isTrue();
+            assertThat(props("TodoCreateRequest").has("tagIds")).isTrue();
+            assertThat(props("TodoUpdateRequest").has("category")).isTrue();
+            assertThat(props("TodoUpdateRequest").has("tagIds")).isTrue();
+        }
+
+        @Test
+        @DisplayName("태그 응답에 usageCount 가 있다 — 화면 삭제 확인창이 이 숫자를 읽는다")
+        void tagResponseCarriesUsageCount() {
+            assertThat(props("TodoTagResponse").fieldNames()).toIterable()
+                .containsExactlyInAnyOrder(
+                    "rowId", "userRowId", "tagName", "color", "createAt", "modifyAt", "usageCount");
+        }
+    }
 }
