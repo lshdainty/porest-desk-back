@@ -86,7 +86,7 @@ class ExportDataServiceTest {
     }
 
     private Memo memo(LocalDateTime createAtUtc) {
-        Memo m = Memo.createMemo(user(), null, "회의록", "내용", null, "#000000");
+        Memo m = Memo.createMemo(user(), "회의록", "내용", null, "#000000");
         ReflectionTestUtils.setField(m, "createAt", createAtUtc);
         return m;
     }
@@ -115,7 +115,7 @@ class ExportDataServiceTest {
         @Test
         @DisplayName("메모 생성일 — UTC 00:01:36.625966 → KST 09:01 (마이크로초 제거)")
         void memoCreateAtConvertedToUserZone() {
-            given(memoRepository.findAllByUser(USER_ID, null, null))
+            given(memoRepository.findAllByUser(USER_ID, null))
                 .willReturn(List.of(memo(LocalDateTime.of(2026, 9, 3, 0, 1, 36, 625_966_000))));
 
             ExportTable t = sutInSeoul().buildTable(ExportType.MEMO, USER_ID, START, END, false);
@@ -139,7 +139,7 @@ class ExportDataServiceTest {
         @Test
         @DisplayName("타임존은 사용자마다 해석된다 — UTC 사용자에게는 변환 없이 그대로")
         void conversionFollowsUserZone() {
-            given(memoRepository.findAllByUser(USER_ID, null, null))
+            given(memoRepository.findAllByUser(USER_ID, null))
                 .willReturn(List.of(memo(LocalDateTime.of(2026, 9, 3, 0, 1, 36, 625_966_000))));
 
             ExportTable t = sut(rowId -> ZoneId.of("UTC"))
@@ -151,7 +151,7 @@ class ExportDataServiceTest {
         @Test
         @DisplayName("사용자 타임존을 못 구하면 서비스 기준(Asia/Seoul)으로 폴백한다")
         void fallsBackToServiceZone() {
-            given(memoRepository.findAllByUser(USER_ID, null, null))
+            given(memoRepository.findAllByUser(USER_ID, null))
                 .willReturn(List.of(memo(LocalDateTime.of(2026, 9, 3, 0, 1, 36, 625_966_000))));
 
             ExportTable t = sut(rowId -> null).buildTable(ExportType.MEMO, USER_ID, START, END, false);

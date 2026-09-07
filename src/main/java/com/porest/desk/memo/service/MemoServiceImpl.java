@@ -5,8 +5,6 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.constellation.service.StarlightService;
 import com.porest.desk.memo.domain.Memo;
-import com.porest.desk.memo.domain.MemoFolder;
-import com.porest.desk.memo.repository.MemoFolderRepository;
 import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
 import com.porest.desk.user.domain.User;
@@ -24,7 +22,6 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class MemoServiceImpl implements MemoService {
     private final MemoRepository memoRepository;
-    private final MemoFolderRepository memoFolderRepository;
     private final UserRepository userRepository;
     private final StarlightService starlightService;
 
@@ -36,17 +33,7 @@ public class MemoServiceImpl implements MemoService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        MemoFolder folder = null;
-        if (command.folderId() != null) {
-            folder = memoFolderRepository.findById(command.folderId())
-                .orElseThrow(() -> {
-                    log.warn("메모 폴더 조회 실패 - 존재하지 않는 폴더: folderId={}", command.folderId());
-                    return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
-                });
-            validateFolderOwnership(folder, command.userRowId());
-        }
-
-        Memo memo = Memo.createMemo(user, folder, command.title(), command.content(),
+        Memo memo = Memo.createMemo(user, command.title(), command.content(),
             command.tag(), command.color());
 
         memoRepository.save(memo);
@@ -58,10 +45,10 @@ public class MemoServiceImpl implements MemoService {
     }
 
     @Override
-    public List<MemoServiceDto.MemoInfo> getMemos(Long userRowId, Long folderId, String search) {
-        log.debug("메모 목록 조회: userRowId={}, folderId={}, search={}", userRowId, folderId, search);
+    public List<MemoServiceDto.MemoInfo> getMemos(Long userRowId, String search) {
+        log.debug("메모 목록 조회: userRowId={}, search={}", userRowId, search);
 
-        List<Memo> memos = memoRepository.findAllByUser(userRowId, folderId, search);
+        List<Memo> memos = memoRepository.findAllByUser(userRowId, search);
 
         return memos.stream()
             .map(MemoServiceDto.MemoInfo::from)
@@ -86,17 +73,7 @@ public class MemoServiceImpl implements MemoService {
         Memo memo = findMemoOrThrow(memoId);
         validateMemoOwnership(memo, userRowId);
 
-        MemoFolder folder = null;
-        if (command.folderId() != null) {
-            folder = memoFolderRepository.findById(command.folderId())
-                .orElseThrow(() -> {
-                    log.warn("메모 폴더 조회 실패 - 존재하지 않는 폴더: folderId={}", command.folderId());
-                    return new EntityNotFoundException(DeskErrorCode.MEMO_FOLDER_NOT_FOUND);
-                });
-            validateFolderOwnership(folder, userRowId); // create 와 대칭 — 남의 폴더로 이동 차단
-        }
-
-        memo.updateMemo(folder, command.title(), command.content(), command.tag(), command.color());
+        memo.updateMemo(command.title(), command.content(), command.tag(), command.color());
 
         log.info("메모 수정 완료: memoId={}", memoId);
 
@@ -135,14 +112,6 @@ public class MemoServiceImpl implements MemoService {
         if (!memo.getUser().getRowId().equals(userRowId)) {
             log.warn("메모 소유권 검증 실패 - memoId={}, ownerRowId={}, requestUserRowId={}",
                 memo.getRowId(), memo.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.MEMO_ACCESS_DENIED);
-        }
-    }
-
-    private void validateFolderOwnership(MemoFolder folder, Long userRowId) {
-        if (!folder.getUser().getRowId().equals(userRowId)) {
-            log.warn("메모 폴더 소유권 검증 실패 - folderId={}, ownerRowId={}, requestUserRowId={}",
-                folder.getRowId(), folder.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.MEMO_ACCESS_DENIED);
         }
     }

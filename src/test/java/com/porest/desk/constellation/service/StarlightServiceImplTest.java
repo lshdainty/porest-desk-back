@@ -346,7 +346,7 @@ class StarlightServiceImplTest {
     void memoEarnsOnePoint() {
         Constellation c = dipper();
         ConstellationDaily daily = openDaily(c, 0);
-        Memo memo = Memo.createMemo(user(), null, "m", "c", null, null);
+        Memo memo = Memo.createMemo(user(), "m", "c", null, null);
         ReflectionTestUtils.setField(memo, "rowId", 20L);
         given(starlightRepository.countActiveMemoEarns(USER_ID, today)).willReturn(0L);
         given(starlightRepository.findBySourceIncludingRevoked(StarlightSourceType.MEMO, 20L)).willReturn(Optional.empty());
@@ -363,7 +363,7 @@ class StarlightServiceImplTest {
     @Test
     @DisplayName("메모 별빛 일 한도 2 — 초과분 무시")
     void memoDailyLimit() {
-        Memo memo = Memo.createMemo(user(), null, "m", "c", null, null);
+        Memo memo = Memo.createMemo(user(), "m", "c", null, null);
         ReflectionTestUtils.setField(memo, "rowId", 21L);
         given(starlightRepository.countActiveMemoEarns(USER_ID, today)).willReturn(2L);
 
@@ -377,7 +377,7 @@ class StarlightServiceImplTest {
     void memoDeleteRevokes() {
         Constellation c = dipper();
         ConstellationDaily daily = openDaily(c, 1);
-        Memo memo = Memo.createMemo(user(), null, "m", "c", null, null);
+        Memo memo = Memo.createMemo(user(), "m", "c", null, null);
         ReflectionTestUtils.setField(memo, "rowId", 20L);
         TodoStarlight ledger = seedLedger(
             TodoStarlight.earn(user(), StarlightSourceType.MEMO, 20L, 1, today));

@@ -7,7 +7,7 @@ import java.util.Optional;
 
 public interface MemoRepository {
     Optional<Memo> findById(Long rowId);
-    List<Memo> findAllByUser(Long userRowId, Long folderId, String search);
+    List<Memo> findAllByUser(Long userRowId, String search);
     Memo save(Memo memo);
     void delete(Memo memo);
 }

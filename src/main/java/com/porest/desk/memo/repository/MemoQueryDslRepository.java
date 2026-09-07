@@ -31,14 +31,11 @@ public class MemoQueryDslRepository implements MemoRepository {
     }
 
     @Override
-    public List<Memo> findAllByUser(Long userRowId, Long folderId, String search) {
+    public List<Memo> findAllByUser(Long userRowId, String search) {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(memo.user.rowId.eq(userRowId));
         builder.and(memo.isDeleted.eq(YNType.N));
 
-        if (folderId != null) {
-            builder.and(memo.folder.rowId.eq(folderId));
-        }
         if (search != null && !search.isBlank()) {
             builder.and(
                 memo.title.contains(search)

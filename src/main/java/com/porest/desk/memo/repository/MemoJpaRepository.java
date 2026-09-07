@@ -27,13 +27,10 @@ public class MemoJpaRepository implements MemoRepository {
     }
 
     @Override
-    public List<Memo> findAllByUser(Long userRowId, Long folderId, String search) {
+    public List<Memo> findAllByUser(Long userRowId, String search) {
         StringBuilder jpql = new StringBuilder("SELECT m FROM Memo m WHERE m.user.rowId = :userRowId AND m.isDeleted = :isDeleted");
         List<String> conditions = new ArrayList<>();
 
-        if (folderId != null) {
-            conditions.add(" AND m.folder.rowId = :folderId");
-        }
         if (search != null && !search.isBlank()) {
             conditions.add(" AND (m.title LIKE :search OR m.content LIKE :search)");
         }
@@ -47,9 +44,6 @@ public class MemoJpaRepository implements MemoRepository {
             .setParameter("userRowId", userRowId)
             .setParameter("isDeleted", YNType.N);
 
-        if (folderId != null) {
-            query.setParameter("folderId", folderId);
-        }
         if (search != null && !search.isBlank()) {
             query.setParameter("search", "%" + search + "%");
         }
