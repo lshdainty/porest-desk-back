@@ -122,14 +122,23 @@ public class Todo extends AuditingFieldsWithIp {
         this.dueDate = dueDate;
     }
 
+    /**
+     * 상태를 <b>지정한 값</b>으로 바꾼다.
+     *
+     * <p>같은 상태가 다시 오면 아무것도 하지 않는다 — 재시도·중복 탭으로 "완료" 가 두 번 오면
+     * {@code completedAt} 이 뒤로 밀려 "언제 끝냈는지" 가 요청할 때마다 달라진다(토글은 사이에
+     * 대기를 거치므로 그때 다시 찍히는 게 맞다). 완료가 아닌 상태로 가면 완료 시각은 지운다
+     * ({@code IN_PROGRESS} 포함) — 끝내지 않은 일에 끝낸 시각이 남아 있으면 안 된다.
+     */
+    public void changeStatus(TodoStatus next) {
+        if (next == null || next == this.status) return;
+        this.status = next;
+        this.completedAt = next == TodoStatus.COMPLETED ? LocalDateTime.now() : null;
+    }
+
+    /** 본문 없는 옛 요청의 뜻 — 완료면 대기로, 그 밖이면 완료로. */
     public void toggleStatus() {
-        if (this.status == TodoStatus.COMPLETED) {
-            this.status = TodoStatus.PENDING;
-            this.completedAt = null;
-        } else {
-            this.status = TodoStatus.COMPLETED;
-            this.completedAt = LocalDateTime.now();
-        }
+        changeStatus(this.status == TodoStatus.COMPLETED ? TodoStatus.PENDING : TodoStatus.COMPLETED);
     }
 
     public void togglePin() {

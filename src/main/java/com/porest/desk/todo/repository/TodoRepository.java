@@ -22,6 +22,17 @@ public interface TodoRepository {
      * @return 옮긴 행 수
      */
     long renameCategory(Long userRowId, String fromCategory, String toCategory);
+    /**
+     * 태그 삭제에 맞춰 그 이름을 쓰던 활성 할 일의 {@code category} 를 비운다.
+     *
+     * <p>{@code category} 는 태그 이름의 복사본이다. 태그만 지우면 이 문자열이 남아, 그 할 일을
+     * 다음에 저장하는 순간 서버가 같은 이름의 태그를 <b>다시 만든다</b>(QA #88).
+     * 삭제 확인창은 "이 태그를 쓰는 할 일 N건은 태그 없음으로 남아요" 라고 말하고 있으므로,
+     * 화면의 약속대로 이름을 지워 둔다.
+     *
+     * @return 비운 행 수
+     */
+    long clearCategory(Long userRowId, String category);
     List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate);
     List<Todo> findSubtasks(Long parentRowId);
     /** 여러 부모 ID에 대한 서브태스크 카운트를 한 번의 쿼리로 조회 (parentId -> [total, completed]) */

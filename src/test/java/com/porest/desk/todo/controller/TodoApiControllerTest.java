@@ -165,15 +165,53 @@ class TodoApiControllerTest {
         assertThat(captor.getValue().tagIds()).containsExactly(3L);
     }
 
+    /**
+     * 웹({@code todoApi.toggleTodoStatus})이 본문 없이 부르는 자리 — <b>이게 깨지면 완료 체크가
+     * 통째로 400 이 된다.</b> 본문 없음은 서비스에 {@code status = null}(= 종전 토글)로 간다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 컨트롤러의 {@code @RequestBody(required = false)} 에서
+     * {@code required = false} 를 빼면 이 요청이 400 이 되어 깨진다.
+     */
     @Test
-    @DisplayName("PATCH /todo/{id}/status — 상태 토글 위임")
-    void toggleStatus() throws Exception {
-        given(todoService.toggleStatus(100L, 1L)).willReturn(sampleTodo());
+    @DisplayName("PATCH /todo/{id}/status — 본문 없는 옛 요청은 종전대로 토글(status=null 위임)")
+    void changeStatusWithoutBodyTogglesAsBefore() throws Exception {
+        given(todoService.changeStatus(100L, 1L, null)).willReturn(sampleTodo());
 
         mockMvc.perform(patch("/api/v1/todo/{id}/status", 100L))
                 .andExpect(status().isOk());
 
-        verify(todoService).toggleStatus(100L, 1L);
+        verify(todoService).changeStatus(100L, 1L, null);
+    }
+
+    /**
+     * 앱({@code todo_repository.setStatus})이 보내는 모양 — 종전엔 서버가 본문을 안 읽어
+     * "진행 중" 을 골라도 완료가 됐다(QA #93).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 컨트롤러에서 {@code request.status()} 대신 {@code null} 을
+     * 넘기면(= 종전 동작) 이 단언이 깨진다.
+     */
+    @Test
+    @DisplayName("PATCH /todo/{id}/status — 본문 status 를 그대로 위임한다(IN_PROGRESS)")
+    void changeStatusHonorsBody() throws Exception {
+        given(todoService.changeStatus(100L, 1L, TodoStatus.IN_PROGRESS)).willReturn(sampleTodo());
+
+        mockMvc.perform(patch("/api/v1/todo/{id}/status", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+
+        verify(todoService).changeStatus(100L, 1L, TodoStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("PATCH /todo/{id}/status — 없는 상태 값은 400(역직렬화에서 끊긴다)")
+    void changeStatusRejectsUnknownValue() throws Exception {
+        mockMvc.perform(patch("/api/v1/todo/{id}/status", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"DONE\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).changeStatus(any(), any(), any());
     }
 
     @Test
@@ -239,6 +277,36 @@ class TodoApiControllerTest {
         ArgumentCaptor<List<Long>> captor = ArgumentCaptor.forClass(List.class);
         verify(todoService).updateTags(eq(100L), eq(1L), captor.capture());
         assertThat(captor.getValue()).containsExactly(10L, 20L, 30L);
+    }
+
+    /**
+     * QA #87 — 값을 빠뜨린 요청이 붙여 둔 태그를 조용히 다 지웠다. 세 모양을 한 자리에 묶어 둔다:
+     * 키 없음 · null 은 400 이고, <b>빈 배열만</b> "전부 해제" 다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TagUpdateRequest.tagIds} 의 {@code @NotNull} 이나
+     * 컨트롤러의 {@code @Valid} 중 하나만 빼도 앞의 두 케이스가 200 이 되면서 깨진다.
+     */
+    @Test
+    @DisplayName("PATCH /todo/{id}/tags — 키 없음·null 은 400, 빈 배열만 전부 해제")
+    void updateTagsRejectsMissingListButAcceptsEmptyOne() throws Exception {
+        mockMvc.perform(patch("/api/v1/todo/{id}/tags", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(patch("/api/v1/todo/{id}/tags", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tagIds\":null}"))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).updateTags(any(), any(), any());
+
+        mockMvc.perform(patch("/api/v1/todo/{id}/tags", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tagIds\":[]}"))
+                .andExpect(status().isOk());
+
+        verify(todoService).updateTags(100L, 1L, List.of());
     }
 
     @Test

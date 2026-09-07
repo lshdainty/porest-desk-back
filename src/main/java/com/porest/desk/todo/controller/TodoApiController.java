@@ -89,11 +89,24 @@ public class TodoApiController {
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
 
+    /**
+     * 상태 변경. 본문 {@code {"status":"IN_PROGRESS"}} 를 실으면 <b>그 상태로</b> 바꾼다.
+     *
+     * <p><b>본문은 필수가 아니다.</b> 웹({@code todoApi.toggleTodoStatus})이 본문 없이 부르고,
+     * 그 뜻은 종전대로 "완료 ↔ 대기 토글" 이다. 필수로 걸면 지금 되는 화면이 400 을 맞는다.
+     * 앱은 {@code {"status":"..."}} 를 보내고 있었는데 서버가 그걸 읽지 않아 진행 중을 고르면
+     * 완료가 됐다(QA #93) — 읽는 쪽을 고친다.
+     *
+     * <p>없는 상태 값({@code "DONE"} 등)은 Jackson 역직렬화에서 걸려
+     * {@code RequestValueExceptionHandler} 가 400 으로 답한다.
+     */
     @PatchMapping("/todo/{id}/status")
-    public ApiResponse<TodoApiDto.Response> toggleStatus(
+    public ApiResponse<TodoApiDto.Response> changeStatus(
             @LoginUser UserPrincipal loginUser,
-            @PathVariable Long id) {
-        TodoServiceDto.TodoInfo info = todoService.toggleStatus(id, loginUser.getRowId());
+            @PathVariable Long id,
+            @RequestBody(required = false) TodoApiDto.StatusUpdateRequest request) {
+        TodoServiceDto.TodoInfo info = todoService.changeStatus(
+            id, loginUser.getRowId(), request != null ? request.status() : null);
         return ApiResponse.success(TodoApiDto.Response.from(info));
     }
 
@@ -132,11 +145,15 @@ public class TodoApiController {
         return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
     }
 
+    /**
+     * 태그 일괄 지정. <b>{@code tagIds} 는 필수</b>고, 빈 배열만 "전부 해제" 로 인정한다(QA #87).
+     * 왜 그렇게 갈랐는지는 {@link TodoApiDto.TagUpdateRequest} 에 적어 뒀다.
+     */
     @PatchMapping("/todo/{id}/tags")
     public ApiResponse<Void> updateTags(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody TodoApiDto.TagUpdateRequest request) {
+            @Valid @RequestBody TodoApiDto.TagUpdateRequest request) {
         todoService.updateTags(id, loginUser.getRowId(), request.tagIds());
         return ApiResponse.success();
     }

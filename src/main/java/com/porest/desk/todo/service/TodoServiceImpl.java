@@ -145,19 +145,32 @@ public class TodoServiceImpl implements TodoService {
         return buildTodoInfo(todo);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p><b>전이를 막지 않는다.</b> 세 상태는 사용자가 자기 할 일에 붙이는 표시일 뿐이고,
+     * 대기 → 완료 → 진행 중 → 대기 어느 쪽으로 가도 잃는 데이터가 없다. 순서를 강제하면
+     * 잘못 누른 것을 되돌리는 길만 막힌다. 별빛은 <b>완료냐 아니냐</b>만 보므로
+     * ({@code onTodoStatusToggled}) 진행 중은 대기와 같게 다뤄져 회수까지 자동으로 맞는다.
+     */
     @Override
     @Transactional
-    public TodoServiceDto.TodoInfo toggleStatus(Long todoId, Long userRowId) {
-        log.debug("할일 상태 토글 시작: todoId={}", todoId);
+    public TodoServiceDto.TodoInfo changeStatus(Long todoId, Long userRowId, TodoStatus status) {
+        log.debug("할일 상태 변경 시작: todoId={}, status={}", todoId, status);
 
         Todo todo = findTodoOrThrow(todoId);
         validateTodoOwnership(todo, userRowId);
-        todo.toggleStatus();
+        if (status == null) {
+            // 본문 없는 옛 요청 — 종전 뜻(완료 ↔ 대기) 그대로.
+            todo.toggleStatus();
+        } else {
+            todo.changeStatus(status);
+        }
         // 별자리 게이미피케이션 — 완료 전이면 별빛 적립(당일 회수분은 복원), 해제면 당일 회수
         // (같은 트랜잭션). 실제 적립량을 응답에 실어 화면 "+N" 토스트가 거짓이 되지 않게 한다.
         int earnedStarlight = starlightService.onTodoStatusToggled(todo);
 
-        log.info("할일 상태 토글 완료: todoId={}, newStatus={}, earnedStarlight={}",
+        log.info("할일 상태 변경 완료: todoId={}, newStatus={}, earnedStarlight={}",
             todoId, todo.getStatus(), earnedStarlight);
 
         return buildTodoInfo(todo).withEarnedStarlight(earnedStarlight);

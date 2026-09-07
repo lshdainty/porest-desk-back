@@ -4,6 +4,7 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.todo.domain.TodoTag;
 import com.porest.desk.todo.repository.TodoRepository;
+import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.user.domain.User;
@@ -44,6 +45,7 @@ import static org.mockito.Mockito.never;
 class TodoTagServiceImplTest {
 
     @Mock private TodoTagRepository todoTagRepository;
+    @Mock private TodoTagMappingRepository todoTagMappingRepository;
     @Mock private TodoRepository todoRepository;
     @Mock private UserRepository userRepository;
     // 생성자 주입 — findOrCreateByName 이 새 트랜잭션 템플릿을 쓰므로 트랜잭션 매니저가 필요하다.
@@ -80,6 +82,34 @@ class TodoTagServiceImplTest {
 
         assertThatThrownBy(() -> sut.deleteTag(5L, USER_ID))
                 .isInstanceOf(ForbiddenException.class);
+        verify(todoRepository, never()).clearCategory(anyLong(), anyString());
+        verify(todoTagMappingRepository, never()).deleteByTagId(anyLong());
+    }
+
+    /**
+     * QA #88 — 태그 행만 지우면 {@code todo.category} 에 이름이 남아, 그 할 일을 다음에 저장할 때
+     * 서버가 같은 이름의 태그를 색 없이 새로 만들었다(저장할 때마다 하나씩).
+     *
+     * <p>삭제 확인창이 "이 태그를 쓰는 할 일 N건은 태그 없음으로 남아요" 라고 약속하므로,
+     * 삭제하는 자리에서 그 이름을 비우고 연결도 걷는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code deleteTag} 에서 {@code clearCategory} ·
+     * {@code deleteByTagId} 호출을 지우면(= 종전 동작) 아래 두 단언이 깨진다.
+     */
+    @Test
+    @DisplayName("deleteTag — 그 이름을 쓰던 할일의 category 를 비우고 연결도 걷는다(되살아남 방지)")
+    void deleteClearsCategoryAndMappings() {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        TodoTag tag = TodoTag.createTag(u, "업무", "#ff0000");
+        ReflectionTestUtils.setField(tag, "rowId", 5L);
+        given(todoTagRepository.findById(5L)).willReturn(Optional.of(tag));
+
+        sut.deleteTag(5L, USER_ID);
+
+        // 이름은 soft-delete 전 값이어야 한다 — 뒤에서 읽으면 WHERE 가 엉뚱해진다.
+        verify(todoRepository).clearCategory(USER_ID, "업무");
+        verify(todoTagMappingRepository).deleteByTagId(5L);
     }
 
     @Test
