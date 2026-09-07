@@ -548,7 +548,7 @@ public class ImportServiceImpl implements ImportService {
             // 자리에서 다시 실패한다. 카테고리 하나가 파일의 절반을 차지하면 그 절반이 통째로
             // 실패로 센다. 여기서 "있으면 그걸 쓴다" 로 받으면 그 연쇄가 끊긴다.
             var info = expenseCategoryService.findOrCreateCategory(new ExpenseCategoryServiceDto.CreateCommand(
-                userRowId, name, DEFAULT_ICON, DEFAULT_COLOR, type, parentRowId));
+                userRowId, name, DEFAULT_ICON, DEFAULT_COLOR, type, null, parentRowId));
             return info.rowId();
         }
 

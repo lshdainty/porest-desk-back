@@ -54,7 +54,7 @@ class EventLabelApiControllerTest {
     @MockitoBean private MessageResolver messageResolver;
 
     private EventLabelServiceDto.LabelInfo sampleInfo() {
-        return new EventLabelServiceDto.LabelInfo(30L, 1L, "중요", "#f00", 0, 0L);
+        return new EventLabelServiceDto.LabelInfo(30L, 1L, "중요", "#ff0000", 0, 0L);
     }
 
     @Test
@@ -63,7 +63,7 @@ class EventLabelApiControllerTest {
         given(eventLabelService.createLabel(any())).willReturn(sampleInfo());
 
         String body = """
-                {"labelName":"중요","color":"#f00"}
+                {"labelName":"중요","color":"#ff0000"}
                 """;
 
         mockMvc.perform(post("/api/v1/calendar/label")
@@ -77,7 +77,7 @@ class EventLabelApiControllerTest {
         verify(eventLabelService).createLabel(captor.capture());
         assertThat(captor.getValue().userRowId()).isEqualTo(1L);
         assertThat(captor.getValue().labelName()).isEqualTo("중요");
-        assertThat(captor.getValue().color()).isEqualTo("#f00");
+        assertThat(captor.getValue().color()).isEqualTo("#ff0000");
     }
 
     @Test
@@ -99,7 +99,7 @@ class EventLabelApiControllerTest {
         given(eventLabelService.updateLabel(eq(30L), eq(1L), any())).willReturn(sampleInfo());
 
         String body = """
-                {"labelName":"보통","color":"#0f0"}
+                {"labelName":"보통","color":"#00ff00"}
                 """;
 
         mockMvc.perform(put("/api/v1/calendar/label/{id}", 30L)
@@ -111,7 +111,7 @@ class EventLabelApiControllerTest {
         var captor = ArgumentCaptor.forClass(EventLabelServiceDto.UpdateCommand.class);
         verify(eventLabelService).updateLabel(eq(30L), eq(1L), captor.capture());
         assertThat(captor.getValue().labelName()).isEqualTo("보통");
-        assertThat(captor.getValue().color()).isEqualTo("#0f0");
+        assertThat(captor.getValue().color()).isEqualTo("#00ff00");
     }
 
     @Test
@@ -150,7 +150,7 @@ class EventLabelApiControllerTest {
     void updateLabel_blankName_returns400() throws Exception {
         mockMvc.perform(put("/api/v1/calendar/label/{id}", 30L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"labelName\":\"  \",\"color\":\"#0f0\"}"))
+                        .content("{\"labelName\":\"  \",\"color\":\"#00ff00\"}"))
                 .andExpect(status().isBadRequest());
 
         verify(eventLabelService, never()).updateLabel(any(Long.class), any(Long.class), any());

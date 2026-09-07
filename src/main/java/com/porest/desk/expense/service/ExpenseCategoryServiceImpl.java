@@ -171,7 +171,10 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             command.icon(),
             command.color(),
             command.expenseType(),
-            parent
+            parent,
+            // 클라이언트가 실어 보낸 자리를 그대로 쓴다. 안 보내면 팩토리가 0(맨 앞)으로 둔다 —
+            // 종전엔 이 값이 컨트롤러에서 서비스로 오지도 못했다(QA 2026-09-07 #91).
+            command.sortOrder()
         );
 
         expenseCategoryRepository.save(category);

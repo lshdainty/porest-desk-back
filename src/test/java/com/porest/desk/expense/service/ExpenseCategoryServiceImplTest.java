@@ -87,7 +87,7 @@ class ExpenseCategoryServiceImplTest {
             given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, "식비", "utensils", "#fff", ExpenseType.EXPENSE, null);
+                    USER_ID, "식비", "utensils", "#fff", ExpenseType.EXPENSE, null, null);
 
             var info = sut.createCategory(command);
 
@@ -106,7 +106,7 @@ class ExpenseCategoryServiceImplTest {
                     USER_ID, null, ExpenseType.EXPENSE, "식비", null)).willReturn(true);
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, "식비", "utensils", "#fff", ExpenseType.EXPENSE, null);
+                    USER_ID, "식비", "utensils", "#fff", ExpenseType.EXPENSE, null, null);
 
             assertThatThrownBy(() -> sut.createCategory(command))
                     .isInstanceOf(InvalidValueException.class);
@@ -123,7 +123,7 @@ class ExpenseCategoryServiceImplTest {
             given(expenseCategoryRepository.findById(11L)).willReturn(Optional.of(parentAlreadyChild));
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, 11L);
+                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, null, 11L);
 
             assertThatThrownBy(() -> sut.createCategory(command))
                     .isInstanceOf(InvalidValueException.class);
@@ -139,7 +139,7 @@ class ExpenseCategoryServiceImplTest {
             given(expenseCategoryRepository.findById(20L)).willReturn(Optional.of(parent));
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, "부수입", "utensils", "#fff", ExpenseType.INCOME, 20L);
+                    USER_ID, "부수입", "utensils", "#fff", ExpenseType.INCOME, null, 20L);
 
             assertThatThrownBy(() -> sut.createCategory(command))
                     .isInstanceOf(InvalidValueException.class);
@@ -155,7 +155,7 @@ class ExpenseCategoryServiceImplTest {
             given(expenseRepository.existsByCategory(30L)).willReturn(true);
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, 30L);
+                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, null, 30L);
 
             assertThatThrownBy(() -> sut.createCategory(command))
                     .isInstanceOf(InvalidValueException.class);
@@ -173,7 +173,7 @@ class ExpenseCategoryServiceImplTest {
             given(expenseSplitRepository.existsActiveByCategory(31L)).willReturn(true);
 
             var command = new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, 31L);
+                    USER_ID, "외식", "utensils", "#fff", ExpenseType.EXPENSE, null, 31L);
 
             assertThatThrownBy(() -> sut.createCategory(command))
                     .isInstanceOf(InvalidValueException.class);
@@ -382,7 +382,7 @@ class ExpenseCategoryServiceImplTest {
 
         private ExpenseCategoryServiceDto.CreateCommand command(String name) {
             return new ExpenseCategoryServiceDto.CreateCommand(
-                    USER_ID, name, "utensils", "#fff", ExpenseType.EXPENSE, null);
+                    USER_ID, name, "utensils", "#fff", ExpenseType.EXPENSE, null, null);
         }
 
         @Test

@@ -63,7 +63,7 @@ class ExpenseApiControllerTest {
 
     private ExpenseServiceDto.ExpenseInfo sampleInfo() {
         return new ExpenseServiceDto.ExpenseInfo(
-                10L, 1L, 5L, "식비", "utensils", "#fff",
+                10L, 1L, 5L, "식비", "utensils", "#ffffff",
                 2L, "현금", ExpenseType.EXPENSE, 15000L, "점심",
                 LocalDateTime.of(2026, 7, 3, 12, 0), "김밥천국", "CARD",
                 null, null,
@@ -206,7 +206,9 @@ class ExpenseApiControllerTest {
 
         mockMvc.perform(put("/api/v1/expense/{id}", 10L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"amount\":30000,\"expenseType\":\"EXPENSE\",\"expenseDate\":\"2026-07-03\"}"))
+                        // categoryRowId 는 수정에서도 필수다 — 서비스가 조건 없이 카테고리를 조회해
+                        // 빠지면 500 이었다(QA 2026-09-07 #85). 웹·앱 모두 수정에서 항상 싣는다.
+                        .content("{\"categoryRowId\":7,\"amount\":30000,\"expenseType\":\"EXPENSE\",\"expenseDate\":\"2026-07-03\"}"))
                 .andExpect(status().isOk());
 
         var captor = ArgumentCaptor.forClass(ExpenseServiceDto.UpdateCommand.class);

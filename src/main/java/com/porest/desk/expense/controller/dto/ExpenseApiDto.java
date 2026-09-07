@@ -31,9 +31,17 @@ public class ExpenseApiDto {
      * 수정 경로도 받은 값을 그대로 덮는다. 하나만 빠져도 종전엔 저장이 409 "다른 곳에서 먼저
      * 수정됐어요" 로 튕겼다(QA #81) — 돈이 걸린 화면에서 가장 오해가 큰 답이다.
      * 웹·앱 모두 생성·수정에서 셋을 항상 함께 보낸다(2026-09-07 양쪽 코드로 확인).
+     *
+     * <p><b>{@code categoryRowId} 도 같은 층이다</b>(QA 2026-09-07 #85). 서비스는 생성·수정
+     * 양쪽에서 이 값을 <b>조건 없이</b> 카테고리 조회에 넘기는데, QueryDSL 은 {@code eq(null)} 을
+     * {@code IllegalArgumentException} 으로 거절하고 그것이 {@code @Repository} 프록시에서
+     * {@code InvalidDataAccessApiUsageException} 으로 번역돼 매핑이 없는 채로 <b>500</b> 이 됐다.
+     * 웹은 {@code ExpenseFormValues.categoryRowId} 가 필수 필드고 앱도
+     * {@code required int categoryRowId} 라 필수로 걸어도 쓰던 화면이 막히지 않는다.
      */
     @Schema(name = "ExpenseCreateRequest")
     public record CreateRequest(
+        @NotNull(message = "카테고리를 골라 주세요")
         Long categoryRowId,
         Long assetRowId,
         @NotNull(message = "거래 종류를 골라 주세요")
@@ -65,6 +73,7 @@ public class ExpenseApiDto {
 
     @Schema(name = "ExpenseUpdateRequest")
     public record UpdateRequest(
+        @NotNull(message = "카테고리를 골라 주세요")
         Long categoryRowId,
         Long assetRowId,
         @NotNull(message = "거래 종류를 골라 주세요")

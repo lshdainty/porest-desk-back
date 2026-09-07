@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -97,11 +98,17 @@ class DutchPayApiControllerTest {
         assertThat(captor.getValue().participants().get(1).amount()).isEqualTo(20000L);
     }
 
+    /**
+     * 종전엔 200 이었다 — 참가자가 없는 정산 행이 남고, 1/N 을 계산할 사람이 없어 목록이 0원으로
+     * 보였다(QA 2026-09-07 #86). 이 테스트는 그 동작을 <b>계약으로 박아 두고 있었다.</b>
+     * 지금은 만들기 자체를 막으므로 기대를 뒤집는다.
+     *
+     * <p>수정({@code PUT})은 그대로 둔다 — 거기서 {@code participants} 를 안 보내는 것은
+     * "참가자는 안 건드린다" 는 뜻이라 뜻이 다르다({@code updateWithoutParticipantsPassesNull} 이 지킨다).
+     */
     @Test
-    @DisplayName("POST /dutch-pay — participants 누락 시 빈 목록으로 위임")
+    @DisplayName("POST /dutch-pay — participants 를 빼면 400 (종전 200: 나눌 사람 없는 정산)")
     void createDutchPay_nullParticipants() throws Exception {
-        given(dutchPayService.createDutchPay(any())).willReturn(sampleDutchPay());
-
         String body = """
                 {"title":"정산","totalAmount":1000,"currency":"KRW","splitMethod":"EQUAL"}
                 """;
@@ -109,11 +116,10 @@ class DutchPayApiControllerTest {
         mockMvc.perform(post("/api/v1/dutch-pay")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest());
 
-        var captor = ArgumentCaptor.forClass(DutchPayServiceDto.CreateCommand.class);
-        verify(dutchPayService).createDutchPay(captor.capture());
-        assertThat(captor.getValue().participants()).isEmpty();
+        // 저장까지 가지 않는다 — 조회·저장 전에 끊는 것이 이 항목의 요구다.
+        verify(dutchPayService, never()).createDutchPay(any());
     }
 
     @Test

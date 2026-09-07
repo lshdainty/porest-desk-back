@@ -58,7 +58,7 @@ class UserCalendarApiControllerTest {
 
     private UserCalendarServiceDto.CalendarInfo sampleInfo() {
         return new UserCalendarServiceDto.CalendarInfo(
-                40L, 1L, "오너", "내캘린더", "#0f0", 0,
+                40L, 1L, "오너", "내캘린더", "#00ff00", 0,
                 true, true, "INVITE123", false, true, CalendarRole.OWNER, 1, null, null);
     }
 
@@ -73,7 +73,7 @@ class UserCalendarApiControllerTest {
         given(userCalendarService.createCalendar(any())).willReturn(sampleInfo());
 
         String body = """
-                {"calendarName":"내캘린더","color":"#0f0"}
+                {"calendarName":"내캘린더","color":"#00ff00"}
                 """;
 
         mockMvc.perform(post("/api/v1/calendar/calendars")
@@ -87,7 +87,7 @@ class UserCalendarApiControllerTest {
         verify(userCalendarService).createCalendar(captor.capture());
         assertThat(captor.getValue().userRowId()).isEqualTo(1L);
         assertThat(captor.getValue().calendarName()).isEqualTo("내캘린더");
-        assertThat(captor.getValue().color()).isEqualTo("#0f0");
+        assertThat(captor.getValue().color()).isEqualTo("#00ff00");
     }
 
     @Test
@@ -109,7 +109,7 @@ class UserCalendarApiControllerTest {
         given(userCalendarService.updateCalendar(eq(40L), eq(1L), any())).willReturn(sampleInfo());
 
         String body = """
-                {"calendarName":"수정캘린더","color":"#00f"}
+                {"calendarName":"수정캘린더","color":"#0000ff"}
                 """;
 
         mockMvc.perform(put("/api/v1/calendar/calendars/{id}", 40L)
@@ -121,7 +121,7 @@ class UserCalendarApiControllerTest {
         var captor = ArgumentCaptor.forClass(UserCalendarServiceDto.UpdateCommand.class);
         verify(userCalendarService).updateCalendar(eq(40L), eq(1L), captor.capture());
         assertThat(captor.getValue().calendarName()).isEqualTo("수정캘린더");
-        assertThat(captor.getValue().color()).isEqualTo("#00f");
+        assertThat(captor.getValue().color()).isEqualTo("#0000ff");
     }
 
     @Test
@@ -226,7 +226,7 @@ class UserCalendarApiControllerTest {
     void createCalendar_missingName_returns400() throws Exception {
         mockMvc.perform(post("/api/v1/calendar/calendars")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"color\":\"#0f0\"}"))
+                        .content("{\"color\":\"#00ff00\"}"))
                 .andExpect(status().isBadRequest());
 
         verify(userCalendarService, never()).createCalendar(any());
@@ -243,7 +243,7 @@ class UserCalendarApiControllerTest {
 
         mockMvc.perform(put("/api/v1/calendar/calendars/{id}", 40L)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"color\":\"#0f0\"}"))
+                        .content("{\"color\":\"#00ff00\"}"))
                 .andExpect(status().isOk());
 
         verify(userCalendarService).updateCalendar(eq(40L), eq(1L), any());

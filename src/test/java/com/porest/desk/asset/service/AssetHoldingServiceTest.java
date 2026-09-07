@@ -114,12 +114,12 @@ class AssetHoldingServiceTest {
     private static AssetServiceDto.HoldingCommand linkedHolding(String symbol, Long qty) {
         return new AssetServiceDto.HoldingCommand(
             null,
-            HoldingType.STOCK, true, null, symbol, qty == null ? null : BigDecimal.valueOf(qty), null, null, null);
+            HoldingType.STOCK, true, null, symbol, qty == null ? null : BigDecimal.valueOf(qty), null, null, null, null);
     }
 
     private static AssetServiceDto.HoldingCommand manualHolding(String name, Long value) {
         return new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, false, null, null, null, name, value, null);
+            null,HoldingType.STOCK, false, null, null, null, name, value, null, null);
     }
 
     /** 미연동 보유 + 수량(선택) — 금·코인처럼 시세가 없어도 몇 g·몇 개인지 기록한다. */
@@ -127,7 +127,7 @@ class AssetHoldingServiceTest {
             HoldingType type, String name, String qty, Long value) {
         return new AssetServiceDto.HoldingCommand(
             null,
-            type, false, null, null, qty == null ? null : new BigDecimal(qty), name, value, null);
+            type, false, null, null, qty == null ? null : new BigDecimal(qty), name, value, null, null);
     }
 
     @Test
@@ -161,11 +161,11 @@ class AssetHoldingServiceTest {
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, true, null, null, BigDecimal.valueOf(30), null, null, null)))))
+            null,HoldingType.STOCK, true, null, null, BigDecimal.valueOf(30), null, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, true, null, "005930", null, null, null, null)))))
+            null,HoldingType.STOCK, true, null, "005930", null, null, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -177,11 +177,11 @@ class AssetHoldingServiceTest {
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, false, null, null, null, null, 1_000L, null)))))
+            null,HoldingType.STOCK, false, null, null, null, null, 1_000L, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT,
                 List.of(new AssetServiceDto.HoldingCommand(
-            null,HoldingType.STOCK, false, null, null, null, "ETF", null, null)))))
+            null,HoldingType.STOCK, false, null, null, null, "ETF", null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -314,12 +314,12 @@ class AssetHoldingServiceTest {
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
                 new AssetServiceDto.HoldingCommand(
             null,
-                    HoldingType.GOLD, true, null, "04020000", BigDecimal.ONE, null, null, null)))))
+                    HoldingType.GOLD, true, null, "04020000", BigDecimal.ONE, null, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
                 new AssetServiceDto.HoldingCommand(
             null,
-                    HoldingType.CRYPTO, true, null, "BTC", BigDecimal.ONE, null, null, null)))))
+                    HoldingType.CRYPTO, true, null, "BTC", BigDecimal.ONE, null, null, null, null)))))
             .isInstanceOf(InvalidValueException.class);
         verify(assetHoldingRepository, never()).save(any());
     }
@@ -368,7 +368,7 @@ class AssetHoldingServiceTest {
         AssetServiceDto.AssetInfo info = sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             new AssetServiceDto.HoldingCommand(
             null,
-                HoldingType.STOCK, true, null, "AAPL", new BigDecimal("0.1"), null, null, null)
+                HoldingType.STOCK, true, null, "AAPL", new BigDecimal("0.1"), null, null, null, null)
         )));
 
         // 185.7 × 1383.5 × 0.1 = 25,691.595 → 25,692 (HALF_UP). double 이면 끝자리가 흔들린다.
@@ -397,7 +397,7 @@ class AssetHoldingServiceTest {
 
         sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(
             new AssetServiceDto.HoldingCommand(
-            null,null, false, null, null, null, "예전 항목", 1_000L, null)
+            null,null, false, null, null, null, "예전 항목", 1_000L, null, null)
         )));
 
         ArgumentCaptor<AssetHolding> captor = ArgumentCaptor.forClass(AssetHolding.class);
@@ -477,7 +477,7 @@ class AssetHoldingServiceTest {
 
         var holding = new AssetServiceDto.HoldingCommand(
             null,
-            HoldingType.STOCK, false, null, null, new BigDecimal("10"), "삼성전자", 700_000L, -500_000L);
+            HoldingType.STOCK, false, null, null, new BigDecimal("10"), "삼성전자", 700_000L, -500_000L, null);
 
         assertThatThrownBy(() -> sut.createAsset(createCommand(AssetType.INVESTMENT, List.of(holding))))
             .isInstanceOf(InvalidValueException.class);
@@ -489,7 +489,7 @@ class AssetHoldingServiceTest {
 
     private static AssetServiceDto.HoldingCommand linkedHolding(String marketCode, String symbol, Long qty) {
         return new AssetServiceDto.HoldingCommand(
-            null, HoldingType.STOCK, true, marketCode, symbol, BigDecimal.valueOf(qty), null, null, null);
+            null, HoldingType.STOCK, true, marketCode, symbol, BigDecimal.valueOf(qty), null, null, null, null);
     }
 
     /** 새로 저장된 보유 n 번째. */
@@ -560,7 +560,7 @@ class AssetHoldingServiceTest {
         given(stockMasterResolver.confirmMarketCode("NAS", "SPY")).willReturn("NAS");
 
         sut.updateAsset(5L, USER_ID, updateCommand(List.of(new AssetServiceDto.HoldingCommand(
-            77L, HoldingType.STOCK, true, "NAS", "SPY", BigDecimal.TEN, null, null, null))));
+            77L, HoldingType.STOCK, true, "NAS", "SPY", BigDecimal.TEN, null, null, null, null))));
 
         assertThat(old.getMarketCode()).isEqualTo("NAS");
         assertThat(old.getIsDeleted()).isEqualTo(YNType.N);

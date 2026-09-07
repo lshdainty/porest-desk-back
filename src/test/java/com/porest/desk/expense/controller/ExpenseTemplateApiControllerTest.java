@@ -67,7 +67,7 @@ class ExpenseTemplateApiControllerTest {
 
     private ExpenseServiceDto.ExpenseInfo sampleExpense() {
         return new ExpenseServiceDto.ExpenseInfo(
-                10L, 1L, 5L, "식비", "utensils", "#fff",
+                10L, 1L, 5L, "식비", "utensils", "#ffffff",
                 2L, "현금", ExpenseType.EXPENSE, 9000L, "회사 근처",
                 LocalDateTime.of(2026, 7, 3, 12, 0), "김밥천국", "CARD",
                 null, null,

@@ -1,10 +1,12 @@
 package com.porest.desk.memo.controller.dto;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.validation.ColorFormat;
 import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -25,8 +27,9 @@ public class MemoApiDto {
         String content,
         @Size(max = FieldLimits.LABEL_MAX, message = "태그는 50자까지 입력할 수 있어요")
         String tag,
-        // memo.color 는 varchar(7) — "#RRGGBB" 한 벌만 들어간다.
-        @Size(max = 7, message = "색상 값이 올바르지 않아요")
+        // memo.color 는 varchar(7) — "#RRGGBB" 한 벌만 들어간다. 길이만 재던 종전엔
+        // "zzz" 가 그대로 저장돼 메모 색이 안 칠해졌다(QA 2026-09-07 #86).
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 
@@ -39,8 +42,9 @@ public class MemoApiDto {
         String content,
         @Size(max = FieldLimits.LABEL_MAX, message = "태그는 50자까지 입력할 수 있어요")
         String tag,
-        // memo.color 는 varchar(7) — "#RRGGBB" 한 벌만 들어간다.
-        @Size(max = 7, message = "색상 값이 올바르지 않아요")
+        // memo.color 는 varchar(7) — "#RRGGBB" 한 벌만 들어간다. 길이만 재던 종전엔
+        // "zzz" 가 그대로 저장돼 메모 색이 안 칠해졌다(QA 2026-09-07 #86).
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 

@@ -6,6 +6,7 @@ import com.porest.desk.dutchpay.service.DutchPayService;
 import com.porest.desk.dutchpay.service.dto.DutchPayServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +29,7 @@ public class DutchPayApiController {
     @PostMapping("/dutch-pay")
     public ApiResponse<DutchPayApiDto.Response> createDutchPay(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody DutchPayApiDto.CreateRequest request) {
+            @Valid @RequestBody DutchPayApiDto.CreateRequest request) {
         List<DutchPayServiceDto.ParticipantCommand> participants = request.participants() != null
             ? request.participants().stream()
                 .map(p -> new DutchPayServiceDto.ParticipantCommand(
@@ -69,7 +70,7 @@ public class DutchPayApiController {
     public ApiResponse<DutchPayApiDto.Response> updateDutchPay(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody DutchPayApiDto.UpdateRequest request) {
+            @Valid @RequestBody DutchPayApiDto.UpdateRequest request) {
         // participants 를 <b>안 보낸</b> 요청은 "참가자는 안 건드린다" 는 뜻이라 null 을 그대로 넘긴다.
         // 여기서 List.of() 로 바꾸면 서비스가 "빈 목록으로 맞춰라" 로 읽어 **활성 참가자를 전원
         // 삭제**한다 — 제목이나 금액 한 줄만 담아 PUT 한 요청이 누가 얼마를 냈는지를 통째로 지웠다.

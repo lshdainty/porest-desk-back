@@ -59,7 +59,7 @@ class DashboardApiControllerTest {
                 new DashboardServiceDto.ExpenseSummary(100, 50, 1000, 500),
                 new DashboardServiceDto.MemoSummary(4, 1, "최근 메모"),
                 List.of(new DashboardServiceDto.UpcomingEvent(
-                        11L, "회의", "MEETING", "#fff", LocalDateTime.of(2026, 7, 10, 9, 0), 7)),
+                        11L, "회의", "MEETING", "#ffffff", LocalDateTime.of(2026, 7, 10, 9, 0), 7)),
                 List.of(new DashboardServiceDto.RecentTodo(
                         22L, "할 일", "HIGH", "PENDING", LocalDate.of(2026, 7, 5))),
                 List.of(new DashboardServiceDto.DailyExpenseTrend(LocalDate.of(2026, 7, 1), 100, 50)));

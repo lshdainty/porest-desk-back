@@ -2,10 +2,12 @@ package com.porest.desk.calendar.controller.dto;
 
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.calendar.type.CalendarRole;
+import com.porest.desk.common.validation.ColorFormat;
 import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -23,7 +25,7 @@ public class UserCalendarApiDto {
         @NotBlank(message = "캘린더 이름을 입력해 주세요")
         @Size(max = FieldLimits.NAME_MAX, message = "캘린더 이름은 50자까지 입력할 수 있어요")
         String calendarName,
-        @Size(max = 20, message = "색상 값이 너무 길어요")
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 
@@ -36,7 +38,7 @@ public class UserCalendarApiDto {
     public record UpdateRequest(
         @Size(max = FieldLimits.NAME_MAX, message = "캘린더 이름은 50자까지 입력할 수 있어요")
         String calendarName,
-        @Size(max = 20, message = "색상 값이 너무 길어요")
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 
