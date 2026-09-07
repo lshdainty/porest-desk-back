@@ -4,6 +4,7 @@ import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.exception.IntegrityViolations;
 import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
@@ -104,6 +105,9 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         try {
             return newTransaction.execute(status -> upsertBudget(command));
         } catch (DataIntegrityViolationException e) {
+            // 재시도가 뜻을 갖는 건 UNIQUE 위반뿐이다 — 상대가 넣은 행을 다시 찾아 수정하면 되기 때문이다.
+            // NOT NULL·FK 는 다시 돌려도 같은 자리에서 같게 터지므로 그대로 올린다(QA #81).
+            if (!IntegrityViolations.isUnique(e)) throw e;
             log.info("예산 등록 경쟁 감지 — 새 트랜잭션으로 재조회 후 수정: userRowId={}, categoryRowId={}, {}-{}",
                 command.userRowId(), command.categoryRowId(), command.budgetYear(), command.budgetMonth());
             return newTransaction.execute(status -> upsertBudget(command));

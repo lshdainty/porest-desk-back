@@ -9,6 +9,7 @@ import com.porest.desk.savingGoal.repository.SavingGoalRepository;
 import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.support.exception.ConstraintViolations;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -166,12 +167,32 @@ class SavingGoalServiceImplTest {
     void translatesConstraintViolation() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         given(savingGoalRepository.existsActiveByUserAndTitle(USER_ID, "유럽 여행", null)).willReturn(false);
-        willThrow(new DataIntegrityViolationException("UK_saving_goal_active_name"))
+        willThrow(ConstraintViolations.unique("UK_saving_goal_active_name"))
                 .given(savingGoalRepository).flush();
 
         assertThatThrownBy(() -> sut.createSavingGoal(createCmd("유럽 여행")))
                 .isInstanceOf(InvalidValueException.class)
                 .extracting(e -> ((InvalidValueException) e).getErrorCode())
                 .isEqualTo(DeskErrorCode.SAVING_GOAL_DUPLICATE_NAME);
+    }
+    /**
+     * QA #81 — <b>UNIQUE 가 아닌 위반은 이 도메인이 손대지 않는다.</b>
+     *
+     * <p>종전엔 여기서 {@code DataIntegrityViolationException} 을 종류와 무관하게 전부
+     * "이름이 중복돼요" 로 번역했다. 그러면 값을 하나 빼먹고 보낸 요청이 <b>있지도 않은
+     * 중복</b>을 이유로 거절당한다. 그런 위반은 그대로 올려 공통 핸들러가 400 으로 답하게 둔다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 서비스의
+     * {@code if (!IntegrityViolations.isUnique(e)) throw e;} 한 줄을 지우면 곧바로 깨진다.
+     */
+    @Test
+    @DisplayName("NOT NULL 위반은 제목 중복으로 번역하지 않고 그대로 올린다")
+    void doesNotTranslateNonUniqueViolation() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(savingGoalRepository.existsActiveByUserAndTitle(USER_ID, "유럽 여행", null)).willReturn(false);
+        willThrow(ConstraintViolations.notNull("TARGET_AMOUNT")).given(savingGoalRepository).flush();
+
+        assertThatThrownBy(() -> sut.createSavingGoal(createCmd("유럽 여행")))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

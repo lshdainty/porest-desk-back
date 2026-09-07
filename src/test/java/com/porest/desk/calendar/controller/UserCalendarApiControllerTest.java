@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -210,5 +211,53 @@ class UserCalendarApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(userCalendarService).changeMemberRole(eq(40L), eq(50L), eq(CalendarRole.EDIT), eq(1L));
+    }
+
+    /**
+     * QA #81 — 이 컨트롤러에도 {@code @Valid} 가 없었다. {@code user_calendar.calendar_name} 은
+     * NOT NULL 이라 이름을 빼고 보내면 저장이 DB 앞에서 터져 409 "다른 곳에서 먼저 수정됐어요"
+     * 가 나갔다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 컨트롤러의 {@code @Valid} 나 DTO 의
+     * {@code @NotBlank(calendarName)} 을 지우면 아래가 200 으로 통과한다.
+     */
+    @Test
+    @DisplayName("POST /calendar/calendars — 이름이 빠지면 400")
+    void createCalendar_missingName_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/calendar/calendars")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"color\":\"#0f0\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(userCalendarService, never()).createCalendar(any());
+    }
+
+    /**
+     * 수정은 <b>보낸 칸만 바꾼다</b> — 색만 보내는 부분 수정은 지금도 성립하는 계약이다.
+     * 여기에 {@code @NotBlank} 를 걸면 멀쩡히 쓰던 요청이 새로 400 을 맞는다. 그 선을 못 박는다.
+     */
+    @Test
+    @DisplayName("PUT /calendar/calendars/{id} — 색만 보내는 부분 수정은 계속 통과한다")
+    void updateCalendar_colorOnly_stillPasses() throws Exception {
+        given(userCalendarService.updateCalendar(eq(40L), eq(1L), any())).willReturn(sampleInfo());
+
+        mockMvc.perform(put("/api/v1/calendar/calendars/{id}", 40L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"color\":\"#0f0\"}"))
+                .andExpect(status().isOk());
+
+        verify(userCalendarService).updateCalendar(eq(40L), eq(1L), any());
+    }
+
+    @Test
+    @DisplayName("PATCH .../role — 권한이 빠지면 400(저장이 아니라 요청이 잘못이다)")
+    void changeMemberRole_missingPermission_returns400() throws Exception {
+        mockMvc.perform(patch("/api/v1/calendar/calendars/{id}/member/{memberId}/role", 40L, 50L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verify(userCalendarService, never())
+                .changeMemberRole(any(Long.class), any(Long.class), any(), any(Long.class));
     }
 }

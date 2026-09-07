@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -120,5 +121,38 @@ class EventLabelApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(eventLabelService).deleteLabel(eq(30L), eq(1L));
+    }
+
+    /**
+     * QA #81 — 이 컨트롤러에는 {@code @Valid} 가 아예 없었다.
+     *
+     * <p>{@code event_label.color} 는 NOT NULL 이라 색을 빼고 보내면 저장이 DB 앞에서 터졌고,
+     * 그 예외를 서비스의 {@code flushOrRejectDuplicate} 가 받아 <b>"이미 같은 이름의 라벨이
+     * 있어요"</b> 로 번역했다 — 이름은 멀쩡한데 이름 탓을 하는 답이다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 컨트롤러의 {@code @Valid} 를 지우거나 DTO 의
+     * {@code @NotBlank(color)} 를 지우면 아래가 200 으로 통과한다 — DTO 에 애노테이션만 달고
+     * {@code @Valid} 를 안 붙이면 <b>아무 일도 일어나지 않는다</b>는 것이 이 테스트의 요점이다.
+     */
+    @Test
+    @DisplayName("POST /calendar/label — 색이 빠지면 400(이름 중복 409 가 아니다)")
+    void createLabel_missingColor_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/calendar/label")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labelName\":\"중요\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(eventLabelService, never()).createLabel(any());
+    }
+
+    @Test
+    @DisplayName("PUT /calendar/label/{id} — 이름이 비면 400")
+    void updateLabel_blankName_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/calendar/label/{id}", 30L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"labelName\":\"  \",\"color\":\"#0f0\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(eventLabelService, never()).updateLabel(any(Long.class), any(Long.class), any());
     }
 }

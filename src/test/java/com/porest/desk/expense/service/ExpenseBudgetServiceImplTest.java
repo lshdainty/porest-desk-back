@@ -34,6 +34,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
+import com.porest.desk.support.exception.ConstraintViolations;
 
 /**
  * 예산 정책 회귀 방지 단위 테스트 — 예산은 최상위(부모) 카테고리에만 설정 가능.
@@ -267,7 +268,7 @@ class ExpenseBudgetServiceImplTest {
                 .willReturn(Optional.empty())
                 .willReturn(Optional.of(winner));
         given(expenseBudgetRepository.save(any(ExpenseBudget.class)))
-                .willThrow(new DataIntegrityViolationException("uk_expense_budget"));
+                .willThrow(ConstraintViolations.unique("uk_expense_budget"));
 
         var info = sut.createBudget(command(null));
 
@@ -287,12 +288,34 @@ class ExpenseBudgetServiceImplTest {
         given(expenseBudgetRepository.findByUserAndCategory(USER_ID, null, 2026, 6))
                 .willReturn(Optional.empty());
         given(expenseBudgetRepository.save(any(ExpenseBudget.class)))
-                .willThrow(new DataIntegrityViolationException("uk_expense_budget"));
+                .willThrow(ConstraintViolations.unique("uk_expense_budget"));
 
         assertThatThrownBy(() -> sut.createBudget(command(null)))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         verify(expenseBudgetRepository, times(2)).save(any(ExpenseBudget.class));
+    }
+
+    /**
+     * QA #81 — 재시도는 UNIQUE 일 때만 뜻이 있다. NOT NULL 은 새 트랜잭션에서 다시 돌려도
+     * 같은 자리에서 같게 터진다 — 쓸모없는 트랜잭션을 한 번 더 열 뿐이다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code createBudget} 의
+     * {@code if (!IntegrityViolations.isUnique(e)) throw e;} 를 지우면 {@code times(1)} 이 2 가 되어 깨진다.
+     */
+    @Test
+    @DisplayName("NOT NULL 위반이면 재시도하지 않고 그대로 올린다")
+    void doesNotRetryOnNonUniqueViolation() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(expenseBudgetRepository.findByUserAndCategory(USER_ID, null, 2026, 6))
+                .willReturn(Optional.empty());
+        given(expenseBudgetRepository.save(any(ExpenseBudget.class)))
+                .willThrow(ConstraintViolations.notNull("BUDGET_AMOUNT"));
+
+        assertThatThrownBy(() -> sut.createBudget(command(null)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        verify(expenseBudgetRepository, times(1)).save(any(ExpenseBudget.class));
     }
 
     @Test

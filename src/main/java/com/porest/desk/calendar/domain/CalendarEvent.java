@@ -97,7 +97,10 @@ public class CalendarEvent extends AuditingFieldsWithIp {
         event.user = user;
         event.title = title;
         event.description = description;
-        event.eventType = eventType;
+        // eventType 은 NOT NULL 이다. 종전엔 null 을 그대로 내려보내 저장이 409 로 튕겼고,
+        // 그 409 는 "다른 곳에서 먼저 수정됐어요" 라고 말했다(QA #81). 화면이 뜻을 정해 주지
+        // 않은 일정은 개인 일정이다 — 웹도 새 일정에 PERSONAL 을 박아 보낸다.
+        event.eventType = eventType != null ? eventType : CalendarEventType.PERSONAL;
         event.color = color != null ? color : "#2c70bf";
         event.startDate = startDate;
         event.endDate = endDate;
@@ -111,16 +114,25 @@ public class CalendarEvent extends AuditingFieldsWithIp {
         return event;
     }
 
+    /**
+     * 수정. <b>NOT NULL 세 칸({@code title}·{@code eventType}·{@code isAllDay})은 값이 오지 않으면
+     * 기존 값을 지킨다</b> — 생성과 달리 여기엔 이미 사용자가 정한 값이 있으므로, 기본값을 씌우면
+     * 고치지 않은 칸이 조용히 바뀐다(WORK 일정을 PERSONAL 로 되돌리는 식). 종전엔 null 을 그대로
+     * 덮어써 저장이 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다(QA #81).
+     *
+     * <p>널 허용 칸({@code description}·{@code color}·{@code label}·{@code location}·{@code rrule})은
+     * 반대로 그대로 덮는다 — 거기서 null 은 "지운다" 는 뜻이고, 지울 방법을 없애면 안 된다.
+     */
     public void updateEvent(String title, String description, CalendarEventType eventType,
             String color, LocalDateTime startDate, LocalDateTime endDate, YNType isAllDay,
             EventLabel label, String location, String rrule) {
-        this.title = title;
+        if (title != null) this.title = title;
+        if (eventType != null) this.eventType = eventType;
+        if (isAllDay != null) this.isAllDay = isAllDay;
         this.description = description;
-        this.eventType = eventType;
         this.color = color;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.isAllDay = isAllDay;
         this.label = label;
         this.location = location;
         this.rrule = rrule;

@@ -16,6 +16,7 @@ import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.support.exception.ConstraintViolations;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -366,13 +367,40 @@ class ExpenseTemplateServiceImplTest {
             given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
             given(expenseTemplateRepository.save(any(ExpenseTemplate.class)))
                     .willAnswer(inv -> inv.getArgument(0));
-            willThrow(new DataIntegrityViolationException("UK_expense_template_active_name"))
+            willThrow(ConstraintViolations.unique("UK_expense_template_active_name"))
                     .given(expenseTemplateRepository).flush();
 
             assertThatThrownBy(() -> sut.createTemplate(createCmd(10L)))
                     .isInstanceOf(InvalidValueException.class)
                     .extracting(e -> ((InvalidValueException) e).getErrorCode())
                     .isEqualTo(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME);
+        }
+        /**
+         * QA #81 — <b>UNIQUE 가 아닌 위반은 이 도메인이 손대지 않는다.</b>
+         *
+         * <p>종전엔 여기서 {@code DataIntegrityViolationException} 을 종류와 무관하게 전부
+         * "이름이 중복돼요" 로 번역했다. 그러면 값을 하나 빼먹고 보낸 요청이 <b>있지도 않은
+         * 중복</b>을 이유로 거절당한다. 그런 위반은 그대로 올려 공통 핸들러가 400 으로 답하게 둔다.
+         *
+         * <p>되돌려 보는 법(네거티브 컨트롤): 서비스의
+         * {@code if (!IntegrityViolations.isUnique(e)) throw e;} 한 줄을 지우면 곧바로 깨진다.
+         */
+        @Test
+        @DisplayName("NOT NULL 위반은 이름 중복으로 번역하지 않고 그대로 올린다")
+        void doesNotTranslateNonUniqueViolation() {
+            User u = user(USER_ID);
+            ExpenseCategory leaf = category(10L, u);
+            given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", null))
+                    .willReturn(false);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            given(expenseTemplateRepository.save(any(ExpenseTemplate.class)))
+                    .willAnswer(inv -> inv.getArgument(0));
+            willThrow(ConstraintViolations.notNull("AMOUNT")).given(expenseTemplateRepository).flush();
+
+            assertThatThrownBy(() -> sut.createTemplate(createCmd(10L)))
+                    .isInstanceOf(DataIntegrityViolationException.class);
         }
     }
 }

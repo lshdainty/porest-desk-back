@@ -14,13 +14,13 @@ import com.porest.desk.stock.repository.StockWatchItemRepository;
 import com.porest.desk.stock.service.dto.StockWatchServiceDto;
 import com.porest.desk.stock.type.StockMarket;
 import com.porest.desk.stock.type.StockSecurityType;
+import com.porest.desk.support.exception.ConstraintViolations;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +32,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * 관심목록 서비스 테스트 — 소유권·상한·중복·심볼 해석(KR/US 우선)·재추가 undelete 를 검증한다.
@@ -251,10 +252,32 @@ class StockWatchServiceImplTest {
         given(groupRepository.existsActiveByUserAndName(USER, "관심", null)).willReturn(false);
         given(groupRepository.findAllActiveByUser(USER)).willReturn(List.of());
         given(groupRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
-        willThrow(new DataIntegrityViolationException("UK_stock_watch_group_user_active_name"))
+        willThrow(ConstraintViolations.unique("UK_stock_watch_group_user_active_name"))
             .given(groupRepository).flush();
 
         assertThatThrownBy(() -> service.createGroup(USER, "관심"))
             .isInstanceOf(DuplicateException.class);
+    }
+    /**
+     * QA #81 — <b>UNIQUE 가 아닌 위반은 이 도메인이 손대지 않는다.</b>
+     *
+     * <p>종전엔 여기서 {@code DataIntegrityViolationException} 을 종류와 무관하게 전부
+     * "이름이 중복돼요" 로 번역했다. 그러면 값을 하나 빼먹고 보낸 요청이 <b>있지도 않은
+     * 중복</b>을 이유로 거절당한다. 그런 위반은 그대로 올려 공통 핸들러가 400 으로 답하게 둔다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 서비스의
+     * {@code if (!IntegrityViolations.isUnique(e)) throw e;} 한 줄을 지우면 곧바로 깨진다.
+     */
+    @Test
+    @DisplayName("그룹 생성 — NOT NULL 위반은 이름 중복으로 번역하지 않고 그대로 올린다")
+    void createGroup_doesNotTranslateNonUniqueViolation() {
+        given(groupRepository.countActiveByUser(USER)).willReturn(1L);
+        given(groupRepository.existsActiveByUserAndName(USER, "관심", null)).willReturn(false);
+        given(groupRepository.findAllActiveByUser(USER)).willReturn(List.of());
+        given(groupRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+        willThrow(ConstraintViolations.notNull("SORT_ORDER")).given(groupRepository).flush();
+
+        assertThatThrownBy(() -> service.createGroup(USER, "관심"))
+            .isInstanceOf(DataIntegrityViolationException.class);
     }
 }

@@ -75,9 +75,14 @@ public class Memo extends AuditingFieldsWithIp {
         return memo;
     }
 
+    /**
+     * 수정. <b>{@code title} 은 NOT NULL 이라 값이 오지 않으면 기존 제목을 지킨다</b> —
+     * 종전엔 null 을 그대로 덮어써 저장이 409 "다른 곳에서 먼저 수정됐어요" 로 튕겼다(QA #81).
+     * 나머지 칸은 널 허용이므로 그대로 덮는다(null = 지운다).
+     */
     public void updateMemo(MemoFolder folder, String title, String content, String tag, String color) {
+        if (title != null) this.title = title;
         this.folder = folder;
-        this.title = title;
         this.content = content;
         this.tag = tag;
         this.color = color;

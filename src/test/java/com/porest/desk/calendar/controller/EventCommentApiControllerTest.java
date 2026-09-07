@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -123,5 +124,34 @@ class EventCommentApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(eventCommentService).deleteComment(eq(20L), eq(1L));
+    }
+
+    /**
+     * QA #81 — 이 컨트롤러에도 {@code @Valid} 가 없었다. {@code event_comment.content} 는 NOT NULL
+     * 이라 빈 댓글이 DB 앞에서 터져 409 "다른 곳에서 먼저 수정됐어요" 로 나갔다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): 컨트롤러의 {@code @Valid} 나 DTO 의
+     * {@code @NotBlank(content)} 를 지우면 아래가 200 으로 통과한다.
+     */
+    @Test
+    @DisplayName("POST .../comment — 내용이 빠지면 400")
+    void createComment_missingContent_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/calendar/event/{eventId}/comment", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verify(eventCommentService, never()).createComment(any());
+    }
+
+    @Test
+    @DisplayName("PUT /calendar/comment/{id} — 내용이 공백뿐이면 400")
+    void updateComment_blankContent_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/calendar/comment/{commentId}", 20L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(eventCommentService, never()).updateComment(any(Long.class), any());
     }
 }
