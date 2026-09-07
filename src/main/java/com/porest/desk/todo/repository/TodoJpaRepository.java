@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Repository("todoJpaRepository")
 @RequiredArgsConstructor
@@ -34,15 +33,15 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
-    public Map<String, Long> countByCategory(Long userRowId) {
+    public long renameCategory(Long userRowId, String fromCategory, String toCategory) {
         return entityManager.createQuery(
-                "SELECT t.category, COUNT(t) FROM Todo t "
-                    + "WHERE t.user.rowId = :userRowId AND t.category IS NOT NULL AND t.isDeleted = :isDeleted "
-                    + "GROUP BY t.category", Object[].class)
+                "UPDATE Todo t SET t.category = :toCategory "
+                    + "WHERE t.user.rowId = :userRowId AND t.category = :fromCategory AND t.isDeleted = :isDeleted")
+            .setParameter("toCategory", toCategory)
             .setParameter("userRowId", userRowId)
+            .setParameter("fromCategory", fromCategory)
             .setParameter("isDeleted", YNType.N)
-            .getResultStream()
-            .collect(Collectors.toMap(r -> (String) r[0], r -> (Long) r[1]));
+            .executeUpdate();
     }
 
     @Override

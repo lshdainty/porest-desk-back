@@ -13,23 +13,44 @@ import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class TodoTagServiceImpl implements TodoTagService {
     private final TodoTagRepository todoTagRepository;
     private final TodoRepository todoRepository;
     private final UserRepository userRepository;
+
+    /**
+     * 확보 시도 하나마다 <b>새 트랜잭션</b>을 여는 템플릿 — {@link #findOrCreateByName} 전용.
+     *
+     * <p>{@code @RequiredArgsConstructor} 를 버리고 생성자를 손으로 쓴 이유가 이것 하나다.
+     * 지출 카테고리({@code ExpenseCategoryServiceImpl})가 같은 자리에서 같은 이유로 먼저 세워 둔 모양이다.
+     */
+    private final TransactionTemplate newTransaction;
+
+    public TodoTagServiceImpl(TodoTagRepository todoTagRepository,
+                              TodoRepository todoRepository,
+                              UserRepository userRepository,
+                              PlatformTransactionManager transactionManager) {
+        this.todoTagRepository = todoTagRepository;
+        this.todoRepository = todoRepository;
+        this.userRepository = userRepository;
+        this.newTransaction = new TransactionTemplate(transactionManager);
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
 
     @Override
     @Transactional
@@ -60,11 +81,12 @@ public class TodoTagServiceImpl implements TodoTagService {
     public List<TodoTagServiceDto.TagInfo> getTags(Long userRowId) {
         log.debug("태그 목록 조회: userRowId={}", userRowId);
 
-        // 태그별 사용 할일 수 — category(태그명) GROUP BY 1회 집계(N+1 금지).
-        Map<String, Long> usage = todoRepository.countByCategory(userRowId);
+        // 태그별 사용 할일 수 — 매핑(FK) GROUP BY 1회 집계(N+1 금지).
+        // 종전엔 tagName 과 todo.category 문자열을 맞대 세어, 태그를 개명하는 순간 0 이 됐다(QA #79).
+        Map<Long, Long> usage = todoTagRepository.countTodosByTag(userRowId);
         return todoTagRepository.findAllByUser(userRowId).stream()
             .map(tag -> TodoTagServiceDto.TagInfo.from(
-                tag, usage.getOrDefault(tag.getTagName(), 0L)))
+                tag, usage.getOrDefault(tag.getRowId(), 0L)))
             .toList();
     }
 
@@ -76,6 +98,10 @@ public class TodoTagServiceImpl implements TodoTagService {
         TodoTag tag = findTagOrThrow(tagId);
         validateTagOwnership(tag, userRowId);
 
+        // ★ 옛 이름을 tag.updateTag(...) 앞에서 잡는다. 뒤에서 읽으면 이미 새 이름이라
+        //   아래 renameCategory 의 WHERE 가 새 이름이 되어 0 행을 고치고 조용히 통과한다.
+        String previousName = tag.getTagName();
+
         String tagName = NameNormalizer.require(command.tagName(), FieldLimits.NAME_MAX);
         // 이름 변경 시 자기 자신을 제외한 활성 태그와 중복 금지
         if (todoTagRepository.existsActiveByUserAndName(userRowId, tagName, tagId)) {
@@ -83,6 +109,13 @@ public class TodoTagServiceImpl implements TodoTagService {
         }
         tag.updateTag(tagName, command.color());
         flushOrRejectDuplicate();
+
+        // 개명이면 todo.category 도 따라 옮긴다 — 안 옮기면 목록 필터·내보내기에 옛 이름이 남는다.
+        if (!tagName.equals(previousName)) {
+            long moved = todoRepository.renameCategory(userRowId, previousName, tagName);
+            log.info("태그 개명에 따른 할일 카테고리 동기화: tagId={}, {} -> {}, movedRows={}",
+                tagId, previousName, tagName, moved);
+        }
 
         log.info("태그 수정 완료: tagId={}", tagId);
 
@@ -99,6 +132,52 @@ public class TodoTagServiceImpl implements TodoTagService {
         tag.deleteTag();
 
         log.info("태그 삭제 완료: tagId={}", tagId);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <h4>왜 새 트랜잭션인가</h4>
+     * 부르는 쪽은 할 일 저장 트랜잭션이다. 여기서 UNIQUE 위반이 나면 그 세션은 더 못 쓰고
+     * (이어서 조회·flush 하면 {@code AssertionFailure ... null identifier}), 위반을 그대로
+     * 올리면 <b>태그 하나 때문에 할 일 저장 전체가 죽는다</b>. 그래서 시도 하나를 트랜잭션
+     * 하나로 감싸고, 위반이 나면 새 트랜잭션으로 <b>한 번만</b> 다시 돈다(무한 루프 금지).
+     * MariaDB 기본 격리수준(REPEATABLE READ)에서는 같은 트랜잭션의 재조회가 처음 뜬 스냅샷을
+     * 그대로 보므로, 상대가 그 뒤에 커밋한 행은 새 트랜잭션이 아니면 보이지도 않는다.
+     */
+    @Override
+    // 재시도가 성립하려면 이 메서드가 트랜잭션을 들고 있으면 안 된다. 클래스 기본값
+    // (readOnly = true) 이 걸리는 것도 막는다.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Long findOrCreateByName(Long userRowId, String rawTagName) {
+        String tagName = NameNormalizer.require(rawTagName, FieldLimits.NAME_MAX);
+        try {
+            return newTransaction.execute(status -> resolveOrCreateTag(userRowId, tagName));
+        } catch (DataIntegrityViolationException e) {
+            // 재시도가 뜻을 갖는 건 UNIQUE 위반뿐이다 — 상대가 넣은 태그를 다시 찾아 쓰면 되기 때문이다.
+            // NOT NULL·FK 는 몇 번을 다시 돌려도 같은 자리에서 같게 터진다(QA #81).
+            if (!IntegrityViolations.isUnique(e)) throw e;
+            log.info("태그 확보 경쟁 감지 — 새 트랜잭션으로 재조회 후 재사용: userRowId={}, tagName={}",
+                userRowId, tagName);
+            return newTransaction.execute(status -> resolveOrCreateTag(userRowId, tagName));
+        }
+    }
+
+    /** 확보 시도 한 번 — {@link #newTransaction} 안에서만 부른다(조회를 밖에 두면 재시도가 옛 스냅샷을 물려받는다). */
+    private Long resolveOrCreateTag(Long userRowId, String tagName) {
+        return todoTagRepository.findActiveByUserAndName(userRowId, tagName)
+            .map(TodoTag::getRowId)
+            .orElseGet(() -> {
+                User user = userRepository.findById(userRowId)
+                    .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+                // 색은 비워 둔다 — 사용자가 고른 적이 없다. 화면은 색 없는 태그를 이미 감당한다.
+                TodoTag tag = TodoTag.createTag(user, tagName, null);
+                todoTagRepository.save(tag);
+                todoTagRepository.flush();
+                log.info("category 로부터 태그 생성: userRowId={}, tagName={}, tagId={}",
+                    userRowId, tagName, tag.getRowId());
+                return tag.getRowId();
+            });
     }
 
     /**

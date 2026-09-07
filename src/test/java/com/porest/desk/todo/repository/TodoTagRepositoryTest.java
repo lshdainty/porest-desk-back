@@ -3,7 +3,11 @@ package com.porest.desk.todo.repository;
 import com.porest.desk.common.config.QueryDslConfig;
 import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
+import com.porest.desk.todo.domain.Todo;
 import com.porest.desk.todo.domain.TodoTag;
+import com.porest.desk.todo.domain.TodoTagMapping;
+import com.porest.desk.todo.type.TodoPriority;
+import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,6 +43,14 @@ class TodoTagRepositoryTest {
 
     private TodoTag persistTag(User user, String name) {
         return em.persist(TodoTag.createTag(user, name, "#ffffff"));
+    }
+
+    private Todo persistTodo(User user, String title, Todo parent, TodoType type) {
+        return em.persist(Todo.createTodo(user, title, null, TodoPriority.MEDIUM, null, null, parent, type));
+    }
+
+    private void persistMapping(Todo todo, TodoTag tag) {
+        em.persist(TodoTagMapping.create(todo, tag));
     }
 
     @Test
@@ -114,5 +127,64 @@ class TodoTagRepositoryTest {
 
         // t3 은 목록에 없어서 제외, deleted 는 soft-delete 로 제외
         assertThat(result).extracting(TodoTag::getTagName).containsExactlyInAnyOrder("t1", "t2");
+    }
+
+    @Test
+    @DisplayName("findActiveByUserAndName — 활성 동명만, 다른 사용자·soft-delete 는 안 잡힌다")
+    void findActiveByUserAndName() {
+        User user = persistUser("owner");
+        User other = persistUser("other");
+        TodoTag work = persistTag(user, "업무");
+        TodoTag gone = persistTag(user, "지운것");
+        gone.deleteTag();
+        persistTag(other, "업무");
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findActiveByUserAndName(user.getRowId(), "업무"))
+                .get().extracting(TodoTag::getRowId).isEqualTo(work.getRowId());
+        assertThat(repository.findActiveByUserAndName(user.getRowId(), "지운것")).isEmpty();
+        assertThat(repository.findActiveByUserAndName(user.getRowId(), "없는이름")).isEmpty();
+    }
+
+    /**
+     * QA #79 — 사용 수의 <b>모수</b>를 여기서 못 박는다.
+     *
+     * <p>세는 것은 "이 태그가 붙은 살아 있는 할 일 전부" 다 — <b>서브태스크도 NOTE 도 함께 센다</b>.
+     * 목록 조회({@code findAllByUser})가 최상위만 보는 것과 일부러 다르다: 이 숫자가 나가는
+     * 자리는 삭제 확인창의 "이 태그를 쓰는 할 일 N건은 태그 없음으로 남아요" 이고, 서브태스크에
+     * 붙은 태그도 똑같이 사라지기 때문이다. 빼면 말한 적 없는 행에서 태그가 사라진다.
+     *
+     * <p>소유권 축은 <b>할 일 주인</b>이다. 태그 주인으로 걸면 (소유권 검사가 없던 시절에 생긴)
+     * 남의 할 일 매핑이 내 태그 사용 수에 섞인다.
+     */
+    @Test
+    @DisplayName("countTodosByTag — 매핑 기준 집계, 축은 할 일 주인, 서브태스크·NOTE 포함·삭제 제외")
+    void countTodosByTag() {
+        User owner = persistUser("owner");
+        User other = persistUser("other");
+        TodoTag work = persistTag(owner, "업무");
+        TodoTag idle = persistTag(owner, "안쓰는것");
+
+        Todo root = persistTodo(owner, "최상위", null, TodoType.TASK);
+        Todo sub = persistTodo(owner, "서브", root, TodoType.TASK);
+        Todo note = persistTodo(owner, "노트", null, TodoType.NOTE);
+        Todo removed = persistTodo(owner, "지운할일", null, TodoType.TASK);
+        Todo foreign = persistTodo(other, "남의할일", null, TodoType.TASK);
+        persistMapping(root, work);
+        persistMapping(sub, work);
+        persistMapping(note, work);
+        persistMapping(removed, work);
+        persistMapping(foreign, work); // 남의 할 일 — 내 집계에 섞이면 안 된다
+        removed.deleteTodo();
+        em.flush();
+        em.clear();
+
+        Map<Long, Long> counts = repository.countTodosByTag(owner.getRowId());
+
+        assertThat(counts).containsEntry(work.getRowId(), 3L);
+        assertThat(counts).doesNotContainKey(idle.getRowId()); // 안 쓰는 태그는 키 자체가 없다
+        assertThat(repository.countTodosByTag(other.getRowId()))
+                .containsEntry(work.getRowId(), 1L);
     }
 }

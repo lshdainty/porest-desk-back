@@ -12,21 +12,30 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.support.exception.ConstraintViolations;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 
 /**
  * 할일 태그 서비스 소유권 가드 회귀 방지 단위 테스트.
@@ -37,6 +46,9 @@ class TodoTagServiceImplTest {
     @Mock private TodoTagRepository todoTagRepository;
     @Mock private TodoRepository todoRepository;
     @Mock private UserRepository userRepository;
+    // 생성자 주입 — findOrCreateByName 이 새 트랜잭션 템플릿을 쓰므로 트랜잭션 매니저가 필요하다.
+    // 목은 getTransaction/commit 을 무해하게 흘려보내므로 콜백은 그대로 돈다.
+    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks private TodoTagServiceImpl sut;
 
@@ -139,5 +151,153 @@ class TodoTagServiceImplTest {
 
         assertThatThrownBy(() -> sut.createTag(new TodoTagServiceDto.CreateCommand(USER_ID, "일상", null)))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    // ── QA #79 — 개명해도 옛 이름이 안 남게, 사용 수는 매핑으로 ──────────────────
+
+    private TodoTag ownedTag(long rowId, String name) {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        TodoTag t = TodoTag.createTag(u, name, "#fff");
+        ReflectionTestUtils.setField(t, "rowId", rowId);
+        return t;
+    }
+
+    /**
+     * QA #79 — 태그를 개명하면 {@code todo.category} 에 남은 옛 이름도 따라 옮긴다.
+     *
+     * <p><b>이 테스트의 핵심은 WHERE 에 실린 값이다.</b> 옛 이름을 {@code tag.updateTag(...)}
+     * <b>뒤에서</b> 읽으면 이미 새 이름이라 {@code renameCategory("회사","회사")} 가 되어
+     * 0 행을 고치고 조용히 통과한다 — 그래서 인자를 못 박아 검증한다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TodoTagServiceImpl.updateTag} 의
+     * {@code String previousName = tag.getTagName();} 를 {@code tag.updateTag(...)} 아래로
+     * 옮기면 아래가 {@code renameCategory(1, "회사", "회사")} 를 보고 깨진다.
+     */
+    @Test
+    @DisplayName("updateTag — 개명하면 옛 이름을 쓰던 할 일의 category 도 새 이름으로 옮긴다")
+    void renameMovesTodoCategory() {
+        TodoTag tag = ownedTag(5L, "업무");
+        given(todoTagRepository.findById(5L)).willReturn(Optional.of(tag));
+        given(todoTagRepository.existsActiveByUserAndName(USER_ID, "회사", 5L)).willReturn(false);
+
+        sut.updateTag(5L, USER_ID, new TodoTagServiceDto.UpdateCommand("회사", "#fff"));
+
+        verify(todoRepository).renameCategory(USER_ID, "업무", "회사");
+    }
+
+    @Test
+    @DisplayName("updateTag — 이름이 그대로면(색만 바꿔도) 할 일 카테고리는 건드리지 않는다")
+    void colorOnlyUpdateLeavesTodosAlone() {
+        TodoTag tag = ownedTag(5L, "업무");
+        given(todoTagRepository.findById(5L)).willReturn(Optional.of(tag));
+        given(todoTagRepository.existsActiveByUserAndName(USER_ID, "업무", 5L)).willReturn(false);
+
+        sut.updateTag(5L, USER_ID, new TodoTagServiceDto.UpdateCommand("업무", "#000"));
+
+        verify(todoRepository, never()).renameCategory(anyLong(), anyString(), anyString());
+    }
+
+    /**
+     * QA #79 — 사용 수를 <b>이름이 아니라 매핑(FK)</b>으로 센다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code getTags} 를
+     * {@code todoRepository.countByCategory} + {@code usage.getOrDefault(tag.getTagName(), 0L)} 로
+     * 되돌리면 tagName 키가 없어 0 이 나와 깨진다.
+     */
+    @Test
+    @DisplayName("getTags — 사용 수는 태그 rowId(FK) 집계에서 온다")
+    void usageCountComesFromMappingAggregate() {
+        TodoTag tag = ownedTag(7L, "리뷰");
+        given(todoTagRepository.findAllByUser(USER_ID)).willReturn(List.of(tag));
+        given(todoTagRepository.countTodosByTag(USER_ID)).willReturn(Map.of(7L, 3L));
+
+        List<TodoTagServiceDto.TagInfo> infos = sut.getTags(USER_ID);
+
+        assertThat(infos).singleElement()
+                .extracting(TodoTagServiceDto.TagInfo::usageCount).isEqualTo(3L);
+    }
+
+    // ── category → 태그 확보(할 일 저장이 부르는 자리) ─────────────────────────
+
+    @Test
+    @DisplayName("findOrCreateByName — 같은 이름의 활성 태그가 있으면 그것을 쓰고 새로 만들지 않는다")
+    void findOrCreateReusesExisting() {
+        given(transactionManager.getTransaction(any())).willReturn(new SimpleTransactionStatus());
+        given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무"))
+                .willReturn(Optional.of(ownedTag(9L, "업무")));
+
+        assertThat(sut.findOrCreateByName(USER_ID, "  업무 ")).isEqualTo(9L);
+        verify(todoTagRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("findOrCreateByName — 없으면 만든다(이름은 다듬어서, 색은 비운 채)")
+    void findOrCreateCreatesWhenMissing() {
+        given(transactionManager.getTransaction(any())).willReturn(new SimpleTransactionStatus());
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무")).willReturn(Optional.empty());
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(todoTagRepository.save(any(TodoTag.class))).willAnswer(inv -> {
+            TodoTag t = inv.getArgument(0);
+            ReflectionTestUtils.setField(t, "rowId", 12L);
+            return t;
+        });
+
+        assertThat(sut.findOrCreateByName(USER_ID, " 업무")).isEqualTo(12L);
+
+        ArgumentCaptor<TodoTag> captor = ArgumentCaptor.forClass(TodoTag.class);
+        verify(todoTagRepository).save(captor.capture());
+        assertThat(captor.getValue().getTagName()).isEqualTo("업무");
+        assertThat(captor.getValue().getColor()).isNull();
+    }
+
+    @Test
+    @DisplayName("findOrCreateByName — 빈 이름은 태그를 만들지 않고 400 으로 거절한다")
+    void findOrCreateRejectsBlankName() {
+        assertThatThrownBy(() -> sut.findOrCreateByName(USER_ID, "  "))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+        verify(todoTagRepository, never()).save(any());
+    }
+
+    /**
+     * QA #79 — 확보 경쟁에서 진 쪽은 <b>상대가 넣은 태그를 다시 찾아 쓴다</b>. 여기서 던지면
+     * 태그 하나 때문에 할 일 저장 전체가 죽는다(#311 이 가져오기에서 쓴 모양 그대로).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code findOrCreateByName} 의 {@code catch} 절을
+     * 지우면 아래가 {@code DataIntegrityViolationException} 을 맞고 깨진다.
+     */
+    @Test
+    @DisplayName("findOrCreateByName — 유니크 위반은 새 트랜잭션으로 재조회해 그 태그를 쓴다")
+    void findOrCreateRetriesOnUniqueViolation() {
+        given(transactionManager.getTransaction(any())).willReturn(new SimpleTransactionStatus());
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무"))
+                .willReturn(Optional.empty(), Optional.of(ownedTag(33L, "업무")));
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        willThrow(ConstraintViolations.unique("UK_todo_tag_user_active_name"))
+                .willDoNothing()
+                .given(todoTagRepository).flush();
+
+        assertThat(sut.findOrCreateByName(USER_ID, "업무")).isEqualTo(33L);
+    }
+
+    @Test
+    @DisplayName("findOrCreateByName — 유니크가 아닌 위반은 재시도 없이 그대로 올린다")
+    void findOrCreateDoesNotRetryOnOtherViolation() {
+        given(transactionManager.getTransaction(any())).willReturn(new SimpleTransactionStatus());
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무")).willReturn(Optional.empty());
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        willThrow(ConstraintViolations.notNull("TAG_NAME")).given(todoTagRepository).flush();
+
+        assertThatThrownBy(() -> sut.findOrCreateByName(USER_ID, "업무"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        verify(todoTagRepository).findActiveByUserAndName(USER_ID, "업무"); // 재조회 없음 = 1회
     }
 }

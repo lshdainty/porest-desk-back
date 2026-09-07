@@ -21,7 +21,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Repository
 @Primary
@@ -183,23 +182,21 @@ public class TodoQueryDslRepository implements TodoRepository {
         return stats;
     }
 
+    /**
+     * 벌크 UPDATE 라 더티 체킹·감사 필드({@code modify_at})를 타지 않는다 — 의도한 것이다.
+     * 바뀐 것은 태그 이름이지 할 일이 아니고, 한 사용자의 같은 카테고리가 수백 행일 수 있어
+     * 엔티티를 다 올려 고칠 자리가 아니다.
+     */
     @Override
-    public Map<String, Long> countByCategory(Long userRowId) {
-        return queryFactory
-            .select(todo.category, todo.count())
-            .from(todo)
+    public long renameCategory(Long userRowId, String fromCategory, String toCategory) {
+        return queryFactory.update(todo)
+            .set(todo.category, toCategory)
             .where(
                 todo.user.rowId.eq(userRowId),
-                todo.category.isNotNull(),
+                todo.category.eq(fromCategory),
                 todo.isDeleted.eq(YNType.N)
             )
-            .groupBy(todo.category)
-            .fetch()
-            .stream()
-            .collect(Collectors.toMap(
-                t -> t.get(todo.category),
-                t -> t.get(todo.count()) == null ? 0L : t.get(todo.count())
-            ));
+            .execute();
     }
 
     @Override

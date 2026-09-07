@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,6 +39,7 @@ public class TodoServiceImpl implements TodoService {
     private final TodoTagMappingRepository todoTagMappingRepository;
     private final UserRepository userRepository;
     private final StarlightService starlightService;
+    private final TodoTagService todoTagService;
 
     @Override
     @Transactional
@@ -62,22 +64,25 @@ public class TodoServiceImpl implements TodoService {
             priority = TodoPriority.LOW;
         }
 
+        // 태그 확보를 할 일 INSERT 앞에 둔다 — 확보는 새 트랜잭션에서 돌므로(findOrCreateByName)
+        // 이 트랜잭션에 못 내보낸 변경이 없는 자리에서 끝내는 편이 안전하다.
+        List<TodoTag> tags = resolveTagsForWrite(command.tagIds(), command.category(), command.userRowId());
+
+        // category 도 태그 이름과 같은 값으로 남겨야 개명(renameCategory)이 이 행을 찾는다 —
+        // 콜레이션이 무시해 주는 것은 끝공백뿐이라 " 업무" 와 "업무" 는 DB 가 다른 값으로 본다.
         Todo todo = Todo.createTodo(
             user, command.title(), command.content(), priority,
-            command.category(), command.dueDate(), parent, type
+            blankToNull(command.category()), command.dueDate(), parent, type
         );
 
         todoRepository.save(todo);
 
-        // Handle tags
-        if (command.tagIds() != null && !command.tagIds().isEmpty()) {
-            List<TodoTag> tags = todoTagRepository.findAllByIds(command.tagIds());
-            for (TodoTag tag : tags) {
-                todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
-            }
+        for (TodoTag tag : tags) {
+            todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
         }
 
-        log.info("할일 등록 완료: todoId={}, userRowId={}, type={}", todo.getRowId(), command.userRowId(), type);
+        log.info("할일 등록 완료: todoId={}, userRowId={}, type={}, tags={}",
+            todo.getRowId(), command.userRowId(), type, tags.size());
 
         return buildTodoInfo(todo);
     }
@@ -120,18 +125,19 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = findTodoOrThrow(todoId);
         validateTodoOwnership(todo, userRowId);
 
-        todo.updateTodo(
-            command.title(), command.content(), command.priority(),
-            command.category(), command.dueDate()
-        );
+        // ★ todo.updateTodo(...) 가 category 를 덮으므로 옛 값을 그 줄 앞에서 잡는다.
+        String previousCategory = todo.getCategory();
 
-        // Update tags if provided
         if (command.tagIds() != null) {
-            todoTagMappingRepository.deleteByTodoId(todoId);
-            List<TodoTag> tags = todoTagRepository.findAllByIds(command.tagIds());
-            for (TodoTag tag : tags) {
-                todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
-            }
+            // 태그를 명시한 요청이 이긴다 — 빈 목록은 "태그 없음" 이라는 뜻이다.
+            List<TodoTag> tags = resolveOwnedTags(command.tagIds(), userRowId);
+            todo.updateTodo(command.title(), command.content(), command.priority(),
+                blankToNull(command.category()), command.dueDate());
+            replaceMappings(todo, tags);
+        } else {
+            syncCategoryBridge(todo, userRowId, previousCategory, command.category());
+            todo.updateTodo(command.title(), command.content(), command.priority(),
+                blankToNull(command.category()), command.dueDate());
         }
 
         log.info("할일 수정 완료: todoId={}", todoId);
@@ -227,14 +233,7 @@ public class TodoServiceImpl implements TodoService {
 
         Todo todo = findTodoOrThrow(todoId);
         validateTodoOwnership(todo, userRowId);
-        todoTagMappingRepository.deleteByTodoId(todoId);
-
-        if (tagIds != null && !tagIds.isEmpty()) {
-            List<TodoTag> tags = todoTagRepository.findAllByIds(tagIds);
-            for (TodoTag tag : tags) {
-                todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
-            }
-        }
+        replaceMappings(todo, resolveOwnedTags(tagIds, userRowId));
 
         log.info("태그 업데이트 완료: todoId={}", todoId);
     }
@@ -249,6 +248,102 @@ public class TodoServiceImpl implements TodoService {
         // [0]=totalTask, [1]=pending, [2]=inProgress, [3]=completed, [4]=todayDue, [5]=overDue, [6]=noteCount, [7]=pinnedNoteCount
 
         return new TodoServiceDto.TodoStats(stats[0], stats[1], stats[2], stats[3], stats[4], stats[5], stats[6]);
+    }
+
+    // ── 태그 다리 ────────────────────────────────────────────────────────────
+    // 웹·앱 어느 쪽도 tagIds 를 안 보낸다 — 보내는 것은 category 문자열 하나다. 그래서
+    // 매핑 테이블이 비고, 매핑으로 세는 usageCount 도 0 이 된다. 서버가 여기서 다리를 놓아
+    // "category 로 활성 태그를 찾고, 없으면 만들어서" 매핑을 남긴다(QA #79).
+    // 화면은 이미 그렇게 보고 있다 — 웹의 태그 선택지가 "서버 태그 ∪ 할 일에 쓰인 category" 다.
+
+    /** 등록에서 남길 태그 — 명시한 tagIds 가 있으면 그쪽이 이기고, 없으면 category 로 잇는다. */
+    private List<TodoTag> resolveTagsForWrite(List<Long> tagIds, String category, Long userRowId) {
+        if (tagIds != null) {
+            return resolveOwnedTags(tagIds, userRowId);
+        }
+        TodoTag bridged = resolveCategoryTag(userRowId, category);
+        return bridged == null ? List.of() : List.of(bridged);
+    }
+
+    /**
+     * 수정에서 category 가 바뀌면 매핑도 따라 옮긴다.
+     *
+     * <p>매핑 전체를 갈아엎지 않는 이유 — {@code PATCH /todo/{id}/tags} 로 여러 태그를 붙여 둔
+     * 할 일이 있을 수 있고, category 하나만 보내는 요청이 그것들을 조용히 지우면 안 된다.
+     * 그래서 <b>옛 이름의 태그만 떼고 새 이름의 태그를 붙인다</b>.
+     */
+    private void syncCategoryBridge(Todo todo, Long userRowId, String previousCategory, String newCategory) {
+        String previous = blankToNull(previousCategory);
+        String current = blankToNull(newCategory);
+        if (previous == null && current == null) return;
+
+        // 확보(새 트랜잭션)를 이 트랜잭션의 쓰기보다 먼저 끝낸다.
+        TodoTag target = resolveCategoryTag(userRowId, current);
+
+        if (previous != null && !previous.equals(current)) {
+            todoTagRepository.findActiveByUserAndName(userRowId, previous)
+                .ifPresent(stale -> todoTagMappingRepository
+                    .deleteByTodoIdAndTagId(todo.getRowId(), stale.getRowId()));
+        }
+        if (target == null) return;
+
+        boolean alreadyMapped = todoTagMappingRepository.findByTodoId(todo.getRowId()).stream()
+            .anyMatch(m -> Objects.equals(m.getTag().getRowId(), target.getRowId()));
+        if (!alreadyMapped) {
+            todoTagMappingRepository.save(TodoTagMapping.create(todo, target));
+        }
+    }
+
+    /** category 문자열 → 그 사용자의 활성 태그. 빈 category 는 태그를 만들지 않는다. */
+    private TodoTag resolveCategoryTag(Long userRowId, String category) {
+        String name = blankToNull(category);
+        if (name == null) return null;
+        Long tagRowId = todoTagService.findOrCreateByName(userRowId, name);
+        return tagRowId == null ? null : todoTagRepository.findById(tagRowId).orElse(null);
+    }
+
+    /**
+     * 요청이 지목한 태그를 <b>내 것인지 확인하고</b> 돌려준다.
+     *
+     * <p>종전엔 확인이 없어 남의 {@code tagId} 를 그대로 매핑했고, 그 태그의 이름·색이 내 할 일
+     * 응답 {@code tags[]} 로 나갔다(QA #79 — 응답 유출). 캘린더가 같은 자리를 이렇게 막는다
+     * ({@code CalendarEventServiceImpl.validateLabelOwnership}): 없으면 404, 남의 것이면 403.
+     */
+    private List<TodoTag> resolveOwnedTags(List<Long> tagIds, Long userRowId) {
+        if (tagIds == null || tagIds.isEmpty()) return List.of();
+
+        List<Long> ids = tagIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) return List.of();
+
+        List<TodoTag> tags = todoTagRepository.findAllByIds(ids);
+        if (tags.size() != ids.size()) {
+            log.warn("태그 조회 실패 - 존재하지 않거나 삭제된 태그: requested={}, found={}", ids.size(), tags.size());
+            throw new EntityNotFoundException(DeskErrorCode.TODO_TAG_NOT_FOUND);
+        }
+        for (TodoTag tag : tags) {
+            validateTagOwnership(tag, userRowId);
+        }
+        return tags;
+    }
+
+    private void replaceMappings(Todo todo, List<TodoTag> tags) {
+        todoTagMappingRepository.deleteByTodoId(todo.getRowId());
+        for (TodoTag tag : tags) {
+            todoTagMappingRepository.save(TodoTagMapping.create(todo, tag));
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private void validateTagOwnership(TodoTag tag, Long userRowId) {
+        Long ownerRowId = tag.getUser() != null ? tag.getUser().getRowId() : null;
+        if (!userRowId.equals(ownerRowId)) {
+            log.warn("태그 소유권 검증 실패 - tagId={}, ownerRowId={}, requestUserRowId={}",
+                tag.getRowId(), ownerRowId, userRowId);
+            throw new ForbiddenException(DeskErrorCode.TODO_ACCESS_DENIED);
+        }
     }
 
     private void validateTodoOwnership(Todo todo, Long userRowId) {
@@ -268,7 +363,7 @@ public class TodoServiceImpl implements TodoService {
     }
 
     private TodoServiceDto.TodoInfo buildTodoInfo(Todo todo) {
-        // 태그 조회 (findByTodoId는 이미 fetchJoin 적용됨)
+        // 태그 조회 (findByTodoId는 이미 fetchJoin 적용됨 · 삭제된 태그는 빠진다)
         List<TodoTagMapping> mappings = todoTagMappingRepository.findByTodoId(todo.getRowId());
         List<TodoServiceDto.TagInfo> tags = mappings.stream()
             .map(m -> new TodoServiceDto.TagInfo(m.getTag().getRowId(), m.getTag().getTagName(), m.getTag().getColor()))
