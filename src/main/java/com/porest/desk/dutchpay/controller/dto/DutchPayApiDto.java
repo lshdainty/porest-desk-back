@@ -1,8 +1,12 @@
 package com.porest.desk.dutchpay.controller.dto;
 
+import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.dutchpay.service.dto.DutchPayServiceDto;
 import com.porest.desk.dutchpay.type.SplitMethod;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotEmpty;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -10,22 +14,45 @@ import java.util.List;
 
 public class DutchPayApiDto {
 
+    /**
+     * 정산은 <b>참가자가 한 명은 있어야</b> 하고 총액은 0보다 커야 한다(QA 2026-09-07 #86).
+     *
+     * <p>종전엔 {@code participants} 를 빈 배열로 보내거나 아예 빼도 200 이었다 — 누가 얼마를
+     * 나눠 내는지가 없는 정산 행이 남고, 목록은 1/N 을 계산할 사람이 없어 0원으로 보인다.
+     * 총액 {@code -1} 도 200 이었다: 받을 돈이 음수인 정산이 저장돼 합계·미정산 금액이 거꾸로 간다.
+     *
+     * <p>웹·앱 모두 만들기 화면이 <b>두 명 이상</b>을 골라야 다음으로 넘어가고 총액도 0보다 커야
+     * 하므로, 여기서 한 명·1원으로 끊어도 쓰던 화면이 막히지 않는다(2026-09-07 양쪽 코드로 확인).
+     *
+     * <p><b>결제자가 몇 명인지는 여기서 안 본다</b> — 그건 별도 항목(#80)이다. 이 자리는
+     * 참가자 <b>개수</b>와 금액만 본다.
+     */
     @Schema(name = "DutchPayCreateRequest")
     public record CreateRequest(
         Long sourceExpenseRowId,
         String title,
         String description,
+        @Min(value = 1, message = "금액은 0보다 커야 해요")
+        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long totalAmount,
         String currency,
         SplitMethod splitMethod,
         LocalDate dutchPayDate,
+        @NotEmpty(message = "함께 나눌 사람을 한 명 이상 골라 주세요")
         List<ParticipantRequest> participants
     ) {}
 
+    /**
+     * 수정은 {@code participants} 를 <b>안 보낼 수 있다</b> — "참가자는 안 건드린다" 는 뜻이라
+     * {@code @NotEmpty} 를 걸면 제목만 고치는 요청이 막힌다. 빈 배열을 명시해 전원을 지우는
+     * 경우는 결제자가 0명이 되는 문제와 같은 자리라 별도 항목(#80)에서 다룬다.
+     */
     @Schema(name = "DutchPayUpdateRequest")
     public record UpdateRequest(
         String title,
         String description,
+        @Min(value = 1, message = "금액은 0보다 커야 해요")
+        @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long totalAmount,
         String currency,
         SplitMethod splitMethod,

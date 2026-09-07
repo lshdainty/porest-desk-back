@@ -16,6 +16,8 @@ public class ExpenseCategoryServiceDto {
         String icon,
         String color,
         ExpenseType expenseType,
+        // null 이면 0(맨 앞). 목록 정렬이 sort_order ASC 라 0 이 맨 앞이다.
+        Integer sortOrder,
         Long parentRowId
     ) {}
 

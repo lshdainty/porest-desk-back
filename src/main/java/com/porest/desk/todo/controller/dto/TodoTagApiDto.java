@@ -1,7 +1,9 @@
 package com.porest.desk.todo.controller.dto;
 
+import com.porest.desk.common.validation.ColorFormat;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Pattern;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -11,12 +13,14 @@ public class TodoTagApiDto {
     @Schema(name = "TodoTagCreateRequest")
     public record CreateRequest(
         String tagName,
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 
     @Schema(name = "TodoTagUpdateRequest")
     public record UpdateRequest(
         String tagName,
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 

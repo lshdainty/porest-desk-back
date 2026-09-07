@@ -121,6 +121,14 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
      * 조회를 밖에 두면 두 번째 시도가 첫 번째의 스냅샷을 물려받아 아무것도 못 고친다.
      */
     private ExpenseBudgetServiceDto.BudgetInfo upsertBudget(ExpenseBudgetServiceDto.CreateCommand command) {
+        // 연·월이 없으면 조회로 가기 전에 끊는다. 아래 findByUserAndCategory 가 두 값을 그대로
+        // QueryDSL 에 넘기는데 eq(null) 은 IllegalArgumentException 이고, @Repository 프록시가
+        // 그걸 InvalidDataAccessApiUsageException 으로 번역해 매핑이 없는 채로 500 이 됐다
+        // (QA 2026-09-07 #85).
+        if (command.budgetYear() == null || command.budgetMonth() == null) {
+            throw new InvalidValueException(DeskErrorCode.REQUIRED_VALUE_MISSING);
+        }
+
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 

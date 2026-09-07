@@ -6,6 +6,7 @@ import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.expense.controller.dto.ExpenseCategoryApiDto;
 import com.porest.desk.expense.service.ExpenseCategoryService;
 import com.porest.desk.expense.service.dto.ExpenseCategoryServiceDto;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,13 +29,14 @@ public class ExpenseCategoryApiController {
     @PostMapping("/expense/category")
     public ApiResponse<ExpenseCategoryApiDto.Response> createCategory(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody ExpenseCategoryApiDto.CreateRequest request) {
+            @Valid @RequestBody ExpenseCategoryApiDto.CreateRequest request) {
         ExpenseCategoryServiceDto.CategoryInfo info = expenseCategoryService.createCategory(new ExpenseCategoryServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.categoryName(),
             request.icon(),
             request.color(),
             request.expenseType(),
+            request.sortOrder(),
             request.parentRowId()
         ));
         return ApiResponse.success(ExpenseCategoryApiDto.Response.from(info));
@@ -51,7 +53,7 @@ public class ExpenseCategoryApiController {
     public ApiResponse<ExpenseCategoryApiDto.Response> updateCategory(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody ExpenseCategoryApiDto.UpdateRequest request) {
+            @Valid @RequestBody ExpenseCategoryApiDto.UpdateRequest request) {
         ExpenseCategoryServiceDto.CategoryInfo info = expenseCategoryService.updateCategory(id, loginUser.getRowId(), new ExpenseCategoryServiceDto.UpdateCommand(
             request.categoryName(),
             request.icon(),
@@ -112,7 +114,7 @@ public class ExpenseCategoryApiController {
     public ApiResponse<ExpenseCategoryApiDto.MoveResponse> splitIntoChild(
             @LoginUser UserPrincipal loginUser,
             @PathVariable("id") Long id,
-            @RequestBody ExpenseCategoryApiDto.SplitIntoChildRequest request) {
+            @Valid @RequestBody ExpenseCategoryApiDto.SplitIntoChildRequest request) {
         var moved = expenseCategoryService.moveTransactionsToNewChild(
             id, request.childName(), request.icon(), request.color(), loginUser.getRowId());
         return ApiResponse.success(new ExpenseCategoryApiDto.MoveResponse(

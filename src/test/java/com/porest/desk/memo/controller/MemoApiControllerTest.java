@@ -62,7 +62,7 @@ class MemoApiControllerTest {
 
     private MemoServiceDto.MemoInfo sampleInfo() {
         return new MemoServiceDto.MemoInfo(
-                100L, 1L, "제목", "내용", "태그", "#fff",
+                100L, 1L, "제목", "내용", "태그", "#ffffff",
                 YNType.N, LocalDateTime.of(2026, 7, 1, 9, 0), LocalDateTime.of(2026, 7, 1, 9, 0));
     }
 
@@ -72,7 +72,7 @@ class MemoApiControllerTest {
         given(memoService.createMemo(any())).willReturn(sampleInfo());
 
         String body = """
-                {"title":"제목","content":"내용","tag":"태그","color":"#fff"}
+                {"title":"제목","content":"내용","tag":"태그","color":"#ffffff"}
                 """;
 
         mockMvc.perform(post("/api/v1/memo")
@@ -88,7 +88,7 @@ class MemoApiControllerTest {
         assertThat(captor.getValue().title()).isEqualTo("제목");
         assertThat(captor.getValue().content()).isEqualTo("내용");
         assertThat(captor.getValue().tag()).isEqualTo("태그");
-        assertThat(captor.getValue().color()).isEqualTo("#fff");
+        assertThat(captor.getValue().color()).isEqualTo("#ffffff");
     }
 
     @Test
@@ -134,7 +134,7 @@ class MemoApiControllerTest {
         given(memoService.updateMemo(eq(5L), eq(1L), any())).willReturn(sampleInfo());
 
         String body = """
-                {"title":"수정제목","content":"수정내용","tag":"수정태그","color":"#000"}
+                {"title":"수정제목","content":"수정내용","tag":"수정태그","color":"#000000"}
                 """;
 
         mockMvc.perform(put("/api/v1/memo/{id}", 5L)
@@ -148,7 +148,7 @@ class MemoApiControllerTest {
         assertThat(captor.getValue().title()).isEqualTo("수정제목");
         assertThat(captor.getValue().content()).isEqualTo("수정내용");
         assertThat(captor.getValue().tag()).isEqualTo("수정태그");
-        assertThat(captor.getValue().color()).isEqualTo("#000");
+        assertThat(captor.getValue().color()).isEqualTo("#000000");
     }
 
     @Test

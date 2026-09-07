@@ -453,7 +453,7 @@ public class AssetServiceImpl implements AssetService {
             }
             AssetServiceDto.HoldingCommand normalized = new AssetServiceDto.HoldingCommand(
                 hc.rowId(), hc.holdingType(), hc.linked(), hc.marketCode(), symbol,
-                hc.quantity(), holdingName, hc.holdingValue(), hc.totalCost());
+                hc.quantity(), holdingName, hc.holdingValue(), hc.totalCost(), hc.sortOrder());
             String key = AssetHolding.uniquenessKey(linked, linked ? symbol : holdingName);
             // 키를 못 만드는 입력(미연동인데 항목명이 없다)은 접지 않고 자리만 지킨다 —
             // 접으면 validateHoldings 가 거절할 입력이 조용히 사라진다. "?" 로 시작하는 자리표는
@@ -468,10 +468,13 @@ public class AssetServiceImpl implements AssetService {
             AssetServiceDto.HoldingCommand first, AssetServiceDto.HoldingCommand later) {
         // rowId 만 앞엣것을 살린다. 뒤엣줄이 rowId 없이 왔다고 새 행을 만들면 기존 행이 삭제되고
         // 새 행이 생겨 거래(asset_trade)가 가리키던 보유가 끊긴다.
+        // 자리(sortOrder)도 앞엣것이다 — 접힌 행은 목록에서 <b>앞엣줄이 있던 자리</b>에 남는다
+        // (LinkedHashMap 이 첫 등장 위치를 지킨다). 뒤엣줄 값을 쓰면 화면에서 본 자리와 어긋난다.
         return new AssetServiceDto.HoldingCommand(
             first.rowId() != null ? first.rowId() : later.rowId(),
             later.holdingType(), later.linked(), later.marketCode(), later.symbol(),
-            later.quantity(), later.holdingName(), later.holdingValue(), later.totalCost());
+            later.quantity(), later.holdingName(), later.holdingValue(), later.totalCost(),
+            first.sortOrder() != null ? first.sortOrder() : later.sortOrder());
     }
 
     /**
@@ -645,7 +648,7 @@ public class AssetServiceImpl implements AssetService {
                     linked ? null : hc.holdingName(),
                     linked ? null : hc.holdingValue(),
                     hc.totalCost(),
-                    i);
+                    holdingOrder(hc, i));
                 kept.add(found);
                 result.add(AssetServiceDto.HoldingInfo.from(found));
                 continue;
@@ -660,7 +663,7 @@ public class AssetServiceImpl implements AssetService {
                 linked ? null : hc.holdingName(),
                 linked ? null : hc.holdingValue(),
                 resolveCost(hc, costByKey),
-                i);
+                holdingOrder(hc, i));
             assetHoldingRepository.save(created);
             result.add(AssetServiceDto.HoldingInfo.from(created));
         }
@@ -673,7 +676,21 @@ public class AssetServiceImpl implements AssetService {
         return result;
     }
 
-    /** 보유 신규 저장 — sortOrder = 배열 인덱스. 생성 경로 전용. */
+    /**
+     * 보유 한 줄의 자리 — <b>보내온 값이 이기고</b>, 안 보냈으면 배열 인덱스다.
+     *
+     * <p>종전엔 인덱스만 썼다. 클라이언트가 {@code sortOrder} 를 실어 보내도 요청 DTO 에 그 필드가
+     * 없어 Jackson 이 조용히 버렸기 때문이다(QA 2026-09-07 #91). 이제 값이 오면 그 값을 쓴다.
+     *
+     * <p>안 보냈을 때 0 이 아니라 <b>인덱스</b>로 가는 이유: 보유는 순서 변경 API 가 따로 없고
+     * 목록을 통째로 보내는 것이 곧 순서 지정이다. 전부 0 이면 정렬이 {@code rowId asc} 로 떨어져
+     * 끌어 옮긴 순서가 사라진다. 앱은 이 필드를 일부러 안 싣고 배열 순서에 기댄다.
+     */
+    private static int holdingOrder(AssetServiceDto.HoldingCommand hc, int index) {
+        return hc.sortOrder() != null ? hc.sortOrder() : index;
+    }
+
+    /** 보유 신규 저장 — 자리는 {@link #holdingOrder}. 생성 경로 전용. */
     private List<AssetServiceDto.HoldingInfo> saveHoldings(Asset asset, List<AssetServiceDto.HoldingCommand> holdings) {
         if (holdings == null || holdings.isEmpty()) {
             return List.of();
@@ -699,7 +716,7 @@ public class AssetServiceImpl implements AssetService {
                 linked ? null : hc.holdingName(),
                 linked ? null : hc.holdingValue(),
                 resolveCost(hc, costByKey),
-                i
+                holdingOrder(hc, i)
             );
             assetHoldingRepository.save(holding);
             result.add(AssetServiceDto.HoldingInfo.from(holding));
@@ -1200,8 +1217,16 @@ public class AssetServiceImpl implements AssetService {
 
     private TransferParties validateTransfer(Long userRowId, Long fromAssetRowId, Long toAssetRowId,
                                              Long amount, Long fee, Long interestAmount) {
+        // 양쪽 자산이 없으면 조회로 가기 전에 끊는다. 아래 findAssetOrThrow 는 null 을 그대로
+        // QueryDSL 에 넘기는데 eq(null) 은 IllegalArgumentException 이고, @Repository 프록시가
+        // 그걸 InvalidDataAccessApiUsageException 으로 번역해 매핑이 없는 채로 500 이 됐다
+        // (QA 2026-09-07 #85). DTO 에도 @NotNull 이 있지만 이 자리는 카드 결제·매수 충당 같은
+        // 서버 안쪽 호출도 지난다 — 그쪽엔 @Valid 가 닿지 않는다.
+        if (fromAssetRowId == null || toAssetRowId == null) {
+            throw new InvalidValueException(DeskErrorCode.REQUIRED_VALUE_MISSING);
+        }
         // 같은 자산으로의 이체는 무의미·잘못된 잔액 이력 유발 — 차단.
-        if (fromAssetRowId != null && fromAssetRowId.equals(toAssetRowId)) {
+        if (fromAssetRowId.equals(toAssetRowId)) {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_SAME_ASSET);
         }
         // 이체 금액은 0보다 커야 함 — 음수는 잔액 흐름을 역전시켜 자금이 거꾸로 이동한다.

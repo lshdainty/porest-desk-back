@@ -4,10 +4,12 @@ import com.porest.core.type.YNType;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.type.CalendarEventType;
+import com.porest.desk.common.validation.ColorFormat;
 import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -23,8 +25,8 @@ public class CalendarEventApiDto {
         @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있어요")
         String description,
         CalendarEventType eventType,
-        // calendar_event.color 는 varchar(20).
-        @Size(max = 20, message = "색상 값이 너무 길어요")
+        // calendar_event.color 는 varchar(20) 이지만 들어오는 값은 "#RRGGBB" 한 벌뿐이다.
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
         // 시작·종료는 NOT NULL 이고 서비스가 둘을 비교한다. 안 보내면 종전엔 NPE → 500 이었다(QA #81).
         @NotNull(message = "시작 일시를 입력해 주세요")
@@ -52,8 +54,8 @@ public class CalendarEventApiDto {
         @Size(max = FieldLimits.CONTENT_MAX, message = "설명은 10,000자까지 입력할 수 있어요")
         String description,
         CalendarEventType eventType,
-        // calendar_event.color 는 varchar(20).
-        @Size(max = 20, message = "색상 값이 너무 길어요")
+        // calendar_event.color 는 varchar(20) 이지만 들어오는 값은 "#RRGGBB" 한 벌뿐이다.
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
         // 시작·종료는 NOT NULL 이고 서비스가 둘을 비교한다. 안 보내면 종전엔 NPE → 500 이었다(QA #81).
         @NotNull(message = "시작 일시를 입력해 주세요")

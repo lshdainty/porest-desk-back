@@ -6,6 +6,7 @@ import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.todo.controller.dto.TodoTagApiDto;
 import com.porest.desk.todo.service.TodoTagService;
 import com.porest.desk.todo.service.dto.TodoTagServiceDto;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,7 +28,7 @@ public class TodoTagApiController {
     @PostMapping("/todo-tag")
     public ApiResponse<TodoTagApiDto.Response> createTag(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody TodoTagApiDto.CreateRequest request) {
+            @Valid @RequestBody TodoTagApiDto.CreateRequest request) {
         TodoTagServiceDto.TagInfo info = todoTagService.createTag(
             new TodoTagServiceDto.CreateCommand(
                 loginUser.getRowId(),
@@ -49,7 +50,7 @@ public class TodoTagApiController {
     public ApiResponse<TodoTagApiDto.Response> updateTag(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody TodoTagApiDto.UpdateRequest request) {
+            @Valid @RequestBody TodoTagApiDto.UpdateRequest request) {
         TodoTagServiceDto.TagInfo info = todoTagService.updateTag(id, loginUser.getRowId(),
             new TodoTagServiceDto.UpdateCommand(request.tagName(), request.color())
         );

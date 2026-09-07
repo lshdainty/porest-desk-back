@@ -133,7 +133,7 @@ class InvestmentCashPreservedTest {
         Asset invest = brokerageWithHoldings();
         var holding = new AssetServiceDto.HoldingCommand(
             null,
-            null, false, null, null, null, "삼성전자", 48_000_000L, null);
+            null, false, null, null, null, "삼성전자", 48_000_000L, null, null);
 
         sut.updateAsset(ASSET_ID, USER_ID, command(48_000_000L, List.of(holding)));
 
@@ -153,7 +153,7 @@ class InvestmentCashPreservedTest {
         var sent = new AssetServiceDto.HoldingCommand(
             null,
             HoldingType.STOCK, false, null, null, new java.math.BigDecimal("100"),
-            "삼성전자", 8_500_000L, null); // totalCost 미전송
+            "삼성전자", 8_500_000L, null, null); // totalCost 미전송
 
         sut.updateAsset(ASSET_ID, USER_ID, command(null, List.of(sent)));
 

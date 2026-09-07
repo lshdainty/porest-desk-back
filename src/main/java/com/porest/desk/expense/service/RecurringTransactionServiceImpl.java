@@ -269,6 +269,13 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     private LocalDate calculateNextExecutionDate(LocalDate startDate, RecurringFrequency frequency,
                                                   Integer intervalValue, Integer dayOfWeek, Integer dayOfMonth) {
+        // 시작일·주기가 없으면 여기서 끊는다 — 아래 isBefore 와 switch 가 둘 다 null 을 못 견뎌
+        // 종전엔 NullPointerException 이 그대로 500 으로 나갔다(QA 2026-09-07 #85).
+        // DTO 에도 @NotNull 이 있지만, 계산이 생성·수정 두 경로에서 같은 자리를 지나므로
+        // 여기 한 줄이 그 둘을 함께 지킨다.
+        if (startDate == null || frequency == null) {
+            throw new InvalidValueException(DeskErrorCode.REQUIRED_VALUE_MISSING);
+        }
         LocalDate today = serviceClock.today();
         LocalDate nextDate = startDate;
 

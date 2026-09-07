@@ -124,12 +124,12 @@ class AssetHoldingUniquenessTest {
 
     private static AssetServiceDto.HoldingCommand linked(Long rowId, String symbol, String qty) {
         return new AssetServiceDto.HoldingCommand(rowId, HoldingType.STOCK, true, null, symbol,
-            qty == null ? null : new BigDecimal(qty), null, null, null);
+            qty == null ? null : new BigDecimal(qty), null, null, null, null);
     }
 
     private static AssetServiceDto.HoldingCommand manual(Long rowId, String name, Long value) {
         return new AssetServiceDto.HoldingCommand(rowId, HoldingType.STOCK, false, null, null,
-            null, name, value, null);
+            null, name, value, null, null);
     }
 
     /** 이미 저장돼 있는 활성 보유를 만들어 둔다. */

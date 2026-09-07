@@ -6,10 +6,13 @@ import com.porest.core.type.YNType;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.common.validation.AmountLimits;
+import com.porest.desk.common.validation.ColorFormat;
 import com.porest.desk.common.validation.FieldLimits;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -51,6 +54,7 @@ public class AssetApiDto {
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
         java.math.BigDecimal exchangeRate,
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
         String institution,
         String memo,
@@ -86,6 +90,7 @@ public class AssetApiDto {
         String currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
         java.math.BigDecimal exchangeRate,
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
         String institution,
         String memo,
@@ -123,12 +128,25 @@ public class AssetApiDto {
         String holdingName,
         Long holdingValue,
         /** 총 매수원가 (원화). 실현손익의 기준 — 미지정이면 0 으로 시작한다. */
-        Long totalCost
+        Long totalCost,
+        /**
+         * 목록에서의 자리 — <b>선택</b>. 안 보내면 <b>보낸 배열의 인덱스</b>가 자리가 된다.
+         *
+         * <p>종전엔 이 필드가 아예 없어 실어 보내도 Jackson 이 조용히 버렸다(QA 2026-09-07 #91).
+         * 지금은 보내온 값이 이긴다.
+         *
+         * <p><b>기본값이 0 이 아니라 배열 인덱스인 이유.</b> 보유는 순서 변경 API 가 따로 없고
+         * 목록을 통째로 실어 보내는 것이 곧 순서 지정이다. 안 보낸 줄을 전부 0 으로 두면 여러 줄이
+         * 같은 값이 되어 정렬이 {@code rowId asc} 로 떨어지고, 줄을 끌어 옮긴 뒤 저장한 순서가
+         * 조용히 사라진다. 앱은 이 필드를 <b>일부러 안 싣고</b> 배열 순서에 기댄다
+         * ({@code asset_repository.dart} 의 {@code _holdingBody}) — 그 계약을 그대로 지킨다.
+         */
+        Integer sortOrder
     ) {
         public AssetServiceDto.HoldingCommand toCommand() {
             return new AssetServiceDto.HoldingCommand(
                 rowId, holdingType, linked, marketCode, tossSymbol, quantity,
-                holdingName, holdingValue, totalCost);
+                holdingName, holdingValue, totalCost, sortOrder);
         }
 
         public static List<AssetServiceDto.HoldingCommand> toCommands(List<HoldingRequest> requests) {
@@ -303,8 +321,22 @@ public class AssetApiDto {
     }
 
     // === Asset Transfer ===
+
+    /**
+     * 이체는 <b>양쪽 자산이 다 있어야</b> 성립한다 — 하나라도 빠지면 종전엔 500 이었다
+     * (QA 2026-09-07 #85). 검증이 두 자산을 조건 없이 조회하는데, QueryDSL 은 {@code eq(null)} 을
+     * {@code IllegalArgumentException} 으로 거절하고 그것이 {@code @Repository} 프록시에서
+     * {@code InvalidDataAccessApiUsageException} 으로 번역돼 매핑이 없는 채로 500 이 됐다(H2 로 재현).
+     *
+     * <p>이 record 는 생성과 수정이 함께 쓴다 — 수정도 두 자산으로 부수효과(이자 지출 · 잔액 이력)를
+     * 다시 만들므로 요구가 같다. 웹({@code AssetTransferFormValues} 필수 필드)·앱
+     * ({@code required int fromAssetRowId/toAssetRowId}) 모두 항상 둘을 보낸다
+     * (2026-09-07 양쪽 코드로 확인).
+     */
     public record CreateTransferRequest(
+        @NotNull(message = "보내는 자산을 골라 주세요")
         Long fromAssetRowId,
+        @NotNull(message = "받는 자산을 골라 주세요")
         Long toAssetRowId,
         Long amount,
         Long fee,

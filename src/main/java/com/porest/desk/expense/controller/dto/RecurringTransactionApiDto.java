@@ -9,6 +9,7 @@ import com.porest.desk.expense.type.RecurringFrequency;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -24,6 +25,22 @@ public class RecurringTransactionApiDto {
      * 거래를 찍었다(QA 2026-09-03 #54). 길이는 컬럼 폭(description 500 · merchant 100)이다.
      */
 
+    /**
+     * {@code frequency} · {@code startDate} 는 <b>있어야 한다</b> — 없으면 종전엔 500 이었다
+     * (QA 2026-09-07 #85). 생성·수정 모두 저장 전에 다음 실행일을 계산하는데, 그 계산이
+     * {@code startDate.isBefore(오늘)} 과 {@code switch (frequency)} 로 시작해 둘 중 하나만
+     * 없어도 {@code NullPointerException} 이 났다(H2 로 재현). 조회도 저장도 못 가 보고 터진다.
+     *
+     * <p>{@code dayOfMonth} 는 <b>1~31</b> 이다. 종전엔 32 도 200 이었는데, 스케줄러가
+     * {@code min(dayOfMonth, 그 달의 마지막 날)} 로 접기 때문에 32 는 <b>31 과 똑같이</b> 동작한다 —
+     * 사용자가 없는 날짜를 골랐다는 사실만 조용히 사라진다. 31 은 그대로 받는다: 같은 접기 덕에
+     * 2월엔 28·29일에 도는 "말일" 이라는 뜻이 되고, 이건 매달 마지막 날에 나가는 이체·구독을
+     * 적는 유일한 방법이다.
+     *
+     * <p>웹({@code RecurringTransactionFormValues.frequency/startDate} 필수)·앱
+     * ({@code required String frequency/startDate}) 모두 항상 함께 보내고, 날짜는 달력에서
+     * 고른 1~31 이다(2026-09-07 양쪽 코드로 확인).
+     */
     @Schema(name = "RecurringTransactionCreateRequest")
     public record CreateRequest(
         Long categoryRowId,
@@ -38,11 +55,15 @@ public class RecurringTransactionApiDto {
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
+        @NotNull(message = "얼마나 자주 반복할지 골라 주세요")
         RecurringFrequency frequency,
         Integer intervalValue,
         Integer dayOfWeek,
+        @Min(value = 1, message = "반복할 날짜는 1일부터 31일까지 고를 수 있어요")
+        @Max(value = 31, message = "반복할 날짜는 1일부터 31일까지 고를 수 있어요")
         Integer dayOfMonth,
         LocalTime executionTime,
+        @NotNull(message = "시작일을 골라 주세요")
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -63,11 +84,15 @@ public class RecurringTransactionApiDto {
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
+        @NotNull(message = "얼마나 자주 반복할지 골라 주세요")
         RecurringFrequency frequency,
         Integer intervalValue,
         Integer dayOfWeek,
+        @Min(value = 1, message = "반복할 날짜는 1일부터 31일까지 고를 수 있어요")
+        @Max(value = 31, message = "반복할 날짜는 1일부터 31일까지 고를 수 있어요")
         Integer dayOfMonth,
         LocalTime executionTime,
+        @NotNull(message = "시작일을 골라 주세요")
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,

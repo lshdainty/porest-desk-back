@@ -96,7 +96,9 @@ public class AssetServiceDto {
         String holdingName,
         Long holdingValue,
         /** 총 매수원가 (원화). null 이면 기존 값 유지 — 실현손익 계산의 기준이다. */
-        Long totalCost
+        Long totalCost,
+        /** 목록에서의 자리. null 이면 보낸 배열의 인덱스가 자리가 된다(QA 2026-09-07 #91). */
+        Integer sortOrder
     ) {}
 
     public record HoldingInfo(

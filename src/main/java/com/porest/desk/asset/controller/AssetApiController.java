@@ -149,7 +149,7 @@ public class AssetApiController {
     @PostMapping("/asset-transfer")
     public ApiResponse<AssetApiDto.TransferResponse> createTransfer(
             @LoginUser UserPrincipal loginUser,
-            @RequestBody AssetApiDto.CreateTransferRequest request) {
+            @Valid @RequestBody AssetApiDto.CreateTransferRequest request) {
         AssetServiceDto.TransferInfo info = assetService.createTransfer(new AssetServiceDto.CreateTransferCommand(
             loginUser.getRowId(),
             request.fromAssetRowId(), request.toAssetRowId(),
@@ -173,7 +173,7 @@ public class AssetApiController {
     public ApiResponse<AssetApiDto.TransferResponse> updateTransfer(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id,
-            @RequestBody AssetApiDto.CreateTransferRequest request) {
+            @Valid @RequestBody AssetApiDto.CreateTransferRequest request) {
         AssetServiceDto.TransferInfo info = assetService.updateTransfer(id,
             new AssetServiceDto.CreateTransferCommand(
                 loginUser.getRowId(), request.fromAssetRowId(), request.toAssetRowId(),

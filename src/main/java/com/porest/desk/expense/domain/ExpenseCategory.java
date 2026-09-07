@@ -70,6 +70,17 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static ExpenseCategory createCategory(User user, String categoryName, String icon, String color, ExpenseType expenseType, ExpenseCategory parent) {
+        return createCategory(user, categoryName, icon, color, expenseType, parent, null);
+    }
+
+    /**
+     * 자리(sortOrder)까지 지정해 만든다 — 안 주면 0(맨 앞)이다.
+     *
+     * <p>종전엔 {@code sortOrder = 0} 을 <b>무조건</b> 박아서, 클라이언트가 자리를 실어 보내도
+     * 만들어진 카테고리는 늘 맨 앞이었다(QA 2026-09-07 #91). {@code SavingGoal}·{@code AssetHolding}
+     * 은 이미 삼항이라 이 자리만 어긋나 있었다.
+     */
+    public static ExpenseCategory createCategory(User user, String categoryName, String icon, String color, ExpenseType expenseType, ExpenseCategory parent, Integer sortOrder) {
         ExpenseCategory category = new ExpenseCategory();
         category.user = user;
         category.categoryName = categoryName;
@@ -77,7 +88,7 @@ public class ExpenseCategory extends AuditingFieldsWithIp {
         category.color = color;
         category.expenseType = expenseType;
         category.parent = parent;
-        category.sortOrder = 0;
+        category.sortOrder = sortOrder != null ? sortOrder : 0;
         category.isDeleted = YNType.N;
         return category;
     }

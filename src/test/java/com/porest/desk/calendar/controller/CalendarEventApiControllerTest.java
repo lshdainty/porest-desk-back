@@ -63,10 +63,10 @@ class CalendarEventApiControllerTest {
     private CalendarEventServiceDto.EventInfo sampleInfo() {
         return new CalendarEventServiceDto.EventInfo(
                 10L, 1L, "회의", "설명",
-                CalendarEventType.WORK, "#fff",
+                CalendarEventType.WORK, "#ffffff",
                 LocalDateTime.of(2026, 7, 3, 10, 0), LocalDateTime.of(2026, 7, 3, 11, 0),
                 YNType.N, null, null, null, null, null, null, YNType.N,
-                List.of(), 40L, "내캘린더", "#0f0", null, null);
+                List.of(), 40L, "내캘린더", "#00ff00", null, null);
     }
 
     @Test
@@ -75,7 +75,7 @@ class CalendarEventApiControllerTest {
         given(calendarEventService.createEvent(any())).willReturn(sampleInfo());
 
         String body = """
-                {"title":"회의","description":"설명","eventType":"WORK","color":"#fff",
+                {"title":"회의","description":"설명","eventType":"WORK","color":"#ffffff",
                  "startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00",
                  "isAllDay":"N","reminderMinutes":[10,30],"calendarRowId":40}
                 """;

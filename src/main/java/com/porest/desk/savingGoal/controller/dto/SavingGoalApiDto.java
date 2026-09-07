@@ -2,10 +2,12 @@ package com.porest.desk.savingGoal.controller.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.validation.AmountLimits;
+import com.porest.desk.common.validation.ColorFormat;
 import com.porest.desk.savingGoal.service.dto.SavingGoalServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -30,6 +32,7 @@ public class SavingGoalApiDto {
         String currency,
         LocalDate deadlineDate,
         String icon,
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
         Long linkedAssetRowId,
         Integer sortOrder
@@ -43,6 +46,7 @@ public class SavingGoalApiDto {
         Long targetAmount,
         LocalDate deadlineDate,
         String icon,
+        @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
         Long linkedAssetRowId
     ) {}

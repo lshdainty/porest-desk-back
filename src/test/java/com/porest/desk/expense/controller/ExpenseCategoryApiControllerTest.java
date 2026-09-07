@@ -56,7 +56,7 @@ class ExpenseCategoryApiControllerTest {
 
     private ExpenseCategoryServiceDto.CategoryInfo sampleInfo() {
         return new ExpenseCategoryServiceDto.CategoryInfo(
-                100L, 1L, "식비", "utensils", "#fff",
+                100L, 1L, "식비", "utensils", "#ffffff",
                 ExpenseType.EXPENSE, 0, null, false, null, null);
     }
 
@@ -66,7 +66,7 @@ class ExpenseCategoryApiControllerTest {
         given(expenseCategoryService.createCategory(any())).willReturn(sampleInfo());
 
         String body = """
-                {"categoryName":"식비","icon":"utensils","color":"#fff","expenseType":"EXPENSE"}
+                {"categoryName":"식비","icon":"utensils","color":"#ffffff","expenseType":"EXPENSE"}
                 """;
 
         mockMvc.perform(post("/api/v1/expense/category")
