@@ -228,8 +228,9 @@ public class DutchPayServiceImpl implements DutchPayService {
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         matched.stream().filter(java.util.Objects::nonNull).forEach(kept::add);
 
+        // 결제자를 못 정하면 여기서 던진다 — 아래 삭제 루프보다 앞이라 아무것도 지워지지 않는다.
         int payerIndex = resolveUpdatePayerIndex(participants, matched, dutchPay.getPayer());
-        DutchPayParticipant nextPayer = payerIndex >= 0 ? matched.get(payerIndex) : null;
+        DutchPayParticipant nextPayer = matched.get(payerIndex);
 
         // ── ① 목록에서 빠진 참가자를 <b>먼저</b> 지운다. id 로 매칭되지 않은 것도 여기 걸린다.
         for (DutchPayParticipant pt : existing) {
@@ -274,7 +275,11 @@ public class DutchPayServiceImpl implements DutchPayService {
     }
 
     private void addParticipants(DutchPay dutchPay, List<DutchPayServiceDto.ParticipantCommand> participants) {
-        if (participants == null) return;
+        // 참가자 0명은 결제자 0명이다 — 개수는 컨트롤러 @NotEmpty 가 먼저 끊지만, 서비스로
+        // 바로 들어오는 호출까지 같은 규칙을 지나게 여기서도 본다.
+        if (participants == null || participants.isEmpty()) {
+            throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+        }
         List<String> names = validateNoDuplicateParticipants(participants);
         int payerIndex = resolveCreatePayerIndex(participants);
         for (int i = 0; i < participants.size(); i++) {
@@ -296,21 +301,29 @@ public class DutchPayServiceImpl implements DutchPayService {
     }
 
     /**
-     * <b>생성</b>에서 결제자가 목록의 몇 번째인지 정한다. 한 정산에 결제자는 한 명이다.
-     *
-     * <p>아무도 표시돼 있지 않으면 <b>첫 사람</b>을 결제자로 본다. 이 필드를 모르는 구버전
-     * 앱이 여전히 정산을 만들 수 있어야 해서다 — 앱은 사용자가 원할 때 올리는 거라 백엔드보다
-     * 늦게 갱신되는 기간이 반드시 생긴다. 기존 데이터를 마이그레이션이 채운 규칙과 같다.
+     * <b>생성</b>에서 결제자가 목록의 몇 번째인지 정한다. 한 정산에 결제자는 <b>반드시 한 명</b>이다.
      *
      * <p>둘 이상이면 거부한다. 그건 클라이언트 버그이고, 넘어가면 화면마다 다른 사람을
-     * 결제자로 그리던 예전 증상으로 되돌아간다.
+     * 결제자로 그리던 예전 증상으로 되돌아간다. <b>0명도 거부한다</b>(QA 2026-09-07 #80) —
+     * 다만 그 전에 {@link #isPayerAware 이 필드를 아는 요청인지}를 본다.
+     *
+     * <p><b>왜 아는 요청만 거부하나.</b> 결제자를 0명으로 두면 {@code getDebtors()} 가 전원을
+     * 갚을 사람으로 돌려줘 전체 정산이 <b>돈 낸 사람까지</b> 납부 처리하고, 화면은 화면대로 첫
+     * 사람을 결제자처럼 그린다 — 서버와 화면이 갈린다. 그래서 새 클라이언트에는 "한 명 골라
+     * 주세요" 로 답한다. 반대로 이 필드를 <b>모르는</b> 구버전 앱은 골라 보낼 방법이 없다.
+     * 거기까지 거부하면 앱을 안 올린 사용자가 정산을 아예 못 만든다 — 스토어를 안 쓰는 앱이라
+     * 자동 업데이트가 없고, 하한({@code min_build.json})도 0 이라 옛 빌드가 그대로 붙는다.
+     * 그래서 <b>폴백은 구버전 호환용으로만 남긴다</b>: 목록 어디에도 키가 없을 때만 첫 사람이다.
+     * 기존 데이터를 마이그레이션이 채우는 규칙(첫 참가자)과 같은 규칙이다.
      *
      * <p><b>수정은 이 폴백을 쓰면 안 된다</b> — 지킬 값이 이미 있기 때문이다.
      * {@link #resolveUpdatePayerIndex} 를 봐라.
      */
     private int resolveCreatePayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants) {
         int marked = markedPayerIndex(participants);
-        return marked >= 0 ? marked : 0;
+        if (marked >= 0) return marked;
+        requireInferablePayer(participants);
+        return 0;
     }
 
     /**
@@ -325,26 +338,67 @@ public class DutchPayServiceImpl implements DutchPayService {
      * <p>그래서 수정의 규칙은 <b>표시 없음 = 안 건드림</b> 이다. 생성 폴백은 구버전 앱을
      * 위한 것이라 그 자리에 그대로 둔다 — 만들 때는 지킬 값이 아직 없어 무언가는 골라야 한다.
      *
-     * <p>지킬 대상이 없을 때만 — 원래 결제자가 없었거나, 이번 요청에서 그 사람이 목록에서
-     * 빠졌을 때 — 생성과 같은 규칙으로 되돌아간다. 결제자를 0명으로 두면 {@code getDebtors()}
-     * 가 전원을 돌려줘 전체 정산이 결제자까지 납부 처리하고, 화면은 화면대로 첫 사람을
-     * 결제자처럼 그린다(서버·화면이 갈린다). 지킬 것이 없으면 추측이 아니라 규칙이다.
+     * <p>단 <b>"안 건드림" 은 표시를 안 실은 요청에만 준다</b>(QA 2026-09-07 #80). 이 필드를
+     * 아는 요청이 전원 {@code false} 로 왔다면 그건 "아무도 안 냈다" 는 주장이라, 저장된
+     * 결제자를 슬쩍 지켜 200 을 주면 클라이언트가 보낸 값과 서버 값이 갈린다 — 화면과 데이터가
+     * 어긋나던 그 증상으로 되돌아간다. 그래서 {@link #requireInferablePayer} 가
+     * <b>지킬 값을 꺼내기 전에</b> 400 으로 끊는다.
+     *
+     * <p>표시가 없고 지킬 대상도 없으면 — 원래 결제자가 없었거나 이번 요청에서 그 사람이
+     * 목록에서 빠졌으면 — 생성과 같은 규칙(첫 사람)으로 되돌아간다.
+     *
+     * <p>목록이 비었으면 결제자를 정할 방법이 아예 없다. 참가자 전원 삭제는 컨트롤러
+     * {@code @Size(min = 1)} 가 먼저 막지만, 서비스로 바로 들어와도 같은 답이다.
      *
      * @param matched 요청 i 번째에 대응하는 기존 행(없으면 신규라 {@code null})
      * @param currentPayer 저장돼 있던 결제자. 없으면 {@code null}
-     * @return 결제자 인덱스. 목록이 비어 결제자를 정할 수 없으면 {@code -1}
+     * @return 결제자 인덱스. 항상 유효한 값이다 — 정할 수 없으면 돌려주지 않고 던진다
      */
     private int resolveUpdatePayerIndex(List<DutchPayServiceDto.ParticipantCommand> participants,
                                         List<DutchPayParticipant> matched,
                                         DutchPayParticipant currentPayer) {
         int marked = markedPayerIndex(participants);
         if (marked >= 0) return marked;
+        // 표시가 없는 요청만 여기 온다 — 지킬 값을 꺼내기 전에 "추측해도 되는 요청인지" 부터 본다.
+        // 순서가 반대면 <b>전원 false</b> 로 온 요청이 저장된 결제자를 그대로 유지하며 200 이 되어,
+        // 명시적으로 "아무도 안 냈다" 고 말한 클라이언트와 서버 값이 조용히 어긋난다.
+        requireInferablePayer(participants);
         if (currentPayer != null) {
             for (int i = 0; i < matched.size(); i++) {
                 if (matched.get(i) == currentPayer) return i;
             }
         }
-        return participants.isEmpty() ? -1 : 0;
+        return 0;
+    }
+
+    /**
+     * 결제자 표시가 없는 요청이다 — 서버가 <b>추측해도 되는</b> 요청인지 보고, 아니면 400 으로 끊는다.
+     *
+     * <p>추측이 허용되는 조건은 둘이다: 참가자가 <b>한 명 이상</b>일 것(0명이면 고를 사람 자체가
+     * 없다)과, 이 요청이 {@code isPayer} 를 <b>모를 것</b>. 아는 요청이 아무도 표시하지 않았다면
+     * 그건 "결제자가 없는 정산" 을 만들겠다는 뜻이라, 추측으로 메우지 않고 되돌려 보낸다.
+     */
+    private void requireInferablePayer(List<DutchPayServiceDto.ParticipantCommand> participants) {
+        if (participants.isEmpty() || isPayerAware(participants)) {
+            log.warn("더치페이 결제자 없음 - participantCount={}", participants.size());
+            throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+        }
+    }
+
+    /**
+     * 보낸 쪽이 {@code isPayer} 를 아는가 — 한 명이라도 이 키를 실었으면 안다.
+     *
+     * <p>구버전 앱과 "결제자를 안 고른 새 클라이언트" 를 가르는 유일한 신호다. 값이 아니라
+     * <b>키가 왔는지</b>를 본다: 아는 클라이언트는 고르지 않은 사람에게도 {@code false} 를
+     * 싣기 때문에, 값만 보면 둘이 똑같이 "true 가 하나도 없음" 으로 보인다.
+     *
+     * <p>이 신호가 흐려지는 경우는 하나뿐이다 — 이 필드를 <b>일부 참가자에만</b> 싣는
+     * 클라이언트. 지금은 없다(웹·앱 모두 한 커밋에서 전원에 붙였다, 2026-09-07 확인).
+     * 그런 요청이 오면 "안다" 로 읽어 400 을 준다 — 안전한 쪽이다. 첫 사람을 추측해
+     * 조용히 저장하는 것보다, 누가 냈는지 다시 물어보는 편이 낫다.
+     */
+    private boolean isPayerAware(List<DutchPayServiceDto.ParticipantCommand> participants) {
+        return participants.stream().anyMatch(pc -> pc.isPayer() != null);
     }
 
     /** 요청에 결제자로 표시된 사람의 인덱스. 아무도 없으면 -1, 둘 이상이면 거부(클라이언트 버그). */

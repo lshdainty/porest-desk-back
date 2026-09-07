@@ -36,6 +36,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * 더치페이 서비스 소유권 가드 회귀 방지 단위 테스트.
@@ -900,5 +902,179 @@ class DutchPayServiceImplTest {
 
         assertThat(debtor.getIsPaid()).isEqualTo(YNType.Y);
         assertThat(payer.getIsPaid()).isEqualTo(YNType.N);
+    }
+
+    /**
+     * 결제자는 <b>반드시 한 명</b>이다(사용자 결정, QA 2026-09-07 #80) — 0명을 만들 수 있는 길을
+     * 전부 막는다. 그 길은 셋이었다: 생성에서 아무도 안 고르기 · 수정에서 결제자를 내려놓기 ·
+     * 참가자를 전원 지우기(사람이 0명이면 결제자도 0명이다).
+     *
+     * <p>막는 자리와 <b>안 막는 자리</b>를 가르는 것은 요청이 {@code isPayer} 를 아는지다.
+     * 구버전 앱은 이 필드를 모르므로 고를 방법이 없다 — 거기까지 400 을 주면 앱을 안 올린
+     * 사용자가 정산을 아예 못 만든다(스토어를 안 써서 자동 업데이트가 없고 {@code min_build}
+     * 하한도 0 이다). 그래서 <b>키가 아예 없는 요청에만</b> 첫 사람 폴백을 남긴다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code requireInferablePayer} 의 본문을 지우면
+     * 이 묶음의 400 기대가 전부 깨지고, {@code isPayerAware} 를 {@code false} 고정으로 바꾸면
+     * 새 클라이언트의 "아무도 안 골랐다" 가 다시 조용히 첫 사람으로 저장된다.
+     */
+    @Nested
+    @DisplayName("결제자 0명 — 만들 수 있는 길을 전부 막는다")
+    class PayerRequired {
+
+        @Test
+        @DisplayName("생성 — isPayer 를 아는 요청이 아무도 안 고르면 400")
+        void createRejectsWhenPayerAwareClientMarksNobody() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            // 새 클라이언트는 안 고른 사람에게도 false 를 싣는다 — 값만 보면 구버전과 같아 보인다.
+            var cmd = createWith(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "A", 10_000L, false),
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "B", 10_000L, false)));
+
+            assertThatThrownBy(() -> sut.createDutchPay(cmd))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+            verify(dutchPayRepository, never()).save(any());
+        }
+
+        /**
+         * 같은 요청이 키를 <b>아예 안 실으면</b> 통과한다 — 이 대비가 이 항목의 전부다.
+         * ({@link DutchPayServiceImplTest#createFallsBackToFirstParticipantAsPayer} 가 그 쪽을 지킨다.)
+         */
+        @Test
+        @DisplayName("생성 — 일부만 isPayer 를 실어도 '아는 요청' 으로 보고 400")
+        void createTreatsPartiallyMarkedRequestAsPayerAware() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            var cmd = createWith(List.of(
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "A", 10_000L, false),
+                    new DutchPayServiceDto.ParticipantCommand(null, null, "B", 10_000L, null)));
+
+            // 첫 사람을 추측해 저장하는 것보다 누가 냈는지 다시 묻는 편이 낫다.
+            assertThatThrownBy(() -> sut.createDutchPay(cmd))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+        }
+
+        /**
+         * 빈 배열과 {@code null} 둘 다 막는다 — 생성에서는 뜻이 같다("나눌 사람이 없다").
+         * 수정에서만 {@code null} 이 "참가자는 안 건드린다" 라는 다른 뜻을 가진다.
+         */
+        @Test
+        @DisplayName("생성 — 참가자가 0명이면 400(고를 사람 자체가 없다)")
+        void createRejectsEmptyParticipants() {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+            assertThatThrownBy(() -> sut.createDutchPay(createWith(List.of())))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+            assertThatThrownBy(() -> sut.createDutchPay(createWith(null)))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+            verify(dutchPayRepository, never()).save(any());
+        }
+
+        /**
+         * 저장된 결제자가 목록에 그대로 있어도 <b>전원 false</b> 면 거부한다.
+         *
+         * <p>"표시 없음 = 안 건드림"(#315) 은 표시를 <b>안 실은</b> 요청에만 준다. 아는 요청이
+         * 전원 false 로 말했는데 서버가 슬쩍 기존 결제자를 지키면, 클라이언트가 보낸 값과 저장된
+         * 값이 갈려 화면과 데이터가 어긋나던 그 증상으로 되돌아간다.
+         */
+        @Test
+        @DisplayName("수정 — 전원 false 면 기존 결제자를 지키지 않고 400")
+        void updateRejectsWhenPayerAwareClientUnmarksEveryone() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant other = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(payer, "rowId", 101L);
+            ReflectionTestUtils.setField(other, "rowId", 102L);
+            dp.addParticipant(payer);
+            dp.addParticipant(other);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+
+            var cmd = new DutchPayServiceDto.UpdateCommand(
+                "회식", null, 100_000L, "KRW", SplitMethod.EQUAL, LocalDate.of(2026, 8, 1),
+                List.of(
+                    new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 50_000L, false),
+                    new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 50_000L, false)));
+
+            assertThatThrownBy(() -> sut.updateDutchPay(1L, USER_ID, cmd))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+            // 저장된 결제자는 그대로다 — 거절은 아무것도 바꾸지 않는다.
+            assertThat(payer.isPayer()).isTrue();
+        }
+
+        /**
+         * 참가자 전원 삭제({@code participants: []})도 결제자 0명을 만든다 — 같은 자리에서 막는다.
+         *
+         * <p>컨트롤러 {@code @Size(min = 1)} 가 먼저 끊지만 서비스에도 둔다. 그리고 <b>끊는
+         * 시점</b>이 중요하다: 요청에서 빠진 참가자를 지우는 루프보다 앞이라, 거절된 요청이
+         * 참가자를 반쯤 지워 두고 나가지 않는다.
+         */
+        @Test
+        @DisplayName("수정 — participants 빈 배열은 400이고 기존 참가자를 지우지 않는다")
+        void updateRejectsEmptyParticipantsWithoutDeletingAnyone() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant other = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(payer, "rowId", 101L);
+            ReflectionTestUtils.setField(other, "rowId", 102L);
+            dp.addParticipant(payer);
+            dp.addParticipant(other);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+
+            var cmd = new DutchPayServiceDto.UpdateCommand(
+                "회식", null, 100_000L, "KRW", SplitMethod.EQUAL, LocalDate.of(2026, 8, 1),
+                List.of());
+
+            assertThatThrownBy(() -> sut.updateDutchPay(1L, USER_ID, cmd))
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                    .isEqualTo(DeskErrorCode.DUTCH_PAY_PAYER_REQUIRED);
+            assertThat(dp.getActiveParticipants()).hasSize(2);
+            assertThat(payer.getIsDeleted()).isEqualTo(YNType.N);
+            assertThat(other.getIsDeleted()).isEqualTo(YNType.N);
+        }
+
+        /**
+         * 구버전 앱의 수정은 그대로 통과한다 — 키가 없으면 저장된 결제자를 지킨다(#315).
+         * 여기가 깨지면 옛 앱이 금액 한 줄도 못 고친다.
+         */
+        @Test
+        @DisplayName("수정 — 키를 아예 안 실은 요청은 여전히 통과하고 결제자를 지킨다")
+        void updateWithoutTheFieldStillKeepsStoredPayer() {
+            User u = user(USER_ID);
+            DutchPay dp = DutchPay.createDutchPay(u, null, "회식", null, 100_000L, "KRW",
+                SplitMethod.EQUAL, LocalDate.of(2026, 8, 1));
+            DutchPayParticipant payer = DutchPayParticipant.create(dp, null, "김철수", 50_000L, true);
+            DutchPayParticipant other = DutchPayParticipant.create(dp, null, "박영희", 50_000L, false);
+            ReflectionTestUtils.setField(payer, "rowId", 101L);
+            ReflectionTestUtils.setField(other, "rowId", 102L);
+            dp.addParticipant(payer);
+            dp.addParticipant(other);
+            given(dutchPayRepository.findById(1L)).willReturn(Optional.of(dp));
+            given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+            sut.updateDutchPay(1L, USER_ID, new DutchPayServiceDto.UpdateCommand(
+                "회식", null, 100_000L, "KRW", SplitMethod.EQUAL, LocalDate.of(2026, 8, 1),
+                List.of(
+                    new DutchPayServiceDto.ParticipantCommand(101L, null, "김철수", 40_000L, null),
+                    new DutchPayServiceDto.ParticipantCommand(102L, null, "박영희", 60_000L, null))));
+
+            assertThat(payer.isPayer()).isTrue();
+            assertThat(other.isPayer()).isFalse();
+        }
     }
 }

@@ -101,7 +101,19 @@ public class DutchPay extends AuditingFieldsWithIp {
             .orElse(null);
     }
 
-    /** 결제자에게 갚아야 할 사람들 — 받을 돈·정산 완료 판정의 대상. */
+    /**
+     * 결제자에게 갚아야 할 사람들 — 받을 돈·정산 완료 판정의 대상.
+     *
+     * <p><b>결제자가 0명이면 전원이 여기 담긴다.</b> 그 상태에서 {@link #settleAll()} 은 돈을
+     * 낸 사람까지 납부 처리하고 {@link #checkSettled()} 는 그 사람의 입금을 기다린다.
+     * 새로 들어오는 요청은 결제자를 반드시 한 명 담게 됐지만(QA 2026-09-07 #80, 입구에서
+     * 400) <b>이미 저장된 0명짜리 행은 그대로 남아 있어</b> 이 분기가 계속 필요하다 —
+     * 마이그레이션이 그 행들을 채우기 전까지 이 동작이 그 행들의 유일한 정의다.
+     *
+     * <p>그래서 이 분기를 <b>지우지 않는다.</b> 여기서 "결제자가 없으면 전원이 채무자" 를
+     * 빼면 0명짜리 행이 조용히 "받을 돈 없음" 으로 바뀌어, 고쳐야 할 데이터가 화면에서
+     * 정상으로 보이게 된다 — 마이그레이션이 세어야 할 대상이 사라진다.
+     */
     public List<DutchPayParticipant> getDebtors() {
         return getActiveParticipants().stream()
             .filter(p -> !p.isPayer())

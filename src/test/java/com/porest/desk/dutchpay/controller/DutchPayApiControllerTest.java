@@ -201,12 +201,20 @@ class DutchPayApiControllerTest {
         assertThat(captor.getValue().participants()).isNull();
     }
 
-    /** 반대로 <b>빈 배열</b>은 "비워라" 라는 뜻이라 그대로 전달한다. */
+    /**
+     * 반대로 <b>빈 배열</b>은 "전원 지워라" 라는 뜻이고, 그건 결제자까지 0명으로 만든다 —
+     * 이제 400 이다(사용자 결정, QA 2026-09-07 #80). 종전엔 이 테스트가 <b>200 을 계약으로
+     * 박아 두고 있었다.</b>
+     *
+     * <p>키를 <b>안 보낸</b> PUT 은 그대로 200 이다({@link #updateWithoutParticipantsPassesNull}) —
+     * 그 둘은 여전히 서로 다른 요청이고, 이 항목이 막는 것은 "비워라" 쪽뿐이다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code UpdateRequest.participants} 의
+     * {@code @Size(min = 1)} 을 지우면 이 테스트가 곧바로 깨진다.
+     */
     @Test
-    @DisplayName("PUT /dutch-pay/{id} — participants 빈 배열은 빈 목록으로 그대로 넘긴다")
-    void updateWithEmptyParticipantsPassesEmptyList() throws Exception {
-        given(dutchPayService.updateDutchPay(eq(100L), eq(1L), any())).willReturn(sampleDutchPay());
-
+    @DisplayName("PUT /dutch-pay/{id} — participants 빈 배열은 400 (종전 200: 참가자·결제자 전원 삭제)")
+    void updateWithEmptyParticipantsIsRejected() throws Exception {
         String body = """
                 {"title":"수정 정산","totalAmount":40000,"splitMethod":"CUSTOM",
                  "dutchPayDate":"2026-08-01","participants":[]}
@@ -215,11 +223,43 @@ class DutchPayApiControllerTest {
         mockMvc.perform(put("/api/v1/dutch-pay/{id}", 100L)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
+                .andExpect(status().isBadRequest());
+
+        // 지우기 전에 끊는다 — 서비스까지 가면 이미 늦다.
+        verify(dutchPayService, never()).updateDutchPay(eq(100L), eq(1L), any());
+    }
+
+    /**
+     * {@code isPayer} 는 <b>키가 왔는지</b>가 뜻을 가진다 — 서비스가 그것으로 구버전 앱과
+     * "결제자를 안 고른 새 클라이언트" 를 가른다(#80). 그 구분이 성립하려면 역직렬화가
+     * 세 가지를 서로 다르게 넘겨야 한다: 키 없음 → {@code null}, {@code false} → {@code FALSE}.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code ParticipantRequest.isPayer} 를 {@code boolean}
+     * 으로 바꾸면 키 없음이 {@code false} 로 뭉개져 첫 단언이 깨진다. 그러면 서버는 구버전 앱의
+     * 요청까지 "결제자를 안 골랐다" 로 읽어 400 을 주게 된다.
+     */
+    @Test
+    @DisplayName("POST /dutch-pay — isPayer 는 '키 없음(null)' 과 'false' 를 구분해 넘긴다")
+    void createKeepsAbsentAndFalseIsPayerApart() throws Exception {
+        given(dutchPayService.createDutchPay(any())).willReturn(sampleDutchPay());
+
+        String body = """
+                {"title":"정산","totalAmount":30000,"splitMethod":"EQUAL","dutchPayDate":"2026-07-03",
+                 "participants":[{"participantName":"키없음","amount":10000},
+                                 {"participantName":"명시false","amount":10000,"isPayer":false},
+                                 {"participantName":"결제자","amount":10000,"isPayer":true}]}
+                """;
+
+        mockMvc.perform(post("/api/v1/dutch-pay")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
                 .andExpect(status().isOk());
 
-        var captor = ArgumentCaptor.forClass(DutchPayServiceDto.UpdateCommand.class);
-        verify(dutchPayService).updateDutchPay(eq(100L), eq(1L), captor.capture());
-        assertThat(captor.getValue().participants()).isEmpty();
+        var captor = ArgumentCaptor.forClass(DutchPayServiceDto.CreateCommand.class);
+        verify(dutchPayService).createDutchPay(captor.capture());
+        assertThat(captor.getValue().participants())
+                .extracting(DutchPayServiceDto.ParticipantCommand::isPayer)
+                .containsExactly(null, false, true);
     }
 
     @Test

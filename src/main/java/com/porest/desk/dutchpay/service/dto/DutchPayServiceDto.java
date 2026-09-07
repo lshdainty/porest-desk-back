@@ -45,7 +45,14 @@ public class DutchPayServiceDto {
         Long userRowId,
         String participantName,
         Long amount,
-        /** 이 사람이 결제했는가. 미지정(null)이면 서버가 첫 사람을 결제자로 본다. */
+        /**
+         * 이 사람이 결제했는가. 한 정산에 반드시 한 명이다.
+         *
+         * <p>{@code null} 은 "안 보냈다" 다 — {@code false}(안 냈다고 명시)와 다른 뜻이라
+         * {@code boolean} 이 아니다. 목록 전체가 {@code null} 이면 이 필드를 모르는 구버전
+         * 클라이언트라 서버가 첫 사람을 결제자로 보고, 하나라도 값이 실려 있는데 {@code true}
+         * 가 없으면 400 이다.
+         */
         Boolean isPayer
     ) {}
 
