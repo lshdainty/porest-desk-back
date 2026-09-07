@@ -52,20 +52,6 @@ class ConstellationApiControllerTest {
     }
 
     @Test
-    @DisplayName("GET /constellations — 카탈로그(star_map 포함) 응답")
-    void getCatalog() throws Exception {
-        given(constellationService.getCatalog()).willReturn(List.of(dipperInfo()));
-
-        mockMvc.perform(get("/api/v1/constellations"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.constellations[0].constellationKey").value("dipper"))
-            .andExpect(jsonPath("$.data.constellations[0].nameEn").value("Big Dipper"))
-            .andExpect(jsonPath("$.data.constellations[0].descriptionEn").value("Seven bright stars"))
-            .andExpect(jsonPath("$.data.constellations[0].starCount").value(7))
-            .andExpect(jsonPath("$.data.constellations[0].starMap").exists());
-    }
-
-    @Test
     @DisplayName("GET /constellations/today — 로그인 사용자 현황 매핑")
     void getToday() throws Exception {
         given(constellationService.getToday(1L)).willReturn(

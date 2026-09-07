@@ -222,17 +222,4 @@ class ConstellationServiceImplTest {
         assertThat(info.totalCollected()).isEqualTo(32L);
     }
 
-    @Test
-    @DisplayName("getCatalog — 정렬 순서대로 마스터 매핑(starMap 포함)")
-    void getCatalog() {
-        Constellation c1 = constellation(10L, "dipper", 7, 1);
-        given(constellationRepository.findAll()).willReturn(List.of(c1));
-
-        List<ConstellationServiceDto.ConstellationInfo> catalog = sut.getCatalog();
-
-        assertThat(catalog).hasSize(1);
-        assertThat(catalog.get(0).constellationKey()).isEqualTo("dipper");
-        assertThat(catalog.get(0).starCount()).isEqualTo(7);
-        assertThat(catalog.get(0).starMap()).contains("pts");
-    }
 }

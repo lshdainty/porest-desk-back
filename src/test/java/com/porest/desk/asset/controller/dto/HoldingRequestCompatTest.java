@@ -50,14 +50,4 @@ class HoldingRequestCompatTest {
         assertThat(req.toCommand().holdingType()).isEqualTo(HoldingType.STOCK);
     }
 
-    @Test
-    @DisplayName("연결 요청도 시장코드 없이 파싱된다")
-    void tossLinkWithoutMarketCode() throws Exception {
-        AssetApiDto.TossLinkRequest req = mapper.readValue(
-            "{\"symbol\":\"005930\",\"quantity\":10}", AssetApiDto.TossLinkRequest.class);
-
-        assertThat(req.marketCode()).isNull();
-        assertThat(req.symbol()).isEqualTo("005930");
-        assertThat(req.quantity()).isEqualTo(10L);
-    }
 }

@@ -245,13 +245,6 @@ public class AssetApiDto {
         }
     }
 
-    /** 투자 자산 ↔ 증권 종목 연결 요청 (종목코드 + 보유수량). 평가액 = 시세 × 수량. */
-    public record TossLinkRequest(
-        /** stock_master 기준 시장코드 — 선택. 안 보내면 서버가 심볼로 해석하고 모호하면 비워 둔다. */
-        String marketCode,
-        String symbol,
-        Long quantity
-    ) {}
 
     public record AssetListResponse(List<AssetResponse> assets) {
         public static AssetListResponse from(List<AssetServiceDto.AssetInfo> infos) {
