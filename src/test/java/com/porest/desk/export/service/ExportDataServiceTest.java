@@ -86,7 +86,7 @@ class ExportDataServiceTest {
     }
 
     private Memo memo(LocalDateTime createAtUtc) {
-        Memo m = Memo.createMemo(user(), "회의록", "내용", null, "#000000");
+        Memo m = Memo.createMemo(user(), "회의록", "내용", null, null, "#000000");
         ReflectionTestUtils.setField(m, "createAt", createAtUtc);
         return m;
     }

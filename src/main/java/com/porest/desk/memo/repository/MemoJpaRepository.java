@@ -19,7 +19,7 @@ public class MemoJpaRepository implements MemoRepository {
     @Override
     public Optional<Memo> findById(Long rowId) {
         return entityManager.createQuery(
-            "SELECT m FROM Memo m WHERE m.rowId = :rowId AND m.isDeleted = :isDeleted", Memo.class)
+            "SELECT m FROM Memo m LEFT JOIN FETCH m.memoTag WHERE m.rowId = :rowId AND m.isDeleted = :isDeleted", Memo.class)
             .setParameter("rowId", rowId)
             .setParameter("isDeleted", YNType.N)
             .getResultStream()
@@ -28,7 +28,8 @@ public class MemoJpaRepository implements MemoRepository {
 
     @Override
     public List<Memo> findAllByUser(Long userRowId, String search) {
-        StringBuilder jpql = new StringBuilder("SELECT m FROM Memo m WHERE m.user.rowId = :userRowId AND m.isDeleted = :isDeleted");
+        StringBuilder jpql = new StringBuilder(
+            "SELECT m FROM Memo m LEFT JOIN FETCH m.memoTag WHERE m.user.rowId = :userRowId AND m.isDeleted = :isDeleted");
         List<String> conditions = new ArrayList<>();
 
         if (search != null && !search.isBlank()) {
@@ -49,6 +50,37 @@ public class MemoJpaRepository implements MemoRepository {
         }
 
         return query.getResultList();
+    }
+
+    /**
+     * QueryDSL 쪽과 같은 규칙 — FK 로 이어진 행과 이름만 같은 행을 함께 옮긴다.
+     * 벌크 UPDATE 라 영속성 컨텍스트를 거치지 않는 것도 같다.
+     */
+    @Override
+    public long renameTag(Long userRowId, Long tagRowId, String fromTagName, String toTagName) {
+        return entityManager.createQuery(
+            "UPDATE Memo m SET m.tag = :toTagName"
+                + " WHERE m.user.rowId = :userRowId AND m.isDeleted = :isDeleted"
+                + " AND (m.memoTag.rowId = :tagRowId OR m.tag = :fromTagName)")
+            .setParameter("toTagName", toTagName)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .setParameter("tagRowId", tagRowId)
+            .setParameter("fromTagName", fromTagName)
+            .executeUpdate();
+    }
+
+    @Override
+    public long clearTag(Long userRowId, Long tagRowId, String tagName) {
+        return entityManager.createQuery(
+            "UPDATE Memo m SET m.tag = NULL, m.memoTag = NULL"
+                + " WHERE m.user.rowId = :userRowId AND m.isDeleted = :isDeleted"
+                + " AND (m.memoTag.rowId = :tagRowId OR m.tag = :tagName)")
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .setParameter("tagRowId", tagRowId)
+            .setParameter("tagName", tagName)
+            .executeUpdate();
     }
 
     @Override

@@ -13,6 +13,7 @@ public class MemoServiceDto {
         String title,
         String content,
         String tag,
+        Long memoTagRowId,
         String color
     ) {}
 
@@ -21,6 +22,7 @@ public class MemoServiceDto {
         Patch<String> title,
         Patch<String> content,
         Patch<String> tag,
+        Patch<Long> memoTagRowId,
         Patch<String> color
     ) {}
 
@@ -30,6 +32,7 @@ public class MemoServiceDto {
         String title,
         String content,
         String tag,
+        Long memoTagRowId,
         String color,
         YNType isPinned,
         LocalDateTime createAt,
@@ -42,6 +45,7 @@ public class MemoServiceDto {
                 memo.getTitle(),
                 memo.getContent(),
                 memo.getTag(),
+                memo.getMemoTag() == null ? null : memo.getMemoTag().getRowId(),
                 memo.getColor(),
                 memo.getIsPinned(),
                 memo.getCreateAt(),

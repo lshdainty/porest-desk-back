@@ -28,6 +28,10 @@ public class MemoApiDto {
         String content,
         @Size(max = FieldLimits.LABEL_MAX, message = "태그는 50자까지 입력할 수 있어요")
         String tag,
+        // 태그 마스터를 직접 고른 경우 — 실으면 tag 문자열보다 이 값이 이긴다(MemoTagApiController
+        // 로 만든 태그를 화면에서 고르는 경로). 안 실으면 서버가 tag 문자열로 마스터를 확보한다.
+        // 남의 태그 아이디는 403 이다.
+        Long memoTagRowId,
         // memo.color 는 varchar(7) — "#RRGGBB" 한 벌만 들어간다. 길이만 재던 종전엔
         // "zzz" 가 그대로 저장돼 메모 색이 안 칠해졌다(QA 2026-09-07 #86).
         @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
@@ -51,6 +55,13 @@ public class MemoApiDto {
                  String> content,
         Optional<@Size(max = FieldLimits.LABEL_MAX, message = "태그는 50자까지 입력할 수 있어요")
                  String> tag,
+        /*
+         * 태그 마스터 아이디 — 실렸으면 tag 문자열보다 이 값이 이긴다.
+         * 키가 없으면 태그를 안 고친다는 뜻이라 tag 문자열(병합된 값)로 잇고,
+         * "memoTagRowId": null 은 태그를 뗀다는 뜻이라 tag 문자열까지 함께 비운다 —
+         * 문자열만 남기면 다음 저장에서 그 이름의 태그가 되살아난다(QA #88).
+         */
+        Optional<Long> memoTagRowId,
         // memo.color 는 varchar(7) — "#RRGGBB" 한 벌만 들어간다. 길이만 재던 종전엔
         // "zzz" 가 그대로 저장돼 메모 색이 안 칠해졌다(QA 2026-09-07 #86).
         Optional<@Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
@@ -64,6 +75,14 @@ public class MemoApiDto {
         String title,
         String content,
         String tag,
+        /*
+         * 이 메모에 붙은 태그 마스터의 아이디 — 태그가 없으면 null.
+         *
+         * 이름(tag)이 아니라 아이디를 싣는다: 이름은 사용자가 바꿀 수 있는 속성이라 개명하는
+         * 순간 화면이 들고 있던 값과 갈린다. 색·정렬 같은 나머지는 GET /memo-tags 가 주므로
+         * 여기서는 어느 행인지만 가리키면 된다.
+         */
+        Long memoTagRowId,
         String color,
         YNType isPinned,
         LocalDateTime createAt,
@@ -76,6 +95,7 @@ public class MemoApiDto {
                 info.title(),
                 info.content(),
                 info.tag(),
+                info.memoTagRowId(),
                 info.color(),
                 info.isPinned(),
                 info.createAt(),

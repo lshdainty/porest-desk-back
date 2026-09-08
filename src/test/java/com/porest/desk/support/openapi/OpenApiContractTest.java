@@ -169,4 +169,53 @@ class OpenApiContractTest {
                     "rowId", "userRowId", "tagName", "color", "createAt", "modifyAt", "usageCount");
         }
     }
+
+    /**
+     * 메모 태그 — {@code tag} 문자열과 {@code memoTagRowId} 가 함께 문서화된다.
+     *
+     * <p>할 일이 {@code category} 와 {@code tags} 를 못 박은 것과 같은 이유다(#314). 메모도
+     * 두 클라이언트가 이 문서를 읽고 손으로 짜는데, 지금 보내는 것은 {@code tag} 문자열
+     * 하나뿐이고 서버가 그것으로 마스터를 확보해 FK 를 채운다(QA #98). 아이디는 새로 생긴
+     * 태그 관리 화면이 쓰는 길이다 — <b>둘 다 계약</b>이라 어느 한쪽이 문서에서 사라지면
+     * 나머지 한쪽만 보고 짠 클라이언트가 조용히 틀린다.
+     *
+     * <p>{@code memo.tag} 를 걷어내는 다음 라운드는 여기서 먼저 걸려야 한다.
+     */
+    @Nested
+    @DisplayName("메모 — tag 문자열과 태그 마스터 아이디가 함께 문서화된다")
+    class MemoTagContract {
+
+        @Test
+        @DisplayName("응답은 tag 와 memoTagRowId 를 함께 싣는다")
+        void responseCarriesBoth() {
+            assertThat(props("MemoResponse").has("tag")).isTrue();
+            assertThat(props("MemoResponse").has("memoTagRowId")).isTrue();
+        }
+
+        @Test
+        @DisplayName("등록·수정 요청은 tag 와 memoTagRowId 를 모두 받는다고 밝힌다")
+        void requestsDocumentBothInputs() {
+            assertThat(props("MemoCreateRequest").has("tag")).isTrue();
+            assertThat(props("MemoCreateRequest").has("memoTagRowId")).isTrue();
+            assertThat(props("MemoUpdateRequest").has("tag")).isTrue();
+            assertThat(props("MemoUpdateRequest").has("memoTagRowId")).isTrue();
+        }
+
+        @Test
+        @DisplayName("태그 응답에 usageCount 가 있다 — 화면 삭제 확인창이 이 숫자를 읽는다")
+        void tagResponseCarriesUsageCount() {
+            assertThat(props("MemoTagResponse").fieldNames()).toIterable()
+                .containsExactlyInAnyOrder(
+                    "rowId", "userRowId", "tagName", "color", "createAt", "modifyAt", "usageCount");
+        }
+
+        @Test
+        @DisplayName("태그 관리 경로가 할 일 태그와 같은 모양으로 문서화된다")
+        void tagPathsMirrorTodoTag() {
+            assertThat(doc.path("paths").path("/api/v1/memo-tag").has("post")).isTrue();
+            assertThat(doc.path("paths").path("/api/v1/memo-tags").has("get")).isTrue();
+            assertThat(doc.path("paths").path("/api/v1/memo-tag/{id}").has("put")).isTrue();
+            assertThat(doc.path("paths").path("/api/v1/memo-tag/{id}").has("delete")).isTrue();
+        }
+    }
 }

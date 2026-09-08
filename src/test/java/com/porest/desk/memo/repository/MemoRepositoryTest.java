@@ -4,6 +4,7 @@ import com.porest.desk.common.config.QueryDslConfig;
 import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
 import com.porest.desk.memo.domain.Memo;
+import com.porest.desk.memo.domain.MemoTag;
 import com.porest.desk.user.domain.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,14 +39,22 @@ class MemoRepositoryTest {
     }
 
     private Memo persistMemo(User user, String title, String content) {
-        return em.persist(Memo.createMemo(user, title, content, null, null));
+        return em.persist(Memo.createMemo(user, title, content, null, null, null));
+    }
+
+    private MemoTag persistTag(User user, String name) {
+        return em.persist(MemoTag.createTag(user, name, "#ffffff"));
+    }
+
+    private Memo persistTaggedMemo(User user, String title, String tagName, MemoTag tag) {
+        return em.persist(Memo.createMemo(user, title, "c", tagName, tag, null));
     }
 
     @Test
     @DisplayName("save 후 findById 로 조회된다")
     void saveAndFindById() {
         User user = persistUser("u1");
-        Memo memo = Memo.createMemo(user, "제목", "내용", null, null);
+        Memo memo = Memo.createMemo(user, "제목", "내용", null, null, null);
         repository.save(memo);
         em.flush();
         em.clear();
@@ -137,12 +146,125 @@ class MemoRepositoryTest {
 
         // A 를 수정해 수정시각을 최신으로 끌어올린다
         Memo managedA = em.find(Memo.class, a.getRowId());
-        managedA.updateMemo("A수정", "c2", null, null);
+        managedA.updateMemo("A수정", "c2", null, null, null);
         em.flush();
         em.clear();
 
         List<Memo> result = repository.findAllByUser(user.getRowId(), null);
 
         assertThat(result).extracting(Memo::getTitle).containsExactly("A수정", "B");
+    }
+
+    // ── 태그 개명·삭제 동기화 (QA #98) ────────────────────────────────────────
+
+    /**
+     * 개명은 <b>FK 로 이어진 행과 이름만 같은 행을 함께</b> 옮긴다.
+     *
+     * <p>둘로 나눠 보는 이유 — 백필 전에는 FK 가 비어 있고 이름만 있는 옛 메모가 있다.
+     * 하나만 보면 그 행이 개명에서 빠지고, 그 메모를 다음에 저장할 때 서버가 옛 이름의 태그를
+     * 다시 만든다(QA #88 과 같은 되살아남).
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code renameTag} 의 WHERE 에서
+     * {@code .or(memo.tag.eq(fromTagName))} 를 지우면 `이름만` 행이 안 옮겨져 깨지고,
+     * {@code memo.memoTag.rowId.eq(tagRowId)} 쪽만 남기면 반대로 `FK만` 행이 깨진다.
+     */
+    @Test
+    @DisplayName("renameTag — FK 로 이어진 메모와 이름만 같은 메모를 함께 옮긴다")
+    void renameTagMovesBothFkAndNameOnlyRows() {
+        User user = persistUser("u1");
+        MemoTag tag = persistTag(user, "업무");
+        Memo linked = persistTaggedMemo(user, "FK로 이어진 메모", "업무", tag);
+        Memo nameOnly = persistTaggedMemo(user, "이름만 있는 옛 메모", "업무", null);
+        Memo untouched = persistTaggedMemo(user, "다른 태그", "개인", null);
+        em.flush();
+        em.clear();
+
+        long moved = repository.renameTag(user.getRowId(), tag.getRowId(), "업무", "회사");
+
+        em.clear();
+        assertThat(moved).isEqualTo(2);
+        assertThat(em.find(Memo.class, linked.getRowId()).getTag()).isEqualTo("회사");
+        assertThat(em.find(Memo.class, nameOnly.getRowId()).getTag()).isEqualTo("회사");
+        assertThat(em.find(Memo.class, untouched.getRowId()).getTag()).isEqualTo("개인");
+    }
+
+    @Test
+    @DisplayName("renameTag — 남의 메모와 삭제된 메모는 건드리지 않는다")
+    void renameTagRespectsOwnerAndSoftDelete() {
+        User mine = persistUser("u1");
+        User other = persistUser("u2");
+        MemoTag tag = persistTag(mine, "업무");
+        Memo theirs = persistTaggedMemo(other, "남의 메모", "업무", null);
+        Memo deleted = persistTaggedMemo(mine, "지운 메모", "업무", tag);
+        deleted.deleteMemo();
+        em.flush();
+        em.clear();
+
+        long moved = repository.renameTag(mine.getRowId(), tag.getRowId(), "업무", "회사");
+
+        em.clear();
+        assertThat(moved).isZero();
+        assertThat(em.find(Memo.class, theirs.getRowId()).getTag()).isEqualTo("업무");
+        assertThat(em.find(Memo.class, deleted.getRowId()).getTag()).isEqualTo("업무");
+    }
+
+    /**
+     * QA #88 — 태그를 지울 때 <b>문자열과 FK 를 함께</b> 끊는다. 한쪽만 끊으면 나머지 한쪽이
+     * 다음 저장에서 그 태그를 되살린다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code clearTag} 에서 {@code .setNull(memo.tag)} 를
+     * 지우면 이름이 남아 깨지고, {@code .setNull(memo.memoTag)} 를 지우면 FK 가 남아 깨진다.
+     */
+    @Test
+    @DisplayName("clearTag — tag 문자열과 FK 를 함께 비운다")
+    void clearTagClearsBothStringAndFk() {
+        User user = persistUser("u1");
+        MemoTag tag = persistTag(user, "업무");
+        Memo linked = persistTaggedMemo(user, "FK로 이어진 메모", "업무", tag);
+        Memo nameOnly = persistTaggedMemo(user, "이름만 있는 옛 메모", "업무", null);
+        em.flush();
+        em.clear();
+
+        long cleared = repository.clearTag(user.getRowId(), tag.getRowId(), "업무");
+
+        em.clear();
+        assertThat(cleared).isEqualTo(2);
+        Memo reloaded = em.find(Memo.class, linked.getRowId());
+        assertThat(reloaded.getTag()).isNull();
+        assertThat(reloaded.getMemoTag()).isNull();
+        assertThat(em.find(Memo.class, nameOnly.getRowId()).getTag()).isNull();
+    }
+
+    @Test
+    @DisplayName("clearTag — 남의 메모는 건드리지 않는다")
+    void clearTagRespectsOwner() {
+        User mine = persistUser("u1");
+        User other = persistUser("u2");
+        MemoTag tag = persistTag(mine, "업무");
+        Memo theirs = persistTaggedMemo(other, "남의 메모", "업무", null);
+        em.flush();
+        em.clear();
+
+        repository.clearTag(mine.getRowId(), tag.getRowId(), "업무");
+
+        em.clear();
+        assertThat(em.find(Memo.class, theirs.getRowId()).getTag()).isEqualTo("업무");
+    }
+
+    @Test
+    @DisplayName("findById·findAllByUser — 태그 마스터를 함께 끌고 온다(fetch join)")
+    void readsFetchTheTagMaster() {
+        User user = persistUser("u1");
+        MemoTag tag = persistTag(user, "업무");
+        Memo memo = persistTaggedMemo(user, "태그 있는 메모", "업무", tag);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findById(memo.getRowId()))
+                .get()
+                .extracting(m -> m.getMemoTag().getTagName()).isEqualTo("업무");
+        assertThat(repository.findAllByUser(user.getRowId(), null))
+                .singleElement()
+                .extracting(m -> m.getMemoTag().getRowId()).isEqualTo(tag.getRowId());
     }
 }

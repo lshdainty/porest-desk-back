@@ -63,7 +63,7 @@ class MemoApiControllerTest {
 
     private MemoServiceDto.MemoInfo sampleInfo() {
         return new MemoServiceDto.MemoInfo(
-                100L, 1L, "제목", "내용", "태그", "#ffffff",
+                100L, 1L, "제목", "내용", "태그", 7L, "#ffffff",
                 YNType.N, LocalDateTime.of(2026, 7, 1, 9, 0), LocalDateTime.of(2026, 7, 1, 9, 0));
     }
 
@@ -149,6 +149,7 @@ class MemoApiControllerTest {
         assertThat(captor.getValue().title()).isEqualTo(Patch.set("수정제목"));
         assertThat(captor.getValue().content()).isEqualTo(Patch.set("수정내용"));
         assertThat(captor.getValue().tag()).isEqualTo(Patch.set("수정태그"));
+        assertThat(captor.getValue().memoTagRowId()).isEqualTo(Patch.absent());
         assertThat(captor.getValue().color()).isEqualTo(Patch.set("#000000"));
     }
 
@@ -173,6 +174,7 @@ class MemoApiControllerTest {
         assertThat(captor.getValue().content()).isEqualTo(Patch.set(null));
         assertThat(captor.getValue().title()).isEqualTo(Patch.absent());
         assertThat(captor.getValue().tag()).isEqualTo(Patch.absent());
+        assertThat(captor.getValue().memoTagRowId()).isEqualTo(Patch.absent());
         assertThat(captor.getValue().color()).isEqualTo(Patch.absent());
     }
 
@@ -280,5 +282,65 @@ class MemoApiControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(memoService, never()).createMemo(any());
+    }
+
+    // ── 태그 마스터 (QA #98) ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /memo — memoTagRowId 를 그대로 명령에 싣는다")
+    void createCarriesMemoTagRowId() throws Exception {
+        given(memoService.createMemo(any())).willReturn(sampleInfo());
+
+        mockMvc.perform(post("/api/v1/memo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"제목","memoTagRowId":22}"""))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(MemoServiceDto.CreateCommand.class);
+        verify(memoService).createMemo(captor.capture());
+        assertThat(captor.getValue().memoTagRowId()).isEqualTo(22L);
+    }
+
+    /**
+     * 8차 #321 이 정한 PUT 의미가 태그 아이디에도 그대로 걸린다 — 키 없음 / 명시적 null /
+     * 값 셋이 서로 다르게 도착해야 한다. {@code "memoTagRowId": null} 은 "태그를 뗀다" 이고,
+     * 키가 없으면 {@code tag} 문자열로 잇는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): DTO 의 {@code Optional<Long> memoTagRowId} 를
+     * 맨 {@code Long} 으로 바꾸면 두 경우가 모두 {@code Patch.set(null)} 로 도착해 깨진다.
+     */
+    @Test
+    @DisplayName("PUT /memo/{id} — memoTagRowId 의 키 없음·명시적 null·값이 갈라져 도착한다")
+    void updateCarriesMemoTagRowIdTriState() throws Exception {
+        given(memoService.updateMemo(eq(5L), eq(1L), any())).willReturn(sampleInfo());
+
+        mockMvc.perform(put("/api/v1/memo/{id}", 5L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"memoTagRowId":null}"""))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/memo/{id}", 5L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"memoTagRowId":22}"""))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(MemoServiceDto.UpdateCommand.class);
+        verify(memoService, org.mockito.Mockito.times(2))
+                .updateMemo(eq(5L), eq(1L), captor.capture());
+        assertThat(captor.getAllValues().get(0).memoTagRowId()).isEqualTo(Patch.set(null));
+        assertThat(captor.getAllValues().get(1).memoTagRowId()).isEqualTo(Patch.set(22L));
+    }
+
+    @Test
+    @DisplayName("응답에 memoTagRowId 가 실린다 — 화면이 태그 목록과 이 아이디로 맞춘다")
+    void responseCarriesMemoTagRowId() throws Exception {
+        given(memoService.getMemo(5L, 1L)).willReturn(sampleInfo());
+
+        mockMvc.perform(get("/api/v1/memo/{id}", 5L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memoTagRowId").value(7))
+                .andExpect(jsonPath("$.data.tag").value("태그"));
     }
 }

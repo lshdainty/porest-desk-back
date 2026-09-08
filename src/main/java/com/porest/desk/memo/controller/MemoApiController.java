@@ -37,6 +37,7 @@ public class MemoApiController {
             request.title(),
             request.content(),
             request.tag(),
+            request.memoTagRowId(),
             request.color()
         ));
         return ApiResponse.success(MemoApiDto.Response.from(info));
@@ -69,6 +70,7 @@ public class MemoApiController {
             Patch.from(request.title()),
             Patch.from(request.content()),
             Patch.from(request.tag()),
+            Patch.from(request.memoTagRowId()),
             Patch.from(request.color())
         ));
         return ApiResponse.success(MemoApiDto.Response.from(info));
