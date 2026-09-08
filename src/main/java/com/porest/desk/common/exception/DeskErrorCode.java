@@ -75,6 +75,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // Memo
     MEMO_NOT_FOUND("MEMO_001", "error.notfound.memo", HttpStatus.NOT_FOUND),
     MEMO_ACCESS_DENIED("MEMO_003", "error.memo.access.denied", HttpStatus.FORBIDDEN),
+    // MEMO_002 는 쓰지 않는다 — 지난 코드가 쓰다 사라진 번호라 되쓰면 옛 클라이언트가 다른
+    // 뜻으로 읽을 수 있다. 태그는 그래서 004 부터다.
+    MEMO_TAG_NOT_FOUND("MEMO_004", "error.notfound.memo.tag", HttpStatus.NOT_FOUND),
+    MEMO_TAG_DUPLICATE_NAME("MEMO_005", "error.duplicate.memo.tag", HttpStatus.CONFLICT),
 
     // Constellation
     CONSTELLATION_NOT_FOUND("CONST_001", "error.notfound.constellation", HttpStatus.NOT_FOUND),
