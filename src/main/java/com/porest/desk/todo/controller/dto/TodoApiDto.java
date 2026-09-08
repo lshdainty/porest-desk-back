@@ -108,8 +108,18 @@ public class TodoApiDto {
      */
     @Schema(name = "TodoTagAssignRequest")
     public record TagUpdateRequest(
+        /**
+         * 원소에도 {@code @NotNull} 을 건다. 목록 자체만 막으면 {@code {"tagIds":[null]}} 이
+         * 그대로 통과했다 — {@code TodoServiceImpl.resolveOwnedTags} 가 null 원소를
+         * {@code filter(Objects::nonNull)} 로 걸러 <b>빈 목록</b>이 되고, 그것이 "전부 떼 달라" 로
+         * 읽혀 붙여 둔 태그가 다 지워졌다(QA #100). 위 {@code @NotNull} 이 막으려던 것과 같은
+         * 사고가 원소 자리에 그대로 남아 있었던 셈이다.
+         *
+         * <p>일정 알림({@code CalendarEventApiDto} 의 {@code reminderMinutes})이 같은 자리를
+         * 이렇게 막는다.
+         */
         @NotNull(message = "붙일 태그를 알려 주세요. 모두 떼려면 빈 목록을 보내 주세요")
-        List<Long> tagIds
+        List<@NotNull(message = "태그가 비어 있어요") Long> tagIds
     ) {}
 
     /**

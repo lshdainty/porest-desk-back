@@ -310,6 +310,33 @@ class TodoApiControllerTest {
         verify(todoService).updateTags(100L, 1L, List.of());
     }
 
+    /**
+     * QA #100 — 위 세 모양을 막고도 <b>원소 null</b> 하나가 남아 있었다.
+     * {@code {"tagIds":[null]}} 은 검증을 통과했고, {@code TodoServiceImpl.resolveOwnedTags} 가
+     * null 원소를 {@code filter(Objects::nonNull)} 로 버려 <b>빈 목록</b>이 됐다 — 즉 위에서
+     * "전부 해제" 로 확정한 그 뜻으로 흘러 붙여 둔 태그가 다 지워졌다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TagUpdateRequest} 의 원소 제약
+     * {@code List<@NotNull Long>} 을 {@code List<Long>} 으로 되돌리면 이 테스트가 200 을 받아
+     * 깨진다. 위 {@code @NotNull} 만으로는 못 막는다 — 목록 자체는 null 이 아니기 때문이다.
+     */
+    @Test
+    @DisplayName("PATCH /todo/{id}/tags — 원소가 null 이면 400 (종전 200: 태그가 전부 해제됐다)")
+    void updateTagsRejectsNullElement() throws Exception {
+        mockMvc.perform(patch("/api/v1/todo/{id}/tags", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tagIds\":[null]}"))
+                .andExpect(status().isBadRequest());
+
+        // 섞여 들어온 경우도 같다 — 하나라도 null 이면 목록 전체를 못 믿는다.
+        mockMvc.perform(patch("/api/v1/todo/{id}/tags", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tagIds\":[10,null,20]}"))
+                .andExpect(status().isBadRequest());
+
+        verify(todoService, never()).updateTags(any(), any(), any());
+    }
+
     @Test
     @DisplayName("GET /todos/stats — 통계 조회 + 응답 매핑")
     void getStats() throws Exception {
