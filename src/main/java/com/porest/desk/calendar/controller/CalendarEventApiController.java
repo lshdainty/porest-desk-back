@@ -79,7 +79,7 @@ public class CalendarEventApiController {
             Patch.from(request.location()),
             Patch.from(request.rrule()),
             request.reminderMinutes(),
-            request.calendarRowId()
+            Patch.from(request.calendarRowId())
         ));
         return ApiResponse.success(CalendarEventApiDto.Response.from(info));
     }

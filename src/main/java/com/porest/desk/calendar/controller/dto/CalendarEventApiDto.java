@@ -45,6 +45,11 @@ public class CalendarEventApiDto {
          * 500 이 났다 — 여기서 400 으로 끊는다. 같은 값이 두 번 담겨 와도 서버가 하나로 접는다.
          */
         List<@NotNull(message = "알림 시각이 비어 있어요") Integer> reminderMinutes,
+        /**
+         * 소속 캘린더. <b>안 보내도 된다 — 서버가 기본 캘린더를 대입한다</b>
+         * (사용자 결정 2026-09-08: "캘린더 없는 일정은 존재할 수 없다").
+         * 거절하지 않는 이유는 {@code CalendarEventServiceImpl.createEvent} 에 적어 뒀다.
+         */
         Long calendarRowId
     ) {}
 
@@ -66,8 +71,17 @@ public class CalendarEventApiDto {
      *   <li>{@code reminderMinutes} — 목록을 통째로 교체하는 칸이다. 종전부터
      *       "{@code null}=미변경, 리스트=교체" 였고, #96 도 거래 {@code splits}·자산
      *       {@code holdings}·할 일 {@code tagIds} 를 같은 이유로 그대로 뒀다.</li>
-     *   <li>{@code calendarRowId} — 서비스가 이미 "null 이면 안 옮긴다" 로 읽는다.</li>
      * </ul>
+     *
+     * <p><b>{@code calendarRowId} 는 셋째 뜻이 <i>없다</i>.</b> 키가 없으면 유지,
+     * 값이 있으면 그 캘린더로 옮긴다. 명시적 {@code null} 은 "소속을 뗀다" 는 뜻인데
+     * 일정은 반드시 캘린더에 속하므로(사용자 결정 2026-09-08) 400 으로 끊는다 —
+     * 판단 근거는 {@code CalendarEventServiceImpl.updateEvent} 에 적어 뒀다.
+     * 종전에는 맨 {@code Long} 이라 안 보낸 것과 {@code null} 을 실은 것이 구별되지 않아
+     * <b>둘 다 조용히 무시</b>됐다. 웹·앱 모두 키를 빼고 보내므로(웹
+     * {@code EventForm.tsx} 의 {@code data.calendarRowId || undefined}, 앱
+     * {@code calendar_repository.dart} 의 {@code 'calendarRowId': ?calendarRowId})
+     * 이 400 에 닿는 화면은 지금 없다.
      */
     @Schema(name = "CalendarEventUpdateRequest")
     public record UpdateRequest(
@@ -95,7 +109,7 @@ public class CalendarEventApiDto {
          * 500 이 났다 — 여기서 400 으로 끊는다. 같은 값이 두 번 담겨 와도 서버가 하나로 접는다.
          */
         List<@NotNull(message = "알림 시각이 비어 있어요") Integer> reminderMinutes,
-        Long calendarRowId
+        Optional<Long> calendarRowId
     ) {}
 
     public record ReminderResponse(

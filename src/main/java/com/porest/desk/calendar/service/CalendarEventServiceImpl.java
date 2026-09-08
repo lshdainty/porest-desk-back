@@ -16,6 +16,7 @@ import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
 import com.porest.desk.calendar.service.dto.EventReminderServiceDto;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +70,14 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             validateLabelOwnership(label, command.userRowId());
         }
 
+        // 캘린더는 <b>반드시</b> 붙는다. 안 보냈으면 거절이 아니라 기본 캘린더를 대입한다
+        // (사용자 결정 2026-09-08 "캘린더 없는 일정은 존재할 수 없다" 의 서버 쪽 절반).
+        //
+        // 생성에서 거절을 고르지 않은 이유: 캘린더를 고르는 것은 사용자가 내린 결정이 아니라
+        // 화면이 채워 주는 값이다. 안 왔다는 것은 "아무 데나" 가 아니라 "화면이 아직 못 채웠다"
+        // 는 뜻이고, 그때 400 을 던지면 <b>일정 자체를 못 만든다</b> — 사용자가 고칠 수 있는
+        // 입력이 아니라서 되돌릴 방법도 없다. 답이 하나뿐인 상황이면 서버가 그 답을 쓴다.
+        // (수정은 다르다 — updateEvent 주석 참고.)
         UserCalendar calendar;
         if (command.calendarRowId() != null) {
             calendar = userCalendarRepository.findById(command.calendarRowId())
@@ -76,9 +85,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             // 공유 캘린더면 편집가능(EDIT) 이상만 일정 생성 가능 (읽기전용 차단)
             calendarMembershipValidator.validateCanWrite(command.calendarRowId(), command.userRowId());
         } else {
-            UserCalendarServiceDto.CalendarInfo defaultInfo = userCalendarService.getOrCreateDefault(command.userRowId());
-            calendar = userCalendarRepository.findById(defaultInfo.rowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+            calendar = defaultCalendarOf(command.userRowId());
         }
 
         CalendarEvent event = CalendarEvent.createEvent(
@@ -173,13 +180,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             command.rrule().orKeep(event.getRrule())
         );
 
-        if (command.calendarRowId() != null) {
-            UserCalendar calendar = userCalendarRepository.findById(command.calendarRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
-            // 옮기려는 캘린더에 쓰기 권한 필요
-            calendarMembershipValidator.validateCanWrite(command.calendarRowId(), userRowId);
-            event.setCalendar(calendar);
-        }
+        applyCalendar(event, command.calendarRowId(), userRowId);
 
         List<EventReminderServiceDto.ReminderInfo> reminderInfos;
         if (command.reminderMinutes() != null) {
@@ -276,6 +277,54 @@ public class CalendarEventServiceImpl implements CalendarEventService {
     }
 
     /**
+     * 수정 요청의 소속 캘린더를 반영한다 — <b>일정이 캘린더 없이 남는 경우가 없게</b> 한다.
+     *
+     * <table border="1">
+     *   <caption>본문 → 결과</caption>
+     *   <tr><th>본문</th><th>결과</th></tr>
+     *   <tr><td>키가 없다</td><td>지금 캘린더 유지. 지금이 <b>없으면</b> 기본 캘린더를 붙인다</td></tr>
+     *   <tr><td>{@code "calendarRowId": 12}</td><td>12 로 옮긴다(쓰기 권한 확인)</td></tr>
+     *   <tr><td>{@code "calendarRowId": null}</td><td><b>400</b> — 뗄 수 없다</td></tr>
+     * </table>
+     *
+     * <p><b>왜 명시적 null 만 거절하나.</b> 생성과 달리 수정에서 답이 하나가 아니다. 기본 캘린더를
+     * 대입하면 <b>공유 캘린더에 있던 일정이 조용히 내 개인 캘린더로 빠져나온다</b> — 같이 보던
+     * 사람들의 화면에서 사라지는데 아무도 그렇게 해 달라고 한 적이 없다. 눈에 안 보이게 틀리는
+     * 쪽보다 400 이 낫다. 반대로 <b>키가 없는 것</b>은 "소속을 건드리지 마라" 라서 거절할 이유가
+     * 없다 — 여기서 거절하면 제목 한 줄 고치는 것도 캘린더를 같이 실어야 하고, 웹·앱은 지금
+     * 그러지 않는다.
+     *
+     * <p><b>캘린더 없이 저장된 옛 일정</b>은 키가 없는 경로에서 기본 캘린더로 붙인다. 그냥 두면
+     * 그 일정은 영영 소속이 없고(목록 조회는 접근 가능한 캘린더로만 긁으므로 화면에서도 안
+     * 보인다), 거절하면 <b>고칠 방법이 없는 채로 갇힌다.</b> 붙이는 쪽만 빠져나갈 구멍이 있다.
+     */
+    private void applyCalendar(CalendarEvent event, Patch<Long> calendarRowId, Long userRowId) {
+        if (calendarRowId.present() && calendarRowId.value() == null) {
+            throw new InvalidValueException(DeskErrorCode.CALENDAR_EVENT_CALENDAR_REQUIRED);
+        }
+        if (calendarRowId.present()) {
+            Long targetRowId = calendarRowId.value();
+            UserCalendar calendar = userCalendarRepository.findById(targetRowId)
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+            // 옮기려는 캘린더에 쓰기 권한 필요
+            calendarMembershipValidator.validateCanWrite(targetRowId, userRowId);
+            event.setCalendar(calendar);
+            return;
+        }
+        if (event.getCalendar() == null) {
+            log.info("캘린더 미소속 일정을 기본 캘린더로 붙임: eventId={}, userRowId={}", event.getRowId(), userRowId);
+            event.setCalendar(defaultCalendarOf(userRowId));
+        }
+    }
+
+    /** 기본 캘린더 엔티티. 없으면 만든다({@link UserCalendarService#getOrCreateDefault}). */
+    private UserCalendar defaultCalendarOf(Long userRowId) {
+        UserCalendarServiceDto.CalendarInfo defaultInfo = userCalendarService.getOrCreateDefault(userRowId);
+        return userCalendarRepository.findById(defaultInfo.rowId())
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_CALENDAR_NOT_FOUND));
+    }
+
+    /**
      * 이벤트는 항상 캘린더에 소속 — 캘린더 멤버십+권한으로 판정.
      * 이벤트 생성자 본인이거나 EDIT 이상 권한이면 수정/삭제 가능.
      */
@@ -290,7 +339,9 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             }
             return;
         }
-        // 캘린더 미소속 이벤트(이론상 없음): 생성자만 (생성자 불명이면 접근 거부)
+        // 캘린더 미소속 이벤트(옛 데이터): 생성자만 (생성자 불명이면 접근 거부).
+        // 이 갈래를 남겨 둬야 본인이 수정을 열어 applyCalendar 가 기본 캘린더를 붙일 수 있다 —
+        // 여기서 막으면 소속 없는 일정이 영영 소속을 못 갖는다.
         if (!userRowId.equals(ownerRowId)) {
             throw new ForbiddenException(DeskErrorCode.CALENDAR_EVENT_ACCESS_DENIED);
         }

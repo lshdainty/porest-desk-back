@@ -225,10 +225,150 @@ class CalendarEventServiceImplTest {
         sut.updateEvent(5L, USER_ID, new CalendarEventServiceDto.UpdateCommand(
                 "회의(수정)", Patch.absent(), null, Patch.absent(),
                 LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0),
-                null, Patch.absent(), Patch.absent(), Patch.absent(), null, null));
+                null, Patch.absent(), Patch.absent(), Patch.absent(), null, Patch.absent()));
 
         org.assertj.core.api.Assertions.assertThat(event.getEventType())
                 .isEqualTo(com.porest.desk.calendar.type.CalendarEventType.WORK);
         org.assertj.core.api.Assertions.assertThat(event.getIsAllDay()).isNotNull();
+    }
+
+    // ── D4 일정은 반드시 캘린더에 속한다 (사용자 결정 2026-09-08) ──────────────
+
+    /** 소속 캘린더 말고는 아무것도 안 건드리는 수정 명령. */
+    private CalendarEventServiceDto.UpdateCommand calendarOnlyCmd(Patch<Long> calendarRowId) {
+        return new CalendarEventServiceDto.UpdateCommand(
+                null, Patch.absent(), null, Patch.absent(),
+                LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0),
+                null, Patch.absent(), Patch.absent(), Patch.absent(), null, calendarRowId);
+    }
+
+    /** 캘린더에 붙어 있는 일정 하나 — 수정 권한까지 열어 둔다. */
+    private CalendarEvent eventInCalendar(UserCalendar calendar, long calendarRowId) {
+        CalendarEvent event = CalendarEvent.createEvent(user(USER_ID), "회의", null, null, null,
+                LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0),
+                null, null, null, null, calendar);
+        ReflectionTestUtils.setField(event, "rowId", 5L);
+        given(calendarEventRepository.findById(5L)).willReturn(Optional.of(event));
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        given(calendarMembershipValidator.validateMembership(calendarRowId, USER_ID)).willReturn(member);
+        given(calendarMembershipValidator.canEditOrDelete(member, USER_ID, USER_ID)).willReturn(true);
+        return event;
+    }
+
+    /**
+     * 명시적 {@code null} 은 "소속을 뗀다" 는 뜻인데, 일정은 캘린더 없이 존재할 수 없다.
+     * 기본 캘린더로 대신 채우지 <b>않는</b> 이유는 공유 캘린더에 있던 일정이 아무도 시키지
+     * 않은 채 내 개인 캘린더로 빠져나가기 때문이다 — 같이 보던 사람 화면에서 조용히 사라진다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code applyCalendar} 의 첫 {@code if} 를 지우면
+     * 예외 없이 지금 캘린더를 그대로 둔 채 200 이 나가며 아래가 깨진다.
+     */
+    @Test
+    @DisplayName("updateEvent — calendarRowId 에 명시적 null 을 실으면 400(소속은 뗄 수 없다)")
+    void updateRejectsExplicitNullCalendar() {
+        UserCalendar cal = mock(UserCalendar.class);
+        given(cal.getRowId()).willReturn(50L);
+        eventInCalendar(cal, 50L);
+
+        assertThatThrownBy(() -> sut.updateEvent(5L, USER_ID, calendarOnlyCmd(Patch.set(null))))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.CALENDAR_EVENT_CALENDAR_REQUIRED);
+    }
+
+    /**
+     * 키가 없는 것은 "소속을 건드리지 마라" 다. 여기서 거절하면 제목 한 줄 고치는 데도
+     * 캘린더를 같이 실어야 하고, 웹·앱은 지금 그러지 않는다.
+     */
+    @Test
+    @DisplayName("updateEvent — calendarRowId 키가 없으면 지금 캘린더를 그대로 둔다")
+    void updateKeepsCalendarWhenKeyAbsent() {
+        UserCalendar cal = mock(UserCalendar.class);
+        given(cal.getRowId()).willReturn(50L);
+        CalendarEvent event = eventInCalendar(cal, 50L);
+        given(eventReminderRepository.findByEventId(5L)).willReturn(java.util.List.of());
+
+        sut.updateEvent(5L, USER_ID, calendarOnlyCmd(Patch.absent()));
+
+        org.assertj.core.api.Assertions.assertThat(event.getCalendar()).isSameAs(cal);
+        verify(userCalendarService, org.mockito.Mockito.never()).getOrCreateDefault(USER_ID);
+    }
+
+    /**
+     * <b>캘린더 없이 저장된 옛 일정</b>은 키가 없는 경로에서 기본 캘린더로 붙인다. 그냥 두면
+     * 그 일정은 영영 소속이 없고(목록 조회는 접근 가능한 캘린더로만 긁으므로 화면에도 안 뜬다),
+     * 거절하면 고칠 방법이 없는 채로 갇힌다. 붙이는 쪽만 빠져나갈 구멍이 있다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code applyCalendar} 의 마지막
+     * {@code if (event.getCalendar() == null)} 갈래를 지우면 소속이 계속 null 로 남아 깨진다.
+     */
+    @Test
+    @DisplayName("updateEvent — 캘린더 없이 저장된 옛 일정은 수정할 때 기본 캘린더로 붙는다")
+    void updateAttachesDefaultCalendarToLegacyEventWithoutOne() {
+        CalendarEvent legacy = CalendarEvent.createEvent(user(USER_ID), "옛 일정", null, null, null,
+                LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0),
+                null, null, null, null, null);
+        ReflectionTestUtils.setField(legacy, "rowId", 5L);
+        given(calendarEventRepository.findById(5L)).willReturn(Optional.of(legacy));
+        given(eventReminderRepository.findByEventId(5L)).willReturn(java.util.List.of());
+        UserCalendar defaultCal = mock(UserCalendar.class);
+        given(userCalendarService.getOrCreateDefault(USER_ID))
+                .willReturn(defaultCalendarInfo(70L));
+        given(userCalendarRepository.findById(70L)).willReturn(Optional.of(defaultCal));
+
+        sut.updateEvent(5L, USER_ID, calendarOnlyCmd(Patch.absent()));
+
+        org.assertj.core.api.Assertions.assertThat(legacy.getCalendar()).isSameAs(defaultCal);
+    }
+
+    /** 옮기는 요청은 종전대로 — 옮겨 갈 캘린더의 쓰기 권한을 확인하고 붙인다. */
+    @Test
+    @DisplayName("updateEvent — calendarRowId 를 실으면 그 캘린더로 옮기고 쓰기 권한을 확인한다")
+    void updateMovesCalendarWhenValuePresent() {
+        UserCalendar cal = mock(UserCalendar.class);
+        given(cal.getRowId()).willReturn(50L);
+        CalendarEvent event = eventInCalendar(cal, 50L);
+        UserCalendar target = mock(UserCalendar.class);
+        given(eventReminderRepository.findByEventId(5L)).willReturn(java.util.List.of());
+        given(userCalendarRepository.findById(60L)).willReturn(Optional.of(target));
+
+        sut.updateEvent(5L, USER_ID, calendarOnlyCmd(Patch.set(60L)));
+
+        org.assertj.core.api.Assertions.assertThat(event.getCalendar()).isSameAs(target);
+        verify(calendarMembershipValidator).validateCanWrite(60L, USER_ID);
+    }
+
+    /**
+     * 생성에서는 거절이 아니라 기본 캘린더를 대입한다 — 캘린더를 고르는 것은 사용자가 내린
+     * 결정이 아니라 화면이 채워 주는 값이라, 안 왔을 때 400 을 던지면 사용자가 고칠 수 없는
+     * 입력 때문에 일정 자체를 못 만든다.
+     */
+    @Test
+    @DisplayName("createEvent — calendarRowId 가 없으면 기본 캘린더가 대입된다(거절하지 않는다)")
+    void createFallsBackToDefaultCalendar() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        UserCalendar defaultCal = mock(UserCalendar.class);
+        given(userCalendarService.getOrCreateDefault(USER_ID))
+                .willReturn(defaultCalendarInfo(70L));
+        given(userCalendarRepository.findById(70L)).willReturn(Optional.of(defaultCal));
+        given(calendarEventRepository.save(org.mockito.ArgumentMatchers.any(CalendarEvent.class)))
+                .willAnswer(inv -> {
+                    CalendarEvent saved = inv.getArgument(0);
+                    ReflectionTestUtils.setField(saved, "rowId", 9L);
+                    return saved;
+                });
+
+        sut.createEvent(createCmd(LocalDateTime.of(2026, 6, 1, 10, 0),
+                LocalDateTime.of(2026, 6, 1, 11, 0), null));
+
+        org.mockito.ArgumentCaptor<CalendarEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(CalendarEvent.class);
+        verify(calendarEventRepository).save(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getCalendar()).isSameAs(defaultCal);
+    }
+
+    private UserCalendarServiceDto.CalendarInfo defaultCalendarInfo(long rowId) {
+        return new UserCalendarServiceDto.CalendarInfo(rowId, USER_ID, "테스터", "기본", "#fff",
+                0, true, true, null, false, true, null, 1, null, null);
     }
 }
