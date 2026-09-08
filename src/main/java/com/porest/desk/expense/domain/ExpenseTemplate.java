@@ -107,6 +107,12 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
         return template;
     }
 
+    /**
+     * 수정 — 받은 값을 그대로 쓴다.
+     *
+     * <p><b>"안 보낸 칸은 유지" 판단은 서비스가 한다</b>(QA #96) — 여기 오는 값은 이미 병합이
+     * 끝난 값이다. {@code lockAmount} 의 null 가드만 남긴다: NOT NULL 컬럼의 마지막 가드다.
+     */
     public void updateTemplate(String templateName, ExpenseCategory category, Asset asset,
                                 ExpenseType expenseType, Long amount, String description,
                                 String merchant, String paymentMethod, YNType lockAmount) {

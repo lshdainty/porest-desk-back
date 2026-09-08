@@ -9,6 +9,7 @@ import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.repository.EventReminderRepository;
 import com.porest.desk.calendar.repository.UserCalendarRepository;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -96,8 +97,8 @@ class EventReminderSyncTest {
 
     private CalendarEventServiceDto.UpdateCommand updateCmd(List<Integer> minutes) {
         return new CalendarEventServiceDto.UpdateCommand(
-                "회의", null, null, null, START, END, null,
-                null, null, null, minutes, null);
+                "회의", Patch.absent(), null, Patch.absent(), START, END, null,
+                Patch.absent(), Patch.absent(), Patch.absent(), minutes, null);
     }
 
     /** 생성 경로가 지나가는 조회들. */

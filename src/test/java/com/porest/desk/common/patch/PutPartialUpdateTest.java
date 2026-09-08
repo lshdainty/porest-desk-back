@@ -29,7 +29,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * QA 2026-09-07 #96 — PUT 의 뜻을 다섯 도메인에서 <b>같은 뜻</b>으로 고정한다.
+ * QA 2026-09-07 #96 — PUT 의 뜻을 <b>같은 뜻</b>으로 고정한다(감사 2026-09-08 로 캘린더·프리셋까지).
  *
  * <p>사용자 결정: <b>"없으면 유지, 지우려면 명시적 null"</b>. 도메인마다 세 케이스를 같은 자리에 건다.
  * <ol>
@@ -502,6 +502,312 @@ class PutPartialUpdateTest {
             assertRejected("asset/assetName=null", put("/asset/" + id, """
                     {"assetName":null}"""));
             assertThat(read(id).get("assetName")).isEqualTo("원이름");
+        }
+    }
+
+    // ────────────────────────────── 캘린더 일정 ──────────────────────────────
+
+    /**
+     * 감사 2026-09-08 [S1] — 캘린더를 #96 과 같은 뜻으로 옮긴다.
+     *
+     * <p>{@code CalendarEvent.updateEvent} 는 {@code description}·{@code color}·{@code label}·
+     * {@code location}·{@code rrule} 다섯 칸을 <b>조건 없이 대입</b>했다. 앱은 값이 없으면 키를 빼고
+     * 보내고 <b>{@code rrule} 은 저장 경로에 파라미터조차 없다</b> — 웹에서 만든 반복 일정이
+     * 앱에서 한 번 저장되는 순간 반복을 잃었고, 앱에는 그것을 되살릴 화면이 없다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code CalendarEventServiceImpl.updateEvent} 의
+     * {@code command.rrule().orKeep(event.getRrule())} 을 {@code command.rrule().value()} 로
+     * 되돌리면 ①이 곧바로 깨진다(다섯 칸 모두 같은 모양이다).
+     */
+    @Nested
+    @DisplayName("캘린더 일정 — description·color·label·location·rrule")
+    class CalendarEvent {
+
+        /** 일정이 놓인 달만 본다 — 반복 전개가 같은 rowId 를 여러 번 돌려주지 않게. */
+        private static final String RANGE = "?startDate=2026-07-01T00:00:00&endDate=2026-07-31T23:59:59";
+
+        private Long labelRowId(String name) {
+            return ((Number) data(post("/calendar/label", """
+                    {"labelName":"%s-%s","color":"#111111"}"""
+                    .formatted(name, UUID.randomUUID().toString().substring(0, 8)))).get("rowId")).longValue();
+        }
+
+        private Long create(Long labelRowId) {
+            return ((Number) data(post("/calendar/event", """
+                    {"title":"원제목","description":"원설명","eventType":"WORK","color":"#111111",
+                     "startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00","isAllDay":"N",
+                     "labelRowId":%d,"location":"원장소","rrule":"FREQ=YEARLY","reminderMinutes":[10]}"""
+                    .formatted(labelRowId))).get("rowId")).longValue();
+        }
+
+        /** 단건 조회 API 가 없다 — 목록에서 그 행을 집어 온다(응답이 아니라 저장된 행을 본다). */
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> read(Long id) {
+            List<Map<String, Object>> rows = (List<Map<String, Object>>)
+                    data(get("/calendar/events" + RANGE)).get("events");
+            return rows.stream()
+                    .filter(row -> ((Number) row.get("rowId")).longValue() == id)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("일정을 목록에서 못 찾았다: " + id));
+        }
+
+        @Test
+        @DisplayName("① 제목만 보내면 설명·색·라벨·장소·반복이 남는다")
+        void partialKeepsRest() {
+            Long labelRowId = labelRowId("원라벨");
+            Long id = create(labelRowId);
+
+            // 시작·종료는 @NotNull 이라 늘 실린다 — 앱·웹도 그렇게 보낸다.
+            Map<String, Object> after = data(put("/calendar/event/" + id, """
+                    {"title":"새제목","startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}"""));
+
+            assertThat(after.get("title")).isEqualTo("새제목");
+            assertThat(after.get("description")).isEqualTo("원설명");
+            assertThat(after.get("color")).isEqualTo("#111111");
+            assertThat(((Number) after.get("labelRowId")).longValue()).isEqualTo(labelRowId);
+            assertThat(after.get("location")).isEqualTo("원장소");
+            assertThat(after.get("rrule")).isEqualTo("FREQ=YEARLY");
+            // 안 보낸 종류·종일 여부는 종전부터 유지였다(도메인 null 가드) — 그대로인지 함께 본다.
+            assertThat(after.get("eventType")).isEqualTo("WORK");
+            assertThat(after.get("isAllDay")).isEqualTo("N");
+            assertThat(read(id)).containsAllEntriesOf(
+                    Map.of("description", "원설명", "location", "원장소", "rrule", "FREQ=YEARLY"));
+        }
+
+        @Test
+        @DisplayName("② 명시적 null 은 지운다")
+        void explicitNullErases() {
+            Long id = create(labelRowId("원라벨"));
+
+            Map<String, Object> after = data(put("/calendar/event/" + id, """
+                    {"description":null,"color":null,"labelRowId":null,"location":null,"rrule":null,
+                     "startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}"""));
+
+            assertThat(after.get("title")).isEqualTo("원제목");
+            assertThat(after.get("description")).isNull();
+            assertThat(after.get("color")).isNull();
+            assertThat(after.get("labelRowId")).isNull();
+            assertThat(after.get("location")).isNull();
+            assertThat(after.get("rrule")).isNull();
+            assertThat(read(id).get("location")).isNull();
+        }
+
+        @Test
+        @DisplayName("③ 전체 PUT — 종전과 같다")
+        void fullPutUnchanged() {
+            Long newLabelRowId = labelRowId("새라벨");
+            Long id = create(labelRowId("원라벨"));
+
+            Map<String, Object> after = data(put("/calendar/event/" + id, """
+                    {"title":"새제목","description":"새설명","eventType":"PERSONAL","color":"#222222",
+                     "startDate":"2026-07-04T09:00:00","endDate":"2026-07-04T10:00:00","isAllDay":"Y",
+                     "labelRowId":%d,"location":"새장소","rrule":"FREQ=MONTHLY","reminderMinutes":[30]}"""
+                    .formatted(newLabelRowId)));
+
+            assertThat(after.get("title")).isEqualTo("새제목");
+            assertThat(after.get("description")).isEqualTo("새설명");
+            assertThat(after.get("eventType")).isEqualTo("PERSONAL");
+            assertThat(after.get("color")).isEqualTo("#222222");
+            assertThat(after.get("isAllDay")).isEqualTo("Y");
+            assertThat(((Number) after.get("labelRowId")).longValue()).isEqualTo(newLabelRowId);
+            assertThat(after.get("location")).isEqualTo("새장소");
+            assertThat(after.get("rrule")).isEqualTo("FREQ=MONTHLY");
+            assertThat((String) after.get("startDate")).startsWith("2026-07-04T09:00");
+            assertThat(read(id).get("description")).isEqualTo("새설명");
+        }
+
+        /**
+         * 알림은 <b>목록을 통째로 교체하는 칸</b>이라 이번에도 그대로 뒀다 —
+         * 종전부터 "{@code null}=미변경, 리스트=교체" 였고 #96 도 거래 {@code splits}·
+         * 자산 {@code holdings}·할 일 {@code tagIds} 를 같은 이유로 건드리지 않았다.
+         */
+        @Test
+        @DisplayName("알림은 종전 계약 그대로 — 안 보내면 유지, 리스트를 보내면 교체")
+        @SuppressWarnings("unchecked")
+        void reminderContractUnchanged() {
+            Long id = create(labelRowId("원라벨"));
+
+            Map<String, Object> kept = data(put("/calendar/event/" + id, """
+                    {"title":"새제목","startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}"""));
+            assertThat((List<Map<String, Object>>) kept.get("reminders"))
+                    .extracting(r -> r.get("minutesBefore")).containsExactly(10);
+
+            Map<String, Object> replaced = data(put("/calendar/event/" + id, """
+                    {"title":"새제목","startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00",
+                     "reminderMinutes":[30]}"""));
+            assertThat((List<Map<String, Object>>) replaced.get("reminders"))
+                    .extracting(r -> r.get("minutesBefore")).containsExactly(30);
+        }
+
+        @Test
+        @DisplayName("실린 값의 제약은 그대로 — 색 형식이 틀리면 400")
+        void constraintsStillApply() {
+            Long id = create(labelRowId("원라벨"));
+            assertRejected("calendar/color=zzz", put("/calendar/event/" + id, """
+                    {"color":"zzz","startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"}"""));
+            assertThat(read(id).get("color")).isEqualTo("#111111");
+        }
+    }
+
+    // ─────────────────────────────── 프리셋 ───────────────────────────────
+
+    /**
+     * 감사 2026-09-08 [S2] — 프리셋 메모가 편집 한 번에 사라지던 자리.
+     *
+     * <p>{@code description} 은 <b>웹·앱 어느 편집 화면도 싣지 않는데</b> 등록은 받고 웹 상세는
+     * 그 값을 그린다 — 저장된 메모가 있고, 보이고, 편집 한 번에 사라지고, 되살릴 입력칸이
+     * 어디에도 없었다. {@code merchant}·{@code paymentMethod}·{@code assetRowId} 도 같은 모양이라
+     * {@code ExpenseApiDto.UpdateRequest} 와 같은 뜻으로 통째로 맞췄다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code ExpenseTemplateServiceImpl.updateTemplate} 의
+     * {@code command.description().orKeep(template.getDescription())} 을
+     * {@code command.description().value()} 로 되돌리면 ①·{@code clientPayloadKeepsDescription}
+     * 이 곧바로 깨진다.
+     */
+    @Nested
+    @DisplayName("프리셋 — description·merchant·paymentMethod·assetRowId")
+    class Preset {
+
+        private Long categoryRowId() {
+            return ((Number) data(post("/expense/category", """
+                    {"categoryName":"식비-%s","icon":"utensils","color":"#2c70bf","expenseType":"EXPENSE"}"""
+                    .formatted(UUID.randomUUID().toString().substring(0, 8)))).get("rowId")).longValue();
+        }
+
+        private Long assetRowId() {
+            return ((Number) data(post("/asset", """
+                    {"assetName":"지갑","assetType":"CASH","balance":100000,"currency":"KRW","isIncludedInTotal":"Y"}"""))
+                    .get("rowId")).longValue();
+        }
+
+        private Long create(Long categoryRowId, Long assetRowId) {
+            return ((Number) data(post("/expense-template", """
+                    {"templateName":"원프리셋-%s","categoryRowId":%d,"assetRowId":%d,"expenseType":"EXPENSE",
+                     "amount":10000,"description":"원메모","merchant":"원거래처","paymentMethod":"CARD",
+                     "lockAmount":"Y"}"""
+                    .formatted(UUID.randomUUID().toString().substring(0, 8), categoryRowId, assetRowId)))
+                    .get("rowId")).longValue();
+        }
+
+        /** 단건 조회 API 가 없다 — 목록에서 그 행을 집어 온다(응답이 아니라 저장된 행을 본다). */
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> read(Long id) {
+            List<Map<String, Object>> rows = (List<Map<String, Object>>)
+                    data(get("/expense-templates")).get("templates");
+            return rows.stream()
+                    .filter(row -> ((Number) row.get("rowId")).longValue() == id)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("프리셋을 목록에서 못 찾았다: " + id));
+        }
+
+        @Test
+        @DisplayName("① 이름만 보내면 메모·거래처·결제수단·자산·카테고리·금액이 남는다")
+        void partialKeepsRest() {
+            Long categoryRowId = categoryRowId();
+            Long assetRowId = assetRowId();
+            Long id = create(categoryRowId, assetRowId);
+
+            Map<String, Object> after = data(put("/expense-template/" + id, """
+                    {"templateName":"새프리셋-%s"}"""
+                    .formatted(UUID.randomUUID().toString().substring(0, 8))));
+
+            assertThat(after.get("description")).isEqualTo("원메모");
+            assertThat(after.get("merchant")).isEqualTo("원거래처");
+            assertThat(after.get("paymentMethod")).isEqualTo("CARD");
+            assertThat(((Number) after.get("categoryRowId")).longValue()).isEqualTo(categoryRowId);
+            assertThat(((Number) after.get("assetRowId")).longValue()).isEqualTo(assetRowId);
+            assertThat(after.get("amount")).isEqualTo(10000);
+            assertThat(after.get("lockAmount")).isEqualTo("Y");
+            assertThat(after.get("expenseType")).isEqualTo("EXPENSE");
+            assertThat(read(id).get("description")).isEqualTo("원메모");
+        }
+
+        @Test
+        @DisplayName("② 명시적 null 은 지운다")
+        void explicitNullErases() {
+            Long id = create(categoryRowId(), assetRowId());
+
+            Map<String, Object> after = data(put("/expense-template/" + id, """
+                    {"description":null,"merchant":null,"paymentMethod":null,"assetRowId":null}"""));
+
+            assertThat(after.get("description")).isNull();
+            assertThat(after.get("merchant")).isNull();
+            assertThat(after.get("paymentMethod")).isNull();
+            assertThat(after.get("assetRowId")).isNull();
+            assertThat(after.get("amount")).isEqualTo(10000);
+            assertThat(read(id).get("merchant")).isNull();
+        }
+
+        @Test
+        @DisplayName("③ 전체 PUT — 종전과 같다")
+        void fullPutUnchanged() {
+            Long categoryRowId = categoryRowId();
+            Long newCategoryRowId = categoryRowId();
+            Long assetRowId = assetRowId();
+            Long id = create(categoryRowId, assetRowId);
+
+            Map<String, Object> after = data(put("/expense-template/" + id, """
+                    {"templateName":"새프리셋-%s","categoryRowId":%d,"assetRowId":%d,"expenseType":"EXPENSE",
+                     "amount":20000,"description":"새메모","merchant":"새거래처","paymentMethod":"CASH",
+                     "lockAmount":"Y"}"""
+                    .formatted(UUID.randomUUID().toString().substring(0, 8), newCategoryRowId, assetRowId)));
+
+            assertThat(((Number) after.get("categoryRowId")).longValue()).isEqualTo(newCategoryRowId);
+            assertThat(((Number) after.get("assetRowId")).longValue()).isEqualTo(assetRowId);
+            assertThat(after.get("amount")).isEqualTo(20000);
+            assertThat(after.get("description")).isEqualTo("새메모");
+            assertThat(after.get("merchant")).isEqualTo("새거래처");
+            assertThat(after.get("paymentMethod")).isEqualTo("CASH");
+            assertThat(after.get("lockAmount")).isEqualTo("Y");
+            assertThat(read(id).get("description")).isEqualTo("새메모");
+        }
+
+        /**
+         * 웹·앱이 <b>지금 그대로 보내는 본문</b>이다 — {@code description} 키가 없다.
+         * 이 한 번의 저장이 메모를 지웠고, 다시 적어 넣을 입력칸이 어디에도 없었다.
+         */
+        @Test
+        @DisplayName("지금 화면이 보내는 본문(메모 키 없음)으로 저장해도 메모가 남는다")
+        void clientPayloadKeepsDescription() {
+            Long categoryRowId = categoryRowId();
+            Long assetRowId = assetRowId();
+            Long id = create(categoryRowId, assetRowId);
+
+            Map<String, Object> after = data(put("/expense-template/" + id, """
+                    {"templateName":"새프리셋-%s","categoryRowId":%d,"assetRowId":%d,"expenseType":"EXPENSE",
+                     "amount":20000,"merchant":"새거래처","paymentMethod":"CASH","lockAmount":"Y"}"""
+                    .formatted(UUID.randomUUID().toString().substring(0, 8), categoryRowId, assetRowId)));
+
+            assertThat(after.get("description")).isEqualTo("원메모");
+            assertThat(read(id).get("description")).isEqualTo("원메모");
+        }
+
+        /**
+         * 고정 금액과 금액은 한 쌍이다 — 한쪽만 실린 요청이 나머지 한쪽을 지금 값으로 못 읽으면
+         * 고정을 켜 둔 프리셋의 금액이 조용히 사라진다({@code resolveAmount} 는 고정이 아니면 금액을 버린다).
+         */
+        @Test
+        @DisplayName("거래처만 고쳐도 고정 금액이 살아남는다")
+        void lockedAmountSurvivesPartialUpdate() {
+            Long id = create(categoryRowId(), assetRowId());
+
+            Map<String, Object> after = data(put("/expense-template/" + id, """
+                    {"merchant":"새거래처"}"""));
+
+            assertThat(after.get("lockAmount")).isEqualTo("Y");
+            assertThat(after.get("amount")).isEqualTo(10000);
+            assertThat(read(id).get("amount")).isEqualTo(10000);
+        }
+
+        @Test
+        @DisplayName("필수 칸(templateName)의 명시적 null 은 400")
+        void requiredTemplateNameNullRejected() {
+            Long id = create(categoryRowId(), assetRowId());
+            String before = (String) read(id).get("templateName");
+
+            assertRejected("expense-template/templateName=null", put("/expense-template/" + id, """
+                    {"templateName":null}"""));
+            assertThat(read(id).get("templateName")).isEqualTo(before);
         }
     }
 }

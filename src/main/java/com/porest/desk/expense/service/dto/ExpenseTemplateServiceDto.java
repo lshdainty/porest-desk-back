@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service.dto;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.domain.ExpenseTemplate;
 import com.porest.desk.expense.type.ExpenseType;
 
@@ -22,16 +23,17 @@ public class ExpenseTemplateServiceDto {
         YNType lockAmount
     ) {}
 
+    /** 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}). */
     public record UpdateCommand(
-        String templateName,
-        Long categoryRowId,
-        Long assetRowId,
-        ExpenseType expenseType,
-        Long amount,
-        String description,
-        String merchant,
-        String paymentMethod,
-        YNType lockAmount
+        Patch<String> templateName,
+        Patch<Long> categoryRowId,
+        Patch<Long> assetRowId,
+        Patch<ExpenseType> expenseType,
+        Patch<Long> amount,
+        Patch<String> description,
+        Patch<String> merchant,
+        Patch<String> paymentMethod,
+        Patch<YNType> lockAmount
     ) {}
 
     public record TemplateInfo(

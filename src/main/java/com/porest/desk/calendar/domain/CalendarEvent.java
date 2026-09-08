@@ -122,6 +122,8 @@ public class CalendarEvent extends AuditingFieldsWithIp {
      *
      * <p>널 허용 칸({@code description}·{@code color}·{@code label}·{@code location}·{@code rrule})은
      * 반대로 그대로 덮는다 — 거기서 null 은 "지운다" 는 뜻이고, 지울 방법을 없애면 안 된다.
+     * <b>"안 보낸 칸은 유지" 판단은 서비스가 한다</b>(QA #96) — 여기 오는 다섯 칸은 이미
+     * 병합이 끝난 값이다. 이 자리에서 다시 null 을 무시하면 지울 방법이 없어진다.
      */
     public void updateEvent(String title, String description, CalendarEventType eventType,
             String color, LocalDateTime startDate, LocalDateTime endDate, YNType isAllDay,

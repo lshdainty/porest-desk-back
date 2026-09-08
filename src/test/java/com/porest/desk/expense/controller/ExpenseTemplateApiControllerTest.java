@@ -5,6 +5,7 @@ import com.porest.core.util.MessageResolver;
 import com.porest.desk.common.config.web.WebConfig;
 import com.porest.desk.expense.service.ExpenseTemplateService;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
@@ -138,9 +139,11 @@ class ExpenseTemplateApiControllerTest {
 
         var captor = ArgumentCaptor.forClass(ExpenseTemplateServiceDto.UpdateCommand.class);
         verify(expenseTemplateService).updateTemplate(eq(30L), eq(1L), captor.capture());
-        assertThat(captor.getValue().templateName()).isEqualTo("점심 변경");
-        assertThat(captor.getValue().amount()).isEqualTo(11000L);
-        assertThat(captor.getValue().lockAmount()).isEqualTo(YNType.Y);
+        assertThat(captor.getValue().templateName()).isEqualTo(Patch.set("점심 변경"));
+        assertThat(captor.getValue().amount()).isEqualTo(Patch.set(11000L));
+        assertThat(captor.getValue().lockAmount()).isEqualTo(Patch.set(YNType.Y));
+        // 실린 칸은 "이 값으로", 안 실린 칸은 "안 왔다" 로 넘어간다(QA #96).
+        assertThat(captor.getValue().description()).isEqualTo(Patch.set("수정"));
     }
 
     @Test

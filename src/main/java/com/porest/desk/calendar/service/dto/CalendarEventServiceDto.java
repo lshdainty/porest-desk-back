@@ -3,6 +3,7 @@ package com.porest.desk.calendar.service.dto;
 import com.porest.core.type.YNType;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.type.CalendarEventType;
+import com.porest.desk.common.patch.Patch;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,17 +26,24 @@ public class CalendarEventServiceDto {
         Long calendarRowId
     ) {}
 
+    /**
+     * 수정 명령 — 널 허용 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}).
+     *
+     * <p>나머지 칸의 뜻은 종전 그대로다 — {@code title}·{@code eventType}·{@code isAllDay} 는
+     * null 이면 유지(도메인 가드), {@code startDate}·{@code endDate} 는 늘 실리고,
+     * {@code reminderMinutes}·{@code calendarRowId} 는 null 이면 손대지 않는다.
+     */
     public record UpdateCommand(
         String title,
-        String description,
+        Patch<String> description,
         CalendarEventType eventType,
-        String color,
+        Patch<String> color,
         LocalDateTime startDate,
         LocalDateTime endDate,
         YNType isAllDay,
-        Long labelRowId,
-        String location,
-        String rrule,
+        Patch<Long> labelRowId,
+        Patch<String> location,
+        Patch<String> rrule,
         List<Integer> reminderMinutes,
         Long calendarRowId
     ) {}
