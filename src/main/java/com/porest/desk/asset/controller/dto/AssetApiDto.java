@@ -357,7 +357,26 @@ public class AssetApiDto {
         /** 이자 (대출 상환 시). amount 중 이 금액은 부채를 줄이지 않고 지출로 잡힌다. */
         Long interestAmount,
         String description,
-        LocalDateTime transferDate
+        /**
+         * 이체 일시 — <b>문자열로 받아 컨트롤러가 파싱한다</b>({@link com.porest.desk.common.time.WallClockDateTimeParser}).
+         *
+         * <p>종전엔 {@code LocalDateTime} 이라 Jackson 이 {@code "2026-09-08"} 을 못 읽고 그 자리에서
+         * 끊었다(400). 같은 화면의 거래({@code ExpenseApiDto.expenseDate})는 날짜만 보내도 받는데
+         * 이체만 시각을 요구한 셈이다(QA #101) — 실제로 웹 이체 폼
+         * ({@code AssetTransferForm} 의 {@code InputDatePicker})이 날짜만 보낸다.
+         * 이제 날짜만 오면 그 날 00:00 로 읽는다.
+         *
+         * <p><b>응답({@link TransferResponse#transferDate()})은 {@code LocalDateTime} 그대로다</b> —
+         * 클라이언트가 파싱해 쓰고 있고, 바꿀 이유가 요청 쪽에만 있다.
+         *
+         * <p><b>{@code @NotBlank} 는 일부러 안 단다.</b> 거래({@code expenseDate})는 달고 있지만
+         * 여기는 종전에도 없던 제약이고(QA #85 가 이체에 건 {@code @NotNull} 은
+         * {@code fromAssetRowId}·{@code toAssetRowId} 다), 빼먹은 요청은 이미
+         * {@code DataIntegrityExceptionHandler} 가 400 "요청에 빠진 값이 있어요" 로 받는다
+         * ({@code transfer_date} 가 NOT NULL 이라 하이버네이트가 저장 전에 끊는다 — 실측 확인).
+         * 형식만 고치는 자리에서 제약을 새로 걸면 <b>이 PR 이 무엇을 바꿨는지</b>가 흐려진다.
+         */
+        String transferDate
     ) {}
 
     public record TransferResponse(
