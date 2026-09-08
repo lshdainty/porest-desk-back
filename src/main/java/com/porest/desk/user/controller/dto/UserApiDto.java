@@ -2,6 +2,7 @@ package com.porest.desk.user.controller.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.user.domain.User;
+import com.porest.desk.user.type.SupportedCurrency;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -34,7 +35,13 @@ public class UserApiDto {
         private String password;
     }
 
-    /** 알림 환경설정 응답 — boolean 항목은 true/false 로 직렬화. */
+    /**
+     * 환경설정 응답 — boolean 항목은 true/false 로 직렬화.
+     *
+     * <p>알림 말고 <b>표시 설정</b>도 여기로 나간다({@code timezone} · {@code defaultCurrency}).
+     * 엔드포인트를 나누지 않은 이유는 부르는 시점이 같기 때문이다 — 둘 다 설정 화면에서만
+     * 읽고 쓴다. (앱을 열 때마다 필요한 금액 가리기만 {@code /me/hide-cards} 로 따로 있다.)
+     */
     public record PreferencesResponse(
         Boolean pushEnabled,
         Boolean notifyPayment,
@@ -53,7 +60,9 @@ public class UserApiDto {
         Boolean emailEnabled,
         String emailFrequency,
         /** 표시 기준 지역(IANA 타임존 ID) */
-        String timezone
+        String timezone,
+        /** 새 자산·거래에 미리 골라 둘 통화({@link SupportedCurrency}) */
+        String defaultCurrency
     ) {
         private static Boolean bool(YNType v) {
             return v == null ? null : v.toBoolean();
@@ -77,7 +86,8 @@ public class UserApiDto {
                 bool(u.getVibrationEnabled()),
                 bool(u.getEmailEnabled()),
                 u.getEmailFrequency(),
-                u.getTimezone()
+                u.getTimezone(),
+                u.getDefaultCurrency()
             );
         }
     }
@@ -122,6 +132,19 @@ public class UserApiDto {
         // 표시 기준 지역(IANA 타임존 ID). null = 무변경(부분 수정).
         // 값 형식은 ZoneId 로만 판단 가능해 서비스에서 검증한다.
         private String timezone;
+
+        /**
+         * 새 자산·거래 기본 통화. null = 무변경(부분 수정).
+         *
+         * <p>목록을 좁히는 자리가 <b>둘</b>인 이유: 여기 {@code @Pattern} 은 잘못 고른 값을
+         * 그 자리에서 400 으로 끊어 문구를 보여 주고, 서비스의 검사는 이 애노테이션이
+         * 지워지거나 다른 호출자가 생겼을 때를 위한 것이다. 알림음·발송 주기와 달리 이 값은
+         * <b>새 자산·거래로 번져 나가고</b> 환율 조회({@code getFxRate})에까지 실려 나가므로
+         * 한 겹으로 두지 않는다.
+         */
+        @Pattern(regexp = SupportedCurrency.PATTERN,
+                message = "통화는 KRW·USD·EUR·JPY 중에서 골라 주세요")
+        private String defaultCurrency;
     }
 
     /**

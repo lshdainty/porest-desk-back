@@ -58,7 +58,7 @@ class UserApiControllerTest {
     private PreferencesResponse samplePreferences() {
         return new PreferencesResponse(
                 true, false, false, false, false, false, false, false,
-                80, false, null, null, "DEFAULT", true, false, "WEEKLY", "Asia/Seoul");
+                80, false, null, null, "DEFAULT", true, false, "WEEKLY", "Asia/Seoul", "KRW");
     }
 
     @Test
@@ -148,7 +148,8 @@ class UserApiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.pushEnabled").value(true))
                 .andExpect(jsonPath("$.data.budgetAlertThreshold").value(80))
-                .andExpect(jsonPath("$.data.emailFrequency").value("WEEKLY"));
+                .andExpect(jsonPath("$.data.emailFrequency").value("WEEKLY"))
+                .andExpect(jsonPath("$.data.defaultCurrency").value("KRW"));
 
         verify(userService).getPreferences(1L);
     }
@@ -174,6 +175,49 @@ class UserApiControllerTest {
         assertThat(captor.getValue().getPushEnabled()).isFalse();
         assertThat(captor.getValue().getBudgetAlertThreshold()).isEqualTo(90);
         assertThat(captor.getValue().getEmailFrequency()).isEqualTo("DAILY");
+    }
+
+    /**
+     * QA #124 — 기본 통화가 이 엔드포인트에 얹힌다. 새 API 를 만들지 않은 이유는 부르는
+     * 시점이 알림·지역 설정과 같기 때문이다(설정 화면에서만 읽고 쓴다).
+     */
+    @Test
+    @DisplayName("PATCH /users/me/preferences — 기본 통화도 같은 본문으로 전달된다")
+    void updatePreferencesCarriesDefaultCurrency() throws Exception {
+        given(userService.updatePreferences(eq(1L), any(UpdatePreferencesReq.class)))
+                .willReturn(samplePreferences());
+
+        mockMvc.perform(patch("/api/v1/users/me/preferences")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"defaultCurrency":"USD"}
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<UpdatePreferencesReq> captor = ArgumentCaptor.forClass(UpdatePreferencesReq.class);
+        verify(userService).updatePreferences(eq(1L), captor.capture());
+        assertThat(captor.getValue().getDefaultCurrency()).isEqualTo("USD");
+    }
+
+    /**
+     * 목록 밖의 값은 서비스에 닿기 전에 끊는다 — 알림음·발송 주기와 같은 모양이다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code UpdatePreferencesReq.defaultCurrency} 의
+     * {@code @Pattern} 을 지우면 아래가 200 이 되며 깨진다(서비스는 mock 이라 검사도 안 돈다).
+     */
+    @Test
+    @DisplayName("PATCH /users/me/preferences — 고를 수 없는 통화면 400 이고 서비스까지 안 간다")
+    void updatePreferences_unsupportedCurrency_returns400() throws Exception {
+        mockMvc.perform(patch("/api/v1/users/me/preferences")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"defaultCurrency":"XBT"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+
+        verify(userService, org.mockito.Mockito.never())
+                .updatePreferences(org.mockito.ArgumentMatchers.anyLong(), any(UpdatePreferencesReq.class));
     }
 
     @Test

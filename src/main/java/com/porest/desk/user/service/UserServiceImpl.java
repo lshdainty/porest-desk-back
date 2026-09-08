@@ -11,6 +11,7 @@ import com.porest.desk.user.controller.dto.UserApiDto;
 import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import com.porest.desk.user.type.SupportedCurrency;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -223,7 +224,15 @@ public class UserServiceImpl implements UserService {
             }
             user.updateTimezone(req.getTimezone());
         }
-        log.info("알림 환경설정 변경: userRowId={}", userRowId);
+        // 기본 통화도 저장 전에 좁힌다. DTO 의 @Pattern 과 겹치지만, 이 값은 새 자산·거래로
+        // 번져 나가고 환율 조회에까지 실리므로 애노테이션 하나에 걸어 두지 않는다.
+        if (req.getDefaultCurrency() != null && !req.getDefaultCurrency().isBlank()) {
+            if (!SupportedCurrency.contains(req.getDefaultCurrency())) {
+                throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+            }
+            user.updateDefaultCurrency(req.getDefaultCurrency());
+        }
+        log.info("환경설정 변경: userRowId={}", userRowId);
         return PreferencesResponse.from(user);
     }
 

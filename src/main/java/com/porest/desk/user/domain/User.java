@@ -2,6 +2,7 @@ package com.porest.desk.user.domain;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
+import com.porest.desk.user.type.SupportedCurrency;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -60,6 +61,19 @@ public class User extends AuditingFieldsWithIp {
 
     @Column(name = "timezone", nullable = false, length = 50)
     private String timezone;
+
+    /**
+     * 새 자산·거래를 만들 때 화면이 미리 골라 두는 통화(ISO 4217, {@link SupportedCurrency}).
+     *
+     * <p><b>기기가 아니라 계정에 붙는다.</b> 종전에는 웹 localStorage 의 {@code pd-currency} 에만
+     * 있었고 읽는 곳이 하나도 없었다(QA #124) — 설정에서 고르면 저장된 것처럼 보이는데 폰에서도,
+     * 다른 브라우저에서도 아무 일이 일어나지 않았다.
+     *
+     * <p>이 값은 <b>기본값일 뿐</b>이다. 자산·거래는 각자 통화를 들고 있고
+     * ({@code asset.currency}) 여기 값을 바꿔도 이미 만든 것은 따라 바뀌지 않는다.
+     */
+    @Column(name = "default_currency", nullable = false, length = 10)
+    private String defaultCurrency;
 
     @Column(name = "month_start_day", nullable = false)
     private Integer monthStartDay;
@@ -158,6 +172,7 @@ public class User extends AuditingFieldsWithIp {
         user.userName = userName;
         user.userEmail = userEmail;
         user.timezone = (timezone == null || timezone.isBlank()) ? "Asia/Seoul" : timezone;
+        user.defaultCurrency = SupportedCurrency.DEFAULT;
         user.monthStartDay = 1;
         user.budgetAlertThreshold = 85;
         user.pushEnabled = YNType.Y;
@@ -196,6 +211,10 @@ public class User extends AuditingFieldsWithIp {
 
     public void updateTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public void updateDefaultCurrency(String defaultCurrency) {
+        this.defaultCurrency = defaultCurrency;
     }
 
     public void updateMonthStartDay(Integer monthStartDay) {
