@@ -102,9 +102,15 @@ class SmsImportServiceImplTest {
         return m;
     }
 
+    /** 종류를 안 싣는 옛 앱 모양(expenseType=null). */
     private SmsImportServiceDto.CommitCommand commitCommand(Long assetRowId, boolean remember) {
+        return commitCommand(assetRowId, remember, null);
+    }
+
+    private SmsImportServiceDto.CommitCommand commitCommand(
+        Long assetRowId, boolean remember, ExpenseType expenseType) {
         return new SmsImportServiceDto.CommitCommand(
-            USER, KB_SMS, assetRowId, 10L, 5_500L, "스타벅스강남", null,
+            USER, KB_SMS, assetRowId, 10L, expenseType, 5_500L, "스타벅스강남", null,
             LocalDateTime.of(2026, 8, 13, 13, 22), "CARD", null, null, null, null, remember);
     }
 
@@ -327,11 +333,50 @@ class SmsImportServiceImplTest {
         }
 
         @Test
+        @DisplayName("수입으로 보내면 수입으로 저장한다 — 환불·입금 문자를 남길 유일한 길")
+        void usesGivenExpenseType() {
+            givenExpenseCreated(500L);
+
+            sut.commit(commitCommand(100L, false, ExpenseType.INCOME));
+
+            ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+            verify(expenseService).createExpense(captor.capture());
+            assertThat(captor.getValue().expenseType()).isEqualTo(ExpenseType.INCOME);
+        }
+
+        @Test
+        @DisplayName("지출로 보내면 지출로 저장한다")
+        void keepsExplicitExpenseType() {
+            givenExpenseCreated(500L);
+
+            sut.commit(commitCommand(100L, false, ExpenseType.EXPENSE));
+
+            ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+            verify(expenseService).createExpense(captor.capture());
+            assertThat(captor.getValue().expenseType()).isEqualTo(ExpenseType.EXPENSE);
+        }
+
+        @Test
+        @DisplayName("종류를 안 보내면 지출로 채운다 — 이 키를 모르는 옛 앱이 계속 저장돼야 한다")
+        void expenseTypeDefaultsToExpense() {
+            givenExpenseCreated(500L);
+
+            sut.commit(commitCommand(100L, false, null));
+
+            ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+            verify(expenseService).createExpense(captor.capture());
+            assertThat(captor.getValue().expenseType()).isEqualTo(ExpenseType.EXPENSE);
+        }
+
+        @Test
         @DisplayName("결제수단을 안 보내면 카드로 채운다 — 폼 select 가 알아보는 코드여야 한다")
         void paymentMethodDefaultsToCard() {
             givenExpenseCreated(500L);
             var cmd = new SmsImportServiceDto.CommitCommand(
-                USER, KB_SMS, null, 10L, 5_500L, "스타벅스강남", null,
+                USER, KB_SMS, null, 10L, null, 5_500L, "스타벅스강남", null,
                 LocalDateTime.of(2026, 8, 13, 13, 22), null, null, null, null, null, false);
 
             sut.commit(cmd);
@@ -352,7 +397,7 @@ class SmsImportServiceImplTest {
                 08/13 14:00
                 스타벅스강남""";
             var cmd = new SmsImportServiceDto.CommitCommand(
-                USER, cancelSms, 100L, 10L, 5_500L, "스타벅스강남", null,
+                USER, cancelSms, 100L, 10L, null, 5_500L, "스타벅스강남", null,
                 LocalDateTime.of(2026, 8, 13, 14, 0), "CARD", null, null, null, null, false);
 
             assertThatThrownBy(() -> sut.commit(cmd))
@@ -364,7 +409,7 @@ class SmsImportServiceImplTest {
         @DisplayName("결제 문자가 아닌 원문이면 거부한다")
         void rejectsNonPayment() {
             var cmd = new SmsImportServiceDto.CommitCommand(
-                USER, "오늘 저녁에 만나자", 100L, 10L, 5_500L, "x", null,
+                USER, "오늘 저녁에 만나자", 100L, 10L, null, 5_500L, "x", null,
                 LocalDateTime.of(2026, 8, 13, 14, 0), "CARD", null, null, null, null, false);
 
             assertThatThrownBy(() -> sut.commit(cmd))

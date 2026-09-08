@@ -52,6 +52,7 @@ public class SmsImportApiController {
                 request.text(),
                 request.assetRowId(),
                 request.categoryRowId(),
+                request.expenseType(),
                 request.amount(),
                 request.merchant(),
                 request.description(),

@@ -7,6 +7,7 @@ import com.porest.desk.dataimport.sms.controller.dto.SmsImportApiDto;
 import com.porest.desk.dataimport.sms.service.SmsConfidence;
 import com.porest.desk.dataimport.sms.service.SmsImportService;
 import com.porest.desk.dataimport.sms.service.dto.SmsImportServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
 import com.porest.desk.security.resolver.LoginUserArgumentResolver;
 import com.porest.desk.support.security.WithLoginUser;
@@ -100,7 +101,7 @@ class SmsImportApiControllerTest {
 
         SmsImportApiDto.CommitRequest request = new SmsImportApiDto.CommitRequest(
             "KB국민카드1234승인 5,500원 일시불 08/13 13:22 스타벅스강남",
-            100L, 50L, 5_500L, "스타벅스강남", null,
+            100L, 50L, ExpenseType.INCOME, 5_500L, "스타벅스강남", null,
             "2026-08-13T13:22", "CARD", null, null, null, null, true);
 
         mockMvc.perform(post("/api/v1/import/sms/commit")
@@ -117,6 +118,34 @@ class SmsImportApiControllerTest {
         assertThat(cmd.userRowId()).isEqualTo(1L);
         assertThat(cmd.expenseDate()).isEqualTo(LocalDateTime.of(2026, 8, 13, 13, 22));
         assertThat(cmd.rememberCard()).isTrue();
+        assertThat(cmd.expenseType()).isEqualTo(ExpenseType.INCOME);
+    }
+
+    @Test
+    @DisplayName("POST /import/sms/commit — 종류 키가 없는 옛 앱 본문도 그대로 받는다")
+    void commitWithoutExpenseType() throws Exception {
+        given(smsImportService.commit(any()))
+            .willReturn(new SmsImportServiceDto.CommitResult(500L, false));
+
+        // 레코드를 직렬화하면 expenseType:null 이 실려 "키가 없는" 상황이 안 만들어진다.
+        // 옛 앱이 실제로 보내는 본문 그대로를 쓴다.
+        String legacyBody = """
+            {"text":"KB국민카드1234승인 5,500원 일시불 08/13 13:22 스타벅스강남",
+             "assetRowId":100,"categoryRowId":50,"amount":5500,
+             "merchant":"스타벅스강남","expenseDate":"2026-08-13T13:22",
+             "paymentMethod":"CARD","rememberCard":false}""";
+
+        mockMvc.perform(post("/api/v1/import/sms/commit")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(legacyBody))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.expenseRowId").value(500));
+
+        ArgumentCaptor<SmsImportServiceDto.CommitCommand> captor =
+            ArgumentCaptor.forClass(SmsImportServiceDto.CommitCommand.class);
+        verify(smsImportService).commit(captor.capture());
+        // 기본값은 서비스가 정한다 — 컨트롤러는 안 온 값을 지어내지 않는다.
+        assertThat(captor.getValue().expenseType()).isNull();
     }
 
     @Test
@@ -127,7 +156,7 @@ class SmsImportApiControllerTest {
 
         SmsImportApiDto.CommitRequest request = new SmsImportApiDto.CommitRequest(
             "KB국민카드1234승인 5,500원 일시불 스타벅스강남",
-            100L, 50L, 5_500L, "스타벅스강남", null,
+            100L, 50L, null, 5_500L, "스타벅스강남", null,
             "2026-08-13", "CARD", null, null, null, null, false);
 
         mockMvc.perform(post("/api/v1/import/sms/commit")

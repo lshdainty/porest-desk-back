@@ -2,6 +2,7 @@ package com.porest.desk.dataimport.sms.service.dto;
 
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.dataimport.sms.service.SmsConfidence;
+import com.porest.desk.expense.type.ExpenseType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -65,6 +66,7 @@ public class SmsImportServiceDto {
      * 서버가 다시 파싱해 취소 문자면 저장을 막고, 카드 매핑 키를 스스로 도출한다.
      * 매핑 키를 클라이언트가 정하게 두면 남의 문자에서 온 키로 자산을 묶을 수 있다.
      *
+     * @param expenseType   거래 종류 — null 이면 지출로 본다(이 값을 안 보내는 옛 클라이언트)
      * @param rememberCard  체크 시 (원문에서 도출한 카드 힌트 → assetRowId) 를 기억해 다음부터 자동 연결
      */
     public record CommitCommand(
@@ -72,6 +74,7 @@ public class SmsImportServiceDto {
         String text,
         Long assetRowId,
         Long categoryRowId,
+        ExpenseType expenseType,
         Long amount,
         String merchant,
         String description,

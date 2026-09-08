@@ -3,6 +3,7 @@ package com.porest.desk.dataimport.sms.controller.dto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.dataimport.sms.service.SmsConfidence;
 import com.porest.desk.dataimport.sms.service.dto.SmsImportServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -75,6 +76,11 @@ public class SmsImportApiDto {
         String text,
         Long assetRowId,
         Long categoryRowId,
+        /**
+         * 거래 종류(INCOME/EXPENSE). <b>비면 지출로 본다</b> — 이 키를 안 보내는
+         * 옛 앱이 계속 돌아야 한다. 환불·입금 문자를 수입으로 남기려면 INCOME 을 싣는다.
+         */
+        ExpenseType expenseType,
         Long amount,
         String merchant,
         String description,

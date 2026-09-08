@@ -114,7 +114,7 @@ public class SmsImportServiceImpl implements SmsImportService {
                 command.userRowId(),
                 command.categoryRowId(),
                 command.assetRowId(),
-                ExpenseType.EXPENSE,
+                expenseTypeOf(command.expenseType()),
                 command.amount(),
                 command.description(),
                 command.expenseDate(),
@@ -321,6 +321,19 @@ public class SmsImportServiceImpl implements SmsImportService {
         }
         cardMappingRepository.save(SmsCardMapping.create(userRowId, cardHint, assetRowId));
         return true;
+    }
+
+    /**
+     * 거래 종류 — 클라이언트가 고른 값을 그대로 쓰고, 비면 지출로 본다.
+     *
+     * <p>결제 문자는 대개 지출이지만 환불·입금 문자도 온다. 종전에는 여기서
+     * {@code EXPENSE} 를 박아 넣어 <b>수입으로 남길 길이 아예 없었다</b>.
+     *
+     * <p>기본값을 지출로 두는 이유는 <b>이 값을 안 보내는 앱이 이미 나가 있어서</b>다 —
+     * 필수로 바꾸면 그 앱들의 저장이 전부 실패한다.
+     */
+    private static ExpenseType expenseTypeOf(ExpenseType expenseType) {
+        return expenseType == null ? ExpenseType.EXPENSE : expenseType;
     }
 
     /** 결제수단 — 클라이언트가 고른 코드를 그대로 쓰고, 비면 카드로 본다. */
