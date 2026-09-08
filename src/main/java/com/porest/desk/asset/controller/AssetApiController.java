@@ -3,6 +3,7 @@ package com.porest.desk.asset.controller;
 import com.porest.core.controller.ApiResponse;
 import com.porest.desk.asset.controller.dto.AssetApiDto;
 import com.porest.desk.common.patch.Patch;
+import com.porest.desk.common.time.WallClockDateTimeParser;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.security.annotation.LoginUser;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -140,7 +142,7 @@ public class AssetApiController {
             loginUser.getRowId(),
             request.fromAssetRowId(), request.toAssetRowId(),
             request.amount(), request.fee(), request.interestAmount(),
-            request.description(), request.transferDate(),
+            request.description(), parseTransferDate(request.transferDate()),
             null  // 사용자가 만든 이체
         ));
         return ApiResponse.success(AssetApiDto.TransferResponse.from(info));
@@ -164,7 +166,7 @@ public class AssetApiController {
             new AssetServiceDto.CreateTransferCommand(
                 loginUser.getRowId(), request.fromAssetRowId(), request.toAssetRowId(),
                 request.amount(), request.fee(), request.interestAmount(),
-                request.description(), request.transferDate(), null));
+                request.description(), parseTransferDate(request.transferDate()), null));
         return ApiResponse.success(AssetApiDto.TransferResponse.from(info));
     }
 
@@ -174,5 +176,16 @@ public class AssetApiController {
             @PathVariable Long id) {
         assetService.deleteTransferByUser(id, loginUser.getRowId());
         return ApiResponse.success();
+    }
+
+    /**
+     * transferDate 문자열 → LocalDateTime. 규칙은 {@link WallClockDateTimeParser} 참조 —
+     * 거래({@code ExpenseApiController.parseExpenseDate})와 <b>같은 파서</b>다(QA #101).
+     *
+     * <p>형식이 어긋나면 {@code DateTimeParseException} 이 그대로 올라가고
+     * {@code RequestValueExceptionHandler} 가 400 "올바른 날짜가 아니에요" 로 받는다.
+     */
+    private static LocalDateTime parseTransferDate(String s) {
+        return WallClockDateTimeParser.parse(s);
     }
 }
