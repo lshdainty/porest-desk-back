@@ -11,6 +11,7 @@ import com.porest.desk.calendar.repository.EventLabelRepository;
 import com.porest.desk.calendar.repository.EventReminderRepository;
 import com.porest.desk.calendar.repository.UserCalendarRepository;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.user.domain.User;
@@ -222,9 +223,9 @@ class CalendarEventServiceImplTest {
         given(eventReminderRepository.findByEventId(5L)).willReturn(java.util.List.of());
 
         sut.updateEvent(5L, USER_ID, new CalendarEventServiceDto.UpdateCommand(
-                "회의(수정)", null, null, null,
+                "회의(수정)", Patch.absent(), null, Patch.absent(),
                 LocalDateTime.of(2026, 6, 1, 10, 0), LocalDateTime.of(2026, 6, 1, 11, 0),
-                null, null, null, null, null, null));
+                null, Patch.absent(), Patch.absent(), Patch.absent(), null, null));
 
         org.assertj.core.api.Assertions.assertThat(event.getEventType())
                 .isEqualTo(com.porest.desk.calendar.type.CalendarEventType.WORK);

@@ -7,6 +7,7 @@ import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.domain.ExpenseTemplate;
 import com.porest.desk.expense.repository.ExpenseCategoryRepository;
 import com.porest.desk.expense.repository.ExpenseRepository;
@@ -77,8 +78,9 @@ class ExpenseTemplateServiceImplTest {
 
     private ExpenseTemplateServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new ExpenseTemplateServiceDto.UpdateCommand(
-                "점심 템플릿", categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                null, null, null, null);
+                Patch.set("점심 템플릿"), Patch.set(categoryRowId), Patch.absent(),
+                Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
     }
 
     @Test
@@ -210,8 +212,9 @@ class ExpenseTemplateServiceImplTest {
         given(assetRepository.findById(20L)).willReturn(Optional.of(othersAsset));
 
         var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
-                "점심 템플릿", null, 20L, ExpenseType.EXPENSE, 10_000L,
-                null, null, null, null);
+                Patch.set("점심 템플릿"), Patch.absent(), Patch.set(20L),
+                Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
 
         assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID, cmd))
                 .isInstanceOf(ForbiddenException.class);
@@ -274,9 +277,18 @@ class ExpenseTemplateServiceImplTest {
         @Test
         @DisplayName("수정에서도 음수를 막는다")
         void rejectsNegativeOnUpdate() {
+            // 금액 검사가 조회보다 뒤로 갔다 — 안 보낸 칸을 지금 값으로 채워야 "고정 금액인가" 를
+            // 판정할 수 있어서다(QA #96). 그래서 이 테스트는 프리셋이 실재해야 한다.
+            User u = user(USER_ID);
+            ExpenseTemplate t = ExpenseTemplate.createTemplate(
+                u, "프리셋", null, null, ExpenseType.EXPENSE, 10_000L,
+                null, null, null, null, YNType.Y);
+            given(expenseTemplateRepository.findById(1L)).willReturn(Optional.of(t));
+
             var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
-                "프리셋", 1L, null, ExpenseType.EXPENSE, -5_000L,
-                null, null, null, YNType.Y);
+                Patch.set("프리셋"), Patch.absent(), Patch.absent(),
+                Patch.set(ExpenseType.EXPENSE), Patch.set(-5_000L),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.set(YNType.Y));
             assertThatThrownBy(() -> sut.updateTemplate(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
         }
@@ -332,8 +344,9 @@ class ExpenseTemplateServiceImplTest {
 
             assertThatCode(() -> sut.updateTemplate(5L, USER_ID,
                     new ExpenseTemplateServiceDto.UpdateCommand(
-                            "점심 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
-                            null, null, null, null)))
+                            Patch.set("점심 템플릿"), Patch.absent(), Patch.absent(),
+                            Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent())))
                     .doesNotThrowAnyException();
         }
 
@@ -350,8 +363,9 @@ class ExpenseTemplateServiceImplTest {
 
             assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID,
                     new ExpenseTemplateServiceDto.UpdateCommand(
-                            "점심 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
-                            null, null, null, null)))
+                            Patch.set("점심 템플릿"), Patch.absent(), Patch.absent(),
+                            Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent())))
                     .isInstanceOf(InvalidValueException.class);
         }
 

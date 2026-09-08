@@ -18,6 +18,7 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.ExpenseTemplateRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
+import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -106,24 +107,37 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     @Override
     @Transactional
     public ExpenseTemplateServiceDto.TemplateInfo updateTemplate(Long templateId, Long userRowId, ExpenseTemplateServiceDto.UpdateCommand command) {
-        Long amount = resolveAmount(command.amount(), command.lockAmount());
-        String templateName = NameNormalizer.require(command.templateName(), FieldLimits.WIDE_NAME_MAX);
         log.debug("경비 템플릿 수정 시작: templateId={}", templateId);
 
+        // 등록과 달리 <b>행을 먼저 읽는다</b> — 안 보낸 칸을 지금 값으로 채워야 금액·이름을
+        // 검사할 수 있다(QA #96). 그래서 없는 프리셋에 잘못된 값을 보내면 400 이 아니라 404 다.
         ExpenseTemplate template = findTemplateOrThrow(templateId);
         validateTemplateOwnership(template, userRowId);
+
+        // 실린 칸만 바꾼다 — 안 온 칸은 지금 값이 그대로 남는다.
+        String templateName = NameNormalizer.require(
+            command.templateName().orKeep(template.getTemplateName()), FieldLimits.WIDE_NAME_MAX);
+        ExpenseType expenseType = command.expenseType().orKeep(template.getExpenseType());
+        // 금액과 고정 여부는 한 쌍이다 — 둘 다 병합한 뒤에 함께 판정한다. 한쪽만 실린 요청이
+        // 나머지 한쪽을 지금 값으로 못 읽으면, 고정을 켜 둔 프리셋의 금액이 조용히 사라진다.
+        YNType lockAmount = command.lockAmount().orKeep(template.getLockAmount());
+        Long amount = resolveAmount(command.amount().orKeep(template.getAmount()), lockAmount);
 
         // 자기 자신은 뺀다 — 안 빼면 이름을 그대로 두고 금액만 고치는 저장이 영영 막힌다.
         if (expenseTemplateRepository.existsActiveByUserAndName(userRowId, templateName, templateId)) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME);
         }
 
-        ExpenseCategory category = null;
-        if (command.categoryRowId() != null) {
-            category = expenseCategoryRepository.findById(command.categoryRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
-            // 거래 유형 == 카테고리 유형 강제 (create 와 대칭).
-            if (category.getExpenseType() != command.expenseType()) {
+        // 조회가 필요한 칸(카테고리·자산)은 <b>실렸을 때만</b> 찾는다 — 안 보낸 요청이
+        // 붙여 둔 카테고리·자산을 떼면 안 되고, 없는 값을 조회하면 404 가 난다.
+        ExpenseCategory category = command.categoryRowId()
+            .map(rowId -> expenseCategoryRepository.findById(rowId)
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND)))
+            .orKeep(template.getCategory());
+        if (category != null) {
+            // 거래 유형 == 카테고리 유형 강제 (create 와 대칭). 판정은 <b>병합된 짝</b>으로 한다 —
+            // 종전엔 categoryRowId 를 안 보내면 카테고리가 통째로 null 이 되어 검사할 짝이 없었다.
+            if (category.getExpenseType() != expenseType) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
             }
             // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
@@ -132,18 +146,22 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             }
         }
 
-        Asset asset = null;
-        if (command.assetRowId() != null) {
-            asset = assetRepository.findById(command.assetRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-            validateAssetOwnership(asset, userRowId); // create 와 대칭 — 남의 자산 할당 차단
-        }
+        Asset asset = command.assetRowId()
+            .map(rowId -> {
+                Asset found = assetRepository.findById(rowId)
+                    .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+                validateAssetOwnership(found, userRowId); // create 와 대칭 — 남의 자산 할당 차단
+                return found;
+            })
+            .orKeep(template.getAsset());
 
         template.updateTemplate(
             templateName, category, asset,
-            command.expenseType(), amount, command.description(),
-            command.merchant(), command.paymentMethod(),
-            command.lockAmount()
+            expenseType, amount,
+            command.description().orKeep(template.getDescription()),
+            command.merchant().orKeep(template.getMerchant()),
+            command.paymentMethod().orKeep(template.getPaymentMethod()),
+            lockAmount
         );
         flushOrRejectDuplicate();
 

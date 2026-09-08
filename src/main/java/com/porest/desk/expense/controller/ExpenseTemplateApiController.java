@@ -2,6 +2,7 @@ package com.porest.desk.expense.controller;
 
 import com.porest.core.controller.ApiResponse;
 import com.porest.desk.expense.controller.dto.ExpenseApiDto;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.controller.dto.ExpenseTemplateApiDto;
 import com.porest.desk.expense.service.ExpenseTemplateService;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
@@ -55,10 +56,11 @@ public class ExpenseTemplateApiController {
             @RequestBody ExpenseTemplateApiDto.UpdateRequest request) {
         ExpenseTemplateServiceDto.TemplateInfo info = expenseTemplateService.updateTemplate(id, loginUser.getRowId(),
             new ExpenseTemplateServiceDto.UpdateCommand(
-                request.templateName(), request.categoryRowId(), request.assetRowId(),
-                request.expenseType(), request.amount(), request.description(),
-                request.merchant(), request.paymentMethod(),
-                request.lockAmount()
+                Patch.from(request.templateName()), Patch.from(request.categoryRowId()),
+                Patch.from(request.assetRowId()), Patch.from(request.expenseType()),
+                Patch.from(request.amount()), Patch.from(request.description()),
+                Patch.from(request.merchant()), Patch.from(request.paymentMethod()),
+                Patch.from(request.lockAmount())
             )
         );
         return ApiResponse.success(ExpenseTemplateApiDto.Response.from(info));

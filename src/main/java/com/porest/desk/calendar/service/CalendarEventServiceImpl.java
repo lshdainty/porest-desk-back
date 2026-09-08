@@ -148,24 +148,29 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
         validateDateRange(command.startDate(), command.endDate());
 
-        EventLabel label = null;
-        if (command.labelRowId() != null) {
-            label = eventLabelRepository.findById(command.labelRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
-            validateLabelOwnership(label, userRowId);
-        }
+        // 라벨은 <b>실렸을 때만</b> 찾는다 — 안 보낸 요청이 붙여 둔 라벨을 떼면 안 되고,
+        // 없는 값을 조회하면 404 가 난다. 명시적 null 은 그대로 통과해 라벨을 뗀다.
+        EventLabel label = command.labelRowId()
+            .map(rowId -> {
+                EventLabel found = eventLabelRepository.findById(rowId)
+                    .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EVENT_LABEL_NOT_FOUND));
+                validateLabelOwnership(found, userRowId);
+                return found;
+            })
+            .orKeep(event.getLabel());
 
+        // 실린 칸만 바꾼다 — 안 온 칸은 지금 값을 그대로 넘긴다(QA #96).
         event.updateEvent(
             command.title(),
-            command.description(),
+            command.description().orKeep(event.getDescription()),
             command.eventType(),
-            command.color(),
+            command.color().orKeep(event.getColor()),
             command.startDate(),
             command.endDate(),
             command.isAllDay(),
             label,
-            command.location(),
-            command.rrule()
+            command.location().orKeep(event.getLocation()),
+            command.rrule().orKeep(event.getRrule())
         );
 
         if (command.calendarRowId() != null) {

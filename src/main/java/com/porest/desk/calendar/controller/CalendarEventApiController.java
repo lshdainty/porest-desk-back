@@ -4,6 +4,7 @@ import com.porest.core.controller.ApiResponse;
 import com.porest.desk.calendar.controller.dto.CalendarEventApiDto;
 import com.porest.desk.calendar.service.CalendarEventService;
 import com.porest.desk.calendar.service.dto.CalendarEventServiceDto;
+import com.porest.desk.common.patch.Patch;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import jakarta.validation.Valid;
@@ -68,15 +69,15 @@ public class CalendarEventApiController {
             @Valid @RequestBody CalendarEventApiDto.UpdateRequest request) {
         CalendarEventServiceDto.EventInfo info = calendarEventService.updateEvent(id, loginUser.getRowId(), new CalendarEventServiceDto.UpdateCommand(
             request.title(),
-            request.description(),
+            Patch.from(request.description()),
             request.eventType(),
-            request.color(),
+            Patch.from(request.color()),
             request.startDate(),
             request.endDate(),
             request.isAllDay(),
-            request.labelRowId(),
-            request.location(),
-            request.rrule(),
+            Patch.from(request.labelRowId()),
+            Patch.from(request.location()),
+            Patch.from(request.rrule()),
             request.reminderMinutes(),
             request.calendarRowId()
         ));
