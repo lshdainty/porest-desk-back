@@ -257,6 +257,64 @@ class UserServiceImplTest {
         assertThat(u.getTimezone()).isEqualTo("Asia/Seoul");
     }
 
+    // ==================== updatePreferences — 기본 통화 ====================
+
+    /**
+     * QA #124 — 표시 설정의 "기본 통화" 가 웹 localStorage({@code pd-currency})에만 있었고
+     * 읽는 곳이 하나도 없었다. 고르면 저장된 것처럼 보이는데 폰에서도 다른 브라우저에서도
+     * 아무 일이 없었다. 계정에 붙여 서버가 기준이 된다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code updatePreferences} 의
+     * {@code user.updateDefaultCurrency(...)} 줄을 지우면 응답에는 옛 값이 실려 아래가 깨진다.
+     */
+    @Test
+    @DisplayName("updatePreferences — 기본 통화를 바꾸면 저장되고 응답에 실린다")
+    void updatesDefaultCurrency() {
+        User u = userWithThreshold(85);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        UpdatePreferencesReq req = new UpdatePreferencesReq();
+        ReflectionTestUtils.setField(req, "defaultCurrency", "USD");
+
+        var resp = sut.updatePreferences(USER_ID, req);
+
+        assertThat(u.getDefaultCurrency()).isEqualTo("USD");
+        assertThat(resp.defaultCurrency()).isEqualTo("USD");
+    }
+
+    @Test
+    @DisplayName("updatePreferences — 기본 통화 미전송이면 기존 값을 유지한다(부분 수정)")
+    void keepsDefaultCurrencyWhenAbsent() {
+        User u = userWithThreshold(85);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        var resp = sut.updatePreferences(USER_ID, new UpdatePreferencesReq());
+
+        assertThat(u.getDefaultCurrency()).isEqualTo("KRW");
+        assertThat(resp.defaultCurrency()).isEqualTo("KRW");
+    }
+
+    /**
+     * 목록 밖의 값은 <b>서비스에서도</b> 막는다. 이 값은 새 자산·거래로 번져 나가고 환율
+     * 조회에까지 실리므로 요청 DTO 의 {@code @Pattern} 한 겹에 걸어 두지 않는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code updatePreferences} 의
+     * {@code SupportedCurrency.contains} 검사를 지우면 예외 없이 저장되며 아래가 깨진다.
+     */
+    @Test
+    @DisplayName("updatePreferences — 고를 수 없는 통화면 거부한다(저장 전 검증)")
+    void rejectsUnsupportedCurrency() {
+        User u = userWithThreshold(85);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+
+        UpdatePreferencesReq req = new UpdatePreferencesReq();
+        ReflectionTestUtils.setField(req, "defaultCurrency", "XBT");
+
+        assertThatThrownBy(() -> sut.updatePreferences(USER_ID, req))
+                .isInstanceOf(InvalidValueException.class);
+        assertThat(u.getDefaultCurrency()).isEqualTo("KRW");
+    }
+
     // ── 금액 가리기 ──────────────────────────────────────────────────────
 
     private User userWithHideCards(String raw) {
