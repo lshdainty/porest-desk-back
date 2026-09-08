@@ -11,6 +11,7 @@ import com.porest.desk.memo.domain.MemoTag;
 import com.porest.desk.memo.repository.MemoRepository;
 import com.porest.desk.memo.repository.MemoTagRepository;
 import com.porest.desk.memo.service.dto.MemoServiceDto;
+import com.porest.desk.memo.service.dto.MemoTagServiceDto;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +53,10 @@ public class MemoServiceImpl implements MemoService {
         starlightService.onMemoCreated(memo);
         log.info("메모 등록 완료: memoId={}, userRowId={}", memo.getRowId(), command.userRowId());
 
-        return MemoServiceDto.MemoInfo.from(memo);
+        // 응답의 memoTagRowId 는 memo.getMemoTag() 가 아니라 link 에서 꺼낸다 — 방금 이은 것이
+        // 프록시라 아이디를 읽는 것만으로 SELECT 가 나가고, 처음 쓰는 이름이면 그 SELECT 가
+        // 빈손으로 돌아온다(QA #102).
+        return MemoServiceDto.MemoInfo.from(memo, link.tagRowId());
     }
 
     @Override
@@ -98,7 +102,8 @@ public class MemoServiceImpl implements MemoService {
 
         log.info("메모 수정 완료: memoId={}", memoId);
 
-        return MemoServiceDto.MemoInfo.from(memo);
+        // 등록과 같은 이유로 link 에서 꺼낸다(QA #102).
+        return MemoServiceDto.MemoInfo.from(memo, link.tagRowId());
     }
 
     @Override
@@ -143,8 +148,13 @@ public class MemoServiceImpl implements MemoService {
      * null 인 조합은 <b>확보에 실패한 경우</b>다 — 사용자가 친 글자는 지키고(잃으면 안 된다)
      * 다음 저장에서 다시 잇는다.
      */
-    private record TagLink(String tagName, MemoTag tag) {
-        private static final TagLink NONE = new TagLink(null, null);
+    private record TagLink(String tagName, MemoTag tag, Long tagRowId) {
+        private static final TagLink NONE = new TagLink(null, null, null);
+
+        /** 이미 읽은 마스터로 잇는다 — 조회로 얻은 엔티티라 필드를 읽어도 안전하다. */
+        private static TagLink of(MemoTag tag) {
+            return new TagLink(tag.getTagName(), tag, tag.getRowId());
+        }
     }
 
     /**
@@ -194,7 +204,7 @@ public class MemoServiceImpl implements MemoService {
                 return new EntityNotFoundException(DeskErrorCode.MEMO_TAG_NOT_FOUND);
             });
         validateTagOwnership(tag, userRowId);
-        return new TagLink(tag.getTagName(), tag);
+        return TagLink.of(tag);
     }
 
     /** 문자열 → 그 사용자의 활성 태그(없으면 만든다). 빈 문자열은 태그를 만들지 않는다. */
@@ -207,15 +217,21 @@ public class MemoServiceImpl implements MemoService {
         // 그 값을 치르지 않게 한다. 삭제된 태그면 지름길을 쓰지 않는다 — 그때는 다시 확보해야 한다.
         if (currentTag != null && currentTag.getIsDeleted() == YNType.N
                 && name.equals(currentTag.getTagName())) {
-            return new TagLink(currentTag.getTagName(), currentTag);
+            return TagLink.of(currentTag);
         }
 
-        Long tagRowId = memoTagService.findOrCreateByName(userRowId, name);
-        MemoTag tag = tagRowId == null ? null : memoTagRepository.findById(tagRowId).orElse(null);
+        // ★ 확보가 돌려준 아이디를 findById 로 다시 읽지 마라(QA #102). 확보는 새 트랜잭션에서
+        //   커밋하는데 이 트랜잭션은 그 앞에서 스냅샷을 잡았으므로 처음 쓰는 이름은 안 보이고,
+        //   FK 가 빈 채로 저장돼 사용 수가 0 이 된다. 프록시는 조회를 안 하니 스냅샷과 무관하고
+        //   행은 이미 커밋돼 있어 FK 삽입은 통과한다.
+        MemoTagServiceDto.TagRef ref = memoTagService.findOrCreateByName(userRowId, name);
         // 확보에 실패해도 사용자가 친 글자는 그대로 남긴다 — 다음 저장에서 다시 잇는다.
+        if (ref == null) return new TagLink(name, null, null);
         // 이름은 마스터를 따른다: 콜레이션(utf8mb4_unicode_ci)이 "Food" 와 "food" 를 같은 이름으로
         // 보므로, 확보된 마스터의 표기로 통일해야 개명·삭제의 WHERE 가 이 행을 정확히 찾는다.
-        return tag == null ? new TagLink(name, null) : new TagLink(tag.getTagName(), tag);
+        // 그 표기는 확보가 실어 보낸 값이다 — 프록시에서 읽으면 지연 로딩 SELECT 가 나가
+        // 같은 스냅샷에 부딪혀 EntityNotFoundException 이 된다.
+        return new TagLink(ref.tagName(), memoTagRepository.getReference(ref.rowId()), ref.rowId());
     }
 
     private static String blankToNull(String value) {

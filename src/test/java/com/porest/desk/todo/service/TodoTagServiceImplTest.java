@@ -257,7 +257,9 @@ class TodoTagServiceImplTest {
         given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무"))
                 .willReturn(Optional.of(ownedTag(9L, "업무")));
 
-        assertThat(sut.findOrCreateByName(USER_ID, "  업무 ")).isEqualTo(9L);
+        // 아이디만이 아니라 이름까지 함께 온다 — 부르는 쪽이 프록시에서 이름을 읽지 않게 하는 값이다(QA #102).
+        assertThat(sut.findOrCreateByName(USER_ID, "  업무 "))
+                .isEqualTo(new TodoTagServiceDto.TagRef(9L, "업무", "#fff"));
         verify(todoTagRepository, never()).save(any());
     }
 
@@ -275,7 +277,9 @@ class TodoTagServiceImplTest {
             return t;
         });
 
-        assertThat(sut.findOrCreateByName(USER_ID, " 업무")).isEqualTo(12L);
+        // 새로 만든 태그도 아이디·이름을 함께 돌려준다 — 이 트랜잭션 밖에서는 다시 못 읽는다(QA #102).
+        assertThat(sut.findOrCreateByName(USER_ID, " 업무"))
+                .isEqualTo(new TodoTagServiceDto.TagRef(12L, "업무", null));
 
         ArgumentCaptor<TodoTag> captor = ArgumentCaptor.forClass(TodoTag.class);
         verify(todoTagRepository).save(captor.capture());
@@ -313,7 +317,7 @@ class TodoTagServiceImplTest {
                 .willDoNothing()
                 .given(todoTagRepository).flush();
 
-        assertThat(sut.findOrCreateByName(USER_ID, "업무")).isEqualTo(33L);
+        assertThat(sut.findOrCreateByName(USER_ID, "업무").rowId()).isEqualTo(33L);
     }
 
     @Test

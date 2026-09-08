@@ -36,6 +36,11 @@ public class TodoTagQueryDslRepository implements TodoTagRepository {
     }
 
     @Override
+    public TodoTag getReference(Long rowId) {
+        return entityManager.getReference(TodoTag.class, rowId);
+    }
+
+    @Override
     public List<TodoTag> findAllByUser(Long userRowId) {
         return queryFactory.selectFrom(tag)
             .where(tag.user.rowId.eq(userRowId), tag.isDeleted.eq(YNType.N))

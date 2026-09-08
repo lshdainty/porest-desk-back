@@ -34,6 +34,11 @@ public class MemoTagQueryDslRepository implements MemoTagRepository {
     }
 
     @Override
+    public MemoTag getReference(Long rowId) {
+        return entityManager.getReference(MemoTag.class, rowId);
+    }
+
+    @Override
     public List<MemoTag> findAllByUser(Long userRowId) {
         return queryFactory.selectFrom(tag)
             .where(tag.user.rowId.eq(userRowId), tag.isDeleted.eq(YNType.N))

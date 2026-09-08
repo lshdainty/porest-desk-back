@@ -13,12 +13,14 @@ import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.porest.desk.memo.service.dto.MemoServiceDto;
+import com.porest.desk.memo.service.dto.MemoTagServiceDto;
 
 import java.util.Optional;
 
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,11 +63,17 @@ class MemoServiceImplTest {
         return t;
     }
 
-    /** {@code tag} 문자열 → 마스터 확보가 성공하는 상황을 만든다. */
+    /**
+     * {@code tag} 문자열 → 마스터 확보가 성공하는 상황을 만든다.
+     *
+     * <p>확보는 아이디만이 아니라 <b>이름·색까지</b> 돌려주고, 부르는 쪽은 그 아이디로
+     * {@code getReference} 참조만 잡는다 — {@code findById} 는 부르지 않는다(QA #102).
+     */
     private MemoTag stubResolve(String name, long tagRowId) {
         MemoTag t = tag(tagRowId, USER_ID, name);
-        given(memoTagService.findOrCreateByName(USER_ID, name)).willReturn(tagRowId);
-        given(memoTagRepository.findById(tagRowId)).willReturn(Optional.of(t));
+        given(memoTagService.findOrCreateByName(USER_ID, name))
+                .willReturn(MemoTagServiceDto.TagRef.from(t));
+        given(memoTagRepository.getReference(tagRowId)).willReturn(t);
         return t;
     }
 
@@ -195,22 +204,83 @@ class MemoServiceImplTest {
      * 이름은 <b>마스터를 따른다</b>. 콜레이션(utf8mb4_unicode_ci)이 "Food" 와 "food" 를 같은
      * 이름으로 보므로, 확보된 마스터의 표기로 통일해야 개명·삭제의 WHERE 가 이 행을 찾는다.
      *
-     * <p>되돌려 보는 법: {@code linkByName} 의 마지막 줄을 {@code new TagLink(name, tag)} 로
-     * 바꾸면(마스터 이름 대신 사용자가 친 글자를 남기면) 아래가 깨진다.
+     * <p>되돌려 보는 법: {@code linkByName} 의 마지막 줄에서 {@code ref.tagName()} 대신
+     * {@code name} 을 넘기면(마스터 표기 대신 사용자가 친 글자를 남기면) 아래가 깨진다.
      */
     @Test
     @DisplayName("createMemo — 저장되는 tag 문자열은 마스터의 표기를 따른다")
     void createNormalizesTagTextToMasterName() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         MemoTag master = tag(11L, USER_ID, "Food");
-        given(memoTagService.findOrCreateByName(USER_ID, "food")).willReturn(11L);
-        given(memoTagRepository.findById(11L)).willReturn(Optional.of(master));
+        given(memoTagService.findOrCreateByName(USER_ID, "food"))
+                .willReturn(MemoTagServiceDto.TagRef.from(master));
+        given(memoTagRepository.getReference(11L)).willReturn(master);
 
         var info = sut.createMemo(new MemoServiceDto.CreateCommand(
                 USER_ID, "회의록", null, "food", null, null));
 
         assertThat(info.tag()).isEqualTo("Food");
         assertThat(info.memoTagRowId()).isEqualTo(11L);
+    }
+
+    /**
+     * QA #102 — <b>처음 쓰는 이름</b>. 확보({@code findOrCreateByName})는 새 트랜잭션에서
+     * 커밋하는데, 저장 트랜잭션은 그 앞에서 스냅샷을 잡았으므로 MariaDB 기본 격리수준
+     * (REPEATABLE READ)에서 그 행이 안 보인다. 종전 코드는 그 아이디를 {@code findById} 로
+     * 다시 읽어 {@code orElse(null)} 에 떨어졌고, 마스터만 생기고 FK 는 빈 채로 저장됐다
+     * (설정의 사용 수 0 · 필터에서 누락). 이제 다시 읽지 않고 참조로 잇는다.
+     *
+     * <p>여기서 {@code findById} 를 스텁하지 않은 것이 곧 그 상황이다 — 못 읽는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code linkByName} 의 마지막 줄을
+     * {@code memoTagRepository.findById(ref.rowId()).orElse(null)} 로 되돌리면
+     * {@code memoTagRowId} 가 null 이 되어 깨진다.
+     */
+    @Test
+    @DisplayName("createMemo — 처음 쓰는 이름도 다시 읽지 않고(참조로) FK 를 잇는다")
+    void createLinksBrandNewTagWithoutRereading() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        MemoTag master = stubResolve("신규", 11L);
+
+        var info = sut.createMemo(new MemoServiceDto.CreateCommand(
+                USER_ID, "회의록", "본문", "신규", null, null));
+
+        assertThat(info.memoTagRowId()).isEqualTo(11L);
+        assertThat(info.tag()).isEqualTo("신규");
+        verify(memoTagRepository, never()).findById(anyLong());
+
+        ArgumentCaptor<Memo> saved = ArgumentCaptor.forClass(Memo.class);
+        verify(memoRepository).save(saved.capture());
+        assertThat(saved.getValue().getMemoTag()).isSameAs(master);
+    }
+
+    /**
+     * 응답의 {@code memoTagRowId} 는 <b>메모에 붙은 마스터에서 읽지 않는다</b> — 방금 붙인 것은
+     * 조회를 안 한 참조라, 아이디를 읽는 것만으로 지연 로딩 SELECT 가 나가고 그 SELECT 는
+     * 스냅샷에 없는 행을 찾아 {@code EntityNotFoundException} 이 된다(QA #102 · 리포 슬라이스
+     * 테스트가 그 동작을 못 박아 뒀다). 확보가 실어 보낸 아이디를 그대로 싣는다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code createMemo} 의 마지막 줄을
+     * {@code MemoServiceDto.MemoInfo.from(memo)} 로 되돌리면 아래가 예외로 깨진다.
+     */
+    @Test
+    @DisplayName("createMemo — 응답을 만들 때 방금 이은 참조를 건드리지 않는다")
+    void createDoesNotTouchTheProxyWhenBuildingResponse() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        // 초기화되지 않은 참조를 흉내 낸다 — 건드리면 터진다. lenient 인 이유는
+        // "안 불린다" 가 이 테스트의 결론이기 때문이다.
+        MemoTag unreadable = mock(MemoTag.class);
+        lenient().when(unreadable.getRowId())
+                .thenThrow(new jakarta.persistence.EntityNotFoundException("초기화되지 않은 참조"));
+        given(memoTagService.findOrCreateByName(USER_ID, "신규"))
+                .willReturn(new MemoTagServiceDto.TagRef(11L, "신규", null));
+        given(memoTagRepository.getReference(11L)).willReturn(unreadable);
+
+        var info = sut.createMemo(new MemoServiceDto.CreateCommand(
+                USER_ID, "회의록", null, "신규", null, null));
+
+        assertThat(info.memoTagRowId()).isEqualTo(11L);
+        verify(unreadable, never()).getRowId();
     }
 
     /**
