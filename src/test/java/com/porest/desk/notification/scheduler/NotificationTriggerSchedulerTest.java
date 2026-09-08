@@ -186,7 +186,7 @@ class NotificationTriggerSchedulerTest {
     void todoReminderSpeaksProductTone() {
         User u = user();
         LocalDate today = serviceClock.today();
-        Todo todo = Todo.createTodo(u, "보고서 제출", "본문", TodoPriority.HIGH, null, today, null, TodoType.TASK);
+        Todo todo = Todo.createTodo(u, "보고서 제출", "본문", TodoPriority.HIGH, null, today, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 3L);
         given(todoRepository.findDueTodosForReminder(today, today.plusDays(1))).willReturn(List.of(todo));
         given(notificationRepository.existsByUserAndReferenceAndCreatedAfter(
@@ -205,7 +205,7 @@ class NotificationTriggerSchedulerTest {
         User u = user();
         LocalDate today = serviceClock.today();
         Todo todo = Todo.createTodo(u, "보고서 제출", "본문", TodoPriority.HIGH, null,
-                today.plusDays(1), null, TodoType.TASK);
+                today.plusDays(1), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 3L);
         given(todoRepository.findDueTodosForReminder(today, today.plusDays(1))).willReturn(List.of(todo));
         given(notificationRepository.existsByUserAndReferenceAndCreatedAfter(

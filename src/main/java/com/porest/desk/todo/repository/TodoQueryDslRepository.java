@@ -9,7 +9,6 @@ import com.porest.desk.todo.type.TodoType;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.dsl.Expressions;
-import com.querydsl.core.types.dsl.NumberTemplate;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -17,9 +16,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -45,7 +42,6 @@ public class TodoQueryDslRepository implements TodoRepository {
         BooleanBuilder builder = new BooleanBuilder();
         builder.and(todo.user.rowId.eq(userRowId));
         builder.and(todo.isDeleted.eq(YNType.N));
-        builder.and(todo.parent.isNull());
 
         if (type != null) {
             builder.and(todo.type.eq(type));
@@ -87,47 +83,6 @@ public class TodoQueryDslRepository implements TodoRepository {
     }
 
     @Override
-    public List<Todo> findSubtasks(Long parentRowId) {
-        return queryFactory.selectFrom(todo)
-            .leftJoin(todo.user).fetchJoin()
-            .where(todo.parent.rowId.eq(parentRowId), todo.isDeleted.eq(YNType.N))
-            .orderBy(todo.sortOrder.asc(), todo.rowId.asc())
-            .fetch();
-    }
-
-    @Override
-    public Map<Long, int[]> findSubtaskCountsByParentIds(List<Long> parentIds) {
-        Map<Long, int[]> result = new HashMap<>();
-        if (parentIds.isEmpty()) return result;
-
-        NumberTemplate<Long> completedCount = Expressions.numberTemplate(Long.class,
-            "SUM(CASE WHEN {0} = {1} THEN 1 ELSE 0 END)", todo.status, TodoStatus.COMPLETED);
-
-        List<Tuple> tuples = queryFactory
-            .select(
-                todo.parent.rowId,
-                todo.count(),
-                completedCount
-            )
-            .from(todo)
-            .where(todo.parent.rowId.in(parentIds), todo.isDeleted.eq(YNType.N))
-            .groupBy(todo.parent.rowId)
-            .fetch();
-
-        for (Tuple tuple : tuples) {
-            Long parentId = tuple.get(0, Long.class);
-            Long total = tuple.get(1, Long.class);
-            Long completed = tuple.get(2, Long.class);
-            result.put(parentId, new int[]{
-                total != null ? total.intValue() : 0,
-                completed != null ? completed.intValue() : 0
-            });
-        }
-
-        return result;
-    }
-
-    @Override
     public long[] countStatsByUser(Long userRowId, LocalDate today) {
         Tuple result = queryFactory
             .select(
@@ -165,8 +120,7 @@ public class TodoQueryDslRepository implements TodoRepository {
             .from(todo)
             .where(
                 todo.user.rowId.eq(userRowId),
-                todo.isDeleted.eq(YNType.N),
-                todo.parent.isNull()
+                todo.isDeleted.eq(YNType.N)
             )
             .fetchOne();
 

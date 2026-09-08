@@ -29,7 +29,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -114,11 +113,10 @@ class TodoServiceImplTest {
             return t;
         });
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var cmd = new TodoServiceDto.CreateCommand(
                 USER_ID, "기획서 작성", "초안", TodoPriority.HIGH, "업무",
-                LocalDate.of(2026, 6, 20), null, null, TodoType.TASK);
+                LocalDate.of(2026, 6, 20), null, TodoType.TASK);
         var info = sut.createTodo(cmd);
 
         assertThat(info.type()).isEqualTo(TodoType.TASK);
@@ -130,7 +128,6 @@ class TodoServiceImplTest {
         assertThat(info.sortOrder()).isEqualTo(0);
         assertThat(info.isPinned()).isEqualTo(YNType.N);
         assertThat(info.completedAt()).isNull();
-        assertThat(info.subtaskCount()).isEqualTo(0);
     }
 
     @Test
@@ -143,10 +140,9 @@ class TodoServiceImplTest {
             return t;
         });
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var cmd = new TodoServiceDto.CreateCommand(
-                USER_ID, "메모성 노트", null, TodoPriority.HIGH, null, null, null, null, TodoType.NOTE);
+                USER_ID, "메모성 노트", null, TodoPriority.HIGH, null, null, null, TodoType.NOTE);
         var info = sut.createTodo(cmd);
 
         assertThat(info.type()).isEqualTo(TodoType.NOTE);
@@ -175,10 +171,9 @@ class TodoServiceImplTest {
             return t;
         });
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var cmd = new TodoServiceDto.CreateCommand(
-                USER_ID, "장보기", null, null, null, null, null, null, null);
+                USER_ID, "장보기", null, null, null, null, null, null);
         var info = sut.createTodo(cmd);
 
         assertThat(info.priority()).isEqualTo(TodoPriority.MEDIUM);
@@ -189,11 +184,10 @@ class TodoServiceImplTest {
     @DisplayName("changeStatus(null) — 본문 없는 옛 요청: PENDING→COMPLETED, completedAt 세팅")
     void toggleStatusToCompleted() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 7L);
         given(todoRepository.findById(7L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.changeStatus(7L, USER_ID, null);
 
@@ -205,12 +199,11 @@ class TodoServiceImplTest {
     @DisplayName("changeStatus(null) — 본문 없는 옛 요청: COMPLETED→PENDING, completedAt 클리어")
     void toggleStatusBackToPending() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 8L);
         todo.toggleStatus(); // 먼저 COMPLETED 로
         given(todoRepository.findById(8L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.changeStatus(8L, USER_ID, null);
 
@@ -228,11 +221,10 @@ class TodoServiceImplTest {
     @DisplayName("changeStatus(IN_PROGRESS) — 지정한 상태로 간다(완료로 튀지 않는다)")
     void changeStatusToInProgress() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 9L);
         given(todoRepository.findById(9L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.changeStatus(9L, USER_ID, TodoStatus.IN_PROGRESS);
 
@@ -245,12 +237,11 @@ class TodoServiceImplTest {
     @DisplayName("changeStatus(IN_PROGRESS) — 완료였다면 completedAt 을 지운다")
     void changeStatusFromCompletedToInProgressClearsCompletedAt() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 10L);
         todo.toggleStatus(); // 먼저 COMPLETED 로
         given(todoRepository.findById(10L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.changeStatus(10L, USER_ID, TodoStatus.IN_PROGRESS);
 
@@ -269,13 +260,12 @@ class TodoServiceImplTest {
     @DisplayName("changeStatus(COMPLETED) — 이미 완료면 completedAt 을 다시 찍지 않는다")
     void changeStatusToSameStatusKeepsCompletedAt() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", "c", TodoPriority.MEDIUM, "cat",
-                LocalDate.of(2026, 6, 10), null, TodoType.TASK);
+                LocalDate.of(2026, 6, 10), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 11L);
         todo.toggleStatus(); // COMPLETED
         var completedAt = todo.getCompletedAt();
         given(todoRepository.findById(11L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.changeStatus(11L, USER_ID, TodoStatus.COMPLETED);
 
@@ -321,11 +311,10 @@ class TodoServiceImplTest {
     @DisplayName("updateTodo — priority 가 없으면 기존 값을 지킨다(기본값으로 덮지 않는다)")
     void updateKeepsExistingPriorityWhenAbsent() {
         Todo todo = Todo.createTodo(user(USER_ID), "원제목", "내용", TodoPriority.HIGH, "업무",
-                LocalDate.of(2026, 6, 20), null, TodoType.TASK);
+                LocalDate.of(2026, 6, 20), TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
         given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
                 Patch.set("고친제목"), Patch.set("내용"), Patch.absent(), Patch.set("업무"), Patch.set(LocalDate.of(2026, 6, 20)), null));
@@ -365,7 +354,6 @@ class TodoServiceImplTest {
             return t;
         });
         given(todoTagMappingRepository.findByTodoId(any())).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
     }
 
     private TodoTag savedMappingTag() {
@@ -389,7 +377,7 @@ class TodoServiceImplTest {
         stubResolve("업무", 42L);
 
         sut.createTodo(new TodoServiceDto.CreateCommand(
-                USER_ID, "기획서", null, TodoPriority.MEDIUM, "업무", null, null, null, TodoType.TASK));
+                USER_ID, "기획서", null, TodoPriority.MEDIUM, "업무", null, null, TodoType.TASK));
 
         assertThat(savedMappingTag().getRowId()).isEqualTo(42L);
     }
@@ -417,7 +405,7 @@ class TodoServiceImplTest {
         TodoTag master = stubResolve("신규", 77L);
 
         var info = sut.createTodo(new TodoServiceDto.CreateCommand(
-                USER_ID, "기획서", null, TodoPriority.MEDIUM, "신규", null, null, null, TodoType.TASK));
+                USER_ID, "기획서", null, TodoPriority.MEDIUM, "신규", null, null, TodoType.TASK));
 
         assertThat(savedMappingTag()).isSameAs(master);
         assertThat(info.tags())
@@ -433,12 +421,11 @@ class TodoServiceImplTest {
     @DisplayName("updateTodo — 처음 쓰는 category 도 매핑을 남기고 저장 직후 응답에 실린다")
     void updateLinksBrandNewCategoryTag() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, null,
-                null, null, TodoType.TASK);
+                null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
         TodoTag master = stubResolve("신규", 77L);
         given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         var info = sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
                 Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("신규"), Patch.absent(), null));
@@ -456,7 +443,7 @@ class TodoServiceImplTest {
         stubTodoSave(201L);
 
         sut.createTodo(new TodoServiceDto.CreateCommand(
-                USER_ID, "장보기", null, null, "   ", null, null, null, null));
+                USER_ID, "장보기", null, null, "   ", null, null, null));
 
         verify(todoTagService, never()).findOrCreateByName(anyLong(), anyString());
         verify(todoTagMappingRepository, never()).save(any());
@@ -472,7 +459,7 @@ class TodoServiceImplTest {
         given(todoTagRepository.getReference(7L)).willReturn(review);
 
         sut.createTodo(new TodoServiceDto.CreateCommand(
-                USER_ID, "코드 리뷰", null, null, "업무", null, null, List.of(7L), null));
+                USER_ID, "코드 리뷰", null, null, "업무", null, List.of(7L), null));
 
         verify(todoTagService, never()).findOrCreateByName(anyLong(), anyString());
         assertThat(savedMappingTag().getRowId()).isEqualTo(7L);
@@ -493,7 +480,7 @@ class TodoServiceImplTest {
         given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(tag(7L, "남의태그", 999L)));
 
         assertThatThrownBy(() -> sut.createTodo(new TodoServiceDto.CreateCommand(
-                USER_ID, "훔쳐보기", null, null, null, null, null, List.of(7L), null)))
+                USER_ID, "훔쳐보기", null, null, null, null, List.of(7L), null)))
                 .isInstanceOf(ForbiddenException.class);
         verify(todoTagMappingRepository, never()).save(any());
     }
@@ -501,7 +488,7 @@ class TodoServiceImplTest {
     @Test
     @DisplayName("updateTags — 없는(또는 지워진) 태그를 지목하면 404 로 답한다")
     void rejectsUnknownTagIds() {
-        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, null, null, null, TodoType.TASK);
+        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, null, null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
         given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of());
@@ -524,14 +511,13 @@ class TodoServiceImplTest {
     @DisplayName("updateTodo — category 가 바뀌면 옛 태그 매핑을 걷고 새 태그를 붙인다")
     void updateMovesMappingWhenCategoryChanges() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, "업무",
-                null, null, TodoType.TASK);
+                null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
         stubResolve("개인", 12L);
         given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무"))
                 .willReturn(Optional.of(tag(11L, "업무", USER_ID)));
         given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
                 Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("개인"), Patch.absent(), null));
@@ -544,7 +530,7 @@ class TodoServiceImplTest {
     @DisplayName("updateTodo — category 가 그대로고 이미 매핑돼 있으면 아무것도 만들지 않는다")
     void updateKeepsExistingMappingWhenCategoryUnchanged() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, "업무",
-                null, null, TodoType.TASK);
+                null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         TodoTag work = tag(11L, "업무", USER_ID);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
@@ -552,7 +538,6 @@ class TodoServiceImplTest {
                 .willReturn(TodoTagServiceDto.TagRef.from(work));
         given(todoTagMappingRepository.findByTodoId(5L))
                 .willReturn(List.of(TodoTagMapping.create(todo, work)));
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
                 Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("업무"), Patch.absent(), null));
@@ -565,14 +550,13 @@ class TodoServiceImplTest {
     @DisplayName("updateTodo — tagIds 를 명시하면 매핑을 통째로 갈아 끼운다(다리는 타지 않는다)")
     void updateWithExplicitTagIdsReplacesMappings() {
         Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, "업무",
-                null, null, TodoType.TASK);
+                null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
         TodoTag review = tag(7L, "리뷰", USER_ID);
         given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(review));
         given(todoTagRepository.getReference(7L)).willReturn(review);
         given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
-        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 
         sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
                 Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("업무"), Patch.absent(), List.of(7L)));

@@ -71,7 +71,7 @@ class IntegrityViolationKindOnH2Test {
     @DisplayName("UNIQUE 위반은 UNIQUE 로 판정된다 — 이것만 409 로 나가야 한다")
     void uniqueViolation() {
         User user = persistUser("k2");
-        Todo todo = em.persist(Todo.createTodo(user, "할일", null, TodoPriority.LOW, null, null, null, TodoType.TASK));
+        Todo todo = em.persist(Todo.createTodo(user, "할일", null, TodoPriority.LOW, null, null, TodoType.TASK));
         TodoTag tag = em.persist(TodoTag.createTag(user, "태그", "#111111"));
         em.flush();
 
@@ -99,7 +99,7 @@ class IntegrityViolationKindOnH2Test {
     @DisplayName("제약 이름을 원인 사슬에서 읽어 낸다 — 앞에 뭐가 붙어도 우리가 지은 이름이 들어 있다")
     void constraintNameIsReadable() {
         User user = persistUser("k4");
-        Todo todo = em.persist(Todo.createTodo(user, "할일", null, TodoPriority.LOW, null, null, null, TodoType.TASK));
+        Todo todo = em.persist(Todo.createTodo(user, "할일", null, TodoPriority.LOW, null, null, TodoType.TASK));
         TodoTag tag = em.persist(TodoTag.createTag(user, "태그", "#111111"));
         em.flush();
         em.persist(TodoTagMapping.create(todo, tag));

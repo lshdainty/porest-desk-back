@@ -7,7 +7,6 @@ import com.porest.desk.todo.type.TodoType;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 public interface TodoRepository {
@@ -34,9 +33,6 @@ public interface TodoRepository {
      */
     long clearCategory(Long userRowId, String category);
     List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate);
-    List<Todo> findSubtasks(Long parentRowId);
-    /** 여러 부모 ID에 대한 서브태스크 카운트를 한 번의 쿼리로 조회 (parentId -> [total, completed]) */
-    Map<Long, int[]> findSubtaskCountsByParentIds(List<Long> parentIds);
 
     /**
      * 사용자의 할일 통계를 단일 집계 쿼리로 조회 (전체 엔티티 로드 대신 COUNT만)

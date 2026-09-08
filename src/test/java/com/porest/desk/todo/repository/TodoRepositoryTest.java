@@ -21,13 +21,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Todo QueryDsl 리포 슬라이스 테스트 — H2 에서 소유권·soft-delete 제외·parent-null(최상위) 필터,
- * 상태/우선순위/카테고리/기간/프로젝트/타입 조건, 정렬, 서브태스크 집계, 통계 집계, 리마인더 조회를 검증.
+ * Todo QueryDsl 리포 슬라이스 테스트 — H2 에서 소유권·soft-delete 제외,
+ * 상태/우선순위/카테고리/기간/프로젝트/타입 조건, 정렬, 통계 집계, 리마인더 조회를 검증.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -44,12 +43,12 @@ class TodoRepositoryTest {
     }
 
     private Todo persistTask(User user, String title, TodoPriority priority, String category,
-                             LocalDate dueDate, Todo parent) {
-        return em.persist(Todo.createTodo(user, title, null, priority, category, dueDate, parent, TodoType.TASK));
+                             LocalDate dueDate) {
+        return em.persist(Todo.createTodo(user, title, null, priority, category, dueDate, TodoType.TASK));
     }
 
     private Todo persistNote(User user, String title, boolean pinned) {
-        Todo note = Todo.createTodo(user, title, null, TodoPriority.LOW, null, null, null, TodoType.NOTE);
+        Todo note = Todo.createTodo(user, title, null, TodoPriority.LOW, null, null, TodoType.NOTE);
         Todo saved = em.persist(note);
         if (pinned) saved.togglePin();
         return saved;
@@ -59,8 +58,8 @@ class TodoRepositoryTest {
     @DisplayName("findById — soft-delete 된 할일은 조회되지 않는다")
     void findByIdExcludesSoftDeleted() {
         User user = persistUser("u1");
-        Todo active = persistTask(user, "살아있음", TodoPriority.MEDIUM, null, null, null);
-        Todo deleted = persistTask(user, "삭제됨", TodoPriority.MEDIUM, null, null, null);
+        Todo active = persistTask(user, "살아있음", TodoPriority.MEDIUM, null, null);
+        Todo deleted = persistTask(user, "삭제됨", TodoPriority.MEDIUM, null, null);
         deleted.deleteTodo();
         em.flush();
         em.clear();
@@ -70,19 +69,18 @@ class TodoRepositoryTest {
     }
 
     @Test
-    @DisplayName("findAllByUser — 소유권·soft-delete·서브태스크(parent!=null) 제외 후 sortOrder asc, rowId desc 정렬")
-    void findAllByUserOwnershipParentNullSoftDeleteOrdering() {
+    @DisplayName("findAllByUser — 소유권·soft-delete 제외 후 sortOrder asc, rowId desc 정렬")
+    void findAllByUserOwnershipSoftDeleteOrdering() {
         User user = persistUser("owner");
         User other = persistUser("other");
 
-        Todo tA = persistTask(user, "A", TodoPriority.MEDIUM, null, null, null);
+        Todo tA = persistTask(user, "A", TodoPriority.MEDIUM, null, null);
         tA.updateSortOrder(1);
-        Todo tB = persistTask(user, "B", TodoPriority.MEDIUM, null, null, null); // sortOrder 0
-        Todo tC = persistTask(user, "C", TodoPriority.MEDIUM, null, null, null); // sortOrder 0, rowId > tB
-        Todo tDeleted = persistTask(user, "삭제", TodoPriority.MEDIUM, null, null, null);
+        Todo tB = persistTask(user, "B", TodoPriority.MEDIUM, null, null); // sortOrder 0
+        Todo tC = persistTask(user, "C", TodoPriority.MEDIUM, null, null); // sortOrder 0, rowId > tB
+        Todo tDeleted = persistTask(user, "삭제", TodoPriority.MEDIUM, null, null);
         tDeleted.deleteTodo();
-        persistTask(user, "서브태스크", TodoPriority.MEDIUM, null, null, tB); // parent != null → 제외
-        persistTask(other, "남의할일", TodoPriority.MEDIUM, null, null, null); // 소유권 제외
+        persistTask(other, "남의할일", TodoPriority.MEDIUM, null, null); // 소유권 제외
         em.flush();
         em.clear();
 
@@ -95,8 +93,8 @@ class TodoRepositoryTest {
     @DisplayName("findAllByUser — status·priority·category 스칼라 필터")
     void findAllByUserScalarFilters() {
         User user = persistUser("u1");
-        Todo highPending = persistTask(user, "높음대기", TodoPriority.HIGH, "일", null, null);
-        Todo lowDone = persistTask(user, "낮음완료", TodoPriority.LOW, "취미", null, null);
+        Todo highPending = persistTask(user, "높음대기", TodoPriority.HIGH, "일", null);
+        Todo lowDone = persistTask(user, "낮음완료", TodoPriority.LOW, "취미", null);
         lowDone.toggleStatus(); // → COMPLETED
         em.flush();
         em.clear();
@@ -113,7 +111,7 @@ class TodoRepositoryTest {
     @DisplayName("findAllByUser — type 필터(NOTE 만)")
     void findAllByUserTypeFilter() {
         User user = persistUser("u1");
-        persistTask(user, "태스크", TodoPriority.MEDIUM, null, null, null);
+        persistTask(user, "태스크", TodoPriority.MEDIUM, null, null);
         persistNote(user, "노트", false);
         em.flush();
         em.clear();
@@ -128,10 +126,10 @@ class TodoRepositoryTest {
         User user = persistUser("u1");
         LocalDate start = LocalDate.of(2026, 6, 10);
         LocalDate end = LocalDate.of(2026, 6, 20);
-        persistTask(user, "start경계", TodoPriority.MEDIUM, null, start, null);
-        persistTask(user, "end경계", TodoPriority.MEDIUM, null, end, null);
-        persistTask(user, "범위전", TodoPriority.MEDIUM, null, start.minusDays(1), null);
-        persistTask(user, "범위후", TodoPriority.MEDIUM, null, end.plusDays(1), null);
+        persistTask(user, "start경계", TodoPriority.MEDIUM, null, start);
+        persistTask(user, "end경계", TodoPriority.MEDIUM, null, end);
+        persistTask(user, "범위전", TodoPriority.MEDIUM, null, start.minusDays(1));
+        persistTask(user, "범위후", TodoPriority.MEDIUM, null, end.plusDays(1));
         em.flush();
         em.clear();
 
@@ -148,17 +146,17 @@ class TodoRepositoryTest {
         LocalDate start = LocalDate.of(2026, 6, 10);
         LocalDate end = LocalDate.of(2026, 6, 20);
 
-        persistTask(user, "onStart", TodoPriority.MEDIUM, null, start, null);
-        Todo mid1 = persistTask(user, "mid1", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 15), null);
+        persistTask(user, "onStart", TodoPriority.MEDIUM, null, start);
+        Todo mid1 = persistTask(user, "mid1", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 15));
         mid1.updateSortOrder(2);
-        Todo mid2 = persistTask(user, "mid2", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 15), null);
+        Todo mid2 = persistTask(user, "mid2", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 15));
         mid2.updateSortOrder(1);
-        persistTask(user, "onEnd", TodoPriority.MEDIUM, null, end, null);
-        persistTask(user, "범위전", TodoPriority.MEDIUM, null, start.minusDays(1), null);
-        persistTask(user, "범위후", TodoPriority.MEDIUM, null, end.plusDays(1), null);
-        Todo deleted = persistTask(user, "삭제", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 12), null);
+        persistTask(user, "onEnd", TodoPriority.MEDIUM, null, end);
+        persistTask(user, "범위전", TodoPriority.MEDIUM, null, start.minusDays(1));
+        persistTask(user, "범위후", TodoPriority.MEDIUM, null, end.plusDays(1));
+        Todo deleted = persistTask(user, "삭제", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 12));
         deleted.deleteTodo();
-        persistTask(other, "남의것", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 12), null);
+        persistTask(other, "남의것", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 12));
         em.flush();
         em.clear();
 
@@ -168,89 +166,38 @@ class TodoRepositoryTest {
     }
 
     @Test
-    @DisplayName("findSubtasks — 부모 매칭 + soft-delete 제외 + sortOrder asc, rowId asc 정렬")
-    void findSubtasksParentMatchSoftDeleteOrdering() {
-        User user = persistUser("u1");
-        Todo parent = persistTask(user, "부모", TodoPriority.MEDIUM, null, null, null);
-        Todo otherParent = persistTask(user, "다른부모", TodoPriority.MEDIUM, null, null, null);
-
-        Todo s1 = persistTask(user, "s1", TodoPriority.MEDIUM, null, null, parent);
-        s1.updateSortOrder(1);
-        persistTask(user, "s2", TodoPriority.MEDIUM, null, null, parent); // sortOrder 0
-        persistTask(user, "s3", TodoPriority.MEDIUM, null, null, parent); // sortOrder 0, rowId > s2
-        Todo sDel = persistTask(user, "삭제서브", TodoPriority.MEDIUM, null, null, parent);
-        sDel.deleteTodo();
-        persistTask(user, "남의부모서브", TodoPriority.MEDIUM, null, null, otherParent); // 다른 부모 → 제외
-        em.flush();
-        em.clear();
-
-        List<Todo> result = repository.findSubtasks(parent.getRowId());
-
-        assertThat(result).extracting(Todo::getTitle).containsExactly("s2", "s3", "s1");
-    }
-
-    @Test
-    @DisplayName("findSubtaskCountsByParentIds — 부모별 [total, completed] 집계, soft-delete 제외, 빈 리스트는 빈 맵")
-    void findSubtaskCountsByParentIds() {
-        User user = persistUser("u1");
-        Todo p1 = persistTask(user, "부모1", TodoPriority.MEDIUM, null, null, null);
-        Todo p2 = persistTask(user, "부모2", TodoPriority.MEDIUM, null, null, null);
-
-        persistTask(user, "p1-s1", TodoPriority.MEDIUM, null, null, p1);
-        persistTask(user, "p1-s2", TodoPriority.MEDIUM, null, null, p1);
-        Todo p1done = persistTask(user, "p1-s3완료", TodoPriority.MEDIUM, null, null, p1);
-        p1done.toggleStatus(); // COMPLETED
-        Todo p1del = persistTask(user, "p1-s4삭제", TodoPriority.MEDIUM, null, null, p1);
-        p1del.deleteTodo(); // 카운트 제외
-
-        Todo p2done = persistTask(user, "p2-s1완료", TodoPriority.MEDIUM, null, null, p2);
-        p2done.toggleStatus(); // COMPLETED
-        em.flush();
-        em.clear();
-
-        Map<Long, int[]> counts = repository.findSubtaskCountsByParentIds(List.of(p1.getRowId(), p2.getRowId()));
-
-        assertThat(counts.get(p1.getRowId())).containsExactly(3, 1); // total 3(삭제 제외), completed 1
-        assertThat(counts.get(p2.getRowId())).containsExactly(1, 1);
-        assertThat(repository.findSubtaskCountsByParentIds(List.of())).isEmpty();
-    }
-
-    @Test
-    @DisplayName("countStatsByUser — [total,pending,inProgress,completed,todayDue,overDue,note,pinnedNote] 8개 통계 (parent-null·소유권·soft-delete)")
+    @DisplayName("countStatsByUser — [total,pending,inProgress,completed,todayDue,overDue,note,pinnedNote] 8개 통계 (소유권·soft-delete)")
     void countStatsByUser() {
         User user = persistUser("owner");
         User other = persistUser("other");
         LocalDate today = LocalDate.of(2026, 7, 2);
         LocalDate yesterday = today.minusDays(1);
 
-        persistTask(user, "t1대기", TodoPriority.MEDIUM, null, null, null); // PENDING
-        Todo t2 = Todo.createTodo(user, "t2진행", null, TodoPriority.MEDIUM, null, null, null, TodoType.TASK);
+        persistTask(user, "t1대기", TodoPriority.MEDIUM, null, null); // PENDING
+        Todo t2 = Todo.createTodo(user, "t2진행", null, TodoPriority.MEDIUM, null, null, TodoType.TASK);
         ReflectionTestUtils.setField(t2, "status", TodoStatus.IN_PROGRESS);
         em.persist(t2);
-        Todo t3 = persistTask(user, "t3완료", TodoPriority.MEDIUM, null, null, null);
+        Todo t3 = persistTask(user, "t3완료", TodoPriority.MEDIUM, null, null);
         t3.toggleStatus(); // COMPLETED
-        persistTask(user, "t4오늘마감", TodoPriority.MEDIUM, null, today, null); // PENDING + todayDue
-        persistTask(user, "t5연체", TodoPriority.MEDIUM, null, yesterday, null); // PENDING + overDue
-        Todo t6 = persistTask(user, "t6완료연체", TodoPriority.MEDIUM, null, yesterday, null);
+        persistTask(user, "t4오늘마감", TodoPriority.MEDIUM, null, today); // PENDING + todayDue
+        persistTask(user, "t5연체", TodoPriority.MEDIUM, null, yesterday); // PENDING + overDue
+        Todo t6 = persistTask(user, "t6완료연체", TodoPriority.MEDIUM, null, yesterday);
         t6.toggleStatus(); // COMPLETED → overDue 아님
 
         persistNote(user, "n1핀노트", true);  // note + pinned
         persistNote(user, "n2노트", false);   // note
 
         // 통계에서 제외되어야 할 잡음
-        persistTask(user, "서브(제외)", TodoPriority.MEDIUM, null, today,
-                persistTask(user, "서브부모", TodoPriority.MEDIUM, null, null, null));
-        Todo del = persistTask(user, "삭제(제외)", TodoPriority.MEDIUM, null, today, null);
+        Todo del = persistTask(user, "삭제(제외)", TodoPriority.MEDIUM, null, today);
         del.deleteTodo();
-        persistTask(other, "남의것(제외)", TodoPriority.MEDIUM, null, today, null);
+        persistTask(other, "남의것(제외)", TodoPriority.MEDIUM, null, today);
         em.flush();
         em.clear();
 
         long[] stats = repository.countStatsByUser(user.getRowId(), today);
 
-        // 부모 태스크 "서브부모"(parent-null, TASK, PENDING) 도 total/pending 에 포함됨
-        assertThat(stats[0]).as("totalTask").isEqualTo(7);       // t1~t6 + 서브부모
-        assertThat(stats[1]).as("pending").isEqualTo(4);         // t1,t4,t5,서브부모
+        assertThat(stats[0]).as("totalTask").isEqualTo(6);       // t1~t6
+        assertThat(stats[1]).as("pending").isEqualTo(3);         // t1,t4,t5
         assertThat(stats[2]).as("inProgress").isEqualTo(1);      // t2
         assertThat(stats[3]).as("completed").isEqualTo(2);       // t3,t6
         assertThat(stats[4]).as("todayDue").isEqualTo(1);        // t4
@@ -279,19 +226,19 @@ class TodoRepositoryTest {
         LocalDate start = LocalDate.of(2026, 6, 10);
         LocalDate end = LocalDate.of(2026, 6, 12);
 
-        persistTask(userA, "a1대기", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 11), null); // 포함
-        Todo a2 = Todo.createTodo(userA, "a2진행-end경계", null, TodoPriority.MEDIUM, null, end, null, TodoType.TASK);
+        persistTask(userA, "a1대기", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 11)); // 포함
+        Todo a2 = Todo.createTodo(userA, "a2진행-end경계", null, TodoPriority.MEDIUM, null, end, TodoType.TASK);
         ReflectionTestUtils.setField(a2, "status", TodoStatus.IN_PROGRESS);
         em.persist(a2); // 포함 (미완료 + end 경계)
-        persistTask(userB, "b1대기-start경계", TodoPriority.MEDIUM, null, start, null); // 포함 (다른 사용자)
+        persistTask(userB, "b1대기-start경계", TodoPriority.MEDIUM, null, start); // 포함 (다른 사용자)
 
-        Todo done = persistTask(userA, "완료", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 11), null);
+        Todo done = persistTask(userA, "완료", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 11));
         done.toggleStatus(); // 제외 (COMPLETED)
         Todo note = Todo.createTodo(userA, "노트", null, TodoPriority.LOW, null,
-                LocalDate.of(2026, 6, 11), null, TodoType.NOTE);
+                LocalDate.of(2026, 6, 11), TodoType.NOTE);
         em.persist(note); // 제외 (NOTE)
-        persistTask(userA, "범위후", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 13), null); // 제외
-        Todo del = persistTask(userA, "삭제", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 11), null);
+        persistTask(userA, "범위후", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 13)); // 제외
+        Todo del = persistTask(userA, "삭제", TodoPriority.MEDIUM, null, LocalDate.of(2026, 6, 11));
         del.deleteTodo(); // 제외
         em.flush();
         em.clear();
@@ -314,11 +261,11 @@ class TodoRepositoryTest {
     void renameCategoryMovesOnlyOwnActiveRows() {
         User owner = persistUser("owner");
         User other = persistUser("other");
-        Todo a = persistTask(owner, "a", TodoPriority.MEDIUM, "업무", null, null);
-        Todo b = persistTask(owner, "b", TodoPriority.MEDIUM, "업무", null, null);
-        Todo keep = persistTask(owner, "keep", TodoPriority.MEDIUM, "개인", null, null);
-        Todo removed = persistTask(owner, "removed", TodoPriority.MEDIUM, "업무", null, null);
-        Todo foreign = persistTask(other, "foreign", TodoPriority.MEDIUM, "업무", null, null);
+        Todo a = persistTask(owner, "a", TodoPriority.MEDIUM, "업무", null);
+        Todo b = persistTask(owner, "b", TodoPriority.MEDIUM, "업무", null);
+        Todo keep = persistTask(owner, "keep", TodoPriority.MEDIUM, "개인", null);
+        Todo removed = persistTask(owner, "removed", TodoPriority.MEDIUM, "업무", null);
+        Todo foreign = persistTask(other, "foreign", TodoPriority.MEDIUM, "업무", null);
         removed.deleteTodo();
         em.flush();
         em.clear();
@@ -346,11 +293,11 @@ class TodoRepositoryTest {
     void clearCategoryClearsOnlyOwnActiveRows() {
         User owner = persistUser("owner2");
         User other = persistUser("other2");
-        Todo a = persistTask(owner, "a", TodoPriority.MEDIUM, "업무", null, null);
-        Todo b = persistTask(owner, "b", TodoPriority.MEDIUM, "업무", null, null);
-        Todo keep = persistTask(owner, "keep", TodoPriority.MEDIUM, "개인", null, null);
-        Todo removed = persistTask(owner, "removed", TodoPriority.MEDIUM, "업무", null, null);
-        Todo foreign = persistTask(other, "foreign", TodoPriority.MEDIUM, "업무", null, null);
+        Todo a = persistTask(owner, "a", TodoPriority.MEDIUM, "업무", null);
+        Todo b = persistTask(owner, "b", TodoPriority.MEDIUM, "업무", null);
+        Todo keep = persistTask(owner, "keep", TodoPriority.MEDIUM, "개인", null);
+        Todo removed = persistTask(owner, "removed", TodoPriority.MEDIUM, "업무", null);
+        Todo foreign = persistTask(other, "foreign", TodoPriority.MEDIUM, "업무", null);
         removed.deleteTodo();
         em.flush();
         em.clear();
