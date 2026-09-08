@@ -47,8 +47,8 @@ class TodoTagRepositoryTest {
         return em.persist(TodoTag.createTag(user, name, "#ffffff"));
     }
 
-    private Todo persistTodo(User user, String title, Todo parent, TodoType type) {
-        return em.persist(Todo.createTodo(user, title, null, TodoPriority.MEDIUM, null, null, parent, type));
+    private Todo persistTodo(User user, String title, TodoType type) {
+        return em.persist(Todo.createTodo(user, title, null, TodoPriority.MEDIUM, null, null, type));
     }
 
     private void persistMapping(Todo todo, TodoTag tag) {
@@ -161,20 +161,20 @@ class TodoTagRepositoryTest {
      * 남의 할 일 매핑이 내 태그 사용 수에 섞인다.
      */
     @Test
-    @DisplayName("countTodosByTag — 매핑 기준 집계, 축은 할 일 주인, 서브태스크·NOTE 포함·삭제 제외")
+    @DisplayName("countTodosByTag — 매핑 기준 집계, 축은 할 일 주인, NOTE 포함·삭제 제외")
     void countTodosByTag() {
         User owner = persistUser("owner");
         User other = persistUser("other");
         TodoTag work = persistTag(owner, "업무");
         TodoTag idle = persistTag(owner, "안쓰는것");
 
-        Todo root = persistTodo(owner, "최상위", null, TodoType.TASK);
-        Todo sub = persistTodo(owner, "서브", root, TodoType.TASK);
-        Todo note = persistTodo(owner, "노트", null, TodoType.NOTE);
-        Todo removed = persistTodo(owner, "지운할일", null, TodoType.TASK);
-        Todo foreign = persistTodo(other, "남의할일", null, TodoType.TASK);
+        Todo root = persistTodo(owner, "할일1", TodoType.TASK);
+        Todo second = persistTodo(owner, "할일2", TodoType.TASK);
+        Todo note = persistTodo(owner, "노트", TodoType.NOTE);
+        Todo removed = persistTodo(owner, "지운할일", TodoType.TASK);
+        Todo foreign = persistTodo(other, "남의할일", TodoType.TASK);
         persistMapping(root, work);
-        persistMapping(sub, work);
+        persistMapping(second, work);
         persistMapping(note, work);
         persistMapping(removed, work);
         persistMapping(foreign, work); // 남의 할 일 — 내 집계에 섞이면 안 된다
@@ -206,7 +206,7 @@ class TodoTagRepositoryTest {
     void getReferenceLinksMappingWithoutSelect() {
         User user = persistUser("u1");
         TodoTag tag = persistTag(user, "업무");
-        Todo todo = persistTodo(user, "기획서", null, TodoType.TASK);
+        Todo todo = persistTodo(user, "기획서", TodoType.TASK);
         Long userRowId = user.getRowId();
         Long tagRowId = tag.getRowId();
         Long todoRowId = todo.getRowId();

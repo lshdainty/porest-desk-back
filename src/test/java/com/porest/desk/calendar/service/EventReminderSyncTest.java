@@ -98,7 +98,7 @@ class EventReminderSyncTest {
     private CalendarEventServiceDto.UpdateCommand updateCmd(List<Integer> minutes) {
         return new CalendarEventServiceDto.UpdateCommand(
                 "회의", Patch.absent(), null, Patch.absent(), START, END, null,
-                Patch.absent(), Patch.absent(), Patch.absent(), minutes, null);
+                Patch.absent(), Patch.absent(), Patch.absent(), minutes, Patch.absent());
     }
 
     /** 생성 경로가 지나가는 조회들. */

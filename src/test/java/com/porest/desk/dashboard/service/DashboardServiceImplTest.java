@@ -65,14 +65,14 @@ class DashboardServiceImplTest {
     // ── entity builders ─────────────────────────────────────────────
 
     private Todo todoTask(long rowId, TodoStatus status, TodoPriority priority, String title, LocalDate dueDate) {
-        Todo t = Todo.createTodo(null, title, null, priority, null, dueDate, null, TodoType.TASK);
+        Todo t = Todo.createTodo(null, title, null, priority, null, dueDate, TodoType.TASK);
         ReflectionTestUtils.setField(t, "rowId", rowId);
         ReflectionTestUtils.setField(t, "status", status);
         return t;
     }
 
     private Todo todoNote(long rowId, String title) {
-        Todo n = Todo.createTodo(null, title, null, TodoPriority.MEDIUM, null, null, null, TodoType.NOTE);
+        Todo n = Todo.createTodo(null, title, null, TodoPriority.MEDIUM, null, null, TodoType.NOTE);
         ReflectionTestUtils.setField(n, "rowId", rowId);
         return n;
     }

@@ -43,9 +43,9 @@ public class Todo extends AuditingFieldsWithIp {
     @JoinColumn(name = "user_row_id")
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "parent_row_id")
-    private Todo parent;
+    // 하위 할 일(부모-자식)은 개념째 걷었다(사용자 결정 2026-09-08) — 이 엔티티는 더는
+    // parent_row_id 를 매핑하지 않는다. <b>컬럼은 DB 에 그대로 있다</b>(옛 값을 지우지 않는다).
+    // 매핑을 남겨 두면 아무도 안 읽는 연관이 남아 "언젠가 쓰겠지" 로 다시 자란다.
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_row_id")
@@ -91,7 +91,7 @@ public class Todo extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
-    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, Todo parent, TodoType type) {
+    public static Todo createTodo(User user, String title, String content, TodoPriority priority, String category, LocalDate dueDate, TodoType type) {
         Todo todo = new Todo();
         todo.user = user;
         todo.type = type != null ? type : TodoType.TASK;
@@ -101,7 +101,6 @@ public class Todo extends AuditingFieldsWithIp {
         todo.category = category;
         todo.status = TodoStatus.PENDING;
         todo.dueDate = dueDate;
-        todo.parent = parent;
         todo.sortOrder = 0;
         todo.isPinned = YNType.N;
         todo.isDeleted = YNType.N;

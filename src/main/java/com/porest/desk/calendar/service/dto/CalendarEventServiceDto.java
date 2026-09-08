@@ -31,7 +31,10 @@ public class CalendarEventServiceDto {
      *
      * <p>나머지 칸의 뜻은 종전 그대로다 — {@code title}·{@code eventType}·{@code isAllDay} 는
      * null 이면 유지(도메인 가드), {@code startDate}·{@code endDate} 는 늘 실리고,
-     * {@code reminderMinutes}·{@code calendarRowId} 는 null 이면 손대지 않는다.
+     * {@code reminderMinutes} 는 null 이면 손대지 않는다.
+     *
+     * <p>{@code calendarRowId} 도 {@link Patch} 지만 <b>"지워라" 를 받지 않는다</b> —
+     * 일정은 반드시 캘린더에 속하므로 명시적 null 은 400 이다(사용자 결정 2026-09-08).
      */
     public record UpdateCommand(
         String title,
@@ -45,7 +48,7 @@ public class CalendarEventServiceDto {
         Patch<String> location,
         Patch<String> rrule,
         List<Integer> reminderMinutes,
-        Long calendarRowId
+        Patch<Long> calendarRowId
     ) {}
 
     public record EventInfo(

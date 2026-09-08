@@ -51,16 +51,10 @@ public class TodoServiceImpl implements TodoService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        Todo parent = null;
-        if (command.parentRowId() != null) {
-            parent = findTodoOrThrow(command.parentRowId());
-            validateTodoOwnership(parent, command.userRowId());
-        }
-
         TodoType type = command.type() != null ? command.type() : TodoType.TASK;
         // priority 는 NOT NULL 이다. 안 보내면 종전엔 저장이 409 "다른 곳에서 먼저 수정됐어요" 로
-        // 튕겼는데, 앱의 하위 할 일 빠른 추가가 정확히 그 요청을 보낸다(제목만 보낸다) — 즉
-        // 지금 운영에서 안 되는 화면이 있다(QA #81). 안 보낸 것은 "보통" 이라는 뜻으로 읽는다.
+        // 튕겼는데, 제목만 보내는 빠른 추가 경로가 정확히 그 요청을 보낸다(QA #81).
+        // 안 보낸 것은 "보통" 이라는 뜻으로 읽는다.
         TodoPriority priority = command.priority() != null ? command.priority() : TodoPriority.MEDIUM;
         if (type == TodoType.NOTE) {
             priority = TodoPriority.LOW;
@@ -74,7 +68,7 @@ public class TodoServiceImpl implements TodoService {
         // 콜레이션이 무시해 주는 것은 끝공백뿐이라 " 업무" 와 "업무" 는 DB 가 다른 값으로 본다.
         Todo todo = Todo.createTodo(
             user, command.title(), command.content(), priority,
-            blankToNull(command.category()), command.dueDate(), parent, type
+            blankToNull(command.category()), command.dueDate(), type
         );
 
         todoRepository.save(todo);
@@ -94,17 +88,11 @@ public class TodoServiceImpl implements TodoService {
 
         List<Todo> todos = todoRepository.findAllByUser(userRowId, status, priority, category, startDate, endDate, type);
 
-        // Batch load tags and subtask counts
         List<Long> todoIds = todos.stream().map(Todo::getRowId).toList();
         Map<Long, List<TodoServiceDto.TagInfo>> tagsMap = loadTagsMap(todoIds);
-        Map<Long, int[]> subtaskCountsMap = loadSubtaskCountsMap(todoIds);
 
         return todos.stream()
-            .map(todo -> {
-                List<TodoServiceDto.TagInfo> tags = tagsMap.getOrDefault(todo.getRowId(), List.of());
-                int[] counts = subtaskCountsMap.getOrDefault(todo.getRowId(), new int[]{0, 0});
-                return TodoServiceDto.TodoInfo.from(todo, tags, counts[0], counts[1]);
-            })
+            .map(todo -> TodoServiceDto.TodoInfo.from(todo, tagsMap.getOrDefault(todo.getRowId(), List.of())))
             .toList();
     }
 
@@ -223,30 +211,7 @@ public class TodoServiceImpl implements TodoService {
         validateTodoOwnership(todo, userRowId);
         todo.deleteTodo();
 
-        // Also delete subtasks
-        List<Todo> subtasks = todoRepository.findSubtasks(todoId);
-        for (Todo subtask : subtasks) {
-            subtask.deleteTodo();
-        }
-
         log.info("할일 삭제 완료: todoId={}", todoId);
-    }
-
-    @Override
-    public List<TodoServiceDto.TodoInfo> getSubtasks(Long parentRowId, Long userRowId) {
-        log.debug("서브태스크 조회: parentRowId={}", parentRowId);
-
-        Todo parentTodo = findTodoOrThrow(parentRowId);
-        validateTodoOwnership(parentTodo, userRowId);
-
-        List<Todo> subtasks = todoRepository.findSubtasks(parentRowId);
-
-        List<Long> subtaskIds = subtasks.stream().map(Todo::getRowId).toList();
-        Map<Long, List<TodoServiceDto.TagInfo>> tagsMap = loadTagsMap(subtaskIds);
-
-        return subtasks.stream()
-            .map(todo -> TodoServiceDto.TodoInfo.from(todo, tagsMap.getOrDefault(todo.getRowId(), List.of()), 0, 0))
-            .toList();
     }
 
     @Override
@@ -439,11 +404,7 @@ public class TodoServiceImpl implements TodoService {
             if (tags.stream().noneMatch(x -> Objects.equals(x.rowId(), t.rowId()))) tags.add(t);
         }
 
-        // 서브태스크 카운트를 배치 쿼리로 조회 (엔티티 전체 로드 대신 count만)
-        Map<Long, int[]> counts = todoRepository.findSubtaskCountsByParentIds(List.of(todo.getRowId()));
-        int[] subtaskCounts = counts.getOrDefault(todo.getRowId(), new int[]{0, 0});
-
-        return TodoServiceDto.TodoInfo.from(todo, tags, subtaskCounts[0], subtaskCounts[1]);
+        return TodoServiceDto.TodoInfo.from(todo, tags);
     }
 
     private Map<Long, List<TodoServiceDto.TagInfo>> loadTagsMap(List<Long> todoIds) {
@@ -460,9 +421,4 @@ public class TodoServiceImpl implements TodoService {
             ));
     }
 
-    private Map<Long, int[]> loadSubtaskCountsMap(List<Long> todoIds) {
-        if (todoIds.isEmpty()) return Map.of();
-
-        return todoRepository.findSubtaskCountsByParentIds(todoIds);
-    }
 }

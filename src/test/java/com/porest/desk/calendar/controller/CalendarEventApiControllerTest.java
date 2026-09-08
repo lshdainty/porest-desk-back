@@ -142,6 +142,43 @@ class CalendarEventApiControllerTest {
     }
 
     /**
+     * D4 — 일정은 반드시 캘린더에 속한다(사용자 결정 2026-09-08). 종전에 {@code calendarRowId} 는
+     * 맨 {@code Long} 이라 <b>안 보낸 것과 {@code null} 을 실은 것이 구별되지 않아 둘 다 무시</b>됐다.
+     * 여기서 세 모양이 서로 다른 뜻으로 서비스에 닿는지를 붙들어 둔다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code UpdateRequest.calendarRowId} 를
+     * {@code Optional<Long>} 에서 맨 {@code Long} 으로 되돌리면 컨트롤러가 세 모양을 구별하지
+     * 못해 첫 두 단언이 같은 값이 되며 깨진다.
+     */
+    @Test
+    @DisplayName("PUT /calendar/event/{id} — calendarRowId 는 키없음·null·값이 서로 다른 뜻으로 전달된다")
+    void updatePassesCalendarRowIdAsThreeDistinctShapes() throws Exception {
+        given(calendarEventService.updateEvent(eq(10L), eq(1L), any())).willReturn(sampleInfo());
+        String base = """
+                {"title":"수정회의","startDate":"2026-07-03T10:00:00","endDate":"2026-07-03T11:00:00"%s}
+                """;
+
+        mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON).content(base.formatted("")))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON).content(base.formatted(",\"calendarRowId\":null")))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON).content(base.formatted(",\"calendarRowId\":40")))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(CalendarEventServiceDto.UpdateCommand.class);
+        verify(calendarEventService, org.mockito.Mockito.times(3))
+                .updateEvent(eq(10L), eq(1L), captor.capture());
+        assertThat(captor.getAllValues().get(0).calendarRowId().present()).isFalse();
+        assertThat(captor.getAllValues().get(1).calendarRowId())
+                .isEqualTo(com.porest.desk.common.patch.Patch.set(null));
+        assertThat(captor.getAllValues().get(2).calendarRowId())
+                .isEqualTo(com.porest.desk.common.patch.Patch.set(40L));
+    }
+
+    /**
      * QA #81 — 값이 빠진 요청의 답이 <b>400</b> 이어야 한다.
      *
      * <p>종전엔 이 요청이 서비스까지 내려가 {@code calendar_event.start_date} NOT NULL 앞에서

@@ -20,7 +20,6 @@ public class TodoServiceDto {
         TodoPriority priority,
         String category,
         LocalDate dueDate,
-        Long parentRowId,
         List<Long> tagIds,
         TodoType type
     ) {}
@@ -60,20 +59,17 @@ public class TodoServiceDto {
         LocalDateTime completedAt,
         Integer sortOrder,
         YNType isPinned,
-        Long parentRowId,
         List<TagInfo> tags,
-        int subtaskCount,
-        int subtaskCompletedCount,
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         /** 이번 요청(상태 토글)으로 실제 적립된 별빛 — 조회·그 외 경로는 0. 화면 "+N" 토스트 근거. */
         int earnedStarlight
     ) {
         public static TodoInfo from(Todo todo) {
-            return from(todo, List.of(), 0, 0);
+            return from(todo, List.of());
         }
 
-        public static TodoInfo from(Todo todo, List<TagInfo> tags, int subtaskCount, int subtaskCompletedCount) {
+        public static TodoInfo from(Todo todo, List<TagInfo> tags) {
             return new TodoInfo(
                 todo.getRowId(),
                 todo.getUser().getRowId(),
@@ -87,10 +83,7 @@ public class TodoServiceDto {
                 todo.getCompletedAt(),
                 todo.getSortOrder(),
                 todo.getIsPinned(),
-                todo.getParent() != null ? todo.getParent().getRowId() : null,
                 tags,
-                subtaskCount,
-                subtaskCompletedCount,
                 todo.getCreateAt(),
                 todo.getModifyAt(),
                 0
@@ -99,8 +92,7 @@ public class TodoServiceDto {
 
         public TodoInfo withEarnedStarlight(int earned) {
             return new TodoInfo(rowId, userRowId, type, title, content, priority, category, status,
-                dueDate, completedAt, sortOrder, isPinned, parentRowId, tags,
-                subtaskCount, subtaskCompletedCount, createAt, modifyAt, earned);
+                dueDate, completedAt, sortOrder, isPinned, tags, createAt, modifyAt, earned);
         }
     }
 

@@ -44,7 +44,6 @@ public class TodoApiController {
             request.priority(),
             request.category(),
             request.dueDate(),
-            request.parentRowId(),
             request.tagIds(),
             request.type()
         ));
@@ -138,13 +137,15 @@ public class TodoApiController {
         return ApiResponse.success();
     }
 
-    @GetMapping("/todo/{id}/subtasks")
-    public ApiResponse<TodoApiDto.ListResponse> getSubtasks(
-            @LoginUser UserPrincipal loginUser,
-            @PathVariable Long id) {
-        List<TodoServiceDto.TodoInfo> infos = todoService.getSubtasks(id, loginUser.getRowId());
-        return ApiResponse.success(TodoApiDto.ListResponse.from(infos));
-    }
+    // GET /todo/{id}/subtasks 는 없앴다 — 하위 할 일 개념째 걷었다(사용자 결정 2026-09-08).
+    //
+    // 빈 배열을 돌려주는 껍데기로 남기지 않은 이유: 그러면 옛 앱의 하위 할 일 칸이 "아직 하나도
+    // 없음" 으로 그려지고, 거기 제목을 적으면 서버는 parentRowId 를 무시해 보통 할 일로
+    // 만든다. 화면은 다시 빈 목록을 받으므로 사용자 눈에는 적은 것이 사라진다 — 에러 없이 틀리는
+    // 쪽이다. 404 는 그 자리에서 "불러오지 못했어요" 로 보이고, 적은 것이 사라지는 일은 없다.
+    //
+    // 앱은 이 칸을 같은 라운드에 걷는다. 그때까지 옛 앱은 할 일 편집 창의 그 칸에서만 실패하고
+    // 나머지는 멀쩡하다 — 눈에 보이는 실패라 minBuildNumber 는 올리지 않는다(레포 CLAUDE.md 기준).
 
     /**
      * 태그 일괄 지정. <b>{@code tagIds} 는 필수</b>고, 빈 배열만 "전부 해제" 로 인정한다(QA #87).

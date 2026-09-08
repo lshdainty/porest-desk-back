@@ -69,7 +69,7 @@ class TodoApiControllerTest {
                 100L, 1L, TodoType.TASK, "할일 제목", "내용",
                 TodoPriority.HIGH, "work", TodoStatus.PENDING,
                 LocalDate.of(2026, 7, 3), null, 0, YNType.N,
-                null, List.of(), 0, 0, null, null, 0);
+                List.of(), null, null, 0);
     }
 
     @Test
@@ -79,7 +79,7 @@ class TodoApiControllerTest {
 
         String body = """
                 {"title":"할일 제목","content":"내용","priority":"HIGH","category":"work",
-                 "dueDate":"2026-07-03","parentRowId":null,
+                 "dueDate":"2026-07-03",
                  "tagIds":[1,2],"type":"TASK"}
                 """;
 
@@ -254,16 +254,41 @@ class TodoApiControllerTest {
         verify(todoService).deleteTodo(100L, 1L);
     }
 
+    /**
+     * 하위 할 일 개념을 걷었다(사용자 결정 2026-09-08) — 이 경로는 <b>더는 없다</b>.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code TodoApiController} 에
+     * {@code @GetMapping("/todo/{id}/subtasks")} 를 되살리면 아래가 404 대신 200 이 되며 깨진다.
+     */
     @Test
-    @DisplayName("GET /todo/{id}/subtasks — 하위 작업 목록 조회")
-    void getSubtasks() throws Exception {
-        given(todoService.getSubtasks(100L, 1L)).willReturn(List.of(sampleTodo()));
-
+    @DisplayName("GET /todo/{id}/subtasks — 없어진 경로다(404)")
+    void subtasksEndpointIsGone() throws Exception {
         mockMvc.perform(get("/api/v1/todo/{id}/subtasks", 100L))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.todos[0].rowId").value(100));
+                .andExpect(status().isNotFound());
+    }
 
-        verify(todoService).getSubtasks(100L, 1L);
+    /**
+     * 옛 클라이언트가 {@code parentRowId} 를 계속 실어 보내도 <b>400 이 아니라 무시</b>다.
+     * 400 으로 끊으면 옛 앱의 하위 빠른 추가가 통째로 에러를 맞는데, 그 키는 사용자가 채운
+     * 값이 아니라 화면이 붙인 값이라 사용자가 고칠 방법이 없다 — 적은 제목 그대로 보통 할 일로
+     * 남는 쪽이 낫다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code application.yml} 에
+     * {@code spring.jackson.deserialization.fail-on-unknown-properties: true} 를 켜면 400 이 되며 깨진다.
+     */
+    @Test
+    @DisplayName("POST /todo — 옛 클라이언트의 parentRowId 는 400 이 아니라 무시된다")
+    void createIgnoresLegacyParentRowId() throws Exception {
+        given(todoService.createTodo(any())).willReturn(sampleTodo());
+
+        mockMvc.perform(post("/api/v1/todo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"하위 할 일","parentRowId":100,"type":"TASK"}
+                                """))
+                .andExpect(status().isOk());
+
+        verify(todoService).createTodo(any());
     }
 
     @Test

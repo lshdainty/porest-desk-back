@@ -24,11 +24,16 @@ public class TodoApiDto {
      * <p><b>제목은 필수로 건다.</b> 제목 없는 할 일은 화면에도 뜻이 없고, 웹·앱 모두 빈 제목을
      * 이미 막고 있다. 종전엔 빠뜨리면 409 "다른 곳에서 먼저 수정됐어요" 였다(QA #81).
      *
-     * <p><b>중요도는 필수로 걸지 않는다.</b> 앱의 하위 할 일 빠른 추가가 제목만 보낸다
-     * ({@code todo_edit_dialog.dart} 의 {@code repo.create(title: title)}) — 여기에
-     * {@code @NotNull} 을 걸면 그 화면이 <b>지금 되던 것도 못 하게</b> 400 을 맞는다.
+     * <p><b>중요도는 필수로 걸지 않는다.</b> 제목만 보내는 빠른 추가 경로가 있다 —
+     * 여기에 {@code @NotNull} 을 걸면 그 화면이 <b>지금 되던 것도 못 하게</b> 400 을 맞는다.
      * 값이 없을 때의 답은 거절이 아니라 기본값이고, 그 기본값은 서비스가 씌운다
      * ({@code TodoServiceImpl.createTodo}).
+     *
+     * <p><b>{@code parentRowId} 는 없앴다</b>(하위 할 일 폐기, 사용자 결정 2026-09-08).
+     * 옛 클라이언트가 계속 실어 보내도 <b>400 이 아니라 무시</b>다 — 알 수 없는 키는
+     * Jackson 이 버린다(Boot 기본값). 400 으로 끊으면 옛 앱의 하위 빠른 추가가 통째로
+     * 에러를 맞는데, 그 키는 사용자가 채운 값이 아니라 화면이 붙인 값이라 사용자가 고칠
+     * 방법이 없다. 무시하면 적은 제목 그대로 <b>보통 할 일</b>로 남는다.
      */
     @Schema(name = "TodoCreateRequest")
     public record CreateRequest(
@@ -41,7 +46,6 @@ public class TodoApiDto {
         @Size(max = FieldLimits.LABEL_MAX, message = "카테고리는 50자까지 입력할 수 있어요")
         String category,
         LocalDate dueDate,
-        Long parentRowId,
         List<Long> tagIds,
         TodoType type
     ) {}
@@ -135,6 +139,15 @@ public class TodoApiDto {
         TodoStatus status
     ) {}
 
+    /**
+     * 할 일 한 건.
+     *
+     * <p><b>{@code parentRowId}·{@code subtaskCount}·{@code subtaskCompletedCount} 를 뺐다</b>
+     * (하위 할 일 폐기, 사용자 결정 2026-09-08). 옛 클라이언트는 세 칸이 빠져도 그대로 돈다 —
+     * 앱 {@code todo.dart} 는 {@code int? parentRowId} 와 {@code @Default(0)} 로 받고,
+     * 웹은 타입에만 적혀 있고 화면에 그리는 자리가 없다. 빈 값을 계속 실어 보내는 쪽이
+     * 오히려 "언젠가 채워지겠지" 를 남긴다.
+     */
     @Schema(name = "TodoResponse")
     public record Response(
         Long rowId,
@@ -149,10 +162,7 @@ public class TodoApiDto {
         LocalDateTime completedAt,
         Integer sortOrder,
         YNType isPinned,
-        Long parentRowId,
         List<TagResponse> tags,
-        int subtaskCount,
-        int subtaskCompletedCount,
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         /** 이번 요청(상태 토글)으로 실제 적립된 별빛 — 그 외 응답은 0. */
@@ -172,10 +182,7 @@ public class TodoApiDto {
                 info.completedAt(),
                 info.sortOrder(),
                 info.isPinned(),
-                info.parentRowId(),
                 info.tags() != null ? info.tags().stream().map(TagResponse::from).toList() : List.of(),
-                info.subtaskCount(),
-                info.subtaskCompletedCount(),
                 info.createAt(),
                 info.modifyAt(),
                 info.earnedStarlight()

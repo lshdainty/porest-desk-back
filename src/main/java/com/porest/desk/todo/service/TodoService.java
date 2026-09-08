@@ -23,7 +23,6 @@ public interface TodoService {
     TodoServiceDto.TodoInfo togglePin(Long todoId, Long userRowId);
     void reorderTodos(Long userRowId, TodoServiceDto.ReorderCommand command);
     void deleteTodo(Long todoId, Long userRowId);
-    List<TodoServiceDto.TodoInfo> getSubtasks(Long parentRowId, Long userRowId);
     void updateTags(Long todoId, Long userRowId, List<Long> tagIds);
     TodoServiceDto.TodoStats getStats(Long userRowId);
 }

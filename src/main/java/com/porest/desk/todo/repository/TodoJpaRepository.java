@@ -109,15 +109,6 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
-    public List<Todo> findSubtasks(Long parentRowId) {
-        return entityManager.createQuery(
-            "SELECT t FROM Todo t WHERE t.parent.rowId = :parentRowId AND t.isDeleted = :isDeleted ORDER BY t.sortOrder ASC, t.rowId DESC", Todo.class)
-            .setParameter("parentRowId", parentRowId)
-            .setParameter("isDeleted", YNType.N)
-            .getResultList();
-    }
-
-    @Override
     public List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate) {
         return entityManager.createQuery(
             "SELECT t FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted AND t.dueDate >= :startDate AND t.dueDate <= :endDate ORDER BY t.dueDate ASC, t.sortOrder ASC", Todo.class)
@@ -140,29 +131,6 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
-    public Map<Long, int[]> findSubtaskCountsByParentIds(List<Long> parentIds) {
-        Map<Long, int[]> result = new HashMap<>();
-        if (parentIds.isEmpty()) return result;
-
-        List<Object[]> rows = entityManager.createQuery(
-            "SELECT t.parent.rowId, COUNT(t), SUM(CASE WHEN t.status = :completed THEN 1 ELSE 0 END) " +
-            "FROM Todo t WHERE t.parent.rowId IN :parentIds AND t.isDeleted = :isDeleted GROUP BY t.parent.rowId", Object[].class)
-            .setParameter("parentIds", parentIds)
-            .setParameter("completed", TodoStatus.COMPLETED)
-            .setParameter("isDeleted", YNType.N)
-            .getResultList();
-
-        for (Object[] row : rows) {
-            Long parentId = (Long) row[0];
-            int total = ((Number) row[1]).intValue();
-            int completed = ((Number) row[2]).intValue();
-            result.put(parentId, new int[]{total, completed});
-        }
-
-        return result;
-    }
-
-    @Override
     public long[] countStatsByUser(Long userRowId, LocalDate today) {
         Object[] row = entityManager.createQuery(
             "SELECT " +
@@ -174,7 +142,7 @@ public class TodoJpaRepository implements TodoRepository {
             "SUM(CASE WHEN t.type = :task AND t.dueDate < :today AND t.status != :completed THEN 1 ELSE 0 END), " +
             "SUM(CASE WHEN t.type = :note THEN 1 ELSE 0 END), " +
             "SUM(CASE WHEN t.type = :note AND t.isPinned = :yes THEN 1 ELSE 0 END) " +
-            "FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted AND t.parent IS NULL", Object[].class)
+            "FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted", Object[].class)
             .setParameter("task", TodoType.TASK)
             .setParameter("note", TodoType.NOTE)
             .setParameter("pending", TodoStatus.PENDING)

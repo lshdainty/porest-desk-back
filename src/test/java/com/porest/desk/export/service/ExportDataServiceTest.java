@@ -92,7 +92,7 @@ class ExportDataServiceTest {
     }
 
     private Todo todo(LocalDate dueDate, LocalDateTime completedAtUtc) {
-        Todo t = Todo.createTodo(user(), "장보기", "우유", TodoPriority.HIGH, "생활", dueDate, null, TodoType.TASK);
+        Todo t = Todo.createTodo(user(), "장보기", "우유", TodoPriority.HIGH, "생활", dueDate, TodoType.TASK);
         ReflectionTestUtils.setField(t, "completedAt", completedAtUtc);
         return t;
     }
