@@ -174,7 +174,7 @@ public class MemoTagServiceImpl implements MemoTagService {
     // 재시도가 성립하려면 이 메서드가 트랜잭션을 들고 있으면 안 된다. 클래스 기본값
     // (readOnly = true) 이 걸리는 것도 막는다.
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public Long findOrCreateByName(Long userRowId, String rawTagName) {
+    public MemoTagServiceDto.TagRef findOrCreateByName(Long userRowId, String rawTagName) {
         String tagName = NameNormalizer.require(rawTagName, FieldLimits.NAME_MAX);
         try {
             return newTransaction.execute(status -> resolveOrCreateTag(userRowId, tagName));
@@ -188,10 +188,15 @@ public class MemoTagServiceImpl implements MemoTagService {
         }
     }
 
-    /** 확보 시도 한 번 — {@link #newTransaction} 안에서만 부른다(조회를 밖에 두면 재시도가 옛 스냅샷을 물려받는다). */
-    private Long resolveOrCreateTag(Long userRowId, String tagName) {
+    /**
+     * 확보 시도 한 번 — {@link #newTransaction} 안에서만 부른다(조회를 밖에 두면 재시도가 옛 스냅샷을 물려받는다).
+     *
+     * <p>이름·색을 <b>여기서</b> 읽어 {@link MemoTagServiceDto.TagRef} 에 담는다. 이 트랜잭션 안이
+     * 그 행이 보이는 유일한 자리다 — 부르는 쪽으로 나가면 아이디로도 다시 못 읽는다(QA #102).
+     */
+    private MemoTagServiceDto.TagRef resolveOrCreateTag(Long userRowId, String tagName) {
         return memoTagRepository.findActiveByUserAndName(userRowId, tagName)
-            .map(MemoTag::getRowId)
+            .map(MemoTagServiceDto.TagRef::from)
             .orElseGet(() -> {
                 User user = userRepository.findById(userRowId)
                     .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
@@ -201,7 +206,7 @@ public class MemoTagServiceImpl implements MemoTagService {
                 memoTagRepository.flush();
                 log.info("memo.tag 로부터 태그 생성: userRowId={}, tagName={}, tagId={}",
                     userRowId, tagName, tag.getRowId());
-                return tag.getRowId();
+                return MemoTagServiceDto.TagRef.from(tag);
             });
     }
 

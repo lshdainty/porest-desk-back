@@ -11,6 +11,7 @@ import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.todo.repository.TodoTagMappingRepository;
 import com.porest.desk.todo.repository.TodoTagRepository;
 import com.porest.desk.todo.service.dto.TodoServiceDto;
+import com.porest.desk.todo.service.dto.TodoTagServiceDto;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoStatus;
 import com.porest.desk.todo.type.TodoType;
@@ -343,6 +344,20 @@ class TodoServiceImplTest {
         return t;
     }
 
+    /**
+     * category 문자열 → 태그 확보가 성공하는 상황을 만든다.
+     *
+     * <p>확보는 아이디만이 아니라 <b>이름·색까지</b> 돌려주고, 부르는 쪽은 그 아이디로
+     * {@code getReference} 참조만 잡는다 — {@code findById} 는 부르지 않는다(QA #102).
+     */
+    private TodoTag stubResolve(String name, long tagRowId) {
+        TodoTag t = tag(tagRowId, name, USER_ID);
+        given(todoTagService.findOrCreateByName(USER_ID, name))
+                .willReturn(TodoTagServiceDto.TagRef.from(t));
+        given(todoTagRepository.getReference(tagRowId)).willReturn(t);
+        return t;
+    }
+
     private void stubTodoSave(long rowId) {
         given(todoRepository.save(any(Todo.class))).willAnswer(inv -> {
             Todo t = inv.getArgument(0);
@@ -371,13 +386,67 @@ class TodoServiceImplTest {
     void createBridgesCategoryToTag() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         stubTodoSave(200L);
-        given(todoTagService.findOrCreateByName(USER_ID, "업무")).willReturn(42L);
-        given(todoTagRepository.findById(42L)).willReturn(Optional.of(tag(42L, "업무", USER_ID)));
+        stubResolve("업무", 42L);
 
         sut.createTodo(new TodoServiceDto.CreateCommand(
                 USER_ID, "기획서", null, TodoPriority.MEDIUM, "업무", null, null, null, TodoType.TASK));
 
         assertThat(savedMappingTag().getRowId()).isEqualTo(42L);
+    }
+
+    /**
+     * QA #102 — <b>처음 쓰는 category</b>. 확보({@code findOrCreateByName})는 새 트랜잭션에서
+     * 커밋하는데, 저장 트랜잭션은 그 앞에서 스냅샷을 잡았으므로 MariaDB 기본 격리수준
+     * (REPEATABLE READ)에서 그 행이 안 보인다. 종전 코드는 그 아이디를 {@code findById} 로
+     * 다시 읽어 {@code orElse(null)} 에 떨어졌고, 매핑이 하나도 안 남아 사용 수가 0 이었다.
+     *
+     * <p>여기서 {@code findById} 를 스텁하지 않은 것, 그리고 {@code findByTodoId} 가 빈 목록을
+     * 돌려주는 것이 곧 그 상황이다 — <b>다시 읽어도 안 보이고, 재조회의 조인에서도 떨어진다.</b>
+     * 그래도 매핑은 남아야 하고(사용 수 1), 저장 직후 응답에도 그 태그가 실려야 한다.
+     *
+     * <p>되돌려 보는 법(네거티브 컨트롤): {@code resolveCategoryTag} 를
+     * {@code todoTagRepository.findById(ref.rowId()).orElse(null)} 로 되돌리면 매핑이 안 남아
+     * {@code savedMappingTag()} 가 깨지고, {@code buildTodoInfo} 의 {@code linked} 병합을 지우면
+     * {@code info.tags()} 가 비어 깨진다.
+     */
+    @Test
+    @DisplayName("createTodo — 처음 쓰는 category 도 매핑을 남기고 저장 직후 응답에 실린다")
+    void createLinksBrandNewCategoryTagWithoutRereading() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        stubTodoSave(203L);
+        TodoTag master = stubResolve("신규", 77L);
+
+        var info = sut.createTodo(new TodoServiceDto.CreateCommand(
+                USER_ID, "기획서", null, TodoPriority.MEDIUM, "신규", null, null, null, TodoType.TASK));
+
+        assertThat(savedMappingTag()).isSameAs(master);
+        assertThat(info.tags())
+                .containsExactly(new TodoServiceDto.TagInfo(77L, "신규", "#fff"));
+        verify(todoTagRepository, never()).findById(anyLong());
+    }
+
+    /**
+     * 수정도 같은 자리다 — category 를 처음 쓰는 이름으로 바꾸면 매핑이 남고 저장 직후 응답에
+     * 실려야 한다(QA #102).
+     */
+    @Test
+    @DisplayName("updateTodo — 처음 쓰는 category 도 매핑을 남기고 저장 직후 응답에 실린다")
+    void updateLinksBrandNewCategoryTag() {
+        Todo todo = Todo.createTodo(user(USER_ID), "t", null, TodoPriority.MEDIUM, null,
+                null, null, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 5L);
+        given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
+        TodoTag master = stubResolve("신규", 77L);
+        given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
+        given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
+
+        var info = sut.updateTodo(5L, USER_ID, new TodoServiceDto.UpdateCommand(
+                Patch.set("t"), Patch.absent(), Patch.absent(), Patch.set("신규"), Patch.absent(), null));
+
+        assertThat(savedMappingTag()).isSameAs(master);
+        assertThat(info.tags())
+                .containsExactly(new TodoServiceDto.TagInfo(77L, "신규", "#fff"));
+        verify(todoTagRepository, never()).findById(anyLong());
     }
 
     @Test
@@ -398,7 +467,9 @@ class TodoServiceImplTest {
     void explicitTagIdsWinOverCategory() {
         given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
         stubTodoSave(202L);
-        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(tag(7L, "리뷰", USER_ID)));
+        TodoTag review = tag(7L, "리뷰", USER_ID);
+        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(review));
+        given(todoTagRepository.getReference(7L)).willReturn(review);
 
         sut.createTodo(new TodoServiceDto.CreateCommand(
                 USER_ID, "코드 리뷰", null, null, "업무", null, null, List.of(7L), null));
@@ -456,8 +527,7 @@ class TodoServiceImplTest {
                 null, null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
-        given(todoTagService.findOrCreateByName(USER_ID, "개인")).willReturn(12L);
-        given(todoTagRepository.findById(12L)).willReturn(Optional.of(tag(12L, "개인", USER_ID)));
+        stubResolve("개인", 12L);
         given(todoTagRepository.findActiveByUserAndName(USER_ID, "업무"))
                 .willReturn(Optional.of(tag(11L, "업무", USER_ID)));
         given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
@@ -478,8 +548,8 @@ class TodoServiceImplTest {
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         TodoTag work = tag(11L, "업무", USER_ID);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
-        given(todoTagService.findOrCreateByName(USER_ID, "업무")).willReturn(11L);
-        given(todoTagRepository.findById(11L)).willReturn(Optional.of(work));
+        given(todoTagService.findOrCreateByName(USER_ID, "업무"))
+                .willReturn(TodoTagServiceDto.TagRef.from(work));
         given(todoTagMappingRepository.findByTodoId(5L))
                 .willReturn(List.of(TodoTagMapping.create(todo, work)));
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
@@ -498,7 +568,9 @@ class TodoServiceImplTest {
                 null, null, TodoType.TASK);
         ReflectionTestUtils.setField(todo, "rowId", 5L);
         given(todoRepository.findById(5L)).willReturn(Optional.of(todo));
-        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(tag(7L, "리뷰", USER_ID)));
+        TodoTag review = tag(7L, "리뷰", USER_ID);
+        given(todoTagRepository.findAllByIds(List.of(7L))).willReturn(List.of(review));
+        given(todoTagRepository.getReference(7L)).willReturn(review);
         given(todoTagMappingRepository.findByTodoId(5L)).willReturn(List.of());
         given(todoRepository.findSubtaskCountsByParentIds(any())).willReturn(Map.of());
 

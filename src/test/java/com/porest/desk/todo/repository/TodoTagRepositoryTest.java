@@ -9,6 +9,7 @@ import com.porest.desk.todo.domain.TodoTagMapping;
 import com.porest.desk.todo.type.TodoPriority;
 import com.porest.desk.todo.type.TodoType;
 import com.porest.desk.user.domain.User;
+import org.hibernate.Hibernate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TodoTag QueryDsl 리포 슬라이스 테스트 — 소유권·soft-delete 제외·tagName 정렬,
@@ -186,5 +188,56 @@ class TodoTagRepositoryTest {
         assertThat(counts).doesNotContainKey(idle.getRowId()); // 안 쓰는 태그는 키 자체가 없다
         assertThat(repository.countTodosByTag(other.getRowId()))
                 .containsEntry(work.getRowId(), 1L);
+    }
+
+    // ── QA #102 — 처음 쓰는 이름의 매핑을 잇는 방법 ──────────────────────────
+    // findOrCreateByName 은 새 트랜잭션에서 커밋한다. 부르는 트랜잭션은 그 앞에서 스냅샷을
+    // 잡았으므로 MariaDB 기본 격리수준(REPEATABLE READ)에서 그 행을 다시 읽지 못한다.
+    // H2 는 격리 수준이 달라 그 상황 자체를 재현하지 못하므로, 여기서는 "우리가 고른 방법"
+    // (참조로 잇는다 · 프록시에서 필드를 읽지 않는다)을 붙들어 둔다. 메모 태그의 미러다.
+
+    /**
+     * 되돌려 보는 법(네거티브 컨트롤): {@code TodoTagQueryDslRepository.getReference} 를
+     * {@code entityManager.find(TodoTag.class, rowId)} 로 바꾸면 아래 첫 단언(초기화되지 않은
+     * 참조)이 깨진다 — 그 순간 조회가 나가고, 운영에서는 그 조회가 빈손으로 돌아온다.
+     */
+    @Test
+    @DisplayName("getReference — 조회 없이 참조만 잡고, 그 참조로 남긴 매핑은 그대로 저장된다")
+    void getReferenceLinksMappingWithoutSelect() {
+        User user = persistUser("u1");
+        TodoTag tag = persistTag(user, "업무");
+        Todo todo = persistTodo(user, "기획서", null, TodoType.TASK);
+        Long userRowId = user.getRowId();
+        Long tagRowId = tag.getRowId();
+        Long todoRowId = todo.getRowId();
+        em.flush();
+        em.clear();
+
+        TodoTag ref = repository.getReference(tagRowId);
+        assertThat(Hibernate.isInitialized(ref)).isFalse();
+
+        em.persist(TodoTagMapping.create(em.find(Todo.class, todoRowId), ref));
+        em.flush();
+        em.clear();
+
+        assertThat(repository.countTodosByTag(userRowId)).containsEntry(tagRowId, 1L);
+    }
+
+    /**
+     * ★ 이 참조에서 <b>필드를 읽으면</b> 그때 조회가 나간다 — 아이디 게터도 예외가 아니다
+     * (필드 접근 매핑이라 프록시가 가로채지 못한다). 운영에서 그 조회는 스냅샷에 없는 행을
+     * 찾으므로 빈손으로 돌아오고 {@code EntityNotFoundException} 이 된다. 그래서 이름·색은
+     * {@code findOrCreateByName} 이 함께 돌려주는 {@code TagRef} 에서 읽는다.
+     */
+    @Test
+    @DisplayName("getReference — 없는 행의 참조는 필드를 읽는 순간 터진다(이름을 프록시에서 읽으면 안 되는 이유)")
+    void readingProxyFieldTriggersSelect() {
+        TodoTag ghost = repository.getReference(999_999L);
+
+        assertThat(Hibernate.isInitialized(ghost)).isFalse();
+        assertThatThrownBy(ghost::getTagName)
+                .isInstanceOf(jakarta.persistence.EntityNotFoundException.class);
+        assertThatThrownBy(ghost::getRowId)
+                .isInstanceOf(jakarta.persistence.EntityNotFoundException.class);
     }
 }
