@@ -113,6 +113,22 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EXPENSE_INVALID_AMOUNT("EXP_021", "error.expense.invalid.amount", HttpStatus.BAD_REQUEST),
     EXPENSE_AUTO_GENERATED_READONLY("EXP_022", "error.expense.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     EXPENSE_TEMPLATE_DUPLICATE_NAME("EXP_023", "error.duplicate.expense.template", HttpStatus.CONFLICT),
+    /**
+     * 환불 합계가 원거래 금액을 넘었다.
+     *
+     * <p>넘으면 그 달 지출이 <b>음수</b>가 된다 — {@code Expense#expenseContribution()} 이 환불을
+     * 음수로 상계하므로, 13,000원 지출에 99,999원 환불이 붙으면 그 달 지출이 -86,999원이 되고
+     * 통계·예산 이행률이 그 음수를 그대로 더한다(QA 2026-09-10 #152·#155).
+     */
+    EXPENSE_REFUND_EXCEEDS_ORIGINAL("EXP_024", "error.expense.refund.exceeds.original", HttpStatus.BAD_REQUEST),
+    /**
+     * 원거래 금액을 이미 달린 환불 합계보다 작게 줄이려 했다 — 같은 불변식의 뒷문이다.
+     *
+     * <p>환불 쪽만 막으면 13,000원 지출에 13,000원 환불을 정상으로 넣은 뒤 원거래를 5,000원으로
+     * 줄여 같은 음수 지출을 만들 수 있다. 고쳐야 할 대상이 다르므로(환불이 아니라 원거래) 문구를
+     * 따로 둔다.
+     */
+    EXPENSE_AMOUNT_BELOW_REFUNDS("EXP_025", "error.expense.amount.below.refunds", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_AUTO_GENERATED_READONLY("AST_030", "error.asset.transfer.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_PAYMENT_READONLY("AST_031", "error.asset.transfer.card.payment.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_REFUND_READONLY("AST_032", "error.asset.transfer.card.refund.readonly", HttpStatus.BAD_REQUEST),

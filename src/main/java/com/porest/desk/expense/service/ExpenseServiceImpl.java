@@ -120,6 +120,10 @@ public class ExpenseServiceImpl implements ExpenseService {
             validateAssetOwnership(asset, command.userRowId());
         }
 
+        // 환불 상한 — 원거래에 달린 환불 합계가 원거래 금액을 넘지 못한다(#152).
+        validateRefundWithinOriginal(
+            command.expenseType(), command.refundOfExpenseRowId(), command.amount(), null);
+
         Expense expense = Expense.createExpense(
             user, category, asset,
             command.expenseType(),
@@ -276,6 +280,36 @@ public class ExpenseServiceImpl implements ExpenseService {
                 return found;
             })
             .orKeep(expense.getAsset());
+
+        // 환불 상한 — 생성과 같은 검사를 수정에도 건다. orKeep 이라 연결이 그대로여도 금액만 오를 수
+        // 있고, 다른 원거래로 옮기면 그쪽 합계 기준으로 다시 봐야 한다.
+        // 합계에서 자기 자신을 뺀다(excludeRowId=expenseId) — 안 빼면 금액을 그대로 두고
+        // 저장만 해도 자기 금액이 두 번 세어져 400 이 난다.
+        validateRefundWithinOriginal(
+            expenseType,
+            command.refundOfExpenseRowId().orKeep(expense.getRefundOfExpenseRowId()),
+            amount,
+            expenseId);
+
+        // 원거래 금액 축소도 같은 불변식을 깬다 — 13,000원 지출에 13,000원 환불을 정상으로 넣은 뒤
+        // 원거래를 5,000원으로 줄이면 환불이 초과가 되어 #155(월 지출 음수)가 그대로 재현된다.
+        // 환불 쪽만 막으면 뒷문이 열려 있으므로 같은 규칙으로 막는다.
+        //
+        // 줄일 때만 본다. 무조건 보면 (a) 금액을 안 실은 수정(설명만 고치기)과 (b) 같은 금액을
+        // 다시 저장하는 요청까지 400 이 되고, 이 규칙 이전에 이미 초과로 쌓인 행은 금액을 올려 바로잡는
+        // 길까지 막힌다 — 환불 쪽에서 자기 자신을 빼는 이유와 같다.
+        if (command.amount().present() && amount != null && expense.getAmount() != null
+                && amount < expense.getAmount()) {
+            long attachedRefunds = expenseRepository.findActiveRefundsOf(expenseId).stream()
+                .filter(r -> r.getAmount() != null)
+                .mapToLong(Expense::getAmount)
+                .sum();
+            if (attachedRefunds > amount) {
+                log.warn("환불 합계 초과로 원거래 금액 축소 거부 - expenseId={}, 환불합계={}, 새금액={}",
+                    expenseId, attachedRefunds, amount);
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_AMOUNT_BELOW_REFUNDS);
+            }
+        }
 
         expense.updateExpense(
             category, asset,
@@ -935,6 +969,47 @@ public class ExpenseServiceImpl implements ExpenseService {
     private void validateAmount(Long amount) {
         if (amount == null || amount <= 0) {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
+        }
+    }
+
+    /**
+     * 환불 상한 — 한 원거래에 달린 활성 환불의 합이 <b>원거래 금액을 넘지 못한다</b>(사용자 결정, QA #152).
+     *
+     * <p>넘으면 그 달 지출이 음수가 된다. {@link Expense#expenseContribution()} 이 환불을 음수로
+     * 상계하므로 13,000원 지출에 99,999원 환불이 붙으면 그 달 지출이 -86,999원이 되고, 통계·예산
+     * 이행률이 그 음수를 그대로 더한다(#155). 화면에 그럴듯한 숫자가 뜨는 자리라 들어오는 입구에서 막는다.
+     *
+     * <p>판정 기준은 {@link Expense#isRefund()} 와 같다 — 원거래 연결이 있고 유형이 INCOME 일 때만
+     * 환불이다. EXPENSE 로 들어온 행은 상계하지 않으므로 상한도 없다.
+     *
+     * <p>원거래를 못 찾으면 그냥 통과시킨다. 이 연결은 FK 가 아니고, 원거래가 soft delete 됐거나
+     * 가져오기로 들어온 행처럼 애초에 없을 수 있다({@code Expense#refundOfExpenseRowId} 주석).
+     * 비교할 기준이 없으면 상한도 정할 수 없고, 여기서 404 를 내면 지금까지 되던 등록이 깨진다.
+     *
+     * @param excludeRowId 합계에서 뺄 행 — 수정 중인 환불 <b>자신</b>이다. 생성이면 {@code null}.
+     *                     안 빼면 자기 금액이 두 번 세어져 <b>금액을 그대로 저장만 해도</b> 400 이 난다.
+     */
+    private void validateRefundWithinOriginal(ExpenseType expenseType, Long originalRowId,
+                                              Long amount, Long excludeRowId) {
+        if (originalRowId == null || expenseType != ExpenseType.INCOME || amount == null) {
+            return;
+        }
+
+        Expense original = expenseRepository.findById(originalRowId).orElse(null);
+        if (original == null || original.getAmount() == null) {
+            return;
+        }
+
+        long others = expenseRepository.findActiveRefundsOf(originalRowId).stream()
+            .filter(r -> !java.util.Objects.equals(r.getRowId(), excludeRowId))
+            .filter(r -> r.getAmount() != null)
+            .mapToLong(Expense::getAmount)
+            .sum();
+
+        if (others + amount > original.getAmount()) {
+            log.warn("환불 상한 초과로 거부 - originalRowId={}, 기존환불합계={}, 이번환불={}, 원거래금액={}",
+                originalRowId, others, amount, original.getAmount());
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
         }
     }
 }

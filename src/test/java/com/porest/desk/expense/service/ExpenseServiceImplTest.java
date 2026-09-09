@@ -1,6 +1,7 @@
 package com.porest.desk.expense.service;
 
 import com.porest.desk.common.patch.Patch;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
@@ -966,5 +967,237 @@ class ExpenseServiceImplTest {
         // 잔액 이력도 양쪽 다 되돌린다 — 환불 flow 가 남으면 잔액이 어긋난다.
         verify(balanceHistoryService).removeExpense(1L);
         verify(balanceHistoryService).removeExpense(2L);
+    }
+
+    /**
+     * 환불 상한 — 한 원거래에 달린 활성 환불의 합이 원거래 금액을 넘지 못한다(사용자 결정, QA #152).
+     *
+     * <p>이 검사가 없으면 13,000원 지출에 99,999원 환불이 200 으로 들어가고, 환불이 음수로
+     * 상계되므로 그 달 지출이 -86,999원이 된다 — 통계·예산 이행률이 그 음수를 그대로 더한다(#155).
+     *
+     * <p>막아야 하는 자리가 셋이다: 환불 생성 · 환불 수정(금액만 올라도) · 원거래 금액 축소.
+     * 환불 취소는 검사할 게 없다 — 환불 행을 지우는 것이라 합계가 줄기만 한다.
+     */
+    @Nested
+    @DisplayName("환불 상한 (환불 합계 ≤ 원거래 금액)")
+    class RefundCap {
+
+        private ExpenseCategory incomeCategory(long rowId, User owner) {
+            ExpenseCategory c = ExpenseCategory.createCategory(owner, "환불", "tag", "#fff", ExpenseType.INCOME, null);
+            ReflectionTestUtils.setField(c, "rowId", rowId);
+            return c;
+        }
+
+        private Expense row(long rowId, User u, ExpenseCategory cat, ExpenseType type, long amount, Long refundOf) {
+            Expense e = Expense.createExpense(u, cat, null, type, amount, "쿠팡",
+                LocalDateTime.of(2026, 6, 1, 12, 0), "쿠팡", "CARD", null, refundOf, null, null, null);
+            ReflectionTestUtils.setField(e, "rowId", rowId);
+            return e;
+        }
+
+        /** 환불 생성 명령 — 원거래 1L 에 amount 원을 환불한다. */
+        private ExpenseServiceDto.CreateCommand refundCreateCmd(long categoryRowId, long amount, long originalRowId) {
+            return new ExpenseServiceDto.CreateCommand(
+                USER_ID, categoryRowId, null, ExpenseType.INCOME, amount,
+                "환불", LocalDateTime.of(2026, 6, 3, 12, 0), "쿠팡", "CARD", null, originalRowId,
+                null, null, null, null, null);
+        }
+
+        /** 금액 한 칸만 실은 수정 명령 — 나머지는 지금 값을 그대로 둔다(orKeep). */
+        private ExpenseServiceDto.UpdateCommand amountOnlyUpdate(Long amount) {
+            return new ExpenseServiceDto.UpdateCommand(
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.set(amount),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
+        }
+
+        private void givenIncomeCategoryLookup(User u, long categoryRowId) {
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(categoryRowId))
+                .willReturn(Optional.of(incomeCategory(categoryRowId, u)));
+            given(expenseCategoryRepository.hasChildren(categoryRowId)).willReturn(false);
+        }
+
+        @Test
+        @DisplayName("생성 — 13,000원 지출에 99,999원 환불은 400(EXP_024). 종전 200")
+        void createRejectsRefundOverOriginal() {
+            User u = user(USER_ID);
+            givenIncomeCategoryLookup(u, 11L);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of());
+
+            assertThatThrownBy(() -> sut.createExpense(refundCreateCmd(11L, 99_999L, 1L)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
+
+            then(expenseRepository).should(never()).save(any(Expense.class));
+        }
+
+        @Test
+        @DisplayName("생성 — 원거래와 정확히 같은 금액은 통과(경계값: 전액 환불)")
+        void createAllowsExactlyOriginalAmount() {
+            User u = user(USER_ID);
+            givenIncomeCategoryLookup(u, 11L);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of());
+
+            var info = sut.createExpense(refundCreateCmd(11L, 13_000L, 1L));
+
+            assertThat(info.amount()).isEqualTo(13_000L);
+            then(expenseRepository).should().save(any(Expense.class));
+        }
+
+        @Test
+        @DisplayName("생성 — 나눠 넣다 마지막 한 건에서 합계가 넘으면 400")
+        void createRejectsWhenSumOfPartialRefundsOverflows() {
+            User u = user(USER_ID);
+            givenIncomeCategoryLookup(u, 11L);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
+                row(2L, u, null, ExpenseType.INCOME, 10_000L, 1L),
+                row(3L, u, null, ExpenseType.INCOME, 2_000L, 1L)));
+
+            // 12,000 까지 들어가 있다 — 1,000 은 되고 1,500 은 안 된다.
+            assertThatThrownBy(() -> sut.createExpense(refundCreateCmd(11L, 1_500L, 1L)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
+        }
+
+        @Test
+        @DisplayName("생성 — 남은 만큼(1,000원)은 통과. 상한은 '원거래 − 이미 환불한 금액' 이다")
+        void createAllowsRemainingHeadroom() {
+            User u = user(USER_ID);
+            givenIncomeCategoryLookup(u, 11L);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
+                row(2L, u, null, ExpenseType.INCOME, 10_000L, 1L),
+                row(3L, u, null, ExpenseType.INCOME, 2_000L, 1L)));
+
+            var info = sut.createExpense(refundCreateCmd(11L, 1_000L, 1L));
+
+            assertThat(info.amount()).isEqualTo(1_000L);
+        }
+
+        @Test
+        @DisplayName("수정 — 연결은 그대로인데 금액만 올려도 400(orKeep 이라 링크가 안 실린다)")
+        void updateRejectsRaisingRefundAmountAlone() {
+            User u = user(USER_ID);
+            ExpenseCategory incomeCat = incomeCategory(11L, u);
+            Expense refund = row(2L, u, incomeCat, ExpenseType.INCOME, 3_000L, 1L);
+            given(expenseRepository.findById(2L)).willReturn(Optional.of(refund));
+            given(expenseCategoryRepository.hasChildren(11L)).willReturn(false);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
+                refund,
+                row(3L, u, null, ExpenseType.INCOME, 10_000L, 1L)));
+
+            // 자기(3,000) 를 빼면 10,000 이 남아 있다 — 5,000 을 얹으면 15,000 > 13,000.
+            assertThatThrownBy(() -> sut.updateExpense(2L, USER_ID, amountOnlyUpdate(5_000L)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
+        }
+
+        /**
+         * 합계에서 <b>자기 자신을 빼는지</b> — 안 빼면 자기 금액이 두 번 세어져 아무것도 안 바꾼
+         * 저장까지 400 이 된다. 상한 검사를 넣으면서 가장 쉽게 만드는 회귀라 따로 잠근다.
+         */
+        @Test
+        @DisplayName("수정 — 전액 환불을 금액 그대로 다시 저장하면 통과(자기 자신을 합계에서 뺀다)")
+        void updateExcludesItselfFromTheSum() {
+            User u = user(USER_ID);
+            ExpenseCategory incomeCat = incomeCategory(11L, u);
+            Expense refund = row(2L, u, incomeCat, ExpenseType.INCOME, 13_000L, 1L);
+            given(expenseRepository.findById(2L)).willReturn(Optional.of(refund));
+            given(expenseCategoryRepository.hasChildren(11L)).willReturn(false);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(refund));
+
+            var info = sut.updateExpense(2L, USER_ID, amountOnlyUpdate(13_000L));
+
+            assertThat(info.amount()).isEqualTo(13_000L);
+        }
+
+        @Test
+        @DisplayName("원거래 축소 — 13,000원 환불이 달린 지출을 5,000원으로 줄이면 400(EXP_025)")
+        void updateRejectsShrinkingOriginalBelowRefunds() {
+            User u = user(USER_ID);
+            ExpenseCategory expenseCat = category(10L, u);
+            Expense original = row(1L, u, expenseCat, ExpenseType.EXPENSE, 13_000L, null);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(original));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
+                row(2L, u, null, ExpenseType.INCOME, 13_000L, 1L)));
+
+            assertThatThrownBy(() -> sut.updateExpense(1L, USER_ID, amountOnlyUpdate(5_000L)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EXPENSE_AMOUNT_BELOW_REFUNDS);
+
+            assertThat(original.getAmount()).isEqualTo(13_000L);
+        }
+
+        @Test
+        @DisplayName("원거래 축소 — 환불 합계까지는 줄일 수 있다(경계값)")
+        void updateAllowsShrinkingDownToRefundSum() {
+            User u = user(USER_ID);
+            ExpenseCategory expenseCat = category(10L, u);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, expenseCat, ExpenseType.EXPENSE, 20_000L, null)));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
+                row(2L, u, null, ExpenseType.INCOME, 13_000L, 1L)));
+
+            var info = sut.updateExpense(1L, USER_ID, amountOnlyUpdate(13_000L));
+
+            assertThat(info.amount()).isEqualTo(13_000L);
+        }
+
+        /**
+         * 줄이지 않는 수정은 검사조차 하지 않는다 — 이 규칙 이전에 이미 초과로 쌓인 행이
+         * 설명 한 줄도 못 고치게 잠기면 안 되고, 금액을 올려 바로잡는 길도 열어 둬야 한다.
+         */
+        @Test
+        @DisplayName("원거래 축소 — 금액을 안 실은 수정은 이미 초과인 행에서도 통과")
+        void updateWithoutAmountNeverChecksRefunds() {
+            User u = user(USER_ID);
+            ExpenseCategory expenseCat = category(10L, u);
+            given(expenseRepository.findById(1L))
+                .willReturn(Optional.of(row(1L, u, expenseCat, ExpenseType.EXPENSE, 13_000L, null)));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+            var cmd = new ExpenseServiceDto.UpdateCommand(
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("메모만 고침"), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
+
+            var info = sut.updateExpense(1L, USER_ID, cmd);
+
+            assertThat(info.description()).isEqualTo("메모만 고침");
+            then(expenseRepository).should(never()).findActiveRefundsOf(any());
+        }
+
+        @Test
+        @DisplayName("환불이 아닌 일반 거래는 상한 검사를 타지 않는다(조회도 안 한다)")
+        void plainTransactionIsUntouched() {
+            User u = user(USER_ID);
+            ExpenseCategory leaf = category(10L, u);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+            var info = sut.createExpense(createCmd(10L));
+
+            assertThat(info.amount()).isEqualTo(10_000L);
+            then(expenseRepository).should(never()).findActiveRefundsOf(any());
+        }
     }
 }
