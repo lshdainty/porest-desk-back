@@ -63,6 +63,11 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     EVENT_REMINDER_NOT_FOUND("CAL_004", "error.notfound.event.reminder", HttpStatus.NOT_FOUND),
     USER_CALENDAR_NOT_FOUND("CAL_005", "error.notfound.user.calendar", HttpStatus.NOT_FOUND),
     USER_CALENDAR_DEFAULT_DELETE("CAL_006", "error.calendar.default.delete", HttpStatus.BAD_REQUEST),
+    // 기본 캘린더는 숨기지도 못한다 — 일정 저장 때 캘린더를 안 고르면 서버가 기본 캘린더를 대입하는데,
+    // 그게 숨겨져 있으면 방금 만든 일정이 곧바로 안 보인다. 삭제 거절(CAL_006)을 재사용하지 않는 이유는
+    // 문구다 — "삭제할 수 없어요" 로는 무엇을 하다 막혔는지 알 수 없다. 번호는 캘린더 블록이 이미
+    // 015 까지 차 있어 016 이다.
+    USER_CALENDAR_DEFAULT_HIDE("CAL_016", "error.calendar.default.hide", HttpStatus.BAD_REQUEST),
     CALENDAR_ACCESS_DENIED("CAL_007", "error.calendar.access.denied", HttpStatus.FORBIDDEN),
     CALENDAR_EVENT_ACCESS_DENIED("CAL_008", "error.calendar.event.access.denied", HttpStatus.FORBIDDEN),
     EVENT_LABEL_ACCESS_DENIED("CAL_009", "error.event.label.access.denied", HttpStatus.FORBIDDEN),
