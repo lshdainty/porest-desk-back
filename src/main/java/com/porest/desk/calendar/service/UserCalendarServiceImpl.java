@@ -92,6 +92,14 @@ public class UserCalendarServiceImpl implements UserCalendarService {
         // 표시 토글은 캘린더 멤버(소유+공유) 누구나 가능
         membershipValidator.validateMembership(calendarId, userRowId);
 
+        // 기본 캘린더는 숨길 수 없다. 일정을 만들 때 캘린더를 안 고르면 서버가 기본 캘린더를 대입하는데,
+        // 그 기본 캘린더까지 숨겨져 있으면 방금 저장한 일정이 곧바로 안 보인다 — 숨긴 캘린더는 목록에서
+        // 빠지므로 사용자는 어디로 갔는지도 알 수 없다. 여기서 막으면 선택칸은 늘 최소 하나를 갖고,
+        // 서버의 자동 대입도 늘 보이는 곳에 떨어진다.
+        if (calendar.getIsDefault() == YNType.Y) {
+            throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE);
+        }
+
         calendar.toggleVisibility();
         CalendarRole myRole = memberRepository.findByCalendarAndUser(calendarId, userRowId)
             .map(UserCalendarMember::getPermission).orElse(CalendarRole.READ);

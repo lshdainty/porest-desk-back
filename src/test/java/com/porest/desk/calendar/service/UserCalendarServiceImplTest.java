@@ -10,6 +10,7 @@ import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.calendar.repository.UserCalendarMemberRepository;
 import com.porest.desk.calendar.repository.UserCalendarRepository;
 import com.porest.desk.calendar.type.CalendarRole;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -18,17 +19,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
 /**
  * 사용자 캘린더(공유) 서비스 회귀 방지 단위 테스트 —
- * 기본 캘린더 삭제 금지, 소유권, 소유자 제거/OWNER 권한변경 금지, 중복 가입 금지.
+ * 기본 캘린더 삭제·숨김 금지, 소유권, 소유자 제거/OWNER 권한변경 금지, 중복 가입 금지.
  */
 @ExtendWith(MockitoExtension.class)
 class UserCalendarServiceImplTest {
@@ -49,6 +52,45 @@ class UserCalendarServiceImplTest {
         User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
         ReflectionTestUtils.setField(u, "rowId", rowId);
         return u;
+    }
+
+    /** 토글은 실제 값이 뒤집히는지가 요점이라 mock 이 아니라 진짜 엔티티를 쓴다(생성 직후 isVisible=Y). */
+    private UserCalendar calendar(boolean isDefault) {
+        return UserCalendar.createCalendar(user(USER_ID), "내 캘린더", "#2c70bf", 0, isDefault);
+    }
+
+    @Test
+    @DisplayName("toggleVisibility — 기본 캘린더는 숨길 수 없다(전용 코드 · 400 · 값 그대로)")
+    void toggleRejectsDefaultCalendar() {
+        UserCalendar calendar = calendar(true);
+        given(userCalendarRepository.findById(CAL_ID)).willReturn(Optional.of(calendar));
+
+        assertThatThrownBy(() -> sut.toggleVisibility(CAL_ID, USER_ID))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                // 삭제 거절을 재사용하지 않는다 — "삭제할 수 없어요" 로는 무엇을 하다 막혔는지 알 수 없다.
+                .isEqualTo(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE);
+
+        assertThat(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE.getHttpStatus())
+                .as("숨김 거절은 400 이다")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE.getCode())
+                .isNotEqualTo(DeskErrorCode.USER_CALENDAR_DEFAULT_DELETE.getCode());
+        // 막았는데 값이 뒤집혀 있으면 저장 시점에 그대로 숨겨진다 — 거절 뒤 상태까지 확인한다.
+        assertThat(calendar.getIsVisible()).isEqualTo(YNType.Y);
+    }
+
+    @Test
+    @DisplayName("toggleVisibility — 일반 캘린더는 종전대로 숨김·표시를 왕복한다")
+    void toggleFlipsNonDefaultCalendar() {
+        UserCalendar calendar = calendar(false);
+        given(userCalendarRepository.findById(CAL_ID)).willReturn(Optional.of(calendar));
+
+        assertThat(sut.toggleVisibility(CAL_ID, USER_ID).isVisible()).isFalse();
+        assertThat(calendar.getIsVisible()).isEqualTo(YNType.N);
+
+        assertThat(sut.toggleVisibility(CAL_ID, USER_ID).isVisible()).isTrue();
+        assertThat(calendar.getIsVisible()).isEqualTo(YNType.Y);
     }
 
     @Test
