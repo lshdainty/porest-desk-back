@@ -877,6 +877,13 @@ public class ExpenseServiceImpl implements ExpenseService {
             if (expense.getAmount() == null || expense.getAmount() <= 0) return;
 
             Long userRowId = expense.getUser().getRowId();
+
+            // 사용자가 예산 알림을 껐으면 여기서 끝낸다 — 종전엔 설정을 아예 안 봐서 꺼도 계속 만들어졌다.
+            // 이 메서드가 하는 일은 알림 생성뿐이라(거래 저장은 이미 끝났다) 돌아서면 아래 집계
+            // (월 거래 조회 + 분할 롤업)까지 통째로 아낀다 — 다른 로직에는 영향이 없다.
+            // 사용자 객체는 저장 경로가 이미 들고 있던 것이라 조회가 더 들지 않는다.
+            if (!expense.getUser().allowsBudgetNotification()) return;
+
             int year = expense.getExpenseDate().getYear();
             int month = expense.getExpenseDate().getMonthValue();
 

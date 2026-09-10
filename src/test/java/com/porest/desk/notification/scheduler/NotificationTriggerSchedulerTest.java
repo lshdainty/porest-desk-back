@@ -1,6 +1,7 @@
 package com.porest.desk.notification.scheduler;
 
 import com.porest.core.time.ServiceClock;
+import com.porest.core.type.YNType;
 import com.porest.core.time.UserClock;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.EventReminder;
@@ -44,6 +45,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -98,6 +101,17 @@ class NotificationTriggerSchedulerTest {
     private static User user() {
         User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
         ReflectionTestUtils.setField(u, "rowId", USER_ID);
+        return u;
+    }
+
+    /**
+     * 알림 토글만 바꾼 사용자. 필드 이름 문자열 대신 저장 API 를 그대로 쓴다 —
+     * 앱 알림 설정 화면이 부르는 것과 같은 경로다. null 인 항목은 기본값(대개 Y) 그대로.
+     */
+    private static User userWithToggles(Boolean notifyBudget, Boolean notifyCalendar) {
+        User u = user();
+        u.updateNotificationPreferences(null, null, notifyBudget, null, null, notifyCalendar,
+                null, null, null, null, null, null, null, null, null);
         return u;
     }
 
@@ -250,5 +264,70 @@ class NotificationTriggerSchedulerTest {
         scheduler().checkEventReminders();
 
         assertThat(captureOne().message()).isEqualTo("0분 전 알림");
+    }
+
+    // ── 알림 설정 토글 (종전: 설정을 하나도 안 봐서 꺼도 계속 만들어졌다) ─────────────────
+
+    @Test
+    @DisplayName("예산 알림 — 사용자가 껐으면(notify_budget=N) 배치가 만들지 않는다")
+    void budgetAlertIsSkippedWhenUserTurnedItOff() {
+        User u = userWithToggles(false, null);
+        LocalDate today = serviceClock.today();
+        ExpenseBudget budget = ExpenseBudget.createBudget(
+                u, category(u, "식비"), 10_000L, today.getYear(), today.getMonthValue());
+        ReflectionTestUtils.setField(budget, "rowId", 7L);
+        given(expenseBudgetRepository.findAllByYearAndMonth(today.getYear(), today.getMonthValue()))
+                .willReturn(List.of(budget));
+        // 아래 셋은 "검사가 없었다면 알림이 실제로 터지는" 상황(9,000/10,000, 임계 85%)을 세워 둔 것이다.
+        // 검사가 있으면 쓰이지 않으므로 lenient — 그렇다고 빼면 이 테스트는 검사를 되돌려도 통과한다
+        // (예산이 없어서 조용한 것과 구분이 안 된다).
+        lenient().when(userService.getBudgetAlertThreshold(USER_ID)).thenReturn(85);
+        lenient().when(expenseService.getMonthlyExpenseSpendByCategory(
+                        eq(USER_ID), eq(today.getYear()), eq(today.getMonthValue())))
+                .thenReturn(Map.of(10L, 9_000L));
+        lenient().when(notificationRepository.existsByUserAndReferenceAndCreatedAfter(
+                eq(USER_ID), any(), anyLong(), any())).thenReturn(false);
+
+        scheduler().checkBudgetAlerts();
+
+        verify(notificationService, never()).createNotification(any());
+    }
+
+    @Test
+    @DisplayName("일정 리마인더 — 사용자가 껐으면(notify_calendar=N) 만들지 않고 그 리마인더는 소비한다")
+    void eventReminderIsSkippedWhenUserTurnedItOff() {
+        User u = userWithToggles(null, false);
+        CalendarEvent event = CalendarEvent.createEvent(u, "치과 예약", null,
+                CalendarEventType.PERSONAL, null, LocalDateTime.now().plusMinutes(1), null,
+                null, null, null, null, null);
+        ReflectionTestUtils.setField(event, "rowId", 11L);
+        EventReminder reminder = EventReminder.create(event, "PUSH", 30);
+        ReflectionTestUtils.setField(reminder, "rowId", 12L);
+        given(eventReminderRepository.findUnsentRemindersStartingBefore(any())).willReturn(List.of(reminder));
+
+        scheduler().checkEventReminders();
+
+        verify(notificationService, never()).createNotification(any());
+        // 안 보낸 채로 두면 매 분 다시 후보로 올라오고, 나중에 토글을 켜는 순간 이미 지나간
+        // 일정의 리마인더가 한꺼번에 쏟아진다.
+        assertThat(reminder.getIsSent()).isEqualTo(YNType.Y);
+    }
+
+    @Test
+    @DisplayName("할일 리마인더 — 알림 토글을 다 꺼도 종전대로 생긴다(대응 컬럼이 아직 없다)")
+    void todoReminderIgnoresNotificationToggles() {
+        User u = user();
+        u.updateNotificationPreferences(false, false, false, false, false, false, false, false,
+                null, null, null, null, null, null, null);
+        LocalDate today = serviceClock.today();
+        Todo todo = Todo.createTodo(u, "보고서 제출", "본문", TodoPriority.HIGH, null, today, TodoType.TASK);
+        ReflectionTestUtils.setField(todo, "rowId", 3L);
+        given(todoRepository.findDueTodosForReminder(today, today.plusDays(1))).willReturn(List.of(todo));
+        given(notificationRepository.existsByUserAndReferenceAndCreatedAfter(
+                eq(USER_ID), any(), anyLong(), any())).willReturn(false);
+
+        scheduler().checkTodoReminders();
+
+        verify(notificationService).createNotification(any());
     }
 }

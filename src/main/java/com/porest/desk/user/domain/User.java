@@ -84,7 +84,17 @@ public class User extends AuditingFieldsWithIp {
 
     // ===== 알림 설정 =====
 
-    /** 푸시 알림 마스터 토글. N이면 모든 알림 종류 비활성. 기본 Y. */
+    /**
+     * 푸시 알림 마스터 토글. 기본 Y.
+     *
+     * <p><b>알림 행을 만들지 말지는 이 값으로 정하지 않는다.</b> 이건 "폰을 울릴까" 지
+     * "앱 안에 남길까" 가 아니다 — 껐다고 알림 목록에서까지 지우면 사용자는 그 사이 무슨 일이
+     * 있었는지 볼 자리를 잃고, 목록이 빈 이유도 알 수 없다. 종류별 토글({@code notify_*})은
+     * 목록까지 막지만 이건 아니다.
+     *
+     * <p>지금은 푸시 발송 자체가 없다(FCM·기기 토큰 테이블 없음). 발송이 생기면
+     * {@code quiet_hours_*} 와 함께 <b>보낼 때</b> 보는 값이다.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "push_enabled", nullable = false, length = 1)
     private YNType pushEnabled;
@@ -262,6 +272,25 @@ public class User extends AuditingFieldsWithIp {
         if (vibrationEnabled != null) this.vibrationEnabled = YNType.from(vibrationEnabled);
         if (emailEnabled != null) this.emailEnabled = YNType.from(emailEnabled);
         if (emailFrequency != null) this.emailFrequency = emailFrequency;
+    }
+
+    /**
+     * 예산 알림({@code notify_budget})을 받기로 했는가 — 알림 행을 만들기 전에 본다.
+     *
+     * <p>{@code N} 일 때만 끈 것으로 본다. 컬럼은 {@code NOT NULL} 이지만 읽지 못한 값(null)은
+     * <b>켠 것으로</b> 붙인다 — 안 껐는데 안 오는 쪽이 껐는데 오는 쪽보다 나쁘다.
+     * 못 받은 알림은 사용자가 못 받았다는 사실조차 모른다.
+     */
+    public boolean allowsBudgetNotification() {
+        return notifyBudget != YNType.N;
+    }
+
+    /**
+     * 일정 알림({@code notify_calendar})을 받기로 했는가.
+     * 판정 규칙은 {@link #allowsBudgetNotification()} 과 같다.
+     */
+    public boolean allowsCalendarNotification() {
+        return notifyCalendar != YNType.N;
     }
 
     public void deleteUser() {
