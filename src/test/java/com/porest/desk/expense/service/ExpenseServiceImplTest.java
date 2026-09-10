@@ -58,6 +58,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -383,6 +384,36 @@ class ExpenseServiceImplTest {
             null,
             null,
             null)));
+    }
+
+    @Test
+    @DisplayName("createExpense — 예산 알림을 껐으면(notify_budget=N) 임계를 넘겨도 알림이 없다")
+    void createDoesNotNotifyWhenBudgetNotificationIsOff() {
+        User u = user(USER_ID);
+        // 앱 알림 설정 화면이 부르는 경로 그대로 예산 알림만 끈다.
+        u.updateNotificationPreferences(null, null, false, null, null, null, null, null,
+                null, null, null, null, null, null, null);
+        ExpenseCategory leaf = category(10L, u);
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        // 아래 셋은 "검사가 없었다면 알림이 실제로 터지는" 상황(9,900/10,000, 임계 85%)을 세워 둔 것이다.
+        // 검사가 있으면 쓰이지 않으므로 lenient — 빼면 이 테스트는 검사를 되돌려도 통과한다
+        // (예산이 없어서 조용한 것과 구분이 안 된다).
+        lenient().when(expenseBudgetRepository.findByUser(eq(USER_ID), eq(2026), eq(6)))
+                .thenReturn(List.of(ExpenseBudget.createBudget(u, null, 10_000L, 2026, 6)));
+        lenient().when(userService.getBudgetAlertThreshold(USER_ID)).thenReturn(85);
+        lenient().when(expenseRepository.findByDateRange(eq(USER_ID), any(), any()))
+                .thenReturn(List.of(Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
+                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                        null, null, null)));
+
+        var info = sut.createExpense(createCmdAmount(10L, 9_900L));
+
+        verify(notificationService, never()).createNotification(any());
+        // 막는 건 알림뿐이다 — 거래는 종전대로 저장된다.
+        verify(expenseRepository).save(any(Expense.class));
+        assertThat(info).isNotNull();
     }
 
     @Test

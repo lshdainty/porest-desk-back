@@ -67,6 +67,16 @@ public class NotificationTriggerScheduler {
                 if (event.getStartDate().minusMinutes(minutesBefore).isAfter(nowWall)) {
                     continue;
                 }
+                // 사용자가 일정 알림을 껐으면 만들지 않는다. 도래한 리마인더는 그래도 소비한다 —
+                // 안 그러면 매 분 다시 후보로 올라오고, 나중에 토글을 켜는 순간 이미 지나간 일정의
+                // 리마인더가 한꺼번에 쏟아진다. 사용자 객체는 바로 위 타임존 판정에서 이미 초기화돼
+                // 있어 조회가 더 들지 않는다.
+                if (!event.getUser().allowsCalendarNotification()) {
+                    reminder.markSent();
+                    log.debug("일정 알림 꺼짐 — 리마인더 생성 생략: reminderId={}, eventId={}",
+                        reminder.getRowId(), event.getRowId());
+                    continue;
+                }
                 NotificationServiceDto.CreateCommand command = new NotificationServiceDto.CreateCommand(
                     reminder.getEvent().getUser().getRowId(),
                     NotificationType.EVENT_REMINDER,
@@ -110,6 +120,14 @@ public class NotificationTriggerScheduler {
                 }
 
                 Long userRowId = budget.getUser().getRowId();
+
+                // 사용자가 예산 알림을 껐으면 만들지 않는다. 종전엔 설정을 아예 안 봐서 꺼도 계속 쌓였다.
+                // 사용자당 조회를 더 하지 않는다 — findAllByYearAndMonth 가 user 를 fetch join 으로
+                // 함께 실어 오므로(ExpenseBudgetJpaRepository) 이 객체에서 그냥 읽는다.
+                if (!budget.getUser().allowsBudgetNotification()) {
+                    continue;
+                }
+
                 Long categoryRowId = budget.getCategory() != null ? budget.getCategory().getRowId() : null;
 
                 LocalDate startDate = LocalDate.of(year, month, 1);
@@ -182,6 +200,8 @@ public class NotificationTriggerScheduler {
         LocalDate today = serviceClock.today();
         LocalDate tomorrow = today.plusDays(1);
 
+        // 예산·일정과 달리 여기엔 끄는 토글이 없다 — users 에 대응 컬럼(notify_todo)이 없어서다.
+        // 빠뜨린 게 아니라 아직 없는 것이다. 컬럼이 생기면 위 둘과 같은 자리에서 본다.
         List<Todo> todos = todoRepository.findDueTodosForReminder(today, tomorrow);
 
         for (Todo todo : todos) {
