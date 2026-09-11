@@ -4,7 +4,6 @@ import com.porest.core.exception.ForbiddenException;
 import com.porest.core.type.YNType;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.subscription.repository.UserSubscriptionRepository;
-import com.porest.desk.subscription.type.SubscriptionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,7 +27,7 @@ public class SubscriptionEntitlementServiceImpl implements SubscriptionEntitleme
             return false;
         }
         return subscriptionRepository
-            .findActive(userRowId, SubscriptionStatus.ACTIVE, YNType.N, LocalDateTime.now())
+            .findEntitled(userRowId, YNType.N, LocalDateTime.now())
             .stream()
             .anyMatch(s -> s.getPlan().hasFeature(featureCode));
     }
@@ -47,7 +46,7 @@ public class SubscriptionEntitlementServiceImpl implements SubscriptionEntitleme
             return List.of();
         }
         return subscriptionRepository
-            .findActive(userRowId, SubscriptionStatus.ACTIVE, YNType.N, LocalDateTime.now())
+            .findEntitled(userRowId, YNType.N, LocalDateTime.now())
             .stream()
             .flatMap(s -> parseFeatures(s.getPlan().getFeatures()).stream())
             .distinct()

@@ -30,8 +30,9 @@ public class SubscriptionServiceImpl implements SubscriptionService {
     @Transactional
     public SubscriptionInfo subscribe(Long userRowId, String planCode) {
         LocalDateTime now = LocalDateTime.now();
-        // 활성 구독 중복 방지 (앱 레벨)
-        if (!subscriptionRepository.findActive(userRowId, SubscriptionStatus.ACTIVE, YNType.N, now).isEmpty()) {
+        // 중복 구독 방지 (앱 레벨). 해지했어도 남은 기간을 쓰는 중이면 아직 구독이 살아 있는 것이라
+        // 여기서 막는다 — 통과시키면 기간이 겹치는 행이 둘 생기고, 결제가 붙는 순간 두 번 청구된다.
+        if (!subscriptionRepository.findEntitled(userRowId, YNType.N, now).isEmpty()) {
             throw new InvalidValueException(DeskErrorCode.SUBSCRIPTION_ALREADY_ACTIVE);
         }
         SubscriptionPlan plan = planRepository.findByPlanCodeAndIsDeleted(planCode, YNType.N)
@@ -43,14 +44,29 @@ public class SubscriptionServiceImpl implements SubscriptionService {
         return SubscriptionInfo.from(sub);
     }
 
+    /**
+     * 해지 — 자동갱신을 끄고 상태를 CANCELLED 로 적는다. <b>남은 기간의 권한은 그대로 둔다.</b>
+     *
+     * <p>해지한 뒤에도 기간이 남아 있으면 화면은 여전히 Pro 로 보이므로 해지 버튼이 한 번 더
+     * 눌릴 수 있다. 두 번째 호출은 무동작으로 성공시킨다(DELETE 는 멱등하다) —
+     * 다시 {@code cancel()} 을 태우면 처음 해지한 시각·사유가 덮여 기록이 사라진다.
+     */
     @Override
     @Transactional
     public void cancel(Long userRowId, String reason) {
-        UserSubscription sub = subscriptionRepository
-            .findActive(userRowId, SubscriptionStatus.ACTIVE, YNType.N, LocalDateTime.now())
-            .stream().findFirst()
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.SUBSCRIPTION_NOT_FOUND));
-        sub.cancel(LocalDateTime.now(), reason);
+        List<UserSubscription> entitled =
+            subscriptionRepository.findEntitled(userRowId, YNType.N, LocalDateTime.now());
+        if (entitled.isEmpty()) {
+            throw new EntityNotFoundException(DeskErrorCode.SUBSCRIPTION_NOT_FOUND);
+        }
+        Optional<UserSubscription> active = entitled.stream()
+            .filter(s -> s.getStatus() == SubscriptionStatus.ACTIVE)
+            .findFirst();
+        if (active.isEmpty()) {
+            log.info("구독 해지 요청(이미 해지됨, 남은 기간 사용 중): userRowId={}", userRowId);
+            return;
+        }
+        active.get().cancel(LocalDateTime.now(), reason);
         log.info("구독 해지: userRowId={}", userRowId);
     }
 

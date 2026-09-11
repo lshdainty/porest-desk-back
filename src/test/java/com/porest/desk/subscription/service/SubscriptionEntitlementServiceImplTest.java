@@ -5,7 +5,6 @@ import com.porest.core.type.YNType;
 import com.porest.desk.subscription.domain.SubscriptionPlan;
 import com.porest.desk.subscription.domain.UserSubscription;
 import com.porest.desk.subscription.repository.UserSubscriptionRepository;
-import com.porest.desk.subscription.type.SubscriptionStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,8 +23,12 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
 /**
- * 기능권한 도출 프로세스 — 활성 구독의 plan.features 에서 entitlement 를 도출하고,
+ * 기능권한 도출 프로세스 — 권한이 살아 있는 구독의 plan.features 에서 entitlement 를 도출하고,
  * 미보유 시 게이트가 403(SUBSCRIPTION_REQUIRED)을 던지는지 검증.
+ *
+ * <p>"권한이 살아 있는지" 의 판정(해지해도 기간까지 유지 / 기간이 지나면 막힘)은 JPQL 에 있고
+ * {@code UserSubscriptionRepositoryTest} 가 H2 에서 검증한다. 여기서는 그 조회가 돌려준 구독을
+ * 서비스가 그대로 권한으로 편다는 것만 본다.
  */
 @ExtendWith(MockitoExtension.class)
 class SubscriptionEntitlementServiceImplTest {
@@ -48,16 +51,28 @@ class SubscriptionEntitlementServiceImplTest {
     @DisplayName("활성 구독이 SECURITIES 를 포함하면 hasFeature=true")
     void hasFeature_true() {
         UserSubscription sub = activeWith("[\"SECURITIES\"]", true);
-        given(subscriptionRepository.findActive(eq(USER), eq(SubscriptionStatus.ACTIVE), eq(YNType.N), any()))
+        given(subscriptionRepository.findEntitled(eq(USER), eq(YNType.N), any()))
             .willReturn(List.of(sub));
 
         assertThat(sut.hasFeature(USER, "SECURITIES")).isTrue();
     }
 
     @Test
+    @DisplayName("해지했지만 기간이 남은 구독도 권한을 준다 — 돈 낸 기간은 끝까지 쓴다")
+    void hasFeature_true_cancelledWithinPeriod() {
+        UserSubscription sub = activeWith("[\"SECURITIES\"]", true);
+        sub.cancel(LocalDateTime.now(), "사용자 요청");
+        given(subscriptionRepository.findEntitled(eq(USER), eq(YNType.N), any()))
+            .willReturn(List.of(sub));
+
+        assertThat(sut.hasFeature(USER, "SECURITIES")).isTrue();
+        assertThat(sut.getActiveFeatures(USER)).containsExactly("SECURITIES");
+    }
+
+    @Test
     @DisplayName("활성 구독이 없으면 hasFeature=false")
     void hasFeature_false_noActive() {
-        given(subscriptionRepository.findActive(eq(USER), eq(SubscriptionStatus.ACTIVE), eq(YNType.N), any()))
+        given(subscriptionRepository.findEntitled(eq(USER), eq(YNType.N), any()))
             .willReturn(List.of());
 
         assertThat(sut.hasFeature(USER, "SECURITIES")).isFalse();
@@ -72,7 +87,7 @@ class SubscriptionEntitlementServiceImplTest {
     @Test
     @DisplayName("권한 미보유 시 requireFeature 는 SUBSCRIPTION_REQUIRED(403)")
     void requireFeature_throws() {
-        given(subscriptionRepository.findActive(eq(USER), eq(SubscriptionStatus.ACTIVE), eq(YNType.N), any()))
+        given(subscriptionRepository.findEntitled(eq(USER), eq(YNType.N), any()))
             .willReturn(List.of());
 
         assertThatThrownBy(() -> sut.requireFeature(USER, "SECURITIES"))
@@ -83,7 +98,7 @@ class SubscriptionEntitlementServiceImplTest {
     @DisplayName("getActiveFeatures 는 plan.features JSON 을 코드 목록으로 파싱")
     void getActiveFeatures_parses() {
         UserSubscription sub = activeWith("[\"SECURITIES\"]", true);
-        given(subscriptionRepository.findActive(eq(USER), eq(SubscriptionStatus.ACTIVE), eq(YNType.N), any()))
+        given(subscriptionRepository.findEntitled(eq(USER), eq(YNType.N), any()))
             .willReturn(List.of(sub));
 
         assertThat(sut.getActiveFeatures(USER)).containsExactly("SECURITIES");
