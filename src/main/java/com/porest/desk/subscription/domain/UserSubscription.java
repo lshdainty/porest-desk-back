@@ -22,7 +22,8 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * 사용자 구독. 활성 구독({@code status=ACTIVE} 이고 만료 전)에서 기능권한을 도출한다.
+ * 사용자 구독. 기능권한은 <b>남은 기간</b>에서 도출한다 — 상태가 ACTIVE 든 CANCELLED 든
+ * {@code current_period_end} 가 미래면 권한이 산다({@link com.porest.desk.subscription.repository.UserSubscriptionRepository#findEntitled}).
  * 결제(PG) 없음 — 부여/갱신은 수동·관리자·만료 스케줄러가 처리.
  */
 @Entity
@@ -94,13 +95,14 @@ public class UserSubscription extends AuditingFieldsWithIp {
         return new UserSubscription(userRowId, plan, now, end, autoRenew ? YNType.Y : YNType.N);
     }
 
-    /** 만료 전·활성 여부. */
-    public boolean isActiveAt(LocalDateTime now) {
-        return status == SubscriptionStatus.ACTIVE
-            && (currentPeriodEnd == null || now.isBefore(currentPeriodEnd));
-    }
-
-    /** 해지 — 자동갱신 중지, 상태 CANCELLED. */
+    /**
+     * 해지 — 자동갱신 중지, 상태 CANCELLED. <b>남은 기간은 건드리지 않는다.</b>
+     *
+     * <p>해지 확인창은 "{날짜}부터 Free 로 전환… 그 전까지는 계속 쓸 수 있어요" 라고 약속한다.
+     * 그래서 해지는 {@code current_period_end} 를 앞당기지 않고 자동갱신만 끈다 —
+     * 남은 기간의 권한은 {@code findEntitled} 가 CANCELLED 행도 기간이 남았으면 활성으로 세어 지킨다.
+     * 언제·왜 해지했는지는 {@code cancelledAt}·{@code cancellationReason} 에 남는다.
+     */
     public void cancel(LocalDateTime now, String reason) {
         this.status = SubscriptionStatus.CANCELLED;
         this.autoRenew = YNType.N;

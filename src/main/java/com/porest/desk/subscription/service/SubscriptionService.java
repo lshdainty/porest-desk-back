@@ -12,10 +12,13 @@ import java.util.Optional;
  */
 public interface SubscriptionService {
 
-    /** 구독 부여(결제 없이 즉시 ACTIVE). 이미 활성 구독이 있으면 충돌. */
+    /**
+     * 구독 부여(결제 없이 즉시 ACTIVE). 이미 권한이 살아 있으면 충돌 —
+     * 해지했어도 남은 기간을 쓰는 중이면 여기에 걸린다.
+     */
     SubscriptionInfo subscribe(Long userRowId, String planCode);
 
-    /** 활성 구독 해지. */
+    /** 구독 해지 — 자동갱신만 끄고 남은 기간의 권한은 유지한다. 이미 해지된 구독이면 무동작. */
     void cancel(Long userRowId, String reason);
 
     /** 사용자의 최근 구독 1건. */
