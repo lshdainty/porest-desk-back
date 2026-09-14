@@ -34,7 +34,9 @@ public class RecurringTransactionApiController {
         RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.createRecurring(
             new RecurringTransactionServiceDto.CreateCommand(
                 loginUser.getRowId(),
-                request.categoryRowId(), request.assetRowId(), request.sourceExpenseRowId(),
+                request.categoryRowId(), request.assetRowId(),
+                request.toAssetRowId(), request.fee(), request.interestAmount(),
+                request.sourceExpenseRowId(),
                 request.expenseType(), request.amount(), request.description(),
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),
@@ -69,6 +71,7 @@ public class RecurringTransactionApiController {
         RecurringTransactionServiceDto.RecurringInfo info = recurringTransactionService.updateRecurring(id, loginUser.getRowId(),
             new RecurringTransactionServiceDto.UpdateCommand(
                 request.categoryRowId(), request.assetRowId(),
+                request.toAssetRowId(), request.fee(), request.interestAmount(),
                 request.expenseType(), request.amount(), request.description(),
                 request.merchant(), request.paymentMethod(),
                 request.frequency(), request.intervalValue(),

@@ -5,6 +5,7 @@ import com.porest.desk.common.config.database.JpaAuditingConfig;
 import com.porest.desk.common.config.database.LoginUserAuditorAware;
 import com.porest.desk.expense.domain.ExpenseTemplate;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.user.domain.User;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,7 +42,7 @@ class ExpenseTemplateRepositoryTest {
 
     private ExpenseTemplate persistTemplate(User user, String name, int sortOrder, int useCount) {
         ExpenseTemplate t = ExpenseTemplate.createTemplate(user, name, null, null,
-                ExpenseType.EXPENSE, 10_000L, "설명", "가게", "CARD", sortOrder, null);
+                null, null, null, TxKind.EXPENSE, 10_000L, "설명", "가게", "CARD", sortOrder, null);
         for (int i = 0; i < useCount; i++) {
             t.incrementUseCount();
         }
@@ -53,7 +54,7 @@ class ExpenseTemplateRepositoryTest {
     void saveAndFindById() {
         User user = persistUser("u1");
         ExpenseTemplate template = ExpenseTemplate.createTemplate(user, "월세", null, null,
-                ExpenseType.EXPENSE, 500_000L, "월세", "집주인", "TRANSFER", 0, null);
+                null, null, null, TxKind.EXPENSE, 500_000L, "월세", "집주인", "TRANSFER", 0, null);
         repository.save(template);
         em.flush();
         em.clear();

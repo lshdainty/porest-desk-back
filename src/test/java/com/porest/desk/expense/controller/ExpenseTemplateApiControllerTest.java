@@ -8,6 +8,7 @@ import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
 import com.porest.desk.security.resolver.LoginUserArgumentResolver;
 import com.porest.desk.support.security.WithLoginUser;
@@ -59,8 +60,8 @@ class ExpenseTemplateApiControllerTest {
 
     private ExpenseTemplateServiceDto.TemplateInfo sampleTemplate() {
         return new ExpenseTemplateServiceDto.TemplateInfo(
-                30L, 1L, "점심 정기", 5L, "식비", 2L, "현금",
-                ExpenseType.EXPENSE, 9000L, "회사 근처", "김밥천국", "CARD",
+                30L, 1L, "점심 정기", 5L, "식비", 2L, "현금", null, null, null, null,
+                TxKind.EXPENSE, 9000L, "회사 근처", "김밥천국", "CARD",
                 3, 0, YNType.N,
                 LocalDateTime.of(2026, 7, 2, 12, 0),
                 LocalDateTime.of(2026, 7, 1, 0, 0), LocalDateTime.of(2026, 7, 1, 0, 0));
@@ -105,7 +106,7 @@ class ExpenseTemplateApiControllerTest {
         assertThat(captor.getValue().templateName()).isEqualTo("점심 정기");
         assertThat(captor.getValue().categoryRowId()).isEqualTo(5L);
         assertThat(captor.getValue().amount()).isEqualTo(9000L);
-        assertThat(captor.getValue().expenseType()).isEqualTo(ExpenseType.EXPENSE);
+        assertThat(captor.getValue().expenseType()).isEqualTo(TxKind.EXPENSE);
         assertThat(captor.getValue().lockAmount()).isEqualTo(YNType.N);
     }
 

@@ -3,7 +3,7 @@ package com.porest.desk.expense.service.dto;
 import com.porest.core.type.YNType;
 import com.porest.desk.common.patch.Patch;
 import com.porest.desk.expense.domain.ExpenseTemplate;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 
 import java.time.LocalDateTime;
 
@@ -14,7 +14,10 @@ public class ExpenseTemplateServiceDto {
         String templateName,
         Long categoryRowId,
         Long assetRowId,
-        ExpenseType expenseType,
+        Long toAssetRowId,
+        Long fee,
+        Long interestAmount,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -28,7 +31,10 @@ public class ExpenseTemplateServiceDto {
         Patch<String> templateName,
         Patch<Long> categoryRowId,
         Patch<Long> assetRowId,
-        Patch<ExpenseType> expenseType,
+        Patch<Long> toAssetRowId,
+        Patch<Long> fee,
+        Patch<Long> interestAmount,
+        Patch<TxKind> expenseType,
         Patch<Long> amount,
         Patch<String> description,
         Patch<String> merchant,
@@ -44,7 +50,11 @@ public class ExpenseTemplateServiceDto {
         String categoryName,
         Long assetRowId,
         String assetName,
-        ExpenseType expenseType,
+        Long toAssetRowId,
+        String toAssetName,
+        Long fee,
+        Long interestAmount,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -65,6 +75,10 @@ public class ExpenseTemplateServiceDto {
                 template.getCategory() != null ? template.getCategory().getCategoryName() : null,
                 template.getAsset() != null ? template.getAsset().getRowId() : null,
                 template.getAsset() != null ? template.getAsset().getAssetName() : null,
+                template.getToAsset() != null ? template.getToAsset().getRowId() : null,
+                template.getToAsset() != null ? template.getToAsset().getAssetName() : null,
+                template.getFee(),
+                template.getInterestAmount(),
                 template.getExpenseType(),
                 template.getAmount(),
                 template.getDescription(),

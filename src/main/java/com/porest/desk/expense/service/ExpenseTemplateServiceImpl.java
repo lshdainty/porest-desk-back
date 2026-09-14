@@ -18,7 +18,7 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.ExpenseTemplateRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -65,7 +65,9 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId());
             // 거래 유형 == 카테고리 유형 강제 (혼재 시 집계 오염 방지).
-            if (category.getExpenseType() != command.expenseType()) {
+            // 이체는 카테고리 자체가 없어야 하므로 카테고리가 실린 순간 틀린 요청이다.
+            if (command.expenseType().isTransfer()
+                || category.getExpenseType() != command.expenseType().toExpenseType()) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
             }
             // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
@@ -74,15 +76,14 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             }
         }
 
-        Asset asset = null;
-        if (command.assetRowId() != null) {
-            asset = assetRepository.findById(command.assetRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-            validateAssetOwnership(asset, command.userRowId());
-        }
+        Asset asset = findOwnedAsset(command.assetRowId(), command.userRowId());
+        Asset toAsset = findOwnedAsset(command.toAssetRowId(), command.userRowId());
+        RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
+            amount, command.fee(), command.interestAmount());
 
         ExpenseTemplate template = ExpenseTemplate.createTemplate(
             user, templateName, category, asset,
+            toAsset, command.fee(), command.interestAmount(),
             command.expenseType(), amount, command.description(),
             command.merchant(), command.paymentMethod(), command.sortOrder(),
             command.lockAmount()
@@ -117,7 +118,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         // 실린 칸만 바꾼다 — 안 온 칸은 지금 값이 그대로 남는다.
         String templateName = NameNormalizer.require(
             command.templateName().orKeep(template.getTemplateName()), FieldLimits.WIDE_NAME_MAX);
-        ExpenseType expenseType = command.expenseType().orKeep(template.getExpenseType());
+        TxKind expenseType = command.expenseType().orKeep(template.getExpenseType());
         // 금액과 고정 여부는 한 쌍이다 — 둘 다 병합한 뒤에 함께 판정한다. 한쪽만 실린 요청이
         // 나머지 한쪽을 지금 값으로 못 읽으면, 고정을 켜 둔 프리셋의 금액이 조용히 사라진다.
         YNType lockAmount = command.lockAmount().orKeep(template.getLockAmount());
@@ -137,7 +138,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         if (category != null) {
             // 거래 유형 == 카테고리 유형 강제 (create 와 대칭). 판정은 <b>병합된 짝</b>으로 한다 —
             // 종전엔 categoryRowId 를 안 보내면 카테고리가 통째로 null 이 되어 검사할 짝이 없었다.
-            if (category.getExpenseType() != expenseType) {
+            if (expenseType.isTransfer()
+                || category.getExpenseType() != expenseType.toExpenseType()) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
             }
             // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
@@ -147,16 +149,20 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         }
 
         Asset asset = command.assetRowId()
-            .map(rowId -> {
-                Asset found = assetRepository.findById(rowId)
-                    .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-                validateAssetOwnership(found, userRowId); // create 와 대칭 — 남의 자산 할당 차단
-                return found;
-            })
+            .map(rowId -> findOwnedAsset(rowId, userRowId))
             .orKeep(template.getAsset());
+        Asset toAsset = command.toAssetRowId()
+            .map(rowId -> findOwnedAsset(rowId, userRowId))
+            .orKeep(template.getToAsset());
+        Long fee = command.fee().orKeep(template.getFee());
+        Long interestAmount = command.interestAmount().orKeep(template.getInterestAmount());
+        // 판정은 <b>병합된 값</b>으로 한다 — 종류만 바꾼 요청도 지금 붙어 있는 계좌로 검사된다.
+        RecurringTransferValidator.validate(expenseType, category, asset, toAsset,
+            amount, fee, interestAmount);
 
         template.updateTemplate(
             templateName, category, asset,
+            toAsset, fee, interestAmount,
             expenseType, amount,
             command.description().orKeep(template.getDescription()),
             command.merchant().orKeep(template.getMerchant()),
@@ -200,6 +206,13 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         ExpenseTemplate template = findTemplateOrThrow(templateId);
         validateTemplateOwnership(template, userRowId);
 
+        // 이체 프리셋은 여기로 오지 않는다 — 이 엔드포인트는 지출 1건을 만드는 자리다.
+        // 웹·앱 모두 프리셋을 <b>폼에 채워</b> 각자의 저장(이체면 /asset-transfer)으로 보내고
+        // 사용 기록만 /touch 로 올린다. 여기서 이체를 흉내 내면 같은 일을 하는 길이 둘이 된다.
+        if (template.getExpenseType().isTransfer()) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_INPUT);
+        }
+
         // 정책: 템플릿 생성 이후 카테고리가 상위(부모)가 됐다면 거래 생성 불가.
         if (template.getCategory() != null
             && expenseCategoryRepository.hasChildren(template.getCategory().getRowId())) {
@@ -210,7 +223,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             template.getUser(),
             template.getCategory(),
             template.getAsset(),
-            template.getExpenseType(),
+            template.getExpenseType().toExpenseType(),
             template.getAmount(),
             template.getDescription(),
             // 템플릿은 LocalDate 만 받으므로 00:00 으로 보정하여 엔티티(LocalDateTime) 에 전달
@@ -262,6 +275,17 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
                 category.getRowId(), category.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
         }
+    }
+
+    /** id 가 없으면 null. 있으면 조회하고 남의 자산인지 본다 — 생성·수정이 같은 규칙을 쓴다. */
+    private Asset findOwnedAsset(Long assetRowId, Long userRowId) {
+        if (assetRowId == null) {
+            return null;
+        }
+        Asset asset = assetRepository.findById(assetRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+        validateAssetOwnership(asset, userRowId);
+        return asset;
     }
 
     private void validateAssetOwnership(Asset asset, Long userRowId) {

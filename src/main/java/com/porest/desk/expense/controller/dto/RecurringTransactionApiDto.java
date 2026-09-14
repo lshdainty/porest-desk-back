@@ -4,7 +4,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.common.validation.FieldLimits;
 import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.expense.type.RecurringFrequency;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
@@ -45,8 +45,11 @@ public class RecurringTransactionApiDto {
     public record CreateRequest(
         Long categoryRowId,
         Long assetRowId,
+        Long toAssetRowId,
+        Long fee,
+        Long interestAmount,
         Long sourceExpenseRowId,
-        ExpenseType expenseType,
+        TxKind expenseType,
         @Min(value = 1, message = "금액은 0보다 커야 해요")
         @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
@@ -75,7 +78,10 @@ public class RecurringTransactionApiDto {
     public record UpdateRequest(
         Long categoryRowId,
         Long assetRowId,
-        ExpenseType expenseType,
+        Long toAssetRowId,
+        Long fee,
+        Long interestAmount,
+        TxKind expenseType,
         @Min(value = 1, message = "금액은 0보다 커야 해요")
         @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
@@ -108,8 +114,12 @@ public class RecurringTransactionApiDto {
         String categoryName,
         Long assetRowId,
         String assetName,
+        Long toAssetRowId,
+        String toAssetName,
+        Long fee,
+        Long interestAmount,
         Long sourceExpenseRowId,
-        ExpenseType expenseType,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -136,6 +146,8 @@ public class RecurringTransactionApiDto {
                 info.rowId(), info.userRowId(),
                 info.categoryRowId(), info.categoryName(),
                 info.assetRowId(), info.assetName(),
+                info.toAssetRowId(), info.toAssetName(),
+                info.fee(), info.interestAmount(),
                 info.sourceExpenseRowId(),
                 info.expenseType(), info.amount(), info.description(),
                 info.merchant(), info.paymentMethod(),

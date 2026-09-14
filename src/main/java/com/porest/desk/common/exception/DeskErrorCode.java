@@ -141,6 +141,17 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_TRANSFER_INVALID_AMOUNT("ASSET_005", "error.asset.transfer.invalid.amount", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_INVALID_INTEREST("ASSET_014", "error.asset.transfer.invalid.interest", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CHECK_CARD("ASSET_006", "error.asset.transfer.check.card", HttpStatus.BAD_REQUEST),
+    /**
+     * 반복·프리셋 이체의 당사자로 카드를 고른 경우.
+     *
+     * <p>공용 이체 검증({@code validateTransfer})은 체크카드만 막고 <b>신용카드는 일부러
+     * 허용</b>한다 — 결제일 자동이체가 신용카드로 들어가는 이체이기 때문이다. 그래서 카드
+     * 금지는 그 자리에 넣을 수 없고, <b>반복·프리셋을 만들 때</b> 따로 건다.
+     *
+     * <p>실행 시점이 아니라 만들 때 막는 이유: 자정 배치는 실패해도 로그만 남는다. 만들 때
+     * 안 막으면 사용자는 "저장됐다" 고 믿고 매일 밤 조용히 실패하는 규칙을 갖게 된다.
+     */
+    RECURRING_TRANSFER_CARD_NOT_ALLOWED("EXP_026", "error.recurring.transfer.card.not.allowed", HttpStatus.BAD_REQUEST),
     ASSET_TRADE_NOT_FOUND("ASSET_007", "error.notfound.asset.trade", HttpStatus.NOT_FOUND),
     ASSET_TRADE_NOT_INVESTMENT("ASSET_008", "error.asset.trade.not.investment", HttpStatus.BAD_REQUEST),
     ASSET_TRADE_INVALID_QUANTITY("ASSET_009", "error.asset.trade.invalid.quantity", HttpStatus.BAD_REQUEST),

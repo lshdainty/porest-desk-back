@@ -3,7 +3,7 @@ package com.porest.desk.expense.domain;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.expense.type.RecurringFrequency;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
@@ -53,12 +53,29 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     private Asset asset;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "to_asset_row_id")
+    private Asset toAsset;
+
+    @Column(name = "fee")
+    private Long fee;
+
+    /** 이자 — 받는 자산이 대출일 때만 쓴다. 상환액(amount) 중 부채를 안 줄이는 몫. */
+    @Column(name = "interest_amount")
+    private Long interestAmount;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "source_expense_row_id")
     private Expense sourceExpense;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "expense_type", nullable = false, length = 20)
-    private ExpenseType expenseType;
+    /**
+     * 만들어 낼 거래의 종류. 컬럼은 {@code expense_type} 그대로이고 값에 TRANSFER 가 는다.
+     *
+     * <p>{@link com.porest.desk.expense.type.ExpenseType} 이 아니라 {@link TxKind} 인 이유는
+     * 그 enum 의 주석에 있다 — 이체는 지출도 수입도 아니다.
+     */
+    private TxKind expenseType;
 
     @Column(name = "amount", nullable = false)
     private Long amount;
@@ -136,8 +153,9 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     public static final LocalTime DEFAULT_EXECUTION_TIME = LocalTime.of(9, 0);
 
     public static RecurringTransaction createRecurring(User user, ExpenseCategory category, Asset asset,
+                                                        Asset toAsset, Long fee, Long interestAmount,
                                                         Expense sourceExpense,
-                                                        ExpenseType expenseType, Long amount, String description,
+                                                        TxKind expenseType, Long amount, String description,
                                                         String merchant, String paymentMethod,
                                                         RecurringFrequency frequency, Integer intervalValue,
                                                         Integer dayOfWeek, Integer dayOfMonth,
@@ -150,6 +168,9 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         recurring.user = user;
         recurring.category = category;
         recurring.asset = asset;
+        recurring.toAsset = toAsset;
+        recurring.fee = fee;
+        recurring.interestAmount = interestAmount;
         recurring.sourceExpense = sourceExpense;
         recurring.expenseType = expenseType;
         recurring.amount = amount;
@@ -179,7 +200,8 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         this.category = category;
     }
 
-    public void updateRecurring(ExpenseCategory category, Asset asset, ExpenseType expenseType,
+    public void updateRecurring(ExpenseCategory category, Asset asset,
+                                Asset toAsset, Long fee, Long interestAmount, TxKind expenseType,
                                  Long amount, String description, String merchant, String paymentMethod,
                                  RecurringFrequency frequency, Integer intervalValue,
                                  Integer dayOfWeek, Integer dayOfMonth,
@@ -189,6 +211,9 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
                                  Boolean autoLog, Boolean notifyDayBefore) {
         this.category = category;
         this.asset = asset;
+        this.toAsset = toAsset;
+        this.fee = fee;
+        this.interestAmount = interestAmount;
         this.expenseType = expenseType;
         this.amount = amount;
         this.description = description;

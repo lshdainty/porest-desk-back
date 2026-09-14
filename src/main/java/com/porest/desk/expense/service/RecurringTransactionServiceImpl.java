@@ -6,6 +6,8 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
+import com.porest.desk.asset.service.AssetService;
+import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.common.validation.AmountLimits;
 import com.porest.desk.expense.domain.Expense;
@@ -20,17 +22,19 @@ import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class RecurringTransactionServiceImpl implements RecurringTransactionService {
@@ -41,7 +45,39 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
     private final AssetBalanceHistoryService balanceHistoryService;
+    private final AssetService assetService;
     private final ServiceClock serviceClock;
+
+    /**
+     * 자정 배치에서 <b>반복 거래 한 건마다</b> 새 트랜잭션을 여는 템플릿.
+     *
+     * <p>{@code @RequiredArgsConstructor} 를 버리고 생성자를 손으로 쓴 이유가 이것 하나다.
+     * 자세한 이유는 {@link #executeDueTransactions} 주석에 있다.
+     */
+    private final TransactionTemplate newTransaction;
+
+    public RecurringTransactionServiceImpl(RecurringTransactionRepository recurringTransactionRepository,
+                                           UserClock userClock,
+                                           ExpenseCategoryRepository expenseCategoryRepository,
+                                           AssetRepository assetRepository,
+                                           ExpenseRepository expenseRepository,
+                                           UserRepository userRepository,
+                                           AssetBalanceHistoryService balanceHistoryService,
+                                           AssetService assetService,
+                                           ServiceClock serviceClock,
+                                           PlatformTransactionManager transactionManager) {
+        this.recurringTransactionRepository = recurringTransactionRepository;
+        this.userClock = userClock;
+        this.expenseCategoryRepository = expenseCategoryRepository;
+        this.assetRepository = assetRepository;
+        this.expenseRepository = expenseRepository;
+        this.userRepository = userRepository;
+        this.balanceHistoryService = balanceHistoryService;
+        this.assetService = assetService;
+        this.serviceClock = serviceClock;
+        this.newTransaction = new TransactionTemplate(transactionManager);
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
 
     @Override
     @Transactional
@@ -58,7 +94,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             validateCategoryOwnership(category, command.userRowId());
             // 거래 유형 == 카테고리 유형 강제 (혼재 시 집계 오염 방지).
-            if (category.getExpenseType() != command.expenseType()) {
+            if (command.expenseType().isTransfer()
+                || category.getExpenseType() != command.expenseType().toExpenseType()) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
             }
             // 정책: 상위(자식 보유) 카테고리에는 반복 거래를 둘 수 없음.
@@ -67,12 +104,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             }
         }
 
-        Asset asset = null;
-        if (command.assetRowId() != null) {
-            asset = assetRepository.findById(command.assetRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-            validateAssetOwnership(asset, command.userRowId());
-        }
+        Asset asset = findOwnedAsset(command.assetRowId(), command.userRowId());
+        Asset toAsset = findOwnedAsset(command.toAssetRowId(), command.userRowId());
+        RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
+            command.amount(), command.fee(), command.interestAmount());
 
         Expense sourceExpense = null;
         if (command.sourceExpenseRowId() != null) {
@@ -89,7 +124,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         );
 
         RecurringTransaction recurring = RecurringTransaction.createRecurring(
-            user, category, asset, sourceExpense,
+            user, category, asset, toAsset, command.fee(), command.interestAmount(), sourceExpense,
             command.expenseType(), command.amount(), command.description(),
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
@@ -122,7 +157,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         java.util.stream.Stream<RecurringTransaction> stream = recurringTransactionRepository.findByUser(userRowId).stream();
         if (upcomingOnly) {
             stream = stream.filter(r -> r.getIsActive() == com.porest.core.type.YNType.Y)
-                .filter(r -> r.getExpenseType() == com.porest.desk.expense.type.ExpenseType.EXPENSE)
+                .filter(r -> r.getExpenseType() == com.porest.desk.expense.type.TxKind.EXPENSE)
                 .filter(r -> r.getNextExecutionDate() != null && !r.getNextExecutionDate().isBefore(today));
         }
         if (limit != null && limit > 0) {
@@ -145,7 +180,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             category = expenseCategoryRepository.findById(command.categoryRowId())
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
             // 거래 유형 == 카테고리 유형 강제 (create 와 대칭).
-            if (category.getExpenseType() != command.expenseType()) {
+            if (command.expenseType().isTransfer()
+                || category.getExpenseType() != command.expenseType().toExpenseType()) {
                 throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
             }
             // 정책: 상위(자식 보유) 카테고리에는 반복 거래를 둘 수 없음.
@@ -154,12 +190,10 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             }
         }
 
-        Asset asset = null;
-        if (command.assetRowId() != null) {
-            asset = assetRepository.findById(command.assetRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-            validateAssetOwnership(asset, userRowId); // create 와 대칭 — 남의 자산 할당 차단
-        }
+        Asset asset = findOwnedAsset(command.assetRowId(), userRowId);
+        Asset toAsset = findOwnedAsset(command.toAssetRowId(), userRowId);
+        RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
+            command.amount(), command.fee(), command.interestAmount());
 
         LocalDate nextExecutionDate = calculateNextExecutionDate(
             command.startDate(), command.frequency(), command.intervalValue(),
@@ -167,7 +201,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         );
 
         recurring.updateRecurring(
-            category, asset,
+            category, asset, toAsset, command.fee(), command.interestAmount(),
             command.expenseType(), command.amount(), command.description(),
             command.merchant(), command.paymentMethod(),
             command.frequency(), command.intervalValue(),
@@ -208,63 +242,124 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         return RecurringTransactionServiceDto.RecurringInfo.from(recurring);
     }
 
+    /**
+     * 자정 배치 — 오늘 실행할 반복 거래를 <b>건마다 따로</b> 처리한다.
+     *
+     * <p>배치 전체가 트랜잭션 하나면 한 건의 실패가 그날 처리분을 통째로 되돌린다. 아래
+     * {@code catch} 는 예외를 삼키지만 트랜잭션은 그것과 별개로 이미 <b>rollback-only</b> 로
+     * 찍혀 있어(프록시를 지나는 {@code assetService.createTransfer} 에서 터지면 특히 그렇다)
+     * 마지막 커밋이 {@code UnexpectedRollbackException} 으로 끝난다. 계좌 하나 지워 둔 이체
+     * 규칙 때문에 남의 반복 지출까지 안 남는다 — 다음 날 아무도 눈치채지 못한다.
+     *
+     * <p>그래서 이 메서드는 트랜잭션을 들지 않고({@code NOT_SUPPORTED}), 한 건을
+     * {@link #newTransaction} 안에서 돌린다. 실패한 건만 롤백되고 나머지는 그대로 커밋된다.
+     * 목록은 rowId 만 들고 나온다 — 트랜잭션 밖에서 읽은 엔티티는 어차피 준영속이라
+     * 더티 체킹({@code markExecuted})이 안 먹는다.
+     */
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void executeDueTransactions() {
         // 배치 — 서비스 운영 기준 날짜(JVM 기본 UTC 를 쓰면 하루 어긋난다)
         LocalDate today = serviceClock.today();
         log.debug("반복 거래 실행 시작: date={}", today);
 
-        List<RecurringTransaction> dueTransactions = recurringTransactionRepository.findDueTransactions(today);
+        List<Long> dueIds = recurringTransactionRepository.findDueTransactions(today).stream()
+            .map(RecurringTransaction::getRowId)
+            .toList();
 
-        for (RecurringTransaction recurring : dueTransactions) {
+        for (Long recurringId : dueIds) {
             try {
-                // 실행 시각은 반복 거래마다 사용자가 정한다. 예전에는 09:00 고정이었고,
-                // 그 값이 컬럼 기본값이라 안 고른 건은 그대로 09:00 이다.
-                LocalDateTime executionDateTime = today.atTime(
-                    recurring.getExecutionTime() != null
-                        ? recurring.getExecutionTime()
-                        : RecurringTransaction.DEFAULT_EXECUTION_TIME);
-
-                Expense expense = Expense.createExpense(
-                    recurring.getUser(),
-                    recurring.getCategory(),
-                    recurring.getAsset(),
-                    recurring.getExpenseType(),
-                    recurring.getAmount(),
-                    recurring.getDescription(),
-                    executionDateTime,
-                    recurring.getMerchant(),
-                    recurring.getPaymentMethod(),
-                    null, // 반복 거래는 할부 개념이 없다
-                    null, // 환불이 아니다
-                    null, null, null // 원화 결제
-                );
-
-                expenseRepository.save(expense);
-
-                // 자산 잔액 이력: 자동 생성 expense 의 flow 적재 — 잔액은 조회할 때 이력에서 집계한다
-                balanceHistoryService.recordExpense(recurring.getAsset(), expense.getRowId(),
-                    recurring.getExpenseType(), recurring.getAmount(), executionDateTime);
-
-                LocalDate nextDate = calculateNextDate(
-                    recurring.getNextExecutionDate(),
-                    recurring.getFrequency(),
-                    recurring.getIntervalValue(),
-                    recurring.getDayOfWeek(),
-                    recurring.getDayOfMonth()
-                );
-
-                recurring.markExecuted(LocalDateTime.now(), nextDate);
-
-                log.info("반복 거래 실행 완료: recurringId={}, expenseId={}, nextDate={}",
-                    recurring.getRowId(), expense.getRowId(), nextDate);
+                newTransaction.executeWithoutResult(status -> executeOne(recurringId, today));
             } catch (Exception e) {
-                log.error("반복 거래 실행 실패: recurringId={}", recurring.getRowId(), e);
+                log.error("반복 거래 실행 실패: recurringId={}", recurringId, e);
             }
         }
 
-        log.info("반복 거래 실행 완료: 총 {}건 처리", dueTransactions.size());
+        log.info("반복 거래 실행 완료: 총 {}건 처리", dueIds.size());
+    }
+
+    /** 반복 거래 1건 — {@link #newTransaction} 이 연 트랜잭션 안에서만 부른다. */
+    private void executeOne(Long recurringId, LocalDate today) {
+        RecurringTransaction recurring = findRecurringOrThrow(recurringId);
+
+        // 실행 시각은 반복 거래마다 사용자가 정한다. 예전에는 09:00 고정이었고,
+        // 그 값이 컬럼 기본값이라 안 고른 건은 그대로 09:00 이다.
+        LocalDateTime executionDateTime = today.atTime(
+            recurring.getExecutionTime() != null
+                ? recurring.getExecutionTime()
+                : RecurringTransaction.DEFAULT_EXECUTION_TIME);
+
+        // 무엇을 만드느냐만 갈린다 — 다음 날짜 계산·실행 표시는 종류와 무관하다.
+        Long createdRowId = recurring.getExpenseType().isTransfer()
+            ? executeAsTransfer(recurring, executionDateTime)
+            : executeAsExpense(recurring, executionDateTime);
+
+        LocalDate nextDate = calculateNextDate(
+            recurring.getNextExecutionDate(),
+            recurring.getFrequency(),
+            recurring.getIntervalValue(),
+            recurring.getDayOfWeek(),
+            recurring.getDayOfMonth()
+        );
+
+        recurring.markExecuted(LocalDateTime.now(), nextDate);
+
+        log.info("반복 거래 실행 완료: recurringId={}, type={}, createdRowId={}, nextDate={}",
+            recurring.getRowId(), recurring.getExpenseType(), createdRowId, nextDate);
+    }
+
+    /** 지출·수입 반복 1건 실행 → 만들어진 지출의 rowId. */
+    private Long executeAsExpense(RecurringTransaction recurring, LocalDateTime executionDateTime) {
+        Expense expense = Expense.createExpense(
+            recurring.getUser(),
+            recurring.getCategory(),
+            recurring.getAsset(),
+            recurring.getExpenseType().toExpenseType(),
+            recurring.getAmount(),
+            recurring.getDescription(),
+            executionDateTime,
+            recurring.getMerchant(),
+            recurring.getPaymentMethod(),
+            null, // 반복 거래는 할부 개념이 없다
+            null, // 환불이 아니다
+            null, null, null // 원화 결제
+        );
+
+        expenseRepository.save(expense);
+
+        // 자산 잔액 이력: 자동 생성 expense 의 flow 적재 — 잔액은 조회할 때 이력에서 집계한다
+        balanceHistoryService.recordExpense(recurring.getAsset(), expense.getRowId(),
+            recurring.getExpenseType().toExpenseType(), recurring.getAmount(), executionDateTime);
+
+        return expense.getRowId();
+    }
+
+    /**
+     * 이체 반복 1건 실행 → 만들어진 이체의 rowId.
+     *
+     * <p>이체는 잔액 이력 2건·대출 이자 지출까지 끌고 다니므로 여기서 흉내 내지 않고
+     * {@link AssetService#createTransfer} 를 그대로 부른다.
+     *
+     * <p><b>autoSource 는 걸지 않는다</b>(사용자 결정 2026-09-14). 값을 걸면 만들어진 이체가
+     * 잠겨 고칠 수도 지울 수도 없는데, 반복 지출로 생긴 거래는 그냥 고쳐지므로 이체만 다르면
+     * 사용자가 이유를 알 수 없다. 잘못 나간 이체는 그 건을 고치고, 규칙 자체는 반복 설정에서
+     * 따로 고친다 — 이미 실행된 건과 앞으로 실행될 규칙은 별개다.
+     */
+    private Long executeAsTransfer(RecurringTransaction recurring, LocalDateTime executionDateTime) {
+        // 저장할 때 통과한 규칙이라도 그 사이 계좌가 지워졌을 수 있다. createTransfer 가 다시 본다.
+        AssetServiceDto.TransferInfo transfer = assetService.createTransfer(
+            new AssetServiceDto.CreateTransferCommand(
+                recurring.getUser().getRowId(),
+                recurring.getAsset() != null ? recurring.getAsset().getRowId() : null,
+                recurring.getToAsset() != null ? recurring.getToAsset().getRowId() : null,
+                recurring.getAmount(),
+                recurring.getFee(),
+                recurring.getInterestAmount(),
+                recurring.getDescription(),
+                executionDateTime,
+                null // autoSource — 위 주석 참고
+            ));
+        return transfer.rowId();
     }
 
     private LocalDate calculateNextExecutionDate(LocalDate startDate, RecurringFrequency frequency,
@@ -349,6 +444,17 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                 category.getRowId(), category.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
         }
+    }
+
+    /** id 가 없으면 null. 있으면 조회하고 남의 자산인지 본다 — 생성·수정이 같은 규칙을 쓴다. */
+    private Asset findOwnedAsset(Long assetRowId, Long userRowId) {
+        if (assetRowId == null) {
+            return null;
+        }
+        Asset asset = assetRepository.findById(assetRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+        validateAssetOwnership(asset, userRowId);
+        return asset;
     }
 
     private void validateAssetOwnership(Asset asset, Long userRowId) {

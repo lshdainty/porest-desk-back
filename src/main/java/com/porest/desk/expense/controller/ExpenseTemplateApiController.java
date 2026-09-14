@@ -35,6 +35,7 @@ public class ExpenseTemplateApiController {
             new ExpenseTemplateServiceDto.CreateCommand(
                 loginUser.getRowId(),
                 request.templateName(), request.categoryRowId(), request.assetRowId(),
+                request.toAssetRowId(), request.fee(), request.interestAmount(),
                 request.expenseType(), request.amount(), request.description(),
                 request.merchant(), request.paymentMethod(), request.sortOrder(),
                 request.lockAmount()
@@ -57,7 +58,9 @@ public class ExpenseTemplateApiController {
         ExpenseTemplateServiceDto.TemplateInfo info = expenseTemplateService.updateTemplate(id, loginUser.getRowId(),
             new ExpenseTemplateServiceDto.UpdateCommand(
                 Patch.from(request.templateName()), Patch.from(request.categoryRowId()),
-                Patch.from(request.assetRowId()), Patch.from(request.expenseType()),
+                Patch.from(request.assetRowId()), Patch.from(request.toAssetRowId()),
+                Patch.from(request.fee()), Patch.from(request.interestAmount()),
+                Patch.from(request.expenseType()),
                 Patch.from(request.amount()), Patch.from(request.description()),
                 Patch.from(request.merchant()), Patch.from(request.paymentMethod()),
                 Patch.from(request.lockAmount())

@@ -1,5 +1,23 @@
 package com.porest.desk.expense.service;
 
+import com.porest.core.type.YNType;
+import com.porest.desk.asset.service.AssetService;
+import com.porest.desk.asset.service.dto.AssetServiceDto;
+import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.common.exception.DeskErrorCode;
+import com.porest.desk.expense.type.RecurringFrequency;
+import org.mockito.ArgumentCaptor;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
@@ -12,8 +30,10 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.RecurringTransactionRepository;
 import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -23,11 +43,14 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
@@ -44,11 +67,24 @@ class RecurringTransactionServiceImplTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private UserRepository userRepository;
     @Mock private AssetBalanceHistoryService balanceHistoryService;
+    @Mock private AssetService assetService;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
+    // 배치 기준 날짜 — 실물을 준다. 다음 실행일은 오늘이 아니라 <b>규칙의 nextExecutionDate</b>
+    // 에서 계산되므로 이 값에 물리지 않는다(테스트가 today()±N 에 의존하지 않게).
+    @Spy private ServiceClock serviceClock = new ServiceClock("Asia/Seoul");
+
+    // 배치는 건마다 새 트랜잭션을 연다 — 단위 테스트에서는 상태만 돌려주고 커밋은 no-op.
+    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks private RecurringTransactionServiceImpl sut;
+
+    @BeforeEach
+    void givenTransaction() {
+        lenient().when(transactionManager.getTransaction(any()))
+            .thenReturn(new SimpleTransactionStatus());
+    }
 
     private static final long USER_ID = 1L;
 
@@ -66,13 +102,13 @@ class RecurringTransactionServiceImplTest {
 
     private RecurringTransactionServiceDto.CreateCommand createCmd(long categoryRowId) {
         return new RecurringTransactionServiceDto.CreateCommand(
-                USER_ID, categoryRowId, null, null, ExpenseType.EXPENSE, 10_000L,
+                USER_ID, categoryRowId, null, null, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private RecurringTransactionServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new RecurringTransactionServiceDto.UpdateCommand(
-                categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
+                categoryRowId, null, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
@@ -139,7 +175,7 @@ class RecurringTransactionServiceImplTest {
         given(assetRepository.findById(20L)).willReturn(Optional.of(othersAsset));
 
         var cmd = new RecurringTransactionServiceDto.UpdateCommand(
-                null, 20L, ExpenseType.EXPENSE, 10_000L,
+                null, 20L, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> sut.updateRecurring(5L, USER_ID, cmd))
@@ -159,7 +195,7 @@ class RecurringTransactionServiceImplTest {
 
         private RecurringTransactionServiceDto.CreateCommand cmdAmount(Long amount) {
             return new RecurringTransactionServiceDto.CreateCommand(
-                USER_ID, 1L, null, null, ExpenseType.EXPENSE, amount,
+                USER_ID, 1L, null, null, null, null, null, TxKind.EXPENSE, amount,
                 null, null, null, null, null, null, null, null, null, null, null, null, null);
         }
 
@@ -181,7 +217,7 @@ class RecurringTransactionServiceImplTest {
         @DisplayName("수정에서도 음수를 막는다")
         void rejectsNegativeOnUpdate() {
             var cmd = new RecurringTransactionServiceDto.UpdateCommand(
-                1L, null, ExpenseType.EXPENSE, -5_000L,
+                1L, null, null, null, null, TxKind.EXPENSE, -5_000L,
                 null, null, null, null, null, null, null, null, null, null, null, null, null);
             assertThatThrownBy(() -> sut.updateRecurring(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -198,10 +234,260 @@ class RecurringTransactionServiceImplTest {
         @DisplayName("수정에서도 100억 초과를 막는다")
         void rejectsOverTxLimitOnUpdate() {
             var cmd = new RecurringTransactionServiceDto.UpdateCommand(
-                1L, null, ExpenseType.EXPENSE, 10_000_000_001L,
+                1L, null, null, null, null, TxKind.EXPENSE, 10_000_000_001L,
                 null, null, null, null, null, null, null, null, null, null, null, null, null);
             assertThatThrownBy(() -> sut.updateRecurring(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("이체 반복")
+    class Transfer {
+
+        private Asset asset(long rowId, AssetType type, User owner) {
+            Asset a = Asset.createAsset(owner, "자산" + rowId, type, 0L, "KRW", null,
+                null, null, null, null, YNType.Y, null, null, null, null);
+            ReflectionTestUtils.setField(a, "rowId", rowId);
+            return a;
+        }
+
+        /** 보내는 2 · 받는 3 을 주고 나머지 칸만 바꿔 가며 부른다. */
+        private RecurringTransactionServiceDto.CreateCommand transferCmd(
+                Long toAssetRowId, Long amount, Long fee, Long interest, Long categoryRowId) {
+            return new RecurringTransactionServiceDto.CreateCommand(
+                USER_ID, categoryRowId, 2L, toAssetRowId, fee, interest, null,
+                TxKind.TRANSFER, amount, "적금 이체", null, null,
+                RecurringFrequency.MONTHLY, 1, null, 15, null,
+                LocalDate.of(2026, 9, 15), null, null, null, null);
+        }
+
+        private void givenAssets(AssetType from, AssetType to) {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(assetRepository.findById(2L)).willReturn(Optional.of(asset(2L, from, u)));
+            given(assetRepository.findById(3L)).willReturn(Optional.of(asset(3L, to, u)));
+        }
+
+        @Test
+        @DisplayName("정상 — 예금에서 적금으로 매달 보내는 규칙이 저장된다")
+        void savesTransferRule() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            var info = sut.createRecurring(transferCmd(3L, 100_000L, 500L, null, null));
+
+            assertThat(info.expenseType()).isEqualTo(TxKind.TRANSFER);
+            assertThat(info.toAssetRowId()).isEqualTo(3L);
+            assertThat(info.fee()).isEqualTo(500L);
+            then(recurringTransactionRepository).should().save(any(RecurringTransaction.class));
+        }
+
+        @Test
+        @DisplayName("신용카드는 이체 상대가 될 수 없다 — 카드 결제일 자동이체와 이중으로 빠진다")
+        void rejectsCreditCard() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.CREDIT_CARD);
+
+            assertThatThrownBy(() -> sut.createRecurring(transferCmd(3L, 100_000L, null, null, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.RECURRING_TRANSFER_CARD_NOT_ALLOWED);
+        }
+
+        @Test
+        @DisplayName("체크카드도 막는다 — 보내는 쪽이어도 마찬가지")
+        void rejectsCheckCardOnSendingSide() {
+            givenAssets(AssetType.CHECK_CARD, AssetType.BANK_ACCOUNT);
+
+            assertThatThrownBy(() -> sut.createRecurring(transferCmd(3L, 100_000L, null, null, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.RECURRING_TRANSFER_CARD_NOT_ALLOWED);
+        }
+
+        @Test
+        @DisplayName("받는 계좌가 없으면 저장되지 않는다 — 자정마다 조용히 실패할 규칙이 된다")
+        void rejectsMissingToAsset() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(assetRepository.findById(2L)).willReturn(Optional.of(asset(2L, AssetType.BANK_ACCOUNT, u)));
+
+            assertThatThrownBy(() -> sut.createRecurring(transferCmd(null, 100_000L, null, null, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.REQUIRED_VALUE_MISSING);
+        }
+
+        @Test
+        @DisplayName("이자는 받는 계좌가 대출일 때만 — 적금에 이자를 붙이면 거절한다")
+        void rejectsInterestOnNonLoan() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            assertThatThrownBy(() -> sut.createRecurring(transferCmd(3L, 100_000L, null, 10_000L, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
+        }
+
+        @Test
+        @DisplayName("이자는 상환액을 넘을 수 없다 — 공용 이체 규칙과 같은 한 벌을 쓴다")
+        void rejectsInterestOverAmount() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.LOAN);
+
+            assertThatThrownBy(() -> sut.createRecurring(transferCmd(3L, 100_000L, null, 200_000L, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
+        }
+
+        @Test
+        @DisplayName("대출 상환이면 이자가 허용된다")
+        void allowsInterestOnLoan() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.LOAN);
+
+            var info = sut.createRecurring(transferCmd(3L, 100_000L, null, 20_000L, null));
+
+            assertThat(info.interestAmount()).isEqualTo(20_000L);
+        }
+
+        @Test
+        @DisplayName("이체에는 카테고리가 없다 — 실려 오면 거절한다")
+        void rejectsCategoryOnTransfer() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(category(10L, u)));
+
+            assertThatThrownBy(() -> sut.createRecurring(transferCmd(3L, 100_000L, null, null, 10L)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
+        }
+
+        @Test
+        @DisplayName("지출인데 이체 칸이 채워져 있으면 거절한다 — 종류만 바꿨을 때 쓰레기 값이 살아난다")
+        void rejectsTransferFieldsOnExpense() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(assetRepository.findById(2L)).willReturn(Optional.of(asset(2L, AssetType.BANK_ACCOUNT, u)));
+            given(assetRepository.findById(3L)).willReturn(Optional.of(asset(3L, AssetType.BANK_ACCOUNT, u)));
+
+            var cmd = new RecurringTransactionServiceDto.CreateCommand(
+                USER_ID, null, 2L, 3L, null, null, null,
+                TxKind.EXPENSE, 10_000L, "점심", null, null,
+                RecurringFrequency.MONTHLY, 1, null, 15, null,
+                LocalDate.of(2026, 9, 15), null, null, null, null);
+
+            assertThatThrownBy(() -> sut.createRecurring(cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+        }
+    }
+
+    @Nested
+    @DisplayName("이체 반복 실행(자정 배치)")
+    class TransferExecution {
+
+        private RecurringTransaction dueTransfer(Long fee, Long interest) {
+            User u = user(USER_ID);
+            Asset from = Asset.createAsset(u, "예금", AssetType.BANK_ACCOUNT, 0L, "KRW", null,
+                null, null, null, null, YNType.Y, null, null, null, null);
+            ReflectionTestUtils.setField(from, "rowId", 2L);
+            Asset to = Asset.createAsset(u, "적금", AssetType.SAVINGS, 0L, "KRW", null,
+                null, null, null, null, YNType.Y, null, null, null, null);
+            ReflectionTestUtils.setField(to, "rowId", 3L);
+
+            RecurringTransaction r = RecurringTransaction.createRecurring(
+                u, null, from, to, fee, interest, null,
+                TxKind.TRANSFER, 100_000L, "적금 이체", null, null,
+                RecurringFrequency.MONTHLY, 1, null, 15, null,
+                LocalDate.of(2026, 1, 15), null, null,
+                LocalDate.of(2026, 9, 15), true, false);
+            ReflectionTestUtils.setField(r, "rowId", 77L);
+            return r;
+        }
+
+        @Test
+        @DisplayName("이체를 만든다 — 지출로 기록하지 않는다")
+        void createsTransferNotExpense() {
+            RecurringTransaction r = dueTransfer(500L, null);
+            given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
+            given(recurringTransactionRepository.findById(77L)).willReturn(Optional.of(r));
+            given(assetService.createTransfer(any())).willReturn(transferInfo(900L));
+
+            sut.executeDueTransactions();
+
+            ArgumentCaptor<AssetServiceDto.CreateTransferCommand> captor =
+                ArgumentCaptor.forClass(AssetServiceDto.CreateTransferCommand.class);
+            then(assetService).should().createTransfer(captor.capture());
+            var sent = captor.getValue();
+            assertThat(sent.fromAssetRowId()).isEqualTo(2L);
+            assertThat(sent.toAssetRowId()).isEqualTo(3L);
+            assertThat(sent.amount()).isEqualTo(100_000L);
+            assertThat(sent.fee()).isEqualTo(500L);
+
+            then(expenseRepository).should(never()).save(any());
+            then(balanceHistoryService).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("autoSource 를 걸지 않는다 — 만들어진 이체는 반복 지출처럼 고칠 수 있어야 한다")
+        void leavesGeneratedTransferEditable() {
+            RecurringTransaction r = dueTransfer(null, null);
+            given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
+            given(recurringTransactionRepository.findById(77L)).willReturn(Optional.of(r));
+            given(assetService.createTransfer(any())).willReturn(transferInfo(900L));
+
+            sut.executeDueTransactions();
+
+            ArgumentCaptor<AssetServiceDto.CreateTransferCommand> captor =
+                ArgumentCaptor.forClass(AssetServiceDto.CreateTransferCommand.class);
+            then(assetService).should().createTransfer(captor.capture());
+            assertThat(captor.getValue().autoSource()).isNull();
+        }
+
+        @Test
+        @DisplayName("실행하면 다음 날짜로 넘어간다 — 지출 반복과 같은 흐름")
+        void advancesToNextDate() {
+            RecurringTransaction r = dueTransfer(null, null);
+            given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
+            given(recurringTransactionRepository.findById(77L)).willReturn(Optional.of(r));
+            given(assetService.createTransfer(any())).willReturn(transferInfo(900L));
+
+            sut.executeDueTransactions();
+
+            assertThat(r.getExecutedCount()).isEqualTo(1);
+            assertThat(r.getNextExecutionDate()).isEqualTo(LocalDate.of(2026, 10, 15));
+        }
+
+        @Test
+        @DisplayName("한 건이 터져도 나머지는 남는다 — 건마다 트랜잭션을 따로 연다")
+        void oneFailureDoesNotPoisonTheBatch() {
+            RecurringTransaction bad = dueTransfer(null, null);
+            RecurringTransaction good = dueTransfer(null, null);
+            ReflectionTestUtils.setField(good, "rowId", 78L);
+            given(recurringTransactionRepository.findDueTransactions(any()))
+                .willReturn(List.of(bad, good));
+            given(recurringTransactionRepository.findById(77L)).willReturn(Optional.of(bad));
+            given(recurringTransactionRepository.findById(78L)).willReturn(Optional.of(good));
+            // 받는 계좌를 지운 규칙 — createTransfer 가 터진다.
+            given(assetService.createTransfer(any()))
+                .willThrow(new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND))
+                .willReturn(transferInfo(900L));
+
+            sut.executeDueTransactions();
+
+            // 실패한 건은 실행 표시가 안 되고, 뒤 건은 그대로 실행된다.
+            assertThat(bad.getExecutedCount()).isZero();
+            assertThat(good.getExecutedCount()).isEqualTo(1);
+            // 배치 하나가 아니라 건마다 트랜잭션을 연다 — 실패가 앞뒤로 번지지 않는 근거.
+            then(transactionManager).should(times(2)).getTransaction(any());
+        }
+
+        private AssetServiceDto.TransferInfo transferInfo(long rowId) {
+            return new AssetServiceDto.TransferInfo(
+                rowId, USER_ID, 2L, "예금", 3L, "적금",
+                100_000L, null, null, 100_000L, "적금 이체", null,
+                LocalDateTime.of(2026, 9, 15, 9, 0), LocalDateTime.of(2026, 9, 15, 9, 0));
         }
     }
 }

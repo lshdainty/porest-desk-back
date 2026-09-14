@@ -3,7 +3,7 @@ package com.porest.desk.expense.domain;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -52,9 +52,21 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
     @JoinColumn(name = "asset_row_id")
     private Asset asset;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "to_asset_row_id")
+    private Asset toAsset;
+
+    @Column(name = "fee")
+    private Long fee;
+
+    /** 이자 — 받는 자산이 대출일 때만 쓴다. */
+    @Column(name = "interest_amount")
+    private Long interestAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "expense_type", nullable = false, length = 20)
-    private ExpenseType expenseType;
+    /** 만들어 낼 거래의 종류 — 컬럼은 {@code expense_type} 그대로, 값에 TRANSFER 가 는다. */
+    private TxKind expenseType;
 
     @Column(name = "amount")
     private Long amount;
@@ -87,7 +99,8 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
     private YNType isDeleted;
 
     public static ExpenseTemplate createTemplate(User user, String templateName, ExpenseCategory category,
-                                                  Asset asset, ExpenseType expenseType, Long amount,
+                                                  Asset asset, Asset toAsset, Long fee, Long interestAmount,
+                                                  TxKind expenseType, Long amount,
                                                   String description, String merchant, String paymentMethod,
                                                   Integer sortOrder, YNType lockAmount) {
         ExpenseTemplate template = new ExpenseTemplate();
@@ -95,6 +108,9 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
         template.templateName = templateName;
         template.category = category;
         template.asset = asset;
+        template.toAsset = toAsset;
+        template.fee = fee;
+        template.interestAmount = interestAmount;
         template.expenseType = expenseType;
         template.amount = amount;
         template.description = description;
@@ -114,11 +130,15 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
      * 끝난 값이다. {@code lockAmount} 의 null 가드만 남긴다: NOT NULL 컬럼의 마지막 가드다.
      */
     public void updateTemplate(String templateName, ExpenseCategory category, Asset asset,
-                                ExpenseType expenseType, Long amount, String description,
+                                Asset toAsset, Long fee, Long interestAmount,
+                                TxKind expenseType, Long amount, String description,
                                 String merchant, String paymentMethod, YNType lockAmount) {
         this.templateName = templateName;
         this.category = category;
         this.asset = asset;
+        this.toAsset = toAsset;
+        this.fee = fee;
+        this.interestAmount = interestAmount;
         this.expenseType = expenseType;
         this.amount = amount;
         this.description = description;
