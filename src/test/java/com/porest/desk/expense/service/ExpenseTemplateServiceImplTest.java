@@ -15,6 +15,7 @@ import com.porest.desk.expense.repository.ExpenseTemplateRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.support.exception.ConstraintViolations;
@@ -26,6 +27,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import com.porest.desk.asset.domain.Asset;
+import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.common.exception.DeskErrorCode;
+import org.junit.jupiter.api.Nested;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
@@ -72,14 +77,15 @@ class ExpenseTemplateServiceImplTest {
 
     private ExpenseTemplateServiceDto.CreateCommand createCmd(long categoryRowId) {
         return new ExpenseTemplateServiceDto.CreateCommand(
-                USER_ID, "점심 템플릿", categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
+                USER_ID, "점심 템플릿", categoryRowId, null, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, null, null);
     }
 
     private ExpenseTemplateServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new ExpenseTemplateServiceDto.UpdateCommand(
                 Patch.set("점심 템플릿"), Patch.set(categoryRowId), Patch.absent(),
-                Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set(TxKind.EXPENSE), Patch.set(10_000L),
                 Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
     }
 
@@ -97,7 +103,7 @@ class ExpenseTemplateServiceImplTest {
             .willAnswer(inv -> inv.getArgument(0));
 
         var cmd = new ExpenseTemplateServiceDto.CreateCommand(
-                USER_ID, "구독", 10L, null, ExpenseType.EXPENSE, null,
+                USER_ID, "구독", 10L, null, null, null, null, TxKind.EXPENSE, null,
                 null, null, null, null, YNType.N);
 
         assertThatCode(() -> sut.createTemplate(cmd)).doesNotThrowAnyException();
@@ -109,7 +115,7 @@ class ExpenseTemplateServiceImplTest {
         // 고정 금액은 불러오는 거래가 그 값을 그대로 받는다 — 비어 있으면 의미가 없다.
         // 금액 검증이 사용자 조회보다 먼저라 저장소를 건드리지 않는다.
         var cmd = new ExpenseTemplateServiceDto.CreateCommand(
-                USER_ID, "점심", 10L, null, ExpenseType.EXPENSE, null,
+                USER_ID, "점심", 10L, null, null, null, null, TxKind.EXPENSE, null,
                 null, null, null, null, YNType.Y);
 
         assertThatThrownBy(() -> sut.createTemplate(cmd))
@@ -130,7 +136,7 @@ class ExpenseTemplateServiceImplTest {
             .willAnswer(inv -> inv.getArgument(0));
 
         var cmd = new ExpenseTemplateServiceDto.CreateCommand(
-                USER_ID, "구독", 10L, null, ExpenseType.EXPENSE, 10_000L,
+                USER_ID, "구독", 10L, null, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, null, YNType.N);
 
         var info = sut.createTemplate(cmd);
@@ -142,7 +148,7 @@ class ExpenseTemplateServiceImplTest {
     @DisplayName("createTemplate — 고정 금액을 켰는데 0 이면 거부한다")
     void createRejectsZeroWhenLocked() {
         var cmd = new ExpenseTemplateServiceDto.CreateCommand(
-                USER_ID, "점심", 10L, null, ExpenseType.EXPENSE, 0L,
+                USER_ID, "점심", 10L, null, null, null, null, TxKind.EXPENSE, 0L,
                 null, null, null, null, YNType.Y);
 
         assertThatThrownBy(() -> sut.createTemplate(cmd))
@@ -213,7 +219,8 @@ class ExpenseTemplateServiceImplTest {
 
         var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
                 Patch.set("점심 템플릿"), Patch.absent(), Patch.set(20L),
-                Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set(TxKind.EXPENSE), Patch.set(10_000L),
                 Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
 
         assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID, cmd))
@@ -227,6 +234,7 @@ class ExpenseTemplateServiceImplTest {
         ExpenseCategory nowParent = category(40L, u);
         ExpenseTemplate template = mock(ExpenseTemplate.class);
         given(template.getUser()).willReturn(u);
+        given(template.getExpenseType()).willReturn(TxKind.EXPENSE);
         given(template.getCategory()).willReturn(nowParent);
         given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(template));
         given(expenseCategoryRepository.hasChildren(40L)).willReturn(true);
@@ -245,7 +253,7 @@ class ExpenseTemplateServiceImplTest {
         given(template.getCategory()).willReturn(leaf);
         given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
         given(template.getAsset()).willReturn(null);
-        given(template.getExpenseType()).willReturn(ExpenseType.EXPENSE);
+        given(template.getExpenseType()).willReturn(TxKind.EXPENSE);
         given(template.getAmount()).willReturn(15_000L);
         given(template.getDescription()).willReturn("점심");
         given(template.getMerchant()).willReturn("식당");
@@ -268,7 +276,7 @@ class ExpenseTemplateServiceImplTest {
         @DisplayName("음수 금액 프리셋을 만들 수 없다")
         void rejectsNegative() {
             var cmd = new ExpenseTemplateServiceDto.CreateCommand(
-                USER_ID, "잘못된 프리셋", 1L, null, ExpenseType.EXPENSE, -10_000L,
+                USER_ID, "잘못된 프리셋", 1L, null, null, null, null, TxKind.EXPENSE, -10_000L,
                 null, null, null, null, YNType.Y);
             assertThatThrownBy(() -> sut.createTemplate(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -281,13 +289,14 @@ class ExpenseTemplateServiceImplTest {
             // 판정할 수 있어서다(QA #96). 그래서 이 테스트는 프리셋이 실재해야 한다.
             User u = user(USER_ID);
             ExpenseTemplate t = ExpenseTemplate.createTemplate(
-                u, "프리셋", null, null, ExpenseType.EXPENSE, 10_000L,
+                u, "프리셋", null, null, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, null, YNType.Y);
             given(expenseTemplateRepository.findById(1L)).willReturn(Optional.of(t));
 
             var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
                 Patch.set("프리셋"), Patch.absent(), Patch.absent(),
-                Patch.set(ExpenseType.EXPENSE), Patch.set(-5_000L),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set(TxKind.EXPENSE), Patch.set(-5_000L),
                 Patch.absent(), Patch.absent(), Patch.absent(), Patch.set(YNType.Y));
             assertThatThrownBy(() -> sut.updateTemplate(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -325,7 +334,7 @@ class ExpenseTemplateServiceImplTest {
                     .willAnswer(inv -> inv.getArgument(0));
 
             var info = sut.createTemplate(new ExpenseTemplateServiceDto.CreateCommand(
-                    USER_ID, "  점심 템플릿 ", 10L, null, ExpenseType.EXPENSE, 10_000L,
+                    USER_ID, "  점심 템플릿 ", 10L, null, null, null, null, TxKind.EXPENSE, 10_000L,
                     null, null, null, null, null));
 
             assertThat(info.templateName()).isEqualTo("점심 템플릿");
@@ -336,7 +345,7 @@ class ExpenseTemplateServiceImplTest {
         void updateExcludesSelf() {
             User u = user(USER_ID);
             ExpenseTemplate t = ExpenseTemplate.createTemplate(
-                    u, "점심 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
+                    u, "점심 템플릿", null, null, null, null, null, TxKind.EXPENSE, 10_000L,
                     null, null, null, null, YNType.N);
             given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
             given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", 5L))
@@ -345,7 +354,8 @@ class ExpenseTemplateServiceImplTest {
             assertThatCode(() -> sut.updateTemplate(5L, USER_ID,
                     new ExpenseTemplateServiceDto.UpdateCommand(
                             Patch.set("점심 템플릿"), Patch.absent(), Patch.absent(),
-                            Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                            Patch.absent(), Patch.absent(), Patch.absent(),
+                            Patch.set(TxKind.EXPENSE), Patch.set(10_000L),
                             Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent())))
                     .doesNotThrowAnyException();
         }
@@ -355,7 +365,7 @@ class ExpenseTemplateServiceImplTest {
         void updateRejectsDuplicateActiveName() {
             User u = user(USER_ID);
             ExpenseTemplate t = ExpenseTemplate.createTemplate(
-                    u, "저녁 템플릿", null, null, ExpenseType.EXPENSE, 10_000L,
+                    u, "저녁 템플릿", null, null, null, null, null, TxKind.EXPENSE, 10_000L,
                     null, null, null, null, YNType.N);
             given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
             given(expenseTemplateRepository.existsActiveByUserAndName(USER_ID, "점심 템플릿", 5L))
@@ -364,7 +374,8 @@ class ExpenseTemplateServiceImplTest {
             assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID,
                     new ExpenseTemplateServiceDto.UpdateCommand(
                             Patch.set("점심 템플릿"), Patch.absent(), Patch.absent(),
-                            Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
+                            Patch.absent(), Patch.absent(), Patch.absent(),
+                            Patch.set(TxKind.EXPENSE), Patch.set(10_000L),
                             Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent())))
                     .isInstanceOf(InvalidValueException.class);
         }
@@ -415,6 +426,117 @@ class ExpenseTemplateServiceImplTest {
 
             assertThatThrownBy(() -> sut.createTemplate(createCmd(10L)))
                     .isInstanceOf(DataIntegrityViolationException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("이체 프리셋")
+    class Transfer {
+
+        private Asset asset(long rowId, AssetType type, User owner) {
+            Asset a = Asset.createAsset(owner, "자산" + rowId, type, 0L, "KRW", null,
+                null, null, null, null, YNType.Y, null, null, null, null);
+            ReflectionTestUtils.setField(a, "rowId", rowId);
+            return a;
+        }
+
+        private ExpenseTemplateServiceDto.CreateCommand transferCmd(
+                Long toAssetRowId, Long amount, Long fee, Long interest) {
+            return new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "적금 이체", null, 2L, toAssetRowId, fee, interest,
+                TxKind.TRANSFER, amount, "매달 적금", null, null, 0, YNType.Y);
+        }
+
+        private void givenAssets(AssetType from, AssetType to) {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(assetRepository.findById(2L)).willReturn(Optional.of(asset(2L, from, u)));
+            given(assetRepository.findById(3L)).willReturn(Optional.of(asset(3L, to, u)));
+        }
+
+        @Test
+        @DisplayName("정상 — 보내는·받는 계좌와 수수료가 프리셋에 남는다")
+        void savesTransferPreset() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            var info = sut.createTemplate(transferCmd(3L, 300_000L, 500L, null));
+
+            assertThat(info.expenseType()).isEqualTo(TxKind.TRANSFER);
+            assertThat(info.toAssetRowId()).isEqualTo(3L);
+            assertThat(info.fee()).isEqualTo(500L);
+        }
+
+        @Test
+        @DisplayName("카드는 이체 상대가 될 수 없다 — 반복 이체와 같은 규칙")
+        void rejectsCard() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.CREDIT_CARD);
+
+            assertThatThrownBy(() -> sut.createTemplate(transferCmd(3L, 300_000L, null, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.RECURRING_TRANSFER_CARD_NOT_ALLOWED);
+        }
+
+        @Test
+        @DisplayName("받는 계좌가 없으면 저장되지 않는다")
+        void rejectsMissingToAsset() {
+            User u = user(USER_ID);
+            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
+            given(assetRepository.findById(2L)).willReturn(Optional.of(asset(2L, AssetType.BANK_ACCOUNT, u)));
+
+            assertThatThrownBy(() -> sut.createTemplate(transferCmd(null, 300_000L, null, null)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.REQUIRED_VALUE_MISSING);
+        }
+
+        @Test
+        @DisplayName("이자는 받는 계좌가 대출일 때만")
+        void rejectsInterestOnNonLoan() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            assertThatThrownBy(() -> sut.createTemplate(transferCmd(3L, 300_000L, null, 10_000L)))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
+        }
+
+        @Test
+        @DisplayName("종류만 지출로 바꾸면 거절한다 — 남아 있던 받는 계좌가 함께 와서 짝이 안 맞는다")
+        void rejectsKindSwitchWithStaleTransferFields() {
+            User u = user(USER_ID);
+            ExpenseTemplate t = ExpenseTemplate.createTemplate(
+                u, "적금 이체", null, asset(2L, AssetType.BANK_ACCOUNT, u),
+                asset(3L, AssetType.SAVINGS, u), 500L, null,
+                TxKind.TRANSFER, 300_000L, "매달 적금", null, null, 0, YNType.Y);
+            given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
+
+            // 종류만 EXPENSE 로 바꾼다 — 받는 계좌·수수료는 안 보냈으므로 지금 값이 그대로 남는다.
+            var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set(TxKind.EXPENSE), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
+
+            assertThatThrownBy(() -> sut.updateTemplate(5L, USER_ID, cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+        }
+
+        @Test
+        @DisplayName("useTemplate 로는 이체를 만들지 않는다 — 이 엔드포인트는 지출 1건을 만드는 자리다")
+        void useTemplateRejectsTransfer() {
+            User u = user(USER_ID);
+            ExpenseTemplate t = ExpenseTemplate.createTemplate(
+                u, "적금 이체", null, asset(2L, AssetType.BANK_ACCOUNT, u),
+                asset(3L, AssetType.SAVINGS, u), null, null,
+                TxKind.TRANSFER, 300_000L, "매달 적금", null, null, 0, YNType.Y);
+            given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
+
+            assertThatThrownBy(() -> sut.useTemplate(5L, USER_ID, LocalDate.of(2026, 9, 15)))
+                .isInstanceOf(InvalidValueException.class);
+            verify(expenseRepository, never()).save(any());
         }
     }
 }

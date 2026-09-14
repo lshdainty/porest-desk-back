@@ -1155,27 +1155,8 @@ public class AssetServiceImpl implements AssetService {
 
     private TransferParties validateTransfer(Long userRowId, Long fromAssetRowId, Long toAssetRowId,
                                              Long amount, Long fee, Long interestAmount) {
-        // 양쪽 자산이 없으면 조회로 가기 전에 끊는다. 아래 findAssetOrThrow 는 null 을 그대로
-        // QueryDSL 에 넘기는데 eq(null) 은 IllegalArgumentException 이고, @Repository 프록시가
-        // 그걸 InvalidDataAccessApiUsageException 으로 번역해 매핑이 없는 채로 500 이 됐다
-        // (QA 2026-09-07 #85). DTO 에도 @NotNull 이 있지만 이 자리는 카드 결제·매수 충당 같은
-        // 서버 안쪽 호출도 지난다 — 그쪽엔 @Valid 가 닿지 않는다.
-        if (fromAssetRowId == null || toAssetRowId == null) {
-            throw new InvalidValueException(DeskErrorCode.REQUIRED_VALUE_MISSING);
-        }
-        // 같은 자산으로의 이체는 무의미·잘못된 잔액 이력 유발 — 차단.
-        if (fromAssetRowId.equals(toAssetRowId)) {
-            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_SAME_ASSET);
-        }
-        // 이체 금액은 0보다 커야 함 — 음수는 잔액 흐름을 역전시켜 자금이 거꾸로 이동한다.
-        if (amount == null || amount <= 0) {
-            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
-        }
-        // 수수료도 음수면 안 된다. 출금은 -(amount + fee) 라 fee 가 음수면 그만큼 덜 빠지고
-        // 입금은 그대로 들어와 없던 돈이 생긴다(100,000 이체에 fee -50,000 → 순자산 +50,000).
-        if (fee != null && fee < 0) {
-            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
-        }
+        // 값 규칙은 반복·프리셋 예약과 한 벌을 쓴다(AssetTransferRules).
+        long interest = AssetTransferRules.validateAmounts(fromAssetRowId, toAssetRowId, amount, fee, interestAmount);
 
         Asset fromAsset = findAssetOrThrow(fromAssetRowId);
         validateAssetOwnership(fromAsset, userRowId);
@@ -1189,12 +1170,6 @@ public class AssetServiceImpl implements AssetService {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_CHECK_CARD);
         }
 
-        // 이자는 상환액 안에 포함된 몫이라 그보다 클 수 없다. 같으면 원금이 0 이라 부채가
-        // 전혀 안 줄어드는데, 이자만 내는 거치 상환에서 실제로 있는 일이다.
-        long interest = interestAmount != null ? interestAmount : 0L;
-        if (interest < 0 || interest > amount) {
-            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
-        }
         return new TransferParties(fromAsset, toAsset, interest);
     }
 

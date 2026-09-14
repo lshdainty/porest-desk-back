@@ -2,7 +2,7 @@ package com.porest.desk.expense.service.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.domain.RecurringTransaction;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.expense.type.RecurringFrequency;
 
 import java.time.LocalDate;
@@ -15,8 +15,11 @@ public class RecurringTransactionServiceDto {
         Long userRowId,
         Long categoryRowId,
         Long assetRowId,
+        Long toAssetRowId,
+        Long fee,
+        Long interestAmount,
         Long sourceExpenseRowId,
-        ExpenseType expenseType,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -36,7 +39,10 @@ public class RecurringTransactionServiceDto {
     public record UpdateCommand(
         Long categoryRowId,
         Long assetRowId,
-        ExpenseType expenseType,
+        Long toAssetRowId,
+        Long fee,
+        Long interestAmount,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -60,8 +66,12 @@ public class RecurringTransactionServiceDto {
         String categoryName,
         Long assetRowId,
         String assetName,
+        Long toAssetRowId,
+        String toAssetName,
+        Long fee,
+        Long interestAmount,
         Long sourceExpenseRowId,
-        ExpenseType expenseType,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -91,6 +101,10 @@ public class RecurringTransactionServiceDto {
                 recurring.getCategory() != null ? recurring.getCategory().getCategoryName() : null,
                 recurring.getAsset() != null ? recurring.getAsset().getRowId() : null,
                 recurring.getAsset() != null ? recurring.getAsset().getAssetName() : null,
+                recurring.getToAsset() != null ? recurring.getToAsset().getRowId() : null,
+                recurring.getToAsset() != null ? recurring.getToAsset().getAssetName() : null,
+                recurring.getFee(),
+                recurring.getInterestAmount(),
                 recurring.getSourceExpense() != null ? recurring.getSourceExpense().getRowId() : null,
                 recurring.getExpenseType(),
                 recurring.getAmount(),

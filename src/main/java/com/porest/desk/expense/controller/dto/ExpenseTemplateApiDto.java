@@ -2,7 +2,7 @@ package com.porest.desk.expense.controller.dto;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.expense.service.dto.ExpenseTemplateServiceDto;
-import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
@@ -17,7 +17,10 @@ public class ExpenseTemplateApiDto {
         String templateName,
         Long categoryRowId,
         Long assetRowId,
-        ExpenseType expenseType,
+        Long toAssetRowId,
+        Long fee,
+        Long interestAmount,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -51,7 +54,10 @@ public class ExpenseTemplateApiDto {
         Optional<String> templateName,
         Optional<Long> categoryRowId,
         Optional<Long> assetRowId,
-        Optional<ExpenseType> expenseType,
+        Optional<Long> toAssetRowId,
+        Optional<Long> fee,
+        Optional<Long> interestAmount,
+        Optional<TxKind> expenseType,
         Optional<Long> amount,
         Optional<String> description,
         Optional<String> merchant,
@@ -72,7 +78,11 @@ public class ExpenseTemplateApiDto {
         String categoryName,
         Long assetRowId,
         String assetName,
-        ExpenseType expenseType,
+        Long toAssetRowId,
+        String toAssetName,
+        Long fee,
+        Long interestAmount,
+        TxKind expenseType,
         Long amount,
         String description,
         String merchant,
@@ -89,6 +99,8 @@ public class ExpenseTemplateApiDto {
                 info.rowId(), info.userRowId(), info.templateName(),
                 info.categoryRowId(), info.categoryName(),
                 info.assetRowId(), info.assetName(),
+                info.toAssetRowId(), info.toAssetName(),
+                info.fee(), info.interestAmount(),
                 info.expenseType(), info.amount(), info.description(),
                 info.merchant(), info.paymentMethod(),
                 info.useCount(), info.sortOrder(),

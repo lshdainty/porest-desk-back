@@ -9,9 +9,11 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.RecurringTransactionRepository;
 import com.porest.desk.expense.service.dto.RecurringTransactionServiceDto;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.expense.type.RecurringFrequency;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +22,8 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -29,6 +33,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
 
@@ -51,7 +56,16 @@ class RecurringTransactionNextDateTest {
     // 배치 날짜 판정용 — 실제 동작이 필요하므로 mock 대신 실물 주입
     @Spy private ServiceClock serviceClock = new ServiceClock("Asia/Seoul");
 
+    // 배치는 건마다 새 트랜잭션을 연다 — 단위 테스트에서는 상태만 돌려주고 커밋은 no-op.
+    @Mock private PlatformTransactionManager transactionManager;
+
     @InjectMocks private RecurringTransactionServiceImpl sut;
+
+    @BeforeEach
+    void givenTransaction() {
+        lenient().when(transactionManager.getTransaction(any()))
+            .thenReturn(new SimpleTransactionStatus());
+    }
 
     private static final long USER_ID = 1L;
     /** 실제 now 와 무관하게 항상 미래(2개월 뒤 5일)인 시작일. */
@@ -60,7 +74,7 @@ class RecurringTransactionNextDateTest {
     private RecurringTransactionServiceDto.CreateCommand cmd(
             RecurringFrequency freq, Integer dayOfWeek, Integer dayOfMonth, LocalDate startDate) {
         return new RecurringTransactionServiceDto.CreateCommand(
-                USER_ID, null, null, null, ExpenseType.EXPENSE, 10_000L,
+                USER_ID, null, null, null, null, null, null, TxKind.EXPENSE, 10_000L,
                 null, null, null, freq, 1, dayOfWeek, dayOfMonth, null, startDate, null, null, null, null);
     }
 
@@ -108,7 +122,7 @@ class RecurringTransactionNextDateTest {
         User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
         ReflectionTestUtils.setField(u, "rowId", USER_ID);
         RecurringTransaction r = RecurringTransaction.createRecurring(
-                u, null, null, null, ExpenseType.EXPENSE, 10_000L, null, null, null,
+                u, null, null, null, null, null, null, TxKind.EXPENSE, 10_000L, null, null, null,
                 freq, interval, null, dayOfMonth, null, next, null, maxOccurrences, next, true, true);
         ReflectionTestUtils.setField(r, "rowId", 100L);
         return r;
@@ -116,6 +130,8 @@ class RecurringTransactionNextDateTest {
 
     private void execute(RecurringTransaction r) {
         given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
+        // 배치는 건마다 새 트랜잭션에서 다시 읽는다 — 목록에서 들고 나오는 건 rowId 뿐이다.
+        given(recurringTransactionRepository.findById(r.getRowId())).willReturn(Optional.of(r));
         sut.executeDueTransactions();
     }
 

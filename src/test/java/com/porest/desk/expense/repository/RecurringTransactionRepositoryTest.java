@@ -6,6 +6,7 @@ import com.porest.desk.common.config.database.LoginUserAuditorAware;
 import com.porest.desk.expense.domain.ExpenseCategory;
 import com.porest.desk.expense.domain.RecurringTransaction;
 import com.porest.desk.expense.type.ExpenseType;
+import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.expense.type.RecurringFrequency;
 import com.porest.desk.user.domain.User;
 import org.junit.jupiter.api.DisplayName;
@@ -50,8 +51,8 @@ class RecurringTransactionRepositoryTest {
     private RecurringTransaction newRecurring(User user, ExpenseCategory cat, String desc,
                                               LocalDate nextExec, LocalDate endDate, Integer maxOccurrences) {
         return RecurringTransaction.createRecurring(
-                user, cat, null, null,
-                ExpenseType.EXPENSE, 10_000L, desc, "가게", "TRANSFER",
+                user, cat, null, null, null, null, null,
+                TxKind.EXPENSE, 10_000L, desc, "가게", "TRANSFER",
                 RecurringFrequency.MONTHLY, 1, null, 1,
                 null,
                 LocalDate.of(2026, 1, 1), endDate, maxOccurrences,
