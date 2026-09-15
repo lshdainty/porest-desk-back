@@ -363,8 +363,12 @@ class AssetServiceImplTest {
                 USER_ID, 10L, 11L, 100_000L, -50_000L, 0L, "이체",
                 LocalDate.of(2026, 6, 1).atStartOfDay(), null);
 
+            // 코드까지 본다 — 예외 타입만 보면 "금액이 0 이하" 로 거부해도 통과한다.
+            // 실제로 이 자리는 한동안 ASSET_005(금액)를 돌려 쓰고 있었다(#335 가 갈랐다).
             assertThatThrownBy(() -> sut.createTransfer(cmd))
-                .isInstanceOf(InvalidValueException.class);
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_FEE);
         }
 
         @Test
