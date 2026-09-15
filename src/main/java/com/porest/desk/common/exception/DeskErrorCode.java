@@ -140,6 +140,13 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_ACCESS_DENIED("ASSET_004", "error.asset.access.denied", HttpStatus.FORBIDDEN),
     ASSET_TRANSFER_INVALID_AMOUNT("ASSET_005", "error.asset.transfer.invalid.amount", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_INVALID_INTEREST("ASSET_014", "error.asset.transfer.invalid.interest", HttpStatus.BAD_REQUEST),
+    /**
+     * 수수료가 음수.
+     *
+     * <p>종전엔 {@code ASSET_005}(이체 금액)를 돌려 써서 "이체 금액은 0보다 커야 해요" 가 떴다 —
+     * 금액은 멀쩡한데 금액을 고치라는 말이라 사용자가 고칠 자리를 못 찾는다.
+     */
+    ASSET_TRANSFER_INVALID_FEE("ASSET_015", "error.asset.transfer.invalid.fee", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CHECK_CARD("ASSET_006", "error.asset.transfer.check.card", HttpStatus.BAD_REQUEST),
     /**
      * 반복·프리셋 이체의 당사자로 카드를 고른 경우.

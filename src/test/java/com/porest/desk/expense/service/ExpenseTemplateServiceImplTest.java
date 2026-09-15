@@ -496,7 +496,7 @@ class ExpenseTemplateServiceImplTest {
             assertThatThrownBy(() -> sut.createTemplate(cmd))
                 .isInstanceOf(InvalidValueException.class)
                 .extracting(e -> ((InvalidValueException) e).getErrorCode())
-                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_FEE);
         }
 
         @Test

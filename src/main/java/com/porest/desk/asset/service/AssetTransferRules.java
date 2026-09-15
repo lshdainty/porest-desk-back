@@ -77,7 +77,7 @@ public final class AssetTransferRules {
         // 수수료도 음수면 안 된다. 출금은 -(amount + fee) 라 fee 가 음수면 그만큼 덜 빠지고
         // 입금은 그대로 들어와 없던 돈이 생긴다(100,000 이체에 fee -50,000 → 순자산 +50,000).
         if (fee != null && fee < 0) {
-            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_FEE);
         }
         // 이자는 상환액 안에 포함된 몫이라 그보다 클 수 없다. 같으면 원금이 0 이라 부채가
         // 전혀 안 줄어드는데, 이자만 내는 거치 상환에서 실제로 있는 일이다.
@@ -96,7 +96,7 @@ public final class AssetTransferRules {
      */
     public static void validateMoneySigns(Long fee, Long interestAmount) {
         if (fee != null && fee < 0) {
-            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
+            throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_FEE);
         }
         if (interestAmount != null && interestAmount < 0) {
             throw new InvalidValueException(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
