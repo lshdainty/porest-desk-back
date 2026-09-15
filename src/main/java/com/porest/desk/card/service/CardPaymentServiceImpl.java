@@ -19,10 +19,13 @@ import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.type.ExpenseType;
 import jakarta.persistence.EntityManager;
 import com.porest.core.time.UserClock;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.porest.desk.card.type.BillingStatus;
 import java.util.Objects;
@@ -33,7 +36,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional(readOnly = true)
 public class CardPaymentServiceImpl implements CardPaymentService {
@@ -45,6 +47,31 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     /** 결제계좌 없이 카드만 정리할 때 쓴다 — 이체를 못 만드니 카드에 직접 상계 flow 를 쌓는다. */
     private final AssetBalanceHistoryService balanceHistoryService;
     private final EntityManager entityManager;
+
+    /**
+     * 자정 배치에서 <b>카드 한 장마다</b> 새 트랜잭션을 여는 템플릿.
+     *
+     * <p>{@code @RequiredArgsConstructor} 를 버리고 생성자를 손으로 쓴 이유가 이것 하나다.
+     * 자세한 이유는 {@link #processDueCardPayments} 주석에 있다.
+     */
+    private final TransactionTemplate newTransaction;
+
+    public CardPaymentServiceImpl(CardBillingRepository cardBillingRepository,
+                                  UserClock userClock,
+                                  AssetRepository assetRepository,
+                                  AssetService assetService,
+                                  AssetBalanceHistoryService balanceHistoryService,
+                                  EntityManager entityManager,
+                                  PlatformTransactionManager transactionManager) {
+        this.cardBillingRepository = cardBillingRepository;
+        this.userClock = userClock;
+        this.assetRepository = assetRepository;
+        this.assetService = assetService;
+        this.balanceHistoryService = balanceHistoryService;
+        this.entityManager = entityManager;
+        this.newTransaction = new TransactionTemplate(transactionManager);
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    }
 
     @Override
     public CardPaymentServiceDto.CardBillingInfo getCardBilling(Long cardRowId, Long userRowId) {
@@ -186,35 +213,70 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             billingRowId, billing.getCardAsset().getRowId());
     }
 
+    /**
+     * 자정 배치 — 신용카드를 <b>한 장씩 따로</b> 처리한다.
+     *
+     * <p>배치 전체가 트랜잭션 하나면 한 장의 실패가 그날 처리분을 통째로 되돌린다. 아래
+     * {@code catch} 는 예외를 삼키지만 트랜잭션은 그것과 별개로 이미 <b>rollback-only</b> 로
+     * 찍혀 있어(프록시를 지나는 {@code assetService.createTransfer} 에서 터지면 특히 그렇다)
+     * 마지막 커밋이 {@code UnexpectedRollbackException} 으로 끝난다. 결제계좌를 지워 둔 카드
+     * 한 장 때문에 남의 카드 청구 회차·이체까지 안 남는데, 로그에는 "성공 N, 실패 1" 로
+     * 적혀 아무도 눈치채지 못한다.
+     *
+     * <p>그래서 이 메서드는 트랜잭션을 들지 않고({@code NOT_SUPPORTED}), 카드 한 장을
+     * {@link #newTransaction} 안에서 돌린다. 실패한 장만 롤백되고 나머지는 그대로 커밋된다.
+     * 목록은 rowId 만 들고 나온다 — 트랜잭션 밖에서 읽은 엔티티는 준영속이라 그대로 쓰면
+     * 잔액 이력·청구가 엉뚱한 세션에 붙는다.
+     *
+     * <p>반복 거래 배치({@code RecurringTransactionServiceImpl.executeDueTransactions})와 같은
+     * 모양이다 — 같은 실패 방식을 두 배치가 공유하고 있었다.
+     */
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void processDueCardPayments(LocalDate today) {
         log.debug("자동 카드 결제 처리 시작: today={}", today);
 
-        List<Asset> creditCards = assetRepository.findAllByType(AssetType.CREDIT_CARD);
+        List<Long> cardRowIds = assetRepository.findAllByType(AssetType.CREDIT_CARD).stream()
+            .map(Asset::getRowId)
+            .toList();
         int success = 0, failed = 0, skipped = 0;
 
-        for (Asset card : creditCards) {
-            // 각 건 격리 — 한 카드 실패가 전체 배치를 멈추지 않도록 try-catch
+        for (Long cardRowId : cardRowIds) {
+            // 각 건 격리 — 한 카드 실패가 다른 카드의 커밋을 되돌리지 않도록 트랜잭션까지 가른다.
             try {
-                if (isPaymentDay(card.getPaymentDay(), today)) {
-                    switch (payDueCard(card, today)) {
-                        case PAID -> success++;
-                        case SKIPPED -> skipped++;
-                        case ALREADY_DONE -> { }
-                    }
+                PayOutcome outcome =
+                    newTransaction.execute(status -> processOneCard(cardRowId, today));
+                if (outcome == PayOutcome.PAID) {
+                    success++;
+                } else if (outcome == PayOutcome.SKIPPED) {
+                    skipped++;
                 }
-                // 환급은 결제일과 무관하게 매일 본다 — 환불은 아무 날에나 들어오고,
-                // 결제일까지 기다리면 그동안 잔액이 양수로 떠 있게 된다.
-                refundOverpaymentIfAny(card, today);
             } catch (Exception e) {
                 failed++;
-                log.error("자동 카드 결제 실패: cardRowId={}", card.getRowId(), e);
+                log.error("자동 카드 결제 실패: cardRowId={}", cardRowId, e);
             }
         }
 
         log.info("자동 카드 결제 처리 완료: 대상={}건, 성공={}, 실패={}, 건너뜀={}",
-            creditCards.size(), success, failed, skipped);
+            cardRowIds.size(), success, failed, skipped);
+    }
+
+    /**
+     * 카드 한 장 — {@link #newTransaction} 이 연 트랜잭션 안에서만 부른다.
+     *
+     * @return 결제일 처리 결과. 결제일이 아니거나 이미 처리됐으면 집계에 안 든다
+     */
+    private PayOutcome processOneCard(Long cardRowId, LocalDate today) {
+        Asset card = findAssetOrThrow(cardRowId);
+
+        PayOutcome outcome = null;
+        if (isPaymentDay(card.getPaymentDay(), today)) {
+            outcome = payDueCard(card, today);
+        }
+        // 환급은 결제일과 무관하게 매일 본다 — 환불은 아무 날에나 들어오고,
+        // 결제일까지 기다리면 그동안 잔액이 양수로 떠 있게 된다.
+        refundOverpaymentIfAny(card, today);
+        return outcome;
     }
 
     /** 결제일 처리 결과 — 집계용. */
