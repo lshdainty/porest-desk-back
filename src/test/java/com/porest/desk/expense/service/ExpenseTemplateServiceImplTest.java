@@ -467,6 +467,93 @@ class ExpenseTemplateServiceImplTest {
         }
 
         @Test
+        @DisplayName("금액을 안 고정해도 저장된다 — 이체 프리셋은 금액 없이 두는 게 정상 용도")
+        void savesTransferPresetWithoutAmount() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            // 고정 금액을 끄면 resolveAmount 가 금액을 버린다(null). 대출 이자처럼 매달
+            // 금액만 다른 이체는 나머지(계좌·수수료)만 프리셋으로 두고 그때 금액을 적는다.
+            var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "대출 상환", null, 2L, 3L, 500L, null,
+                TxKind.TRANSFER, null, "매달 이자만 다름", null, null, 0, YNType.N);
+
+            var info = sut.createTemplate(cmd);
+
+            assertThat(info.amount()).isNull();
+            assertThat(info.toAssetRowId()).isEqualTo(3L);
+            assertThat(info.fee()).isEqualTo(500L);
+        }
+
+        @Test
+        @DisplayName("금액이 없어도 수수료 부호는 본다 — 음수 수수료는 없던 돈을 만든다")
+        void rejectsNegativeFeeWithoutAmount() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "적금", null, 2L, 3L, -500L, null,
+                TxKind.TRANSFER, null, null, null, null, 0, YNType.N);
+
+            assertThatThrownBy(() -> sut.createTemplate(cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_AMOUNT);
+        }
+
+        @Test
+        @DisplayName("금액이 없어도 '이자는 대출만' 은 그대로 본다 — 계좌 종류는 금액과 무관하다")
+        void stillRejectsInterestOnNonLoanWithoutAmount() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+
+            var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "적금", null, 2L, 3L, null, 10_000L,
+                TxKind.TRANSFER, null, null, null, null, 0, YNType.N);
+
+            assertThatThrownBy(() -> sut.createTemplate(cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.ASSET_TRANSFER_INVALID_INTEREST);
+        }
+
+        @Test
+        @DisplayName("고정 금액을 켰는데 0 이면 거절한다 — 금액을 적겠다고 해 놓고 안 적은 것")
+        void rejectsZeroWhenLocked() {
+            var cmd = new ExpenseTemplateServiceDto.CreateCommand(
+                USER_ID, "적금", null, 2L, 3L, null, null,
+                TxKind.TRANSFER, 0L, null, null, null, 0, YNType.Y);
+
+            // resolveAmount 가 저장소를 건드리기 전에 끊는다.
+            assertThatThrownBy(() -> sut.createTemplate(cmd))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EXPENSE_INVALID_AMOUNT);
+        }
+
+        @Test
+        @DisplayName("고정을 끄는 수정이면 금액이 지워진다 — 저장된 금액이 유령으로 남지 않는다")
+        void unlockingClearsAmountOnUpdate() {
+            User u = user(USER_ID);
+            ExpenseTemplate t = ExpenseTemplate.createTemplate(
+                u, "적금 이체", null, asset(2L, AssetType.BANK_ACCOUNT, u),
+                asset(3L, AssetType.SAVINGS, u), 500L, null,
+                TxKind.TRANSFER, 300_000L, null, null, null, 0, YNType.Y);
+            given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(t));
+
+            var cmd = new ExpenseTemplateServiceDto.UpdateCommand(
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set(YNType.N));
+
+            var info = sut.updateTemplate(5L, USER_ID, cmd);
+
+            assertThat(info.amount()).isNull();
+            // 나머지는 그대로 — 금액만 비우는 것이 사용자의 뜻이다.
+            assertThat(info.toAssetRowId()).isEqualTo(3L);
+            assertThat(info.fee()).isEqualTo(500L);
+        }
+
+        @Test
         @DisplayName("카드는 이체 상대가 될 수 없다 — 반복 이체와 같은 규칙")
         void rejectsCard() {
             givenAssets(AssetType.BANK_ACCOUNT, AssetType.CREDIT_CARD);
