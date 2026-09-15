@@ -78,7 +78,22 @@ class RecurringTransactionServiceImplTest {
     // 배치는 건마다 새 트랜잭션을 연다 — 단위 테스트에서는 상태만 돌려주고 커밋은 no-op.
     @Mock private PlatformTransactionManager transactionManager;
 
-    @InjectMocks private RecurringTransactionServiceImpl sut;
+    /**
+     * 참조 해석(카테고리·자산)은 <b>진짜</b>를 준다 — 목으로 바꾸면 "남의 카테고리 거절"
+     * 같은 단언이 스텁을 확인하는 셈이 되어 아무것도 안 지킨다. 리포지토리 목을 그대로
+     * 물리므로 기존 스텁·단언의 뜻이 유지된다.
+     */
+    private RecurringTransactionServiceImpl sut;
+
+    @BeforeEach
+    void buildSut() {
+        sut = new RecurringTransactionServiceImpl(
+            recurringTransactionRepository, userClock, expenseCategoryRepository,
+            assetRepository, expenseRepository, userRepository, balanceHistoryService,
+            assetService, serviceClock,
+            new ReservationRefs(expenseCategoryRepository, assetRepository),
+            transactionManager);
+    }
 
     @BeforeEach
     void givenTransaction() {
