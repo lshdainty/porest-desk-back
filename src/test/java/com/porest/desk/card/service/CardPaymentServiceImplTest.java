@@ -19,6 +19,7 @@ import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.user.domain.User;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,8 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -66,8 +69,16 @@ class CardPaymentServiceImplTest {
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
+    // 배치는 카드 한 장마다 새 트랜잭션을 연다 — 단위 테스트에서는 상태만 돌려주고 커밋은 no-op.
+    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks private CardPaymentServiceImpl sut;
+
+    @BeforeEach
+    void givenTransaction() {
+        lenient().when(transactionManager.getTransaction(any()))
+            .thenReturn(new SimpleTransactionStatus());
+    }
 
     private static final long USER_ID = 1L;
     private static final long CARD_ID = 5L;
@@ -1020,6 +1031,8 @@ class CardPaymentServiceImplTest {
         lenient().when(card.getPaymentAsset()).thenReturn(paymentAsset);
         givenCardBalance(balance);
         given(assetRepository.findAllByType(AssetType.CREDIT_CARD)).willReturn(List.of(card));
+        // 배치는 목록에서 rowId 만 들고 나와 건마다 다시 읽는다(건별 트랜잭션).
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         return card;
     }
 
