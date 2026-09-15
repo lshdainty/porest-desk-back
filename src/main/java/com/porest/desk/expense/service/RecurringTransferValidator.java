@@ -11,8 +11,10 @@ import com.porest.desk.expense.type.TxKind;
 /**
  * 반복 거래·프리셋이 <b>이체</b>를 가리킬 때의 검증.
  *
- * <p>숫자 규칙(금액·수수료·이자 범위·같은 자산)은 {@link AssetTransferRules} 한 벌을 그대로 쓴다.
- * 여기 적는 건 <b>예약이라서 달라지는 것</b>뿐이다.
+ * <p>숫자 규칙(금액·수수료·이자 범위·같은 자산)은 {@link AssetTransferRules} 한 벌을 쓴다.
+ * 다만 그 한 벌은 두 묶음이고, <b>예약은 "금액" 묶음을 금액이 있을 때만</b> 본다 —
+ * 프리셋은 금액을 비워 두는 것이 정상 용도이기 때문이다. 여기 적는 건 그 분기와
+ * <b>예약이라서 달라지는 것</b>뿐이다.
  *
  * <ul>
  *   <li><b>카드 금지.</b> 공용 이체 검증({@code AssetServiceImpl.validateTransfer})은 체크카드만
@@ -59,7 +61,17 @@ public final class RecurringTransferValidator {
         if (from == null || to == null) {
             throw new InvalidValueException(DeskErrorCode.REQUIRED_VALUE_MISSING);
         }
-        AssetTransferRules.validateAmounts(from.getRowId(), to.getRowId(), amount, fee, interest);
+        AssetTransferRules.validateParties(from.getRowId(), to.getRowId());
+        // 금액은 <b>있을 때만</b> 본다. 프리셋은 금액을 비워 두는 것이 정상 용도다 — 대출
+        // 이자처럼 매달 금액만 다른 이체는 계좌·수수료만 적어 두고, 불러올 때 금액을 채운다
+        // (`ExpenseTemplateServiceImpl.resolveAmount` 가 고정을 끄면 null 을 넘긴다).
+        // 반복은 금액이 없을 수 없다 — `RecurringTransactionServiceImpl.validateAmount` 가
+        // 앞서 막는다. 그러니 이 분기는 사실상 프리셋만 탄다.
+        if (amount != null) {
+            AssetTransferRules.validateMoney(amount, fee, interest);
+        } else {
+            AssetTransferRules.validateMoneySigns(fee, interest);
+        }
 
         if (isCard(from) || isCard(to)) {
             throw new InvalidValueException(DeskErrorCode.RECURRING_TRANSFER_CARD_NOT_ALLOWED);
