@@ -19,6 +19,7 @@ import com.porest.desk.expense.type.TxKind;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.support.exception.ConstraintViolations;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -59,7 +60,22 @@ class ExpenseTemplateServiceImplTest {
     @Mock private ExpenseRepository expenseRepository;
     @Mock private UserRepository userRepository;
 
-    @InjectMocks private ExpenseTemplateServiceImpl sut;
+    /**
+     * 참조 해석(카테고리·자산)은 <b>진짜</b>를 준다.
+     *
+     * <p>목으로 바꾸면 "남의 카테고리 거절"·"상위 카테고리 거절" 같은 단언이 스텁을 확인하는
+     * 셈이 되어 아무것도 안 지킨다. 진짜에 리포지토리 목을 물리면 기존 스텁과 단언이 그대로
+     * 뜻을 갖는다 — 규칙이 다른 클래스로 옮겨졌을 뿐이다.
+     */
+    private ExpenseTemplateServiceImpl sut;
+
+    @BeforeEach
+    void buildSut() {
+        sut = new ExpenseTemplateServiceImpl(
+            expenseTemplateRepository, expenseCategoryRepository, assetRepository,
+            expenseRepository, userRepository,
+            new ReservationRefs(expenseCategoryRepository, assetRepository));
+    }
 
     private static final long USER_ID = 1L;
 

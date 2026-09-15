@@ -47,6 +47,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
     private final AssetBalanceHistoryService balanceHistoryService;
     private final AssetService assetService;
     private final ServiceClock serviceClock;
+    private final ReservationRefs reservationRefs;
 
     /**
      * 자정 배치에서 <b>반복 거래 한 건마다</b> 새 트랜잭션을 여는 템플릿.
@@ -65,6 +66,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
                                            AssetBalanceHistoryService balanceHistoryService,
                                            AssetService assetService,
                                            ServiceClock serviceClock,
+                                           ReservationRefs reservationRefs,
                                            PlatformTransactionManager transactionManager) {
         this.recurringTransactionRepository = recurringTransactionRepository;
         this.userClock = userClock;
@@ -75,6 +77,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         this.balanceHistoryService = balanceHistoryService;
         this.assetService = assetService;
         this.serviceClock = serviceClock;
+        this.reservationRefs = reservationRefs;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -88,24 +91,11 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        ExpenseCategory category = null;
-        if (command.categoryRowId() != null) {
-            category = expenseCategoryRepository.findById(command.categoryRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
-            validateCategoryOwnership(category, command.userRowId());
-            // 거래 유형 == 카테고리 유형 강제 (혼재 시 집계 오염 방지).
-            if (command.expenseType().isTransfer()
-                || category.getExpenseType() != command.expenseType().toExpenseType()) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
-            }
-            // 정책: 상위(자식 보유) 카테고리에는 반복 거래를 둘 수 없음.
-            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
-            }
-        }
+        ExpenseCategory category = reservationRefs.resolveOwnedCategory(
+            command.expenseType(), command.categoryRowId(), command.userRowId());
 
-        Asset asset = findOwnedAsset(command.assetRowId(), command.userRowId());
-        Asset toAsset = findOwnedAsset(command.toAssetRowId(), command.userRowId());
+        Asset asset = reservationRefs.findOwnedAsset(command.assetRowId(), command.userRowId());
+        Asset toAsset = reservationRefs.findOwnedAsset(command.toAssetRowId(), command.userRowId());
         RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
             command.amount(), command.fee(), command.interestAmount());
 
@@ -175,23 +165,13 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         RecurringTransaction recurring = findRecurringOrThrow(recurringId);
         validateRecurringOwnership(recurring, userRowId);
 
-        ExpenseCategory category = null;
-        if (command.categoryRowId() != null) {
-            category = expenseCategoryRepository.findById(command.categoryRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
-            // 거래 유형 == 카테고리 유형 강제 (create 와 대칭).
-            if (command.expenseType().isTransfer()
-                || category.getExpenseType() != command.expenseType().toExpenseType()) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
-            }
-            // 정책: 상위(자식 보유) 카테고리에는 반복 거래를 둘 수 없음.
-            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
-            }
-        }
+        // 규칙 소유는 위에서 확인했다. 카테고리 소유 재확인은 종전 동작에 없다 — 정리 PR 이라
+        // 여기서 늘리지 않는다(생성은 resolveOwnedCategory 로 계속 본다).
+        ExpenseCategory category =
+            reservationRefs.resolveCategory(command.expenseType(), command.categoryRowId());
 
-        Asset asset = findOwnedAsset(command.assetRowId(), userRowId);
-        Asset toAsset = findOwnedAsset(command.toAssetRowId(), userRowId);
+        Asset asset = reservationRefs.findOwnedAsset(command.assetRowId(), userRowId);
+        Asset toAsset = reservationRefs.findOwnedAsset(command.toAssetRowId(), userRowId);
         RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
             command.amount(), command.fee(), command.interestAmount());
 
@@ -434,33 +414,6 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         if (!recurring.getUser().getRowId().equals(userRowId)) {
             log.warn("반복 거래 소유권 검증 실패 - recurringId={}, ownerRowId={}, requestUserRowId={}",
                 recurring.getRowId(), recurring.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
-        }
-    }
-
-    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
-        if (!category.getUser().getRowId().equals(userRowId)) {
-            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
-                category.getRowId(), category.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
-        }
-    }
-
-    /** id 가 없으면 null. 있으면 조회하고 남의 자산인지 본다 — 생성·수정이 같은 규칙을 쓴다. */
-    private Asset findOwnedAsset(Long assetRowId, Long userRowId) {
-        if (assetRowId == null) {
-            return null;
-        }
-        Asset asset = assetRepository.findById(assetRowId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-        validateAssetOwnership(asset, userRowId);
-        return asset;
-    }
-
-    private void validateAssetOwnership(Asset asset, Long userRowId) {
-        if (!asset.getUser().getRowId().equals(userRowId)) {
-            log.warn("자산 소유권 검증 실패 - assetId={}, ownerRowId={}, requestUserRowId={}",
-                asset.getRowId(), asset.getUser().getRowId(), userRowId);
             throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
         }
     }

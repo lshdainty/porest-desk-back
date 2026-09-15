@@ -40,6 +40,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
     private final AssetRepository assetRepository;
     private final ExpenseRepository expenseRepository;
     private final UserRepository userRepository;
+    private final ReservationRefs reservationRefs;
 
     @Override
     @Transactional
@@ -59,25 +60,11 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
         User user = userRepository.findById(command.userRowId())
             .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
 
-        ExpenseCategory category = null;
-        if (command.categoryRowId() != null) {
-            category = expenseCategoryRepository.findById(command.categoryRowId())
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
-            validateCategoryOwnership(category, command.userRowId());
-            // 거래 유형 == 카테고리 유형 강제 (혼재 시 집계 오염 방지).
-            // 이체는 카테고리 자체가 없어야 하므로 카테고리가 실린 순간 틀린 요청이다.
-            if (command.expenseType().isTransfer()
-                || category.getExpenseType() != command.expenseType().toExpenseType()) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
-            }
-            // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
-            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
-            }
-        }
+        ExpenseCategory category = reservationRefs.resolveOwnedCategory(
+            command.expenseType(), command.categoryRowId(), command.userRowId());
 
-        Asset asset = findOwnedAsset(command.assetRowId(), command.userRowId());
-        Asset toAsset = findOwnedAsset(command.toAssetRowId(), command.userRowId());
+        Asset asset = reservationRefs.findOwnedAsset(command.assetRowId(), command.userRowId());
+        Asset toAsset = reservationRefs.findOwnedAsset(command.toAssetRowId(), command.userRowId());
         RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
             amount, command.fee(), command.interestAmount());
 
@@ -135,24 +122,15 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             .map(rowId -> expenseCategoryRepository.findById(rowId)
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND)))
             .orKeep(template.getCategory());
-        if (category != null) {
-            // 거래 유형 == 카테고리 유형 강제 (create 와 대칭). 판정은 <b>병합된 짝</b>으로 한다 —
-            // 종전엔 categoryRowId 를 안 보내면 카테고리가 통째로 null 이 되어 검사할 짝이 없었다.
-            if (expenseType.isTransfer()
-                || category.getExpenseType() != expenseType.toExpenseType()) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
-            }
-            // 정책: 상위(자식 보유) 카테고리에는 거래(템플릿)를 둘 수 없음.
-            if (expenseCategoryRepository.hasChildren(category.getRowId())) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
-            }
-        }
+        // 판정은 <b>병합된 짝</b>으로 한다 — 종전엔 categoryRowId 를 안 보내면 카테고리가
+        // 통째로 null 이 되어 검사할 짝이 없었다. 그래서 여기만 "이미 정해진 것" 을 넘긴다.
+        reservationRefs.validateCategory(expenseType, category);
 
         Asset asset = command.assetRowId()
-            .map(rowId -> findOwnedAsset(rowId, userRowId))
+            .map(rowId -> reservationRefs.findOwnedAsset(rowId, userRowId))
             .orKeep(template.getAsset());
         Asset toAsset = command.toAssetRowId()
-            .map(rowId -> findOwnedAsset(rowId, userRowId))
+            .map(rowId -> reservationRefs.findOwnedAsset(rowId, userRowId))
             .orKeep(template.getToAsset());
         Long fee = command.fee().orKeep(template.getFee());
         Long interestAmount = command.interestAmount().orKeep(template.getInterestAmount());
@@ -266,33 +244,6 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             // DataIntegrityExceptionHandler 가 종류대로 답하게 둔다.
             if (!IntegrityViolations.isUnique(e)) throw e;
             throw new InvalidValueException(DeskErrorCode.EXPENSE_TEMPLATE_DUPLICATE_NAME, e);
-        }
-    }
-
-    private void validateCategoryOwnership(ExpenseCategory category, Long userRowId) {
-        if (!category.getUser().getRowId().equals(userRowId)) {
-            log.warn("지출 카테고리 소유권 검증 실패 - categoryId={}, ownerRowId={}, requestUserRowId={}",
-                category.getRowId(), category.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
-        }
-    }
-
-    /** id 가 없으면 null. 있으면 조회하고 남의 자산인지 본다 — 생성·수정이 같은 규칙을 쓴다. */
-    private Asset findOwnedAsset(Long assetRowId, Long userRowId) {
-        if (assetRowId == null) {
-            return null;
-        }
-        Asset asset = assetRepository.findById(assetRowId)
-            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
-        validateAssetOwnership(asset, userRowId);
-        return asset;
-    }
-
-    private void validateAssetOwnership(Asset asset, Long userRowId) {
-        if (!asset.getUser().getRowId().equals(userRowId)) {
-            log.warn("자산 소유권 검증 실패 - assetId={}, ownerRowId={}, requestUserRowId={}",
-                asset.getRowId(), asset.getUser().getRowId(), userRowId);
-            throw new ForbiddenException(DeskErrorCode.EXPENSE_ACCESS_DENIED);
         }
     }
 
