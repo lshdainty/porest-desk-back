@@ -3,6 +3,7 @@ package com.porest.desk.user.service;
 import com.porest.core.controller.ApiResponse;
 import com.porest.core.exception.ExternalServiceException;
 import com.porest.core.exception.InvalidValueException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.security.client.SsoOAuth2Client;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,6 +28,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -39,7 +41,9 @@ import static org.mockito.BDDMockito.given;
  *   <li><b>대상과 용도를 서버가 박는다</b> — body 의 {@code userId} 는 로그인한 본인이고
  *       {@code purpose} 는 {@code withdraw} 다. 클라이언트가 고를 수 없다</li>
  *   <li><b>4xx 와 통신 실패를 가른다</b> — 전자는 400(사용자가 고칠 수 있다),
- *       후자는 502. 뭉뚱그리면 SSO 가 죽었을 때 "비밀번호가 틀렸어요" 라고 거짓말한다</li>
+ *       후자는 502. 뭉뚱그리면 SSO 가 죽었을 때 "비밀번호가 틀렸어요" 라고 거짓말한다.
+ *       4xx 안에서도 <b>429 는 따로</b> 넘긴다 — 잠금·쿨다운은 다시 넣어서 되는 게
+ *       아니라 기다려야 풀리는 것이다(QA 22차 #8)</li>
  *   <li><b>티켓 없는 성공은 실패다</b> — 통과시키면 다음 호출에서 AUTH_020 을 맞고
  *       사용자는 방금 맞게 넣은 비밀번호를 의심한다</li>
  * </ol>
@@ -93,6 +97,13 @@ class ReauthProxyServiceImplTest {
         org.mockito.Mockito.verify(ssoRestTemplate).exchange(eq(path), eq(HttpMethod.POST),
                 captor.capture(), any(ParameterizedTypeReference.class));
         return captor.getValue().getHeaders();
+    }
+
+    private static HttpClientErrorException withStatus(HttpStatus status, String message) {
+        return HttpClientErrorException.create(status, status.getReasonPhrase(),
+                HttpHeaders.EMPTY,
+                ("{\"success\":false,\"message\":\"" + message + "\"}").getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8);
     }
 
     private static HttpClientErrorException badRequest(String message) {
@@ -157,6 +168,56 @@ class ReauthProxyServiceImplTest {
             assertThatThrownBy(() -> sut.verifyEmailCode(USER_ID, "000000"))
                     .isInstanceOf(InvalidValueException.class)
                     .hasMessageContaining("인증 코드가 올바르지 않아요");
+        }
+
+        /**
+         * 잠금은 <b>오답과 다른 상태</b>로 나간다.
+         *
+         * <p>둘 다 400 이면 화면은 구별할 수가 없어 "틀렸어요, 다시 넣어 주세요" 로
+         * 안내한다. 그런데 잠긴 동안은 맞게 넣어도 안 된다 — 사용자는 맞는 비밀번호를
+         * 계속 넣으며 자기를 의심한다(QA 22차 #8).
+         */
+        @Test
+        @DisplayName("429 는 429 로 넘긴다 — 오답과 같은 400 이면 '다시 넣어 주세요' 가 된다")
+        void tooManyRequests_staysTooManyRequests() {
+            givenSsoThrows(PASSWORD_PATH, withStatus(HttpStatus.TOO_MANY_REQUESTS,
+                    "본인 확인을 여러 번 틀렸어요. 10분 후 다시 시도해 주세요"));
+
+            InvalidValueException thrown = catchThrowableOfType(
+                    () -> sut.verifyPassword(USER_ID, "pw"), InvalidValueException.class);
+
+            assertThat(thrown).hasMessageContaining("10분 후");
+            assertThat(thrown.getErrorCode()).isEqualTo(DeskErrorCode.REAUTH_LOCKED);
+            assertThat(DeskErrorCode.REAUTH_LOCKED.getHttpStatus())
+                    .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            // 오답과 코드가 겹치면 클라이언트가 가를 수 없다.
+            assertThat(DeskErrorCode.REAUTH_LOCKED.getCode())
+                    .isNotEqualTo(DeskErrorCode.REAUTH_FAILED.getCode());
+        }
+
+        /** 코드 재발송 쿨다운(SSO AUTH_034)도 같은 경로를 탄다. */
+        @Test
+        @DisplayName("재발송 쿨다운도 429 로 넘어간다")
+        void cooldown_staysTooManyRequests() {
+            givenSsoThrows(EMAIL_CODE_PATH, withStatus(HttpStatus.TOO_MANY_REQUESTS,
+                    "코드를 방금 보냈어요. 잠시 뒤에 다시 받아 주세요"));
+
+            InvalidValueException thrown = catchThrowableOfType(
+                    () -> sut.sendEmailCode(USER_ID), InvalidValueException.class);
+
+            assertThat(thrown.getErrorCode()).isEqualTo(DeskErrorCode.REAUTH_LOCKED);
+        }
+
+        /** 400 은 그대로 400 이다 — 429 를 가른 뒤에도 오답 경로가 살아 있어야 한다. */
+        @Test
+        @DisplayName("오답은 여전히 400 이다")
+        void badRequest_staysBadRequest() {
+            givenSsoThrows(PASSWORD_PATH, badRequest("비밀번호가 올바르지 않아요"));
+
+            InvalidValueException thrown = catchThrowableOfType(
+                    () -> sut.verifyPassword(USER_ID, "pw"), InvalidValueException.class);
+
+            assertThat(thrown.getErrorCode()).isEqualTo(DeskErrorCode.REAUTH_FAILED);
         }
 
         @Test
