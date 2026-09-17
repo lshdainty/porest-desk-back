@@ -223,4 +223,42 @@ class WithdrawalServiceImplTest {
         assertThat(result.sharedCalendarsOwned()).isEqualTo(1); // 기본은 안 센다
         assertThat(result.calendarMemberships()).isEqualTo(1);
     }
+
+    /**
+     * 세션 <b>행</b>은 트랜잭션 안에서 끊고, 되돌릴 수 없는 Redis 표식만 커밋 뒤로 미룬다.
+     *
+     * <p>둘 다 커밋 뒤에 하면 영속성 컨텍스트가 닫혀 있어 더티 체킹이 <b>DB 에 닿지
+     * 않는다</b> — 표식만 남고 행은 활성으로 남아 있었다(2026-09-17 QA 실측:
+     * {@code user_sso_session} 4행 활성 유지). 여기서는 트랜잭션이 없어 둘 다 바로
+     * 도는데, <b>어느 것을 어느 메서드로 부르는지</b> 가 고정되면 그 분리가 지켜진다.
+     */
+    @Test
+    @DisplayName("세션은 행을 먼저 끊고 표식은 그 목록으로 남긴다 — 옛 revokeAll 로 뭉치지 않는다")
+    void revokesSessionRowsThenMarks() {
+        given(ssoSessionService.revokeAllRows(USER)).willReturn(List.of("sid-1", "sid-2"));
+
+        service.withdraw(USER, null);
+
+        verify(ssoSessionService).revokeAllRows(USER);
+        verify(ssoSessionService).markRevokedAll(List.of("sid-1", "sid-2"));
+        verify(ssoSessionService, never()).revokeAll(anyLong());
+    }
+
+    /**
+     * SSO 가 죽어도 <b>세션 표식은 남는다.</b>
+     *
+     * <p>예전엔 접근 해제가 먼저였고 그 실패가 그대로 튀어 표식까지 건너뛰었다 —
+     * 이미 끊은 행과 짝이 안 맞아 옛 토큰이 만료까지 살아 있었다.
+     */
+    @Test
+    @DisplayName("SSO 접근 해제가 터져도 세션 표식은 남고 해지는 실패로 보이지 않는다")
+    void ssoFailureDoesNotSkipSessionMarks() {
+        given(ssoSessionService.revokeAllRows(USER)).willReturn(List.of("sid-1"));
+        org.mockito.BDDMockito.willThrow(new IllegalStateException("SSO down"))
+                .given(ssoOAuth2Client).deactivateDeskAccess(anyLong());
+
+        service.withdraw(USER, null);
+
+        verify(ssoSessionService).markRevokedAll(List.of("sid-1"));
+    }
 }

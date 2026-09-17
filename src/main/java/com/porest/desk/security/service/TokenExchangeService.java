@@ -98,14 +98,22 @@ public class TokenExchangeService {
             throw new UnauthorizedException(DeskErrorCode.AUTH_EXCHANGE_FAILED);
         }
 
+        String userId = ssoClaims.getSubject();
+
         // services claim에서 desk 서비스 접근 권한 확인
         List<String> services = ssoClaims.get("services", List.class);
         if (services == null || !services.contains(DESK_SERVICE_CODE)) {
+            // 해지하면 SSO 쪽 desk 접근이 꺼져 services 에서 빠진다 — 그래서 해지자는
+            // 여기에 먼저 걸려 "권한 없음"(AUTH_003)으로 나갔고, 화면은 그걸 보통의 로그인
+            // 실패로 읽어 안내 화면(/withdrawn)에 닿지 못했다(2026-09-17 QA).
+            // 해지자인지는 여기서만 묻는다 — 정상 로그인에는 질의가 늘지 않는다.
+            if (isWithdrawn(userId)) {
+                log.info("해지한 계정의 로그인 시도. userId={}", userId);
+                throw new ForbiddenException(DeskErrorCode.USER_WITHDRAWN);
+            }
             log.warn("User does not have access to Desk service");
             throw new ForbiddenException(DeskErrorCode.AUTH_ACCESS_DENIED);
         }
-
-        String userId = ssoClaims.getSubject();
         String userName = ssoClaims.get("name", String.class);
         String userEmail = ssoClaims.get("email", String.class);
         Long ssoUserNo = ssoClaims.get("userNo", Long.class);
@@ -118,7 +126,8 @@ public class TokenExchangeService {
             // 해지한 계정인지 먼저 본다. 위 조회는 is_deleted='N' 만 보므로 해지자는 "없는
             // 사람" 으로 나오고, 그대로 두면 아래에서 새 행을 만들려다 UK 위반으로 500 이 난다.
             // 사용자에게는 "왜 안 되는지" 를 알려 줘야 한다.
-            if (userRepository.findByUserIdIncludingWithdrawn(userId).isPresent()) {
+            // SSO 접근 해제가 실패해 services 에 desk 가 남아 있는 경우도 여기서 막는다.
+            if (isWithdrawn(userId)) {
                 log.info("해지한 계정의 로그인 시도. userId={}", userId);
                 throw new ForbiddenException(DeskErrorCode.USER_WITHDRAWN);
             }
@@ -145,4 +154,17 @@ public class TokenExchangeService {
             user.getRowId()
         );
     }
+
+    /**
+     * desk 이용을 해지한 계정인가.
+     *
+     * <p>{@code findByUserId} 는 {@code is_deleted='N'} 만 보므로 해지자는 "없는 사람" 으로
+     * 나온다. 해지 여부는 이 조회로만 알 수 있다 — 정상 로그인 경로에서는 부르지 않는다.
+     */
+    private boolean isWithdrawn(String userId) {
+        return userRepository.findByUserIdIncludingWithdrawn(userId)
+                .filter(User::isWithdrawn)
+                .isPresent();
+    }
+
 }
