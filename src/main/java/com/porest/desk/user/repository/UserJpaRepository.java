@@ -14,6 +14,15 @@ public class UserJpaRepository implements UserRepository {
     private final EntityManager entityManager;
 
     @Override
+    public Optional<User> findByUserIdIncludingWithdrawn(String userId) {
+        return entityManager.createQuery(
+            "SELECT u FROM User u WHERE u.userId = :userId", User.class)
+            .setParameter("userId", userId)
+            .getResultStream()
+            .findFirst();
+    }
+
+    @Override
     public Optional<User> findById(Long rowId) {
         return entityManager.createQuery(
             "SELECT u FROM User u WHERE u.rowId = :rowId AND u.isDeleted = :isDeleted", User.class)

@@ -7,7 +7,10 @@ import com.porest.desk.security.resolver.LoginUserArgumentResolver;
 import com.porest.desk.support.security.WithLoginUser;
 import com.porest.desk.user.controller.dto.UserApiDto.PreferencesResponse;
 import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
+import com.porest.desk.user.service.dto.WithdrawalServiceDto.CheckResult;
+import com.porest.desk.user.service.ReauthTicketVerifier;
 import com.porest.desk.user.service.UserService;
+import com.porest.desk.user.service.WithdrawalService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,11 +25,15 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -52,6 +59,10 @@ class UserApiControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private UserService userService;
+    // 해지는 별도 테스트(WithdrawalServiceImplTest·아래 해지 매핑 케이스)에서 본다 — 여기서는 컨트롤러가
+    // 받는 협력자라 슬라이스를 띄우려면 자리가 있어야 한다.
+    @MockitoBean private WithdrawalService withdrawalService;
+    @MockitoBean private ReauthTicketVerifier reauthTicketVerifier;
     // porest-core GlobalExceptionHandler(@ControllerAdvice) 의존 — 슬라이스 로드용 mock.
     @MockitoBean private MessageResolver messageResolver;
 
@@ -232,5 +243,64 @@ class UserApiControllerTest {
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /users/me/withdrawal-check — 로그인 rowId 로 해지 가능 여부를 묻는다")
+    void withdrawalCheck() throws Exception {
+        given(withdrawalService.check(1L)).willReturn(new CheckResult(
+                List.of("SUBSCRIPTION"), LocalDateTime.of(2026, 10, 1, 0, 0), 2, 3, 1, 4));
+
+        mockMvc.perform(get("/api/v1/users/me/withdrawal-check"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.blocked[0]").value("SUBSCRIPTION"))
+                .andExpect(jsonPath("$.data.sharedCalendarsOwned").value(2))
+                .andExpect(jsonPath("$.data.dutchPayParticipations").value(4));
+
+        verify(withdrawalService).check(1L);
+    }
+
+    @Test
+    @DisplayName("DELETE /users/me — 재인증 티켓을 먼저 소모하고 rowId·사유로 해지 위임")
+    void withdraw() throws Exception {
+        String body = """
+                {"reason":"안 쓰게 됐어요"}
+                """;
+
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .header("X-Reauth-Token", "ticket-abc")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(reauthTicketVerifier).consume("ticket-abc", "withdraw");
+        verify(withdrawalService).withdraw(1L, "안 쓰게 됐어요");
+    }
+
+    @Test
+    @DisplayName("DELETE /users/me — 본문이 없어도 사유 없이 해지한다")
+    void withdraw_withoutBody() throws Exception {
+        mockMvc.perform(delete("/api/v1/users/me")
+                        .header("X-Reauth-Token", "ticket-abc"))
+                .andExpect(status().isOk());
+
+        verify(withdrawalService).withdraw(1L, null);
+    }
+
+    @Test
+    @DisplayName("DELETE /users/me — 티켓 검증이 막으면 해지 루틴까지 가지 않는다")
+    void withdraw_reauthRejected_doesNotTouchService() throws Exception {
+        org.mockito.BDDMockito.willThrow(
+                        new com.porest.core.exception.UnauthorizedException(
+                                com.porest.desk.common.exception.DeskErrorCode.REAUTH_REQUIRED))
+                .given(reauthTicketVerifier).consume(any(), eq("withdraw"));
+
+        mockMvc.perform(delete("/api/v1/users/me"))
+                .andExpect(status().isUnauthorized());
+
+        verify(withdrawalService, org.mockito.Mockito.never())
+                .withdraw(org.mockito.ArgumentMatchers.anyLong(), any());
     }
 }

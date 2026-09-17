@@ -4,6 +4,8 @@ import com.porest.core.type.YNType;
 import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.user.type.SupportedCurrency;
 import jakarta.persistence.Column;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -169,6 +171,14 @@ public class User extends AuditingFieldsWithIp {
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
 
+    /** desk 이용 해지 시각 [UTC] — 파기 배치가 "해지 후 N일" 을 세는 기준. */
+    @Column(name = "withdrawn_at")
+    private LocalDateTime withdrawnAt;
+
+    /** 해지 사유(사용자 입력, 선택). */
+    @Column(name = "withdraw_reason", length = 200)
+    private String withdrawReason;
+
     public static User createUser(Long ssoUserRowId, String userId, String userName, String userEmail) {
         return createUser(ssoUserRowId, userId, userName, userEmail, null);
     }
@@ -295,5 +305,26 @@ public class User extends AuditingFieldsWithIp {
 
     public void deleteUser() {
         this.isDeleted = YNType.Y;
+    }
+
+    /**
+     * desk 이용 해지 — 삭제 표식에 <b>언제·왜</b> 를 함께 남긴다.
+     *
+     * <p>{@code is_deleted} 만으로는 관리자 삭제와 본인 해지를 구분할 수 없고, 나중에 붙을
+     * 파기 배치가 "해지 후 N일" 을 셀 기준도 없다. 되돌리는 경로는 없다(설계 결정 9).
+     *
+     * @param reason 사용자가 적은 사유(선택, 200자 이하)
+     */
+    public void withdraw(String reason) {
+        this.isDeleted = YNType.Y;
+        // [UTC] — create_at·modify_at 이 DB utc_timestamp() 로 찍히므로 여기도 UTC 여야
+        // 파기 배치의 "해지 후 N일" 이 같은 자에서 세어진다. 맨 now() 는 Asia/Seoul 이다.
+        this.withdrawnAt = LocalDateTime.now(ZoneOffset.UTC);
+        this.withdrawReason = reason;
+    }
+
+    /** 이미 해지됐나 — 두 번 불러도 같은 결과여야 한다(멱등). */
+    public boolean isWithdrawn() {
+        return this.isDeleted == YNType.Y;
     }
 }

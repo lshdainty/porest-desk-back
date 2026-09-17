@@ -28,6 +28,13 @@ public class TodoQueryDslRepository implements TodoRepository {
     private static final QTodo todo = QTodo.todo;
 
     @Override
+    public List<Todo> findAllByAssignee(Long assigneeRowId) {
+        return queryFactory.selectFrom(todo)
+            .where(todo.assignee.rowId.eq(assigneeRowId), todo.isDeleted.eq(YNType.N))
+            .fetch();
+    }
+
+    @Override
     public Optional<Todo> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(todo)

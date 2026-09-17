@@ -85,6 +85,19 @@ public class DutchPayParticipant extends AuditingFieldsWithIp {
         return this.isPayer == YNType.Y;
     }
 
+    /**
+     * 탈퇴자 익명화 — 사용자 연결을 끊고 이름만 남긴다.
+     *
+     * <p>정산은 만든 사람 것이라 지우지 않는다. 남은 사람들은 "누가 얼마" 를 계속 봐야 하므로
+     * 금액·결제자 표식은 그대로 두고 <b>누구인지만</b> 지운다.
+     *
+     * @param anonymousName 표시할 이름 — 활성 이름 UNIQUE 에 걸리지 않게 호출부가 만들어 준다
+     */
+    public void anonymize(String anonymousName) {
+        this.user = null;
+        this.participantName = anonymousName;
+    }
+
     public void deleteParticipant() {
         this.isDeleted = YNType.Y;
     }

@@ -109,6 +109,15 @@ public class TodoJpaRepository implements TodoRepository {
     }
 
     @Override
+    public List<Todo> findAllByAssignee(Long assigneeRowId) {
+        return entityManager.createQuery(
+            "SELECT t FROM Todo t WHERE t.assignee.rowId = :assigneeRowId AND t.isDeleted = :isDeleted", Todo.class)
+            .setParameter("assigneeRowId", assigneeRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
     public List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate) {
         return entityManager.createQuery(
             "SELECT t FROM Todo t WHERE t.user.rowId = :userRowId AND t.isDeleted = :isDeleted AND t.dueDate >= :startDate AND t.dueDate <= :endDate ORDER BY t.dueDate ASC, t.sortOrder ASC", Todo.class)

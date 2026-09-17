@@ -12,6 +12,13 @@ import java.util.Optional;
 public interface TodoRepository {
     Optional<Todo> findById(Long rowId);
     List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type);
+
+    /**
+     * 이 사용자에게 <b>배정된</b> 할 일 — 남이 만들어 나에게 맡긴 것까지 포함한다.
+     *
+     * <p>해지 루틴이 배정만 떼어 낸다(할 일 자체는 만든 사람 것이라 남긴다).
+     */
+    List<Todo> findAllByAssignee(Long assigneeRowId);
     /**
      * 태그 개명에 맞춰 {@code todo.category} 를 따라 옮긴다 — 옛 이름을 쓰던 활성 할 일만.
      *

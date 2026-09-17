@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -165,4 +166,12 @@ public class UserApiDto {
                     @jakarta.validation.constraints.Size(max = 64, message = "카드 키가 너무 길어요")
                     String> hideCards
     ) {}
+
+    /** 해지 요청 — 사유는 선택이다. 적기 싫은 사람을 막지 않는다. */
+    @Getter
+    @NoArgsConstructor
+    public static class WithdrawReq {
+        @Size(max = 200)
+        private String reason;
+    }
 }

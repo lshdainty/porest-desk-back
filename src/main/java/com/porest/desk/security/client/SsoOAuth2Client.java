@@ -136,6 +136,37 @@ public class SsoOAuth2Client {
      *         사용자에게 알릴 수 있어야 한다. 조용히 삼키면 다른 기기가 살아 있는데
      *         끊었다고 믿게 된다
      */
+    /**
+     * SSO 에서 이 사용자의 <b>desk 접근만</b> 끊는다(계정은 그대로).
+     *
+     * <p>desk 가 자기 해지를 커밋한 <b>뒤</b> 부른다. 실패해도 해지를 되돌리지 않는다 —
+     * desk 쪽은 이미 막혔고(토큰 교환이 USER_021 로 거절), 이건 이중 안전장치다.
+     * 그래서 예외를 던지지 않고 로그만 남긴다.
+     *
+     * @param ssoUserRowId SSO 사용자 row ID
+     * @return 성공 여부 — 호출부가 감사 로그에 남길 수 있게 돌려준다
+     */
+    public boolean deactivateDeskAccess(Long ssoUserRowId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(issueServiceToken());
+
+        try {
+            ssoRestTemplate.exchange(
+                    "/api/v1/clients/desk/users/" + ssoUserRowId + "/deactivate",
+                    HttpMethod.POST,
+                    new HttpEntity<>(headers),
+                    Void.class);
+            log.info("SSO desk 접근 비활성 완료. ssoUserRowId={}", ssoUserRowId);
+            return true;
+        } catch (RestClientException e) {
+            // 여기서 던지면 이미 끝난 해지가 실패로 보인다.
+            log.error("SSO desk 접근 비활성 실패 — desk 쪽은 이미 막혔다. ssoUserRowId={}",
+                    ssoUserRowId, e);
+            return false;
+        }
+    }
+
     public void revokeAllSessions(String userId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

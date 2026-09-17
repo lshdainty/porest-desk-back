@@ -4,14 +4,19 @@ import com.porest.core.controller.ApiResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.user.controller.dto.UserApiDto;
+import com.porest.desk.user.service.ReauthTicketVerifier;
 import com.porest.desk.user.service.UserService;
+import com.porest.desk.user.service.WithdrawalService;
+import com.porest.desk.user.service.dto.WithdrawalServiceDto;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserApiController {
 
     private final UserService userService;
+    private final WithdrawalService withdrawalService;
+    private final ReauthTicketVerifier reauthTicketVerifier;
 
     @PatchMapping("/me/password")
     public ApiResponse<Void> changePassword(
@@ -40,6 +47,35 @@ public class UserApiController {
             @LoginUser UserPrincipal loginUser,
             @Valid @RequestBody UserApiDto.VerifyPasswordReq request) {
         userService.verifyPassword(loginUser.getUserId(), request.getPassword());
+        return ApiResponse.success(null);
+    }
+
+    /**
+     * 해지해도 되는지 · 해지하면 무엇이 사라지는지. 화면이 확인창에 그대로 쓴다.
+     *
+     * <p>막는 사유가 있으면 {@code blocked} 에 담기고, 구독이 막을 때는 언제부터 가능한지
+     * ({@code subscriptionPeriodEnd})를 같이 준다 — 그게 없으면 사용자가 기다릴지 말지 모른다.
+     */
+    @GetMapping("/me/withdrawal-check")
+    public ApiResponse<WithdrawalServiceDto.CheckResult> withdrawalCheck(
+            @LoginUser UserPrincipal loginUser) {
+        return ApiResponse.success(withdrawalService.check(loginUser.getRowId()));
+    }
+
+    /**
+     * desk 이용 해지. <b>되돌릴 수 없다.</b>
+     *
+     * <p>{@code X-Reauth-Token} 이 있어야 한다 — 방금 본인 확인이 끝났다는 SSO 서명 티켓이고,
+     * 여기서 한 번만 쓰인다. 두 번 불러도 같은 결과다(멱등).
+     */
+    @DeleteMapping("/me")
+    public ApiResponse<Void> withdraw(
+            @LoginUser UserPrincipal loginUser,
+            @RequestHeader(value = "X-Reauth-Token", required = false) String reauthToken,
+            @RequestBody(required = false) UserApiDto.WithdrawReq request) {
+        reauthTicketVerifier.consume(reauthToken, "withdraw");
+        withdrawalService.withdraw(loginUser.getRowId(),
+                request != null ? request.getReason() : null);
         return ApiResponse.success(null);
     }
 

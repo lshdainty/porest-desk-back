@@ -20,6 +20,15 @@ public class UserQueryDslRepository implements UserRepository {
     private static final QUser user = QUser.user;
 
     @Override
+    public Optional<User> findByUserIdIncludingWithdrawn(String userId) {
+        return Optional.ofNullable(
+            queryFactory.selectFrom(user)
+                .where(user.userId.eq(userId))
+                .fetchOne()
+        );
+    }
+
+    @Override
     public Optional<User> findById(Long rowId) {
         return Optional.ofNullable(
             queryFactory.selectFrom(user)
