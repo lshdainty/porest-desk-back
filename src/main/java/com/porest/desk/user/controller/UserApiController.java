@@ -104,7 +104,10 @@ public class UserApiController {
     public ApiResponse<Void> withdraw(
             @LoginUser UserPrincipal loginUser,
             @RequestHeader(value = "X-Reauth-Token", required = false) String reauthToken,
-            @RequestBody(required = false) UserApiDto.WithdrawReq request) {
+            // `@Valid` 가 없으면 `@Size(max = 200)` 이 아예 안 돈다 — 201자 사유가
+            // 그대로 내려가 컬럼 길이에서 500 이 났다(2026-09-17 QA). 본문이 없을
+            // 때는 검증도 건너뛴다.
+            @Valid @RequestBody(required = false) UserApiDto.WithdrawReq request) {
         // 티켓의 주인이 **지금 로그인한 사람과 같은지** 본다. 서명·용도·단회만 보고
         // 넘기면 남의 티켓으로 내 계정을 해지시킬 수 있다 — 검증기가 주인을 돌려주는데
         // 그 값을 버리고 있었다(2026-09-17 QA: r13 티켓 + r12 세션이 통과).
