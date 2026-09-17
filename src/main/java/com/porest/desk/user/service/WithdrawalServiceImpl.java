@@ -161,8 +161,10 @@ public class WithdrawalServiceImpl implements WithdrawalService {
             if (isOwnedShareable(c)) {
                 userCalendarService.deleteCalendar(c.rowId(), userRowId);
             } else if (c.myRole() != CalendarRole.OWNER) {
-                calendarMemberRepository.findByCalendarAndUser(c.rowId(), userRowId)
-                        .ifPresent(m -> userCalendarService.removeMember(c.rowId(), m.getRowId(), userRowId));
+                // 내가 스스로 나가는 길이다. `removeMember` 는 **소유자가 남을 내보내는**
+                // 길이라 `validateOwner` 를 지나고, 남의 캘린더 멤버인 사람은 거기서
+                // 403 을 맞아 해지가 통째로 롤백됐다(티켓만 쓰고 아무것도 안 됨).
+                userCalendarService.leaveCalendar(c.rowId(), userRowId);
             }
         }
     }

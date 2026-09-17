@@ -105,7 +105,10 @@ public class UserApiController {
             @LoginUser UserPrincipal loginUser,
             @RequestHeader(value = "X-Reauth-Token", required = false) String reauthToken,
             @RequestBody(required = false) UserApiDto.WithdrawReq request) {
-        reauthTicketVerifier.consume(reauthToken, "withdraw");
+        // 티켓의 주인이 **지금 로그인한 사람과 같은지** 본다. 서명·용도·단회만 보고
+        // 넘기면 남의 티켓으로 내 계정을 해지시킬 수 있다 — 검증기가 주인을 돌려주는데
+        // 그 값을 버리고 있었다(2026-09-17 QA: r13 티켓 + r12 세션이 통과).
+        reauthTicketVerifier.consumeFor(reauthToken, "withdraw", loginUser.getUserId());
         withdrawalService.withdraw(loginUser.getRowId(),
                 request != null ? request.getReason() : null);
         return ApiResponse.success(null);

@@ -134,18 +134,28 @@ class WithdrawalServiceImplTest {
         verify(userCalendarService, never()).deleteCalendar(1L, USER);
     }
 
+    /**
+     * 남의 캘린더에서는 <b>내가 스스로 나간다</b>.
+     *
+     * <p>예전엔 {@code removeMember} 를 불렀는데 그건 <b>소유자가 남을 내보내는</b> 길이라
+     * {@code validateOwner} 를 지난다 — 남의 캘린더 멤버인 사람은 거기서 403 을 맞아
+     * 해지가 통째로 롤백됐다(티켓만 태우고 아무것도 안 됨, 2026-09-17 QA 실측).
+     *
+     * <p>단위 테스트가 그걸 못 잡은 이유는 {@code removeMember} 자체를 mock 해서다 —
+     * 실제로 권한 검사를 지나지 않으니 늘 통과했다. 그래서 여기서는 <b>어느 길로 부르는지</b>
+     * 를 못박고, 권한 검사가 실제로 통과하는지는 아래 통합 테스트가 본다.
+     */
     @Test
-    @DisplayName("남의 캘린더에서는 내가 빠진다")
+    @DisplayName("남의 캘린더에서는 내가 스스로 나간다 — 소유자 권한이 필요한 길로 가지 않는다")
     void leavesOthersCalendars() {
         given(userCalendarService.getCalendars(USER)).willReturn(List.of(
                 calendar(9L, false, CalendarRole.READ)));
-        UserCalendarMember m = org.mockito.Mockito.mock(UserCalendarMember.class);
-        given(m.getRowId()).willReturn(77L);
-        given(calendarMemberRepository.findByCalendarAndUser(9L, USER)).willReturn(Optional.of(m));
 
         service.withdraw(USER, null);
 
-        verify(userCalendarService).removeMember(9L, 77L, USER);
+        verify(userCalendarService).leaveCalendar(9L, USER);
+        verify(userCalendarService, never())
+                .removeMember(anyLong(), anyLong(), anyLong());
         verify(userCalendarService, never()).deleteCalendar(anyLong(), anyLong());
     }
 

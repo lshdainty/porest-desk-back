@@ -250,13 +250,15 @@ class UserApiControllerTest {
     @Test
     @DisplayName("GET /users/me/withdrawal-check — 로그인 rowId 로 해지 가능 여부를 묻는다")
     void withdrawalCheck() throws Exception {
+        // 서버가 실제로 넣는 문자열이다(`WithdrawalServiceImpl.check`). 다른 값을 쓰면
+        // 웹·앱이 맞대는 상수와 어긋나도 이 테스트는 초록불이 난다.
         given(withdrawalService.check(1L)).willReturn(new CheckResult(
-                List.of("SUBSCRIPTION"), LocalDateTime.of(2026, 10, 1, 0, 0), 2, 3, 1, 4));
+                List.of("SUBSCRIPTION_ACTIVE"), LocalDateTime.of(2026, 10, 1, 0, 0), 2, 3, 1, 4));
 
         mockMvc.perform(get("/api/v1/users/me/withdrawal-check"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.blocked[0]").value("SUBSCRIPTION"))
+                .andExpect(jsonPath("$.data.blocked[0]").value("SUBSCRIPTION_ACTIVE"))
                 .andExpect(jsonPath("$.data.sharedCalendarsOwned").value(2))
                 .andExpect(jsonPath("$.data.dutchPayParticipations").value(4));
 
@@ -277,7 +279,7 @@ class UserApiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(reauthTicketVerifier).consume("ticket-abc", "withdraw");
+        verify(reauthTicketVerifier).consumeFor("ticket-abc", "withdraw", "user1");
         verify(withdrawalService).withdraw(1L, "안 쓰게 됐어요");
     }
 
@@ -297,7 +299,7 @@ class UserApiControllerTest {
         org.mockito.BDDMockito.willThrow(
                         new com.porest.core.exception.UnauthorizedException(
                                 com.porest.desk.common.exception.DeskErrorCode.REAUTH_REQUIRED))
-                .given(reauthTicketVerifier).consume(any(), eq("withdraw"));
+                .given(reauthTicketVerifier).consumeFor(any(), eq("withdraw"), any());
 
         mockMvc.perform(delete("/api/v1/users/me"))
                 .andExpect(status().isUnauthorized());
