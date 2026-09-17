@@ -5,6 +5,7 @@ import com.porest.desk.common.domain.AuditingFieldsWithIp;
 import com.porest.desk.user.type.SupportedCurrency;
 import jakarta.persistence.Column;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -316,7 +317,9 @@ public class User extends AuditingFieldsWithIp {
      */
     public void withdraw(String reason) {
         this.isDeleted = YNType.Y;
-        this.withdrawnAt = LocalDateTime.now();
+        // [UTC] — create_at·modify_at 이 DB utc_timestamp() 로 찍히므로 여기도 UTC 여야
+        // 파기 배치의 "해지 후 N일" 이 같은 자에서 세어진다. 맨 now() 는 Asia/Seoul 이다.
+        this.withdrawnAt = LocalDateTime.now(ZoneOffset.UTC);
         this.withdrawReason = reason;
     }
 
