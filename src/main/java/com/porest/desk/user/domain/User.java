@@ -323,6 +323,21 @@ public class User extends AuditingFieldsWithIp {
         this.withdrawReason = reason;
     }
 
+    /**
+     * <b>남에게 보일 이름.</b> 해지한 사람은 이름 대신 {@link #WITHDRAWN_DISPLAY_NAME}.
+     *
+     * <p>해지해도 남의 캘린더·정산에 남긴 흔적(일정·댓글·참가)은 그대로 둔다 — 그건
+     * 그 사람들의 기록이라 지울 것이 아니다. 대신 <b>이름은 더 보이지 않아야 한다.</b>
+     * 조회하는 자리마다 각자 판단하면 한 곳을 빠뜨리는 순간 거기서만 실명이 남으므로
+     * 엔티티가 한 번에 정한다.
+     */
+    public String displayName() {
+        return isWithdrawn() ? WITHDRAWN_DISPLAY_NAME : this.userName;
+    }
+
+    /** 해지한 사람을 남에게 보일 때 쓰는 이름. */
+    public static final String WITHDRAWN_DISPLAY_NAME = "탈퇴한 사용자";
+
     /** 이미 해지됐나 — 두 번 불러도 같은 결과여야 한다(멱등). */
     public boolean isWithdrawn() {
         return this.isDeleted == YNType.Y;

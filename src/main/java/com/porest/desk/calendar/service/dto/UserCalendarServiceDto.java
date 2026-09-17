@@ -41,7 +41,7 @@ public class UserCalendarServiceDto {
             return new CalendarInfo(
                 calendar.getRowId(),
                 calendar.getUser().getRowId(),
-                calendar.getUser().getUserName(),
+                calendar.getUser().displayName(),
                 calendar.getCalendarName(),
                 calendar.getColor(),
                 calendar.getSortOrder(),
@@ -75,7 +75,7 @@ public class UserCalendarServiceDto {
             return new MemberInfo(
                 member.getRowId(),
                 member.getUser().getRowId(),
-                member.getUser().getUserName(),
+                member.getUser().displayName(),
                 member.getUser().getUserEmail(),
                 member.getPermission(),
                 member.getJoinedAt()

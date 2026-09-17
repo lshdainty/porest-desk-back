@@ -33,7 +33,7 @@ public class EventCommentServiceDto {
                 comment.getRowId(),
                 comment.getEvent().getRowId(),
                 comment.getUser().getRowId(),
-                comment.getUser().getUserName(),
+                comment.getUser().displayName(),
                 comment.getParent() != null ? comment.getParent().getRowId() : null,
                 comment.getContent(),
                 comment.getCreateAt(),

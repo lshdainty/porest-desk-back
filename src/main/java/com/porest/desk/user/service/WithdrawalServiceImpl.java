@@ -51,7 +51,8 @@ import java.util.List;
 public class WithdrawalServiceImpl implements WithdrawalService {
 
     /** 남의 정산·캘린더에서 탈퇴자를 가리키는 이름. */
-    private static final String ANONYMOUS_NAME = "탈퇴한 사용자";
+    /** 화면 표시(`User.displayName()`)와 같은 이름을 쓴다 — 갈리면 한 사람이 두 이름으로 보인다. */
+    private static final String ANONYMOUS_NAME = User.WITHDRAWN_DISPLAY_NAME;
 
     private final UserRepository userRepository;
     private final UserSubscriptionRepository subscriptionRepository;
