@@ -4,6 +4,7 @@ import com.porest.core.controller.ApiResponse;
 import com.porest.desk.security.annotation.LoginUser;
 import com.porest.desk.security.principal.UserPrincipal;
 import com.porest.desk.user.controller.dto.UserApiDto;
+import com.porest.desk.user.service.ReauthProxyService;
 import com.porest.desk.user.service.ReauthTicketVerifier;
 import com.porest.desk.user.service.UserService;
 import com.porest.desk.user.service.WithdrawalService;
@@ -27,6 +28,7 @@ public class UserApiController {
 
     private final UserService userService;
     private final WithdrawalService withdrawalService;
+    private final ReauthProxyService reauthProxyService;
     private final ReauthTicketVerifier reauthTicketVerifier;
 
     @PatchMapping("/me/password")
@@ -60,6 +62,36 @@ public class UserApiController {
     public ApiResponse<WithdrawalServiceDto.CheckResult> withdrawalCheck(
             @LoginUser UserPrincipal loginUser) {
         return ApiResponse.success(withdrawalService.check(loginUser.getRowId()));
+    }
+
+    /**
+     * 본인 메일로 재인증 코드를 보낸다.
+     *
+     * <p>비밀번호가 없는 소셜 전용 계정을 위한 경로다. 브라우저·앱에는 SSO 액세스 토큰이
+     * 없어 SSO 를 직접 못 부르므로 여기서 서비스 토큰으로 대신 부른다.
+     */
+    @PostMapping("/me/reauth/email-code")
+    public ApiResponse<Void> sendReauthEmailCode(@LoginUser UserPrincipal loginUser) {
+        reauthProxyService.sendEmailCode(loginUser.getUserId());
+        return ApiResponse.success(null);
+    }
+
+    /** 코드 확인 → 재인증 티켓. 이 티켓을 {@code X-Reauth-Token} 으로 들고 해지를 부른다. */
+    @PostMapping("/me/reauth/email-code/verify")
+    public ApiResponse<UserApiDto.ReauthTicketResp> verifyReauthEmailCode(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody UserApiDto.ReauthEmailCodeReq request) {
+        return ApiResponse.success(new UserApiDto.ReauthTicketResp(
+                reauthProxyService.verifyEmailCode(loginUser.getUserId(), request.getCode())));
+    }
+
+    /** 비밀번호 확인 → 재인증 티켓. */
+    @PostMapping("/me/reauth/password")
+    public ApiResponse<UserApiDto.ReauthTicketResp> verifyReauthPassword(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody UserApiDto.ReauthPasswordReq request) {
+        return ApiResponse.success(new UserApiDto.ReauthTicketResp(
+                reauthProxyService.verifyPassword(loginUser.getUserId(), request.getPassword())));
     }
 
     /**

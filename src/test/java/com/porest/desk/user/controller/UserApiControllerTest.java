@@ -8,6 +8,7 @@ import com.porest.desk.support.security.WithLoginUser;
 import com.porest.desk.user.controller.dto.UserApiDto.PreferencesResponse;
 import com.porest.desk.user.controller.dto.UserApiDto.UpdatePreferencesReq;
 import com.porest.desk.user.service.dto.WithdrawalServiceDto.CheckResult;
+import com.porest.desk.user.service.ReauthProxyService;
 import com.porest.desk.user.service.ReauthTicketVerifier;
 import com.porest.desk.user.service.UserService;
 import com.porest.desk.user.service.WithdrawalService;
@@ -62,6 +63,7 @@ class UserApiControllerTest {
     // 해지는 별도 테스트(WithdrawalServiceImplTest·아래 해지 매핑 케이스)에서 본다 — 여기서는 컨트롤러가
     // 받는 협력자라 슬라이스를 띄우려면 자리가 있어야 한다.
     @MockitoBean private WithdrawalService withdrawalService;
+    @MockitoBean private ReauthProxyService reauthProxyService;
     @MockitoBean private ReauthTicketVerifier reauthTicketVerifier;
     // porest-core GlobalExceptionHandler(@ControllerAdvice) 의존 — 슬라이스 로드용 mock.
     @MockitoBean private MessageResolver messageResolver;
@@ -302,5 +304,69 @@ class UserApiControllerTest {
 
         verify(withdrawalService, org.mockito.Mockito.never())
                 .withdraw(org.mockito.ArgumentMatchers.anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("POST /users/me/reauth/email-code — 로그인 userId 로 코드 발송을 위임한다")
+    void sendReauthEmailCode() throws Exception {
+        mockMvc.perform(post("/api/v1/users/me/reauth/email-code"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(reauthProxyService).sendEmailCode("user1");
+    }
+
+    @Test
+    @DisplayName("POST /users/me/reauth/email-code/verify — 코드를 넘기고 티켓을 돌려준다")
+    void verifyReauthEmailCode() throws Exception {
+        given(reauthProxyService.verifyEmailCode("user1", "123456")).willReturn("ticket-abc");
+
+        mockMvc.perform(post("/api/v1/users/me/reauth/email-code/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reauthToken").value("ticket-abc"));
+    }
+
+    @Test
+    @DisplayName("POST /users/me/reauth/email-code/verify — 6자리가 아니면 400 이고 SSO 까지 안 간다")
+    void verifyReauthEmailCode_badCode_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/users/me/reauth/email-code/verify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"12345"}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(reauthProxyService, org.mockito.Mockito.never()).verifyEmailCode(any(), any());
+    }
+
+    @Test
+    @DisplayName("POST /users/me/reauth/password — 비밀번호를 넘기고 티켓을 돌려준다")
+    void verifyReauthPassword() throws Exception {
+        given(reauthProxyService.verifyPassword("user1", "pw")).willReturn("ticket-abc");
+
+        mockMvc.perform(post("/api/v1/users/me/reauth/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"password":"pw"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reauthToken").value("ticket-abc"));
+    }
+
+    @Test
+    @DisplayName("POST /users/me/reauth/password — 비밀번호가 비면 400")
+    void verifyReauthPassword_blank_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/users/me/reauth/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"password":"  "}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verify(reauthProxyService, org.mockito.Mockito.never()).verifyPassword(any(), any());
     }
 }
