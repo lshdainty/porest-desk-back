@@ -48,6 +48,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     USER_WITHDRAWN("USER_021", "error.user.withdrawn", HttpStatus.FORBIDDEN),
     REAUTH_REQUIRED("AUTH_020", "error.auth.reauth.required", HttpStatus.UNAUTHORIZED),
     REAUTH_FAILED("AUTH_021", "error.auth.reauth.failed", HttpStatus.BAD_REQUEST),
+    // 본인 확인을 여러 번 틀려 잠긴 것 — SSO 가 429 로 알려 주면 그대로 넘긴다.
+    // 오답(AUTH_021, 400)과 같은 코드로 내보내면 화면이 "틀렸어요, 다시" 로 읽어,
+    // 기다려야 풀린다는 것을 전하지 못한다(QA 22차 #8).
+    REAUTH_LOCKED("AUTH_022", "error.auth.reauth.locked", HttpStatus.TOO_MANY_REQUESTS),
 
     // SSO
     SSO_SERVICE_ERROR("SSO_001", "error.sso.service.error", HttpStatus.BAD_GATEWAY),
