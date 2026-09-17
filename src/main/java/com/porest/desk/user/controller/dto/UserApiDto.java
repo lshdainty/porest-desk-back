@@ -174,4 +174,27 @@ public class UserApiDto {
         @Size(max = 200)
         private String reason;
     }
+
+    /** 메일로 받은 재인증 코드. 자릿수는 SSO 가 정한 6자리다. */
+    @Getter
+    @NoArgsConstructor
+    public static class ReauthEmailCodeReq {
+        @NotBlank
+        @Pattern(regexp = "\\d{6}", message = "숫자 6자리를 입력해 주세요")
+        private String code;
+    }
+
+    /** 재인증용 비밀번호. 정책은 SSO 소유라 여기서는 비었는지만 본다. */
+    @Getter
+    @NoArgsConstructor
+    public static class ReauthPasswordReq {
+        @NotBlank
+        private String password;
+    }
+
+    /**
+     * 재인증 티켓. 10분·단회짜리라 저장하지 말고 곧장 다음 호출의
+     * {@code X-Reauth-Token} 헤더에 실어야 한다.
+     */
+    public record ReauthTicketResp(String reauthToken) {}
 }

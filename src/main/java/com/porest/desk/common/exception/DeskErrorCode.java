@@ -47,6 +47,7 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     WITHDRAW_BLOCKED_SUBSCRIPTION("USER_020", "error.user.withdraw.blocked.subscription", HttpStatus.CONFLICT),
     USER_WITHDRAWN("USER_021", "error.user.withdrawn", HttpStatus.FORBIDDEN),
     REAUTH_REQUIRED("AUTH_020", "error.auth.reauth.required", HttpStatus.UNAUTHORIZED),
+    REAUTH_FAILED("AUTH_021", "error.auth.reauth.failed", HttpStatus.BAD_REQUEST),
 
     // SSO
     SSO_SERVICE_ERROR("SSO_001", "error.sso.service.error", HttpStatus.BAD_GATEWAY),
