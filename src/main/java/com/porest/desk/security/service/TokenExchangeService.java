@@ -115,6 +115,13 @@ public class TokenExchangeService {
 
         User user = userRepository.findByUserId(userId).orElse(null);
         if (user == null) {
+            // 해지한 계정인지 먼저 본다. 위 조회는 is_deleted='N' 만 보므로 해지자는 "없는
+            // 사람" 으로 나오고, 그대로 두면 아래에서 새 행을 만들려다 UK 위반으로 500 이 난다.
+            // 사용자에게는 "왜 안 되는지" 를 알려 줘야 한다.
+            if (userRepository.findByUserIdIncludingWithdrawn(userId).isPresent()) {
+                log.info("해지한 계정의 로그인 시도. userId={}", userId);
+                throw new ForbiddenException(DeskErrorCode.USER_WITHDRAWN);
+            }
             user = userRepository.save(User.createUser(ssoUserNo, userId, userName, userEmail, timezone));
             // 신규 사용자: 기본 캘린더를 가입(최초 프로비저닝) 시점에 즉시 생성한다.
             // 지연 생성(getOrCreateDefault on first event)에 의존하면 신규 사용자에게

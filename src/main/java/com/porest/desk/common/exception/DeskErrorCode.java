@@ -43,6 +43,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     USER_ALREADY_EXISTS("USER_002", "error.duplicate.user", HttpStatus.CONFLICT),
     USER_PASSWORD_CHANGE_FAILED("USER_003", "error.user.password.change.failed", HttpStatus.BAD_REQUEST),
     USER_PASSWORD_VERIFY_FAILED("USER_004", "error.user.password.verify.failed", HttpStatus.BAD_REQUEST),
+    // desk 이용 해지 — 설계서 A 흐름.
+    WITHDRAW_BLOCKED_SUBSCRIPTION("USER_020", "error.user.withdraw.blocked.subscription", HttpStatus.CONFLICT),
+    USER_WITHDRAWN("USER_021", "error.user.withdrawn", HttpStatus.FORBIDDEN),
+    REAUTH_REQUIRED("AUTH_020", "error.auth.reauth.required", HttpStatus.UNAUTHORIZED),
 
     // SSO
     SSO_SERVICE_ERROR("SSO_001", "error.sso.service.error", HttpStatus.BAD_GATEWAY),

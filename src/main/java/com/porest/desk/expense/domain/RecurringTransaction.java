@@ -243,6 +243,14 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         }
     }
 
+    /**
+     * 비활성으로 <b>내린다</b>(멱등). {@link #toggleActive()} 는 이미 꺼진 규칙을 되살리므로
+     * "전부 끄기" 에 쓰면 안 된다 — 해지 루틴이 그걸 쓰면 꺼 둔 규칙이 되살아난다.
+     */
+    public void deactivate() {
+        this.isActive = YNType.N;
+    }
+
     public void toggleActive() {
         this.isActive = this.isActive == YNType.Y ? YNType.N : YNType.Y;
     }

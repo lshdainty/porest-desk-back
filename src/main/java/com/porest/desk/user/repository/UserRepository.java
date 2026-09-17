@@ -9,6 +9,14 @@ public interface UserRepository {
     Optional<User> findByUserId(String userId);
 
     /**
+     * 삭제 표식까지 <b>포함해</b> 찾는다 — 해지한 계정을 알아보려면 필요하다.
+     *
+     * <p>{@link #findByUserId}는 {@code is_deleted='N'} 만 보므로 해지한 사용자는 "없는 사람"
+     * 이 된다. 그대로 두면 토큰 교환이 새 행을 만들려다 {@code UK_users_user_id} 에 부딪힌다.
+     */
+    Optional<User> findByUserIdIncludingWithdrawn(String userId);
+
+    /**
      * SSO 사용자 번호로 조회.
      *
      * <p>SSO 가 내리는 이벤트는 자기 {@code users.row_id} 만 들고 온다 — 그걸 desk 의 PK 로

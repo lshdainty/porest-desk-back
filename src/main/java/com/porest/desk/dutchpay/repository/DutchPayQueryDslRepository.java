@@ -2,7 +2,9 @@ package com.porest.desk.dutchpay.repository;
 
 import com.porest.core.type.YNType;
 import com.porest.desk.dutchpay.domain.DutchPay;
+import com.porest.desk.dutchpay.domain.DutchPayParticipant;
 import com.porest.desk.dutchpay.domain.QDutchPay;
+import com.porest.desk.dutchpay.domain.QDutchPayParticipant;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ public class DutchPayQueryDslRepository implements DutchPayRepository {
     private final JPAQueryFactory queryFactory;
     private final EntityManager entityManager;
     private static final QDutchPay dutchPay = QDutchPay.dutchPay;
+    private static final QDutchPayParticipant participant = QDutchPayParticipant.dutchPayParticipant;
 
     @Override
     public Optional<DutchPay> findById(Long rowId) {
@@ -28,6 +31,13 @@ public class DutchPayQueryDslRepository implements DutchPayRepository {
                 .where(dutchPay.rowId.eq(rowId), dutchPay.isDeleted.eq(YNType.N))
                 .fetchOne()
         );
+    }
+
+    @Override
+    public List<DutchPayParticipant> findParticipantsByUser(Long userRowId) {
+        return queryFactory.selectFrom(participant)
+            .where(participant.user.rowId.eq(userRowId), participant.isDeleted.eq(YNType.N))
+            .fetch();
     }
 
     @Override
