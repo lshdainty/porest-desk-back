@@ -114,13 +114,13 @@ class AssetHoldingUniquenessTest {
     private AssetServiceDto.CreateAssetCommand createCmd(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.CreateAssetCommand(
             USER_ID, "토스증권", AssetType.INVESTMENT, 0L, null, "KRW",
-            null, null, null, null, 0, YNType.Y, null, null, null, null, holdings);
+            null, null, null, null, 0, YNType.Y, YNType.N, null, null, null, null, holdings);
     }
 
     private AssetServiceDto.UpdateAssetCommand updateCmd(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
             Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
-            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
     }
 
     private static AssetServiceDto.HoldingCommand linked(Long rowId, String symbol, String qty) {

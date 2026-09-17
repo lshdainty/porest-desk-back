@@ -103,13 +103,13 @@ class AssetHoldingServiceTest {
         return new AssetServiceDto.CreateAssetCommand(
             USER_ID, "토스증권", type, 0L, null, "KRW",
             null, null, null, null, 0,
-            YNType.Y, null, null, null, null, holdings);
+            YNType.Y, YNType.N, null, null, null, null, holdings);
     }
 
     private AssetServiceDto.UpdateAssetCommand updateCommand(List<AssetServiceDto.HoldingCommand> holdings) {
         return new AssetServiceDto.UpdateAssetCommand(
             Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
-            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
     }
 
     private static AssetServiceDto.HoldingCommand linkedHolding(String symbol, Long qty) {

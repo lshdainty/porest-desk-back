@@ -101,7 +101,7 @@ class InvestmentCashPreservedTest {
         return new AssetServiceDto.UpdateAssetCommand(
             Patch.set("주식계좌"), Patch.set(AssetType.INVESTMENT), Patch.set(balance), Patch.absent(), Patch.set("KRW"), Patch.absent(),
             Patch.absent(), Patch.set("삼성증권"), Patch.absent(), Patch.set(YNType.Y),
-            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), holdings);
     }
 
     @Test

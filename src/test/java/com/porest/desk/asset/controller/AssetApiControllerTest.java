@@ -78,6 +78,7 @@ class AssetApiControllerTest {
                 100L, 1L, "주거래", AssetType.BANK_ACCOUNT, 50_000L, 50_000L, 0L, "KRW",
                 java.math.BigDecimal.ONE,        // exchangeRate
                 null, null, null, 0, YNType.Y,   // color · institution · memo · sortOrder · isIncludedInTotal
+                YNType.N,                        // isAmountHidden
                 null, null, null, null,          // cardCatalog · creditLimit · paymentDay · paymentAssetRowId
                 null, null, null,                // marketCode · symbol · quantity
                 List.of(), null, null, null);    // holdings · createAt · modifyAt · monthlyUsedAmount
