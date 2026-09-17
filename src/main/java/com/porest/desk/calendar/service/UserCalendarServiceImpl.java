@@ -216,6 +216,20 @@ public class UserCalendarServiceImpl implements UserCalendarService {
 
     @Override
     @Transactional
+    public void leaveCalendar(Long calendarId, Long userRowId) {
+        // 소유자 권한을 보지 않는다 — 나가는 사람이 자기 자신이라 확인할 것이 "그 멤버가
+        // 나인가" 뿐이다. 조회 자체를 (캘린더, 나)로 하므로 남의 행에 닿을 수가 없다.
+        memberRepository.findByCalendarAndUser(calendarId, userRowId).ifPresent(member -> {
+            if (member.getPermission() == CalendarRole.OWNER) {
+                throw new InvalidValueException(DeskErrorCode.USER_CALENDAR_OWNER_REMOVE);
+            }
+            member.removeMember();
+            log.info("캘린더 나가기 완료: calendarId={}, userRowId={}", calendarId, userRowId);
+        });
+    }
+
+    @Override
+    @Transactional
     public void changeMemberRole(Long calendarId, Long memberId, CalendarRole permission, Long requestUserRowId) {
         membershipValidator.validateOwner(calendarId, requestUserRowId);
 
