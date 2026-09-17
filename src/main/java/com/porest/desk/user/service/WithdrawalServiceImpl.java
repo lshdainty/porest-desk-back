@@ -208,16 +208,26 @@ public class WithdrawalServiceImpl implements WithdrawalService {
      */
     private void afterCommit(User user) {
         Long ssoUserRowId = user.getSsoUserRowId();
-        Long userRowId = user.getRowId();
         String userId = user.getUserId();
+        // 세션 **행**은 지금(트랜잭션 안에서) 끊는다. 커밋 뒤에는 영속성 컨텍스트가 닫혀
+        // 있어 더티 체킹이 DB 에 닿지 않는다 — 예전엔 Redis 표식만 남고 행은 활성으로
+        // 남아 있었다(2026-09-17 QA). 되돌릴 수 없는 Redis 표식만 커밋 뒤로 미룬다.
+        List<String> revokedSessionIds = ssoSessionService.revokeAllRows(user.getRowId());
+
         Runnable work = () -> {
-            if (ssoUserRowId != null) {
-                ssoOAuth2Client.deactivateDeskAccess(ssoUserRowId);
+            // 둘을 각자 감싼다 — 앞이 터져서 뒤가 안 도는 일이 없어야 한다.
+            // 특히 표식은 이미 끊은 행과 짝이라, 안 남기면 옛 토큰이 만료까지 살아 있다.
+            try {
+                if (ssoUserRowId != null) {
+                    ssoOAuth2Client.deactivateDeskAccess(ssoUserRowId);
+                }
+            } catch (Exception e) {
+                log.error("해지 후 SSO 접근 해제 실패 — desk 쪽은 이미 막혔다. userId={}", userId, e);
             }
             try {
-                ssoSessionService.revokeAll(userRowId);
+                ssoSessionService.markRevokedAll(revokedSessionIds);
             } catch (Exception e) {
-                log.error("해지 후 세션 폐기 실패 — 계정은 이미 막혔다. userId={}", userId, e);
+                log.error("해지 후 세션 폐기 표식 실패 — 행은 이미 끊겼다. userId={}", userId, e);
             }
         };
 

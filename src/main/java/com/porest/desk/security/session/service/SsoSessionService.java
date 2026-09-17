@@ -245,6 +245,34 @@ public class SsoSessionService {
     }
 
     /**
+     * 해지 전용 — 세션 <b>행만</b> 끊고 표식 대상을 돌려준다.
+     *
+     * <p>{@link #revokeAll} 과 가르는 이유는 <b>두 부분이 서로 다른 시점에 일어나야</b>
+     * 하기 때문이다. 해지는 한 트랜잭션이고, 되돌릴 수 없는 바깥 호출(Redis 표식)은 커밋
+     * 뒤에 해야 한다 — 그런데 커밋 뒤에는 영속성 컨텍스트가 닫혀 있어 {@code revoke()}
+     * 의 더티 체킹이 <b>DB 에 닿지 않는다.</b> 실제로 Redis 표식만 남고 행은 활성으로
+     * 남아 있었다(2026-09-17 QA 실측: user_sso_session 4행 활성 유지).
+     *
+     * <p>그래서 나눈다 — <b>행은 여기서(트랜잭션 안), 표식은 돌려받은 목록으로 커밋 뒤에.</b>
+     * 부르는 쪽이 {@link #markRevokedAll} 을 반드시 이어 불러야 한다. 표식 없이 행만 끊으면
+     * 이미 발급된 access token 은 그대로 통과한다({@link #kill} 설명 참고).
+     *
+     * @return 표식을 남겨야 할 세션 ID 들
+     */
+    @Transactional
+    public List<String> revokeAllRows(Long userRowId) {
+        List<UserSsoSession> alive =
+                sessionRepository.findAllByUserRowIdAndIsDeleted(userRowId, YNType.N);
+        alive.forEach(UserSsoSession::revoke);
+        return alive.stream().map(UserSsoSession::getSessionId).toList();
+    }
+
+    /** {@link #revokeAllRows} 가 돌려준 목록에 폐기 표식을 남긴다 — 커밋 뒤에 부른다. */
+    public void markRevokedAll(List<String> sessionIds) {
+        sessionIds.forEach(this::markRevoked);
+    }
+
+    /**
      * 새 refresh 를 받을 때마다 만료를 미룬다(sliding).
      *
      * <p>SSO 가 rotation 으로 매번 수명을 새로 주므로, 계속 쓰는 사용자는 로그아웃되지 않는다.

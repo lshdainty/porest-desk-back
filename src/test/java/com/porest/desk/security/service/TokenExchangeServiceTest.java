@@ -51,6 +51,20 @@ class TokenExchangeServiceTest {
         return c;
     }
 
+    /** desk 접근이 꺼진 토큰 — 해지하면 SSO 가 services 에서 desk 를 뺀다. */
+    private Claims noDeskClaims() {
+        Claims c = mock(Claims.class);
+        given(c.get("services", List.class)).willReturn(List.of("hr"));
+        given(c.getSubject()).willReturn("tester");
+        return c;
+    }
+
+    private User withdrawn() {
+        User u = user(7L);
+        u.withdraw(null);
+        return u;
+    }
+
     private User user(long rowId) {
         User u = User.createUser(100L, "tester", "테스터", "tester@porest.com");
         ReflectionTestUtils.setField(u, "rowId", rowId);
@@ -107,5 +121,55 @@ class TokenExchangeServiceTest {
         verify(ssoOAuth2Client).exchangeCodeForToken("authcode", "verifier", "https://desk/auth/callback");
         // 받은 refresh 는 세션에 남아야 한다 — 이게 빠지면 만료 후 조용히 재발급할 방법이 없다
         verify(ssoSessionService).create(7L, "sid", "refresh", "JUnit/1.0");
+    }
+
+    /**
+     * 해지한 계정으로 다시 들어오려 할 때 <b>무엇으로 막히는가.</b>
+     *
+     * <p>해지하면 SSO 쪽 desk 접근이 꺼져 {@code services} 에서 desk 가 빠진다. 그래서
+     * 해지자는 권한 검사에 먼저 걸려 <b>AUTH_003(권한 없음)</b> 으로 나갔고, 화면은 그걸
+     * 보통의 로그인 실패로 읽어 안내 화면에 닿지 못했다 — 사용자는 왜 안 되는지 모른 채
+     * 계속 눌러 보게 된다(2026-09-17 QA).
+     */
+    @Test
+    @DisplayName("해지자는 '권한 없음' 이 아니라 '해지한 계정' 으로 막힌다 — 화면이 이유를 말할 수 있게")
+    void withdrawnUserGetsWithdrawnCode() {
+        // claims 를 먼저 만든다 — `given(...)` 안에서 또 다른 mock 을 스텁하면
+        // Mockito 가 중첩 스터빙으로 보고 죽는다.
+        Claims claims = noDeskClaims();
+        User gone = withdrawn();
+        given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
+        given(userRepository.findByUserIdIncludingWithdrawn("tester")).willReturn(Optional.of(gone));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sut.exchangeToken("sso", "sid"))
+                .isInstanceOf(com.porest.core.exception.ForbiddenException.class)
+                .hasMessage(com.porest.desk.common.exception.DeskErrorCode.USER_WITHDRAWN.getMessageKey());
+    }
+
+    @Test
+    @DisplayName("해지자가 아니면서 desk 권한이 없으면 종전대로 '권한 없음' 이다")
+    void nonWithdrawnWithoutDeskStaysAccessDenied() {
+        Claims claims = noDeskClaims();
+        given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
+        given(userRepository.findByUserIdIncludingWithdrawn("tester")).willReturn(Optional.empty());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sut.exchangeToken("sso", "sid"))
+                .isInstanceOf(com.porest.core.exception.ForbiddenException.class)
+                .hasMessage(
+                        com.porest.desk.common.exception.DeskErrorCode.AUTH_ACCESS_DENIED.getMessageKey());
+    }
+
+    @Test
+    @DisplayName("정상 로그인은 해지 여부를 묻지 않는다 — 질의를 늘리지 않는다")
+    void happyPathDoesNotQueryWithdrawn() {
+        Claims claims = deskClaims();
+        given(jwtTokenProvider.validateSsoToken("sso")).willReturn(claims);
+        given(userRepository.findByUserId("tester")).willReturn(Optional.of(user(7L)));
+        given(jwtTokenProvider.createAccessToken(anyString(), anyString(), anyString(), anyLong(), anyString()))
+                .willReturn("access");
+
+        sut.exchangeToken("sso", "sid");
+
+        verify(userRepository, never()).findByUserIdIncludingWithdrawn(anyString());
     }
 }

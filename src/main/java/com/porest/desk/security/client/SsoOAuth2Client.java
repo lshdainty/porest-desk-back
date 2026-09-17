@@ -147,11 +147,14 @@ public class SsoOAuth2Client {
      * @return 성공 여부 — 호출부가 감사 로그에 남길 수 있게 돌려준다
      */
     public boolean deactivateDeskAccess(Long ssoUserRowId) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(issueServiceToken());
-
         try {
+            // 토큰 발급도 try 안이다 — SSO 가 죽으면 여기서 먼저 터지는데, 밖에 두면
+            // 그 예외가 커밋 뒤 콜백을 뚫고 나가 **이미 끝난 해지가 실패 응답으로** 나갔다
+            // (2026-09-17 QA). 이 메서드의 약속은 "던지지 않는다" 다.
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBearerAuth(issueServiceToken());
+
             ssoRestTemplate.exchange(
                     "/api/v1/clients/desk/users/" + ssoUserRowId + "/deactivate",
                     HttpMethod.POST,
@@ -159,8 +162,8 @@ public class SsoOAuth2Client {
                     Void.class);
             log.info("SSO desk 접근 비활성 완료. ssoUserRowId={}", ssoUserRowId);
             return true;
-        } catch (RestClientException e) {
-            // 여기서 던지면 이미 끝난 해지가 실패로 보인다.
+        } catch (Exception e) {
+            // RestClientException 만 잡으면 토큰 발급 실패(인증 오류 등)가 새어 나간다.
             log.error("SSO desk 접근 비활성 실패 — desk 쪽은 이미 막혔다. ssoUserRowId={}",
                     ssoUserRowId, e);
             return false;
