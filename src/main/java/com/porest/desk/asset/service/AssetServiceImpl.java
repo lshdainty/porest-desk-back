@@ -133,6 +133,8 @@ public class AssetServiceImpl implements AssetService {
             command.paymentDay(),
             paymentAsset
         );
+        // 인자로 안 받는 칸 — 15개짜리 생성자를 더 늘리지 않으려는 것이다(Asset 주석).
+        asset.updateAmountHidden(command.isAmountHidden());
 
         assetRepository.save(asset);
         List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, holdingCommands);
@@ -286,6 +288,7 @@ public class AssetServiceImpl implements AssetService {
             command.paymentDay().orKeep(asset.getPaymentDay()),
             paymentAsset
         );
+        asset.updateAmountHidden(command.isAmountHidden().orKeep(asset.getIsAmountHidden()));
 
         // 평가금액(HOLDING)과 예수금(CASH)은 서로 다른 칸이라 각각 반영한다.
         // 한쪽 가지가 다른 쪽을 막으면 전량 매도처럼 두 칸이 동시에 바뀌는 상황에서 입력이 버려진다.

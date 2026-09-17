@@ -88,13 +88,13 @@ class AssetBalanceInputSignTest {
         return new AssetServiceDto.CreateAssetCommand(
             USER_ID, "테스트자산", type, balance, isOverdraft, "KRW",
             null, null, null, null, 0,
-            YNType.Y, null, null, null, null, null);
+            YNType.Y, YNType.N, null, null, null, null, null);
     }
 
     private AssetServiceDto.UpdateAssetCommand updateCommand(Long balance, Boolean isOverdraft) {
         return new AssetServiceDto.UpdateAssetCommand(
             Patch.absent(), Patch.absent(), Patch.set(balance), Patch.set(isOverdraft), Patch.absent(), Patch.absent(),
-            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
     }
 
     /** 생성 경로 — 저장된 자산(initial_balance) 을 잡아 부호를 본다. */

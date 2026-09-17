@@ -495,6 +495,44 @@ class PutPartialUpdateTest {
             assertThat(after.get("balance")).isEqualTo(70000);
         }
 
+        /**
+         * 금액 숨김은 <b>자산의 속성</b>이라 PUT 의 부분 갱신 규칙을 그대로 받는다.
+         *
+         * <p>화면 카드 가리기와 별개 축이고, 여기서 잠그는 것은 "키를 안 보내면 유지" 다 —
+         * 자산 이름만 고쳤는데 가려 둔 게 풀리면 사용자는 그걸 눈치채지 못한다.
+         */
+        @Test
+        @DisplayName("④ 금액 숨김 — 키가 없으면 유지, 보내면 바뀐다")
+        void amountHiddenFollowsPatchRules() {
+            Long id = create();
+            assertThat(read(id).get("isAmountHidden")).isEqualTo("N");
+
+            // 켠다.
+            assertThat(data(put("/asset/" + id, """
+                    {"isAmountHidden":"Y"}""")).get("isAmountHidden")).isEqualTo("Y");
+
+            // 이름만 고친다 — 가려 둔 것이 풀리면 안 된다.
+            Map<String, Object> after = data(put("/asset/" + id, """
+                    {"assetName":"딴이름"}"""));
+            assertThat(after.get("assetName")).isEqualTo("딴이름");
+            assertThat(after.get("isAmountHidden")).isEqualTo("Y");
+            assertThat(read(id).get("isAmountHidden")).isEqualTo("Y");
+
+            // 끈다.
+            assertThat(data(put("/asset/" + id, """
+                    {"isAmountHidden":"N"}""")).get("isAmountHidden")).isEqualTo("N");
+        }
+
+        @Test
+        @DisplayName("⑤ 금액 숨김의 명시적 null 은 400 — NOT NULL 칸이라 '지운다' 가 성립하지 않는다")
+        void amountHiddenNullRejected() {
+            Long id = create();
+
+            assertRejected("asset/isAmountHidden=null", put("/asset/" + id, """
+                    {"isAmountHidden":null}"""));
+            assertThat(read(id).get("isAmountHidden")).isEqualTo("N");
+        }
+
         @Test
         @DisplayName("필수 칸(assetName)의 명시적 null 은 400")
         void requiredAssetNameNullRejected() {

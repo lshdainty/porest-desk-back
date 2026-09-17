@@ -114,7 +114,11 @@ public class ExportDataService {
     }
 
     private ExportTable assetTable(Long userRowId, boolean mask) {
-        List<String> headers = List.of("자산명", "유형", "잔액", "통화", "기관", "메모", "총자산 포함");
+        // 내보내기는 화면 가리기를 따르지 않는다 — 본인이 받아 가는 자기 자료라
+        // 금액을 그대로 싣고, 가릴지는 `mask` 옵션이 따로 정한다. "금액 숨김" 은
+        // **그 자산을 화면에서 가려 뒀다는 사실**을 알려 주는 칸이다.
+        List<String> headers =
+                List.of("자산명", "유형", "잔액", "통화", "기관", "메모", "총자산 포함", "금액 숨김");
         List<List<String>> rows = new ArrayList<>();
         assetRepository.findByUser(userRowId).forEach(a -> {
             AssetServiceDto.AssetInfo i = AssetServiceDto.AssetInfo.from(a);
@@ -125,7 +129,8 @@ public class ExportDataService {
                 cell(i.currency()),
                 mask ? MASKED : cell(i.institution()),
                 cell(i.memo()),
-                yn(i.isIncludedInTotal())
+                yn(i.isIncludedInTotal()),
+                yn(i.isAmountHidden())
             ));
         });
         return new ExportTable(ExportType.ASSET, headers, rows);

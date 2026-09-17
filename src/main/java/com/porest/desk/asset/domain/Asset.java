@@ -85,6 +85,35 @@ public class Asset extends AuditingFieldsWithIp {
     @Column(name = "is_included_in_total", nullable = false, length = 1)
     private YNType isIncludedInTotal;
 
+    /**
+     * 이 자산의 <b>금액만</b> 가린다.
+     *
+     * <p>화면 카드 가리기({@code users.hide_cards})와 <b>별개 축</b>이다. 그쪽은 "자산
+     * 화면의 계좌 카드를 통째로 가린다" 는 사용자 설정이고, 이건 "이 자산은 늘 가린다" 는
+     * 자산의 속성이다. 둘은 <b>합집합</b>으로 판정한다 — 하나라도 켜져 있으면 가려진다.
+     *
+     * <p><b>합계는 이 값을 보지 않는다.</b> 그룹 합계·구성·순자산·추이는 이 표식과 무관하고,
+     * 역산이 걱정되면 화면 카드 가리기로 합계 카드를 함께 켠다(사용자 결정 2026-09-17).
+     * 그래서 이 컬럼은 어떤 집계 쿼리에도 들어가지 않는다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_amount_hidden", nullable = false, length = 1)
+    private YNType isAmountHidden;
+
+    /**
+     * 이 자산의 금액을 가릴지 정한다.
+     *
+     * <p>{@link #createAsset}·{@link #updateAsset} 의 인자로 받지 않는 이유 — 그 둘은
+     * 이미 인자가 열다섯 개다. 하나를 더 끼우면 <b>기존 호출부 마흔 곳의 인자 순서가
+     * 밀린다.</b> 순서로 맞추는 자리에 칸을 더하는 것은 그 자체가 위험이라, 뜻이 뚜렷한
+     * 이 칸은 자기 이름으로 받는다.
+     *
+     * <p>{@code null} 은 "안 바꾼다" 다 — NOT NULL 칸이라 지운다는 뜻이 성립하지 않는다.
+     */
+    public void updateAmountHidden(YNType isAmountHidden) {
+        this.isAmountHidden = isAmountHidden != null ? isAmountHidden : this.isAmountHidden;
+    }
+
     @Column(name = "credit_limit")
     private Long creditLimit;
 
@@ -136,6 +165,9 @@ public class Asset extends AuditingFieldsWithIp {
         asset.memo = memo;
         asset.sortOrder = sortOrder;
         asset.isIncludedInTotal = isIncludedInTotal != null ? isIncludedInTotal : YNType.Y;
+        // 새 자산은 가리지 않는다 — 만들자마자 금액이 안 보이면 잘못 만든 줄 안다.
+        // 켠 채로 만들고 싶으면 서비스가 이어서 `updateAmountHidden` 을 부른다.
+        asset.isAmountHidden = YNType.N;
         asset.creditLimit = creditLimit;
         asset.paymentDay = paymentDay;
         asset.paymentAsset = paymentAsset;

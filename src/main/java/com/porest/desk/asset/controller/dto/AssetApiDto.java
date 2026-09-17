@@ -62,6 +62,8 @@ public class AssetApiDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        /** 이 자산의 금액만 가린다. 안 보내면 가리지 않는다(N). */
+        YNType isAmountHidden,
         Long cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
         @Min(value = 0, message = "한도는 0원 이상이어야 해요")
@@ -116,6 +118,8 @@ public class AssetApiDto {
         Optional<String> institution,
         Optional<String> memo,
         Optional<@NotNull(message = "합계에 포함할지 골라 주세요") YNType> isIncludedInTotal,
+        /** 키가 없으면 유지, 명시적 {@code null} 은 400 — 위와 같은 규칙. */
+        Optional<@NotNull(message = "금액을 가릴지 골라 주세요") YNType> isAmountHidden,
         Optional<Long> cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
         Optional<@Min(value = 0, message = "한도는 0원 이상이어야 해요")
@@ -235,6 +239,7 @@ public class AssetApiDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        YNType isAmountHidden,
         CardCatalogBriefResponse cardCatalog,
         Long creditLimit,
         Integer paymentDay,
@@ -256,6 +261,7 @@ public class AssetApiDto {
                 info.balance(), info.cashBalance(), info.holdingBalance(),
                 info.currency(), info.exchangeRate(), info.color(),
                 info.institution(), info.memo(), info.sortOrder(), info.isIncludedInTotal(),
+                info.isAmountHidden(),
                 CardCatalogBriefResponse.from(info.cardCatalog()),
                 info.creditLimit(), info.paymentDay(), info.paymentAssetRowId(),
                 info.marketCode(), info.symbol(), info.quantity(),

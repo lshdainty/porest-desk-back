@@ -44,6 +44,7 @@ public class AssetApiController {
             request.currency(), request.exchangeRate(), request.color(),
             request.institution(), request.memo(), request.sortOrder(),
             request.isIncludedInTotal(),
+            request.isAmountHidden(),
             request.cardCatalogRowId(),
             request.creditLimit(), request.paymentDay(), request.paymentAssetRowId(),
             AssetApiDto.HoldingRequest.toCommands(request.holdings())
@@ -77,6 +78,7 @@ public class AssetApiController {
             Patch.from(request.color()),
             Patch.from(request.institution()), Patch.from(request.memo()),
             Patch.from(request.isIncludedInTotal()),
+            Patch.from(request.isAmountHidden()),
             Patch.from(request.cardCatalogRowId()),
             Patch.from(request.creditLimit()), Patch.from(request.paymentDay()),
             Patch.from(request.paymentAssetRowId()),

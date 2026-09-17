@@ -38,6 +38,7 @@ public class AssetServiceDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        YNType isAmountHidden,
         Long cardCatalogRowId,
         Long creditLimit,
         Integer paymentDay,
@@ -68,6 +69,7 @@ public class AssetServiceDto {
         Patch<String> institution,
         Patch<String> memo,
         Patch<YNType> isIncludedInTotal,
+        Patch<YNType> isAmountHidden,
         Patch<Long> cardCatalogRowId,
         Patch<Long> creditLimit,
         Patch<Integer> paymentDay,
@@ -169,6 +171,7 @@ public class AssetServiceDto {
         String memo,
         Integer sortOrder,
         YNType isIncludedInTotal,
+        YNType isAmountHidden,
         CardCatalogBrief cardCatalog,
         Long creditLimit,
         Integer paymentDay,
@@ -225,6 +228,7 @@ public class AssetServiceDto {
                 asset.getMemo(),
                 asset.getSortOrder(),
                 asset.getIsIncludedInTotal(),
+                asset.getIsAmountHidden(),
                 CardCatalogBrief.from(asset.getCardCatalog()),
                 asset.getCreditLimit(),
                 asset.getPaymentDay(),
@@ -242,7 +246,7 @@ public class AssetServiceDto {
         public AssetInfo withMonthlyUsedAmount(Long monthlyUsed) {
             return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
-                isIncludedInTotal, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
+                isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
                 marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsed);
         }
     }
