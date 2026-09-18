@@ -278,4 +278,17 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .fetchFirst();
         return Optional.ofNullable(categoryRowId);
     }
+
+    @Override
+    public Optional<Expense> findActiveByAssetAndAutoSource(Long assetRowId, String autoSource) {
+        if (assetRowId == null || autoSource == null) return Optional.empty();
+        return Optional.ofNullable(queryFactory.selectFrom(expense)
+            .where(
+                expense.asset.rowId.eq(assetRowId),
+                expense.autoSource.eq(autoSource),
+                expense.isDeleted.eq(YNType.N)
+            )
+            .orderBy(expense.rowId.asc())
+            .fetchFirst());
+    }
 }

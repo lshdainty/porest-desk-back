@@ -49,4 +49,11 @@ public interface ExpenseRepository {
      * "GS칼텍스" 가 같은 카테고리로 묶인다.
      */
     Optional<Long> findRecentCategoryRowIdByMerchant(Long userRowId, String merchant, ExpenseType expenseType);
+
+    /**
+     * 이 자산에 달린 활성 시스템 거래 하나 — 신용카드의 "이전 미결제 사용액"(D4) 을 찾는다.
+     *
+     * <p>카드 편집 폼의 그 칸은 이 거래 하나를 고친다. 자산당 한 건이므로 첫 건만 본다.
+     */
+    Optional<Expense> findActiveByAssetAndAutoSource(Long assetRowId, String autoSource);
 }

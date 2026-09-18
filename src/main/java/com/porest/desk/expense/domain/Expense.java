@@ -419,6 +419,16 @@ public class Expense extends AuditingFieldsWithIp {
         this.todo = todo;
     }
 
+    /**
+     * 금액만 바꾼다 — 신용카드의 "이전 미결제 사용액"(D4) 을 카드 편집 폼에서 고치는 자리.
+     *
+     * <p>일반 수정 경로({@link #updateExpense})는 시스템 거래에 열려 있지 않다. 여기만
+     * 예외로 두되 <b>금액 하나</b>만 연다 — 날짜·자산·분류가 바뀌면 그건 이월 거래가 아니다.
+     */
+    public void updateAmountOnly(long newAmount) {
+        this.amount = newAmount;
+    }
+
     public void deleteExpense() {
         this.isDeleted = YNType.Y;
     }
