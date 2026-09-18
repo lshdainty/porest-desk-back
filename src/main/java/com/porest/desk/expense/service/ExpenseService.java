@@ -24,7 +24,10 @@ public interface ExpenseService {
     void createExpensesChunk(List<ExpenseServiceDto.CreateCommand> commands);
     List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command);
-    void deleteExpense(Long expenseId, Long userRowId);
+    /**
+     * 지운다. 결제 완료 회차의 카드 거래였다면 결제계좌로 돌려준 금액을 돌려준다(없으면 null).
+     */
+    Long deleteExpense(Long expenseId, Long userRowId);
     ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date);
     ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
 
@@ -52,4 +55,17 @@ public interface ExpenseService {
 
     /** 환불 취소 — 표식·환급 이체를 무르고 원거래 흐름을 되살린다. */
     ExpenseServiceDto.ExpenseInfo cancelRefund(Long expenseId, Long userRowId);
+
+    /**
+     * 이 거래를 지우거나 고치면 결제계좌로 <b>얼마가 돌아오는지</b> 미리 센다(설계 13-1).
+     *
+     * <p>DB 를 바꾸지 않는다. 세 인자를 모두 비우면 삭제 미리보기(전액 기준)다.
+     *
+     * @param amountAfter     수정 뒤 금액 (null = 그대로)
+     * @param assetRowIdAfter 수정 뒤 자산 (null = 그대로)
+     * @param dateAfter       수정 뒤 일시 (null = 그대로)
+     */
+    ExpenseServiceDto.RefundPreviewInfo refundPreview(
+        Long expenseId, Long userRowId, Long amountAfter, Long assetRowIdAfter,
+        java.time.LocalDateTime dateAfter);
 }

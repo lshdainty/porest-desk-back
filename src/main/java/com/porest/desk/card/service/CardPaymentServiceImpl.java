@@ -504,8 +504,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
 
     @Override
     @Transactional
-    public Long refundCreditIfOverpaid(Long cardRowId, long cap, String memo,
-                                       LocalDateTime at, Long userRowId) {
+    public CardPaymentServiceDto.RefundResult refundCreditIfOverpaid(
+            Long cardRowId, long cap, String memo, LocalDateTime at, Long userRowId) {
         Asset card = findAssetOrThrow(cardRowId);
         if (card.getAssetType() != AssetType.CREDIT_CARD) {
             return null;
@@ -517,7 +517,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             log.info("카드 환급 건너뜀(결제계좌 없음): cardRowId={}", cardRowId);
             return null;
         }
-        long refund = Math.min(overpaidCredit(card, at), cap);
+        long refund = Math.min(overpaidCredit(card, at, null), cap);
         if (refund <= 0L) {
             return null;
         }
@@ -529,7 +529,34 @@ public class CardPaymentServiceImpl implements CardPaymentService {
                 "CARD_REFUND"));
         log.info("카드 환급 이체 생성: cardRowId={}, amount={}, transferRowId={}",
             cardRowId, refund, info.rowId());
-        return info.rowId();
+        return new CardPaymentServiceDto.RefundResult(info.rowId(), refund);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CardPaymentServiceDto.RefundPreview previewRefundCredit(
+            Long cardRowId, long cap, CardPaymentServiceDto.ExpenseChange change,
+            LocalDateTime at) {
+        if (cardRowId == null) {
+            return CardPaymentServiceDto.RefundPreview.none(
+                CardPaymentServiceDto.RefundPreview.NOT_CARD);
+        }
+        Asset card = findAssetOrThrow(cardRowId);
+        if (card.getAssetType() != AssetType.CREDIT_CARD) {
+            return CardPaymentServiceDto.RefundPreview.none(
+                CardPaymentServiceDto.RefundPreview.NOT_CARD);
+        }
+        if (card.getPaymentAsset() == null) {
+            // 결제계좌가 없으면 실제 실행도 이체를 만들지 않는다 — 금액을 예고할 이유가 없다.
+            return CardPaymentServiceDto.RefundPreview.none(
+                CardPaymentServiceDto.RefundPreview.NO_PAYMENT_ASSET);
+        }
+        long refund = Math.min(Math.max(0L, overpaidCredit(card, at, change)), Math.max(0L, cap));
+        if (refund <= 0L) {
+            return CardPaymentServiceDto.RefundPreview.none(
+                CardPaymentServiceDto.RefundPreview.NOT_PAID_CYCLE);
+        }
+        return CardPaymentServiceDto.RefundPreview.of(refund);
     }
 
     /**
@@ -539,7 +566,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 끊는 이유 — 어느 회차가 아직 덜 냈다고 해서 다른 회차에서 받을 환급이 줄어들면
      * 안 된다. 같은 회차에 여러 번 낸(부분 선결제) 경우는 이체액을 합쳐서 한 번 센다.
      */
-    private long overpaidCredit(Asset card, LocalDateTime at) {
+    private long overpaidCredit(Asset card, LocalDateTime at,
+                                CardPaymentServiceDto.ExpenseChange change) {
         Map<String, Long> paidByPeriod = new LinkedHashMap<>();
         Map<String, LocalDate[]> periods = new LinkedHashMap<>();
         for (CardBilling b : cardBillingRepository.findByCardAssetRowId(card.getRowId())) {
@@ -559,17 +587,62 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         long credit = 0L;
         for (Map.Entry<String, Long> e : paidByPeriod.entrySet()) {
             LocalDate[] p = periods.get(e.getKey());
-            credit += Math.max(0L, e.getValue() - grossBill(card.getRowId(), p[0], p[1], at));
+            credit += Math.max(0L,
+                e.getValue() - grossBill(card.getRowId(), p[0], p[1], at, change));
         }
         return credit - alreadyRefunded(card.getRowId());
     }
 
-    /** 그 회차의 지금 청구액 — 일시불 + 할부 회차분. 이미 낸 금액은 빼지 않는다(그쪽이 비교 대상). */
-    private long grossBill(Long cardRowId, LocalDate start, LocalDate end, LocalDateTime at) {
-        long lump = lumpSumNet(cardRowId, start, end, at);
-        long inst = installmentDuesIn(cardRowId, start, end, at).stream()
+    /**
+     * 그 회차의 청구액 — 일시불 + 할부 회차분. 이미 낸 금액은 빼지 않는다(그쪽이 비교 대상).
+     *
+     * <p>{@code change} 가 있으면 <b>바뀐 뒤</b>의 청구액이다: 그 거래를 질의에서 빼고
+     * 가정한 값으로 다시 더한다. 실제 실행은 DB 가 이미 바뀐 뒤라 {@code null} 로 부른다.
+     */
+    private long grossBill(Long cardRowId, LocalDate start, LocalDate end, LocalDateTime at,
+                           CardPaymentServiceDto.ExpenseChange change) {
+        Long exclude = change != null ? change.expense().getRowId() : null;
+        long lump = lumpSumNet(cardRowId, start, end, at, exclude);
+        long inst = installmentDuesIn(cardRowId, start, end, at, exclude).stream()
             .mapToLong(CardPaymentServiceDto.InstallmentDue::amount).sum();
-        return lump + inst;
+        return lump + inst + virtualContribution(change, cardRowId, start, end, at);
+    }
+
+    /**
+     * 바뀐 뒤의 그 거래가 이 회차에 <b>얼마를 얹는지</b>.
+     *
+     * <p>삭제면 0 이다. 자산이 이 카드에서 빠졌거나 날짜가 회차 밖으로 나가도 0 — 그만큼
+     * 청구가 줄고 낸 돈이 남는다. 할부는 회차분만 얹는다(가정한 원금으로 같은 산식을 쓴다).
+     * 수입(캐시백)은 청구를 깎으므로 음수로 얹는다 — 지우면 청구가 <b>늘어</b> 크레딧이 준다.
+     */
+    private long virtualContribution(CardPaymentServiceDto.ExpenseChange change, Long cardRowId,
+                                     LocalDate start, LocalDate end, LocalDateTime at) {
+        if (change == null || change.isDeletion()) {
+            return 0L;
+        }
+        if (!cardRowId.equals(change.assetRowIdAfter())) {
+            return 0L;
+        }
+        Expense e = change.expense();
+        LocalDateTime date = change.dateAfter() != null ? change.dateAfter() : e.getExpenseDate();
+        if (date == null || e.getRefundedAt() != null) {
+            return 0L;
+        }
+        // 상한은 청구 계산과 같다 — 아직 오지 않은 거래는 안 센다(D1).
+        LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
+        LocalDateTime upTo = at.isBefore(periodEnd) ? at : periodEnd;
+        if (date.isAfter(upTo)) {
+            return 0L;
+        }
+        long amount = change.amountAfter();
+        if (e.getInstallmentMonths() != null && e.getInstallmentMonths() > 1) {
+            int seq = Expense.installmentSequenceAt(start, date.toLocalDate());
+            return e.installmentAmountAt(seq, amount);
+        }
+        if (date.isBefore(start.atStartOfDay())) {
+            return 0L;
+        }
+        return e.getExpenseType() == ExpenseType.EXPENSE ? amount : -amount;
     }
 
     /** 이 카드에서 이미 나간 환급 합 — 같은 크레딧을 두 번 돌려주지 않게 뺀다. */
@@ -624,6 +697,12 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 반복 거래가 미리 만들어 둔 거래와 "오늘이지만 시각이 뒤인" 거래가 그렇게 샜다.
      */
     private long lumpSumNet(Long cardRowId, LocalDate start, LocalDate end, LocalDateTime now) {
+        return lumpSumNet(cardRowId, start, end, now, null);
+    }
+
+    /** {@code excludeRowId} 는 미리보기가 "이 거래는 빼고 세라" 를 말하는 자리다(13-1). */
+    private long lumpSumNet(Long cardRowId, LocalDate start, LocalDate end, LocalDateTime now,
+                            Long excludeRowId) {
         // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
         LocalDateTime from = start.atStartOfDay();
         LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
@@ -639,11 +718,13 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "AND (e.installmentMonths IS NULL OR e.installmentMonths <= 1) " +
             // 환불된 거래는 삭제와 똑같이 뺀다 — 원거래가 빠져 청구가 저절로 줄어든다.
             "AND e.refundedAt IS NULL " +
+            "AND (:excludeRowId IS NULL OR e.rowId <> :excludeRowId) " +
             "AND e.isDeleted = :isDeleted", Long.class)
             .setParameter("expenseType", ExpenseType.EXPENSE)
             .setParameter("cardRowId", cardRowId)
             .setParameter("start", from)
             .setParameter("end", to)
+            .setParameter("excludeRowId", excludeRowId)
             .setParameter("isDeleted", YNType.N)
             .getSingleResult();
         return sum == null ? 0L : sum;
@@ -665,6 +746,13 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      */
     private List<CardPaymentServiceDto.InstallmentDue> installmentDuesIn(
             Long cardRowId, LocalDate start, LocalDate end, LocalDateTime now) {
+        return installmentDuesIn(cardRowId, start, end, now, null);
+    }
+
+    /** {@code excludeRowId} 는 미리보기 몫이다 — 그 할부를 빼고 센 뒤 가정값으로 다시 얹는다. */
+    private List<CardPaymentServiceDto.InstallmentDue> installmentDuesIn(
+            Long cardRowId, LocalDate start, LocalDate end, LocalDateTime now,
+            Long excludeRowId) {
         // 아직 회차가 남아 있을 수 있는 할부 거래만 — 이 기간보다 미래 거래는 볼 필요가 없다.
         // 상한은 **지금** 까지다(D1) — 아직 사지도 않은 할부를 청구에 세면 안 된다.
         LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
@@ -677,11 +765,13 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "AND e.expenseDate <= :end " +
             // 환불된 할부는 남은 회차가 통째로 사라진다(설계 결정 8).
             "AND e.refundedAt IS NULL " +
+            "AND (:excludeRowId IS NULL OR e.rowId <> :excludeRowId) " +
             "AND e.isDeleted = :isDeleted " +
             "ORDER BY e.expenseDate", Expense.class)
             .setParameter("cardRowId", cardRowId)
             .setParameter("expenseType", ExpenseType.EXPENSE)
             .setParameter("end", upTo)
+            .setParameter("excludeRowId", excludeRowId)
             .setParameter("isDeleted", YNType.N)
             .getResultList();
 

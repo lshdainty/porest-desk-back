@@ -103,13 +103,26 @@ public class ExpenseServiceDto {
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
-        List<Long> splitCategoryRowIds
+        List<Long> splitCategoryRowIds,
+        /**
+         * 이 요청이 <b>방금 만든</b> 카드 환급액 (없으면 null) — 거래의 속성이 아니라
+         * 그 저장의 결과다(설계 13-1).
+         *
+         * <p>결제 완료 회차의 카드 거래를 줄이면 그만큼 결제계좌로 돌아간다. 화면이
+         * "결제계좌로 N원이 환급됐어요" 를 말할 재료라, 조회에는 늘 null 이다.
+         */
+        Long refundedAmount
     ) {
         public static ExpenseInfo from(Expense expense) {
             return from(expense, List.of());
         }
 
         public static ExpenseInfo from(Expense expense, List<Long> splitCategoryRowIds) {
+            return from(expense, splitCategoryRowIds, null);
+        }
+
+        public static ExpenseInfo from(Expense expense, List<Long> splitCategoryRowIds,
+                                       Long refundedAmount) {
             return new ExpenseInfo(
                 expense.getRowId(),
                 expense.getUser().getRowId(),
@@ -137,10 +150,19 @@ public class ExpenseServiceDto {
                 expense.getAutoSource(),
                 expense.getCreateAt(),
                 expense.getModifyAt(),
-                splitCategoryRowIds != null ? splitCategoryRowIds : List.of()
+                splitCategoryRowIds != null ? splitCategoryRowIds : List.of(),
+                refundedAmount
             );
         }
     }
+
+    /**
+     * 카드 환급 미리보기 — 삭제·수정 확인창이 금액을 예고할 재료(설계 13-1).
+     *
+     * <p>{@code applies=false} 면 이 변경으로 돌려줄 돈이 없다. {@code reason} 으로 화면이
+     * 문구를 고른다(금액 줄 · "이미 환급된 거래" 줄 · 줄 없음).
+     */
+    public record RefundPreviewInfo(boolean applies, long refundAmount, String reason) {}
 
     public record DailySummary(
         LocalDate date,

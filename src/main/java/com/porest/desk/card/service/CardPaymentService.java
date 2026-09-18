@@ -55,8 +55,21 @@ public interface CardPaymentService {
      * 틀린다: 뒤에 쌓인 지출 때문에 잔액이 여전히 음수일 수 있다(네이버 현대카드 실사례).
      *
      * @param cap 돌려줄 상한 — 환불액 또는 줄어든 금액
-     * @return 만든 환급 이체 rowId. 돌려줄 크레딧이 없거나 결제계좌가 없으면 {@code null}
+     * @return 만든 환급 이체와 금액. 돌려줄 크레딧이 없거나 결제계좌가 없으면 {@code null}
      */
-    Long refundCreditIfOverpaid(Long cardRowId, long cap, String memo,
-                                java.time.LocalDateTime at, Long userRowId);
+    CardPaymentServiceDto.RefundResult refundCreditIfOverpaid(
+        Long cardRowId, long cap, String memo, java.time.LocalDateTime at, Long userRowId);
+
+    /**
+     * 같은 크레딧 식으로 <b>미리</b> 센다 — 삭제·감액 확인창이 금액을 보여 줄 수 있게(설계 13-1).
+     *
+     * <p>DB 를 바꾸지 않는다. {@code change} 가 말하는 "바뀐 뒤 모습" 으로 회차 청구액을
+     * 다시 세고, {@link #refundCreditIfOverpaid} 와 <b>같은 함수</b>를 인자만 달리해 부른다 —
+     * 산식을 복사해 두면 확인창 금액과 실제 이체액이 갈린다.
+     *
+     * @param cap 돌려줄 상한 — 삭제면 거래 금액, 감액이면 줄어든 금액
+     */
+    CardPaymentServiceDto.RefundPreview previewRefundCredit(
+        Long cardRowId, long cap, CardPaymentServiceDto.ExpenseChange change,
+        java.time.LocalDateTime at);
 }

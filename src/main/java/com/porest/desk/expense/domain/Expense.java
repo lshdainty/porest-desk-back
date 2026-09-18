@@ -296,8 +296,19 @@ public class Expense extends AuditingFieldsWithIp {
      * @param seq 1..installmentMonths. 범위를 벗어나면 0.
      */
     public long installmentAmountAt(int seq) {
+        return installmentAmountAt(seq, amount);
+    }
+
+    /**
+     * 원금을 <b>가정해서</b> 센 회차 금액 — 환급 미리보기가 "감액하면 이 회차가 얼마가
+     * 되나" 를 같은 산식으로 묻는 자리다(설계 13-1).
+     *
+     * <p>산식을 복사해 가면 미리보기와 실제 환급액이 갈린다. 그래서 원금만 인자로 열고
+     * 나머지(중도 상환 처리·나머지 몰기)는 한 곳에 둔다.
+     */
+    public long installmentAmountAt(int seq, long principal) {
         if (!isInstallment()) {
-            return seq == 1 ? amount : 0L;
+            return seq == 1 ? principal : 0L;
         }
         if (seq < 1 || seq > installmentMonths) {
             return 0L;
@@ -312,18 +323,18 @@ public class Expense extends AuditingFieldsWithIp {
             if (seq == payoffSeq) {
                 long paidBefore = 0L;
                 for (int i = 1; i < payoffSeq; i++) {
-                    paidBefore += normalInstallmentAmountAt(i);
+                    paidBefore += normalInstallmentAmountAt(i, principal);
                 }
-                return amount - paidBefore;
+                return principal - paidBefore;
             }
         }
-        return normalInstallmentAmountAt(seq);
+        return normalInstallmentAmountAt(seq, principal);
     }
 
     /** 정상 분할 회차 금액 — 나머지는 1회차에 몰아 합이 원금과 정확히 맞는다. */
-    private long normalInstallmentAmountAt(int seq) {
-        long base = amount / installmentMonths;
-        long remainder = amount % installmentMonths;
+    private long normalInstallmentAmountAt(int seq, long principal) {
+        long base = principal / installmentMonths;
+        long remainder = principal % installmentMonths;
         return seq == 1 ? base + remainder : base;
     }
 
@@ -347,8 +358,13 @@ public class Expense extends AuditingFieldsWithIp {
      * 전부 이걸 쓴다. 산식이 갈라지면 회차 합이 원금과 어긋난다.
      */
     public int installmentSequenceAt(LocalDate dateInCycle) {
+        return installmentSequenceAt(dateInCycle, expenseDate.toLocalDate());
+    }
+
+    /** 구매일을 <b>가정해서</b> 센 회차 번호 — 미리보기가 "날짜를 옮기면" 을 묻는다. */
+    public static int installmentSequenceAt(LocalDate dateInCycle, LocalDate purchasedOn) {
         return (int) (java.time.temporal.ChronoUnit.MONTHS.between(
-            java.time.YearMonth.from(expenseDate.toLocalDate()),
+            java.time.YearMonth.from(purchasedOn),
             java.time.YearMonth.from(dateInCycle)) + 1);
     }
 

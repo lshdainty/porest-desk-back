@@ -21,6 +21,7 @@ import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
 import com.porest.desk.card.service.CardPaymentService;
+import com.porest.desk.card.service.dto.CardPaymentServiceDto;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.expense.type.ExpenseType;
@@ -1003,6 +1004,21 @@ class ExpenseServiceImplTest {
             return e;
         }
 
+        /**
+         * 수정 경로를 타는 거래 — 카테고리가 있어야 한다.
+         *
+         * <p>{@link #card} 는 마크·삭제만 보므로 카테고리를 비워 뒀다. 수정은 "거래 유형 ==
+         * 카테고리 유형" 을 검사해서 비어 있으면 그 자리에서 터진다.
+         */
+        private Expense cardForUpdate(long amount, LocalDateTime at, Asset asset) {
+            User u = user(USER_ID);
+            Expense e = Expense.createExpense(u, category(10L, u), asset,
+                ExpenseType.EXPENSE, amount, "구매", at, "무신사", "CARD", null, null, null, null);
+            ReflectionTestUtils.setField(e, "rowId", 1L);
+            lenient().when(expenseCategoryRepository.hasChildren(10L)).thenReturn(false);
+            return e;
+        }
+
         @Test
         @DisplayName("지출을 마크하면 흐름이 지워지고 표식이 남는다 — 돈이 자산으로 돌아간다")
         void marksAndRemovesFlow() {
@@ -1108,7 +1124,7 @@ class ExpenseServiceImplTest {
             Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
             given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
             given(cardPaymentService.refundCreditIfOverpaid(eq(9L), eq(50_000L), any(), any(), eq(USER_ID)))
-                .willReturn(77L);
+                .willReturn(new CardPaymentServiceDto.RefundResult(77L, 50_000L));
 
             var info = sut.refund(1L, USER_ID, null);
 
@@ -1141,6 +1157,153 @@ class ExpenseServiceImplTest {
                 .refundCreditIfOverpaid(any(), anyLong(), any(), any(), any());
         }
 
+        /**
+         * 결정 9 의 나머지 절반 — <b>수정</b>도 삭제와 같은 순서로 돌려준다(설계 13-3).
+         *
+         * <p>여기서 잠그는 것은 <b>상한(cap)</b>이다. 얼마가 실제로 돌아오는지는 회차
+         * 크레딧 식이 정하지만, 무엇이 "줄어든 만큼" 인지는 이 자리에서 정해진다 —
+         * 금액만 줄면 차액, 자산이 카드에서 빠지거나 날짜가 옮겨지면 전액, 증액은 0.
+         */
+        private ExpenseServiceDto.UpdateCommand amountTo(long amount) {
+            return new ExpenseServiceDto.UpdateCommand(
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.set(amount),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                null);
+        }
+
+        @Test
+        @DisplayName("감액하면 줄어든 만큼이 상한이고, 메모에 감액분이라고 남는다")
+        void reduceRefundsDifference() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = cardForUpdate(50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+            given(cardPaymentService.refundCreditIfOverpaid(
+                    eq(9L), eq(30_000L), any(), any(), eq(USER_ID)))
+                .willReturn(new CardPaymentServiceDto.RefundResult(88L, 30_000L));
+
+            var info = sut.updateExpense(1L, USER_ID, amountTo(20_000L));
+
+            assertThat(info.refundedAmount())
+                .as("화면이 '결제계좌로 N원이 환급됐어요' 를 말할 재료")
+                .isEqualTo(30_000L);
+            org.mockito.ArgumentCaptor<String> memo =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+            then(cardPaymentService).should().refundCreditIfOverpaid(
+                eq(9L), eq(30_000L), memo.capture(), any(), eq(USER_ID));
+            assertThat(memo.getValue()).endsWith("· 감액분");
+        }
+
+        @Test
+        @DisplayName("증액은 대상이 아니다 — 크레딧 계산을 부르지 않는다")
+        void increaseSkipsCredit() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = cardForUpdate(50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+
+            sut.updateExpense(1L, USER_ID, amountTo(80_000L));
+
+            then(cardPaymentService).should(never())
+                .refundCreditIfOverpaid(any(), anyLong(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("날짜를 옮기면 전액이 상한이다 — 회차 밖으로 나가면 통째로 빠진다")
+        void dateMoveRefundsFull() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = cardForUpdate(50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+
+            sut.updateExpense(1L, USER_ID, new ExpenseServiceDto.UpdateCommand(
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.set(LocalDateTime.of(2026, 9, 10, 12, 0)),
+                Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                null));
+
+            org.mockito.ArgumentCaptor<String> memo =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+            then(cardPaymentService).should().refundCreditIfOverpaid(
+                eq(9L), eq(50_000L), memo.capture(), any(), eq(USER_ID));
+            assertThat(memo.getValue())
+                .as("날짜 이동은 감액이 아니다")
+                .doesNotContain("감액분");
+        }
+
+        /**
+         * 미리보기 — 확인창이 저장하기 <b>전에</b> 금액을 묻는 자리(설계 13-1).
+         *
+         * <p>실제 실행과 같은 함수를 부르므로 여기서는 <b>무엇을 가정으로 넘기는지</b>만 본다.
+         */
+        @Test
+        @DisplayName("삭제 미리보기는 전액을 상한으로 넘긴다")
+        void previewDeletionUsesFullAmount() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+            given(cardPaymentService.previewRefundCredit(eq(9L), eq(50_000L), any(), any()))
+                .willReturn(CardPaymentServiceDto.RefundPreview.of(50_000L));
+
+            var preview = sut.refundPreview(1L, USER_ID, null, null, null);
+
+            assertThat(preview.applies()).isTrue();
+            assertThat(preview.refundAmount()).isEqualTo(50_000L);
+            org.mockito.ArgumentCaptor<CardPaymentServiceDto.ExpenseChange> change =
+                org.mockito.ArgumentCaptor.forClass(CardPaymentServiceDto.ExpenseChange.class);
+            then(cardPaymentService).should().previewRefundCredit(
+                eq(9L), eq(50_000L), change.capture(), any());
+            assertThat(change.getValue().isDeletion()).isTrue();
+        }
+
+        @Test
+        @DisplayName("감액 미리보기는 차액을 상한으로, 가정한 금액을 함께 넘긴다")
+        void previewReduceUsesDifference() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+            given(cardPaymentService.previewRefundCredit(eq(9L), eq(30_000L), any(), any()))
+                .willReturn(CardPaymentServiceDto.RefundPreview.of(30_000L));
+
+            var preview = sut.refundPreview(1L, USER_ID, 20_000L, null, null);
+
+            assertThat(preview.refundAmount()).isEqualTo(30_000L);
+            org.mockito.ArgumentCaptor<CardPaymentServiceDto.ExpenseChange> change =
+                org.mockito.ArgumentCaptor.forClass(CardPaymentServiceDto.ExpenseChange.class);
+            then(cardPaymentService).should().previewRefundCredit(
+                eq(9L), eq(30_000L), change.capture(), any());
+            assertThat(change.getValue().amountAfter()).isEqualTo(20_000L);
+            assertThat(change.getValue().assetRowIdAfter()).isEqualTo(9L);
+        }
+
+        @Test
+        @DisplayName("이미 환불된 거래는 계산하지 않는다 — 환급은 그때 끝났다")
+        void previewAlreadyRefunded() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            e.markRefunded(LocalDateTime.of(2026, 7, 11, 9, 0));
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+
+            var preview = sut.refundPreview(1L, USER_ID, null, null, null);
+
+            assertThat(preview.applies()).isFalse();
+            assertThat(preview.reason())
+                .isEqualTo(CardPaymentServiceDto.RefundPreview.ALREADY_REFUNDED);
+            then(cardPaymentService).should(never())
+                .previewRefundCredit(any(), anyLong(), any(), any());
+        }
+
+        @Test
+        @DisplayName("카드가 아니면 계산하지 않는다 — 돌려줄 자리가 없다")
+        void previewNonCard() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+
+            var preview = sut.refundPreview(1L, USER_ID, null, null, null);
+
+            assertThat(preview.reason())
+                .isEqualTo(CardPaymentServiceDto.RefundPreview.NOT_CARD);
+        }
+
         /** 결정 9 — 이미 낸 회차의 카드 거래를 지우면 남는 돈을 돌려준다. */
         @Test
         @DisplayName("결제된 회차의 카드 거래를 지우면 환급 크레딧을 확인한다")
@@ -1149,10 +1312,17 @@ class ExpenseServiceImplTest {
             Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
             given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-            sut.deleteExpense(1L, USER_ID);
+            given(cardPaymentService.refundCreditIfOverpaid(
+                    eq(9L), eq(50_000L), any(), any(), eq(USER_ID)))
+                .willReturn(new CardPaymentServiceDto.RefundResult(88L, 50_000L));
+
+            Long refunded = sut.deleteExpense(1L, USER_ID);
 
             then(cardPaymentService).should()
                 .refundCreditIfOverpaid(eq(9L), eq(50_000L), any(), any(), eq(USER_ID));
+            assertThat(refunded)
+                .as("화면이 사후 토스트로 알릴 금액")
+                .isEqualTo(50_000L);
         }
     }
 }
