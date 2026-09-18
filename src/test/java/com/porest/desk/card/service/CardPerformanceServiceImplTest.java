@@ -2,6 +2,8 @@ package com.porest.desk.card.service;
 
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.ForbiddenException;
+import com.porest.core.time.ServiceClock;
+import com.porest.core.time.UserClock;
 import com.porest.core.type.YNType;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -42,12 +45,19 @@ class CardPerformanceServiceImplTest {
 
     @Mock private AssetRepository assetRepository;
     @Mock private EntityManager entityManager;
+    // 실적도 "지금까지" 만 센다(D1) — 시각을 고정해야 상한이 결정된다.
+    // 날짜 의존 테스트는 now()±N일 금지(메모리 desk-card-billing-money-cap).
+    @Spy private UserClock userClock =
+        new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
 
     @InjectMocks private CardPerformanceServiceImpl sut;
 
     private static final long USER_ID = 1L;
     private static final long ASSET_ID = 10L;
     private static final YearMonth YM = YearMonth.of(2026, 6);
+    /** YM 달 중간 — 말일·1일 경계에서 흔들리지 않게 고정한다. */
+    private static final java.time.LocalDateTime NOW =
+        java.time.LocalDate.of(2026, 6, 15).atTime(9, 0);
 
     private User user(long rowId) {
         User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
@@ -68,7 +78,12 @@ class CardPerformanceServiceImplTest {
     }
 
     /** 월 지출 합계 쿼리(sumExpenseAmount) 결과를 sum 으로 고정한다. */
+    private void givenNow() {
+        org.mockito.Mockito.doReturn(NOW).when(userClock).now(USER_ID);
+    }
+
     private void givenMonthlyExpenseSum(long sum) {
+        givenNow();
         @SuppressWarnings("unchecked")
         TypedQuery<Long> typedQuery = mock(TypedQuery.class);
         given(entityManager.createQuery(anyString(), eq(Long.class))).willReturn(typedQuery);
@@ -230,5 +245,53 @@ class CardPerformanceServiceImplTest {
         assertThat(q)
                 .as("타입으로 걸러 버리면 환불 행이 아예 안 보인다")
                 .doesNotContain("AND e.expenseType = :expenseType");
+        assertThat(q)
+                .as("할부는 실적에서 뺀다(D2)")
+                .contains("(e.installmentMonths IS NULL OR e.installmentMonths <= 1)");
+    }
+
+    /**
+     * 실적도 <b>아직 오지 않은 거래를 세지 않는다</b>(D1).
+     *
+     * <p>실적은 예측이 아니라 <b>달성도</b>다. 반복 거래가 미리 만들어 둔 거래로 "이번 달
+     * 실적 달성" 이 먼저 켜지면 사용자는 없는 혜택을 믿는다.
+     *
+     * <p>합계가 mock 이라 상한 파라미터를 본다 — 달 말일이 아니라 지금이어야 한다.
+     */
+    @Test
+    @DisplayName("실적은 지금까지만 센다 — 상한이 달 말일이 아니다")
+    void performanceCountsUntilNow() {
+        Asset asset = assetWithCatalog(requiredCatalog(300_000, "30만원"));
+        given(assetRepository.findById(ASSET_ID)).willReturn(Optional.of(asset));
+        givenNow();
+
+        @SuppressWarnings("unchecked")
+        TypedQuery<Long> typedQuery = mock(TypedQuery.class);
+        org.mockito.ArgumentCaptor<Object> values = org.mockito.ArgumentCaptor.forClass(Object.class);
+        given(entityManager.createQuery(anyString(), eq(Long.class))).willReturn(typedQuery);
+        given(typedQuery.setParameter(anyString(), values.capture())).willReturn(typedQuery);
+        given(typedQuery.getSingleResult()).willReturn(100_000L);
+
+        sut.getPerformance(new CardPerformanceServiceDto.PerformanceQuery(USER_ID, ASSET_ID, YM));
+
+        assertThat(values.getAllValues())
+                .as("상한이 지금(%s)이어야 한다 — 달 말일이면 미래 거래까지 센다", NOW)
+                .contains(NOW)
+                .doesNotContain(YM.atEndOfMonth().atTime(java.time.LocalTime.MAX));
+    }
+
+    /** 조회한 달이 통째로 미래면 셀 것이 없다 — 질의를 하지 않는다. */
+    @Test
+    @DisplayName("통째로 미래인 달은 0 이다")
+    void futureMonthIsZero() {
+        Asset asset = assetWithCatalog(requiredCatalog(300_000, "30만원"));
+        given(assetRepository.findById(ASSET_ID)).willReturn(Optional.of(asset));
+        org.mockito.Mockito.doReturn(NOW).when(userClock).now(USER_ID);
+
+        CardPerformanceServiceDto.PerformanceInfo info = sut.getPerformance(
+                new CardPerformanceServiceDto.PerformanceQuery(USER_ID, ASSET_ID, YearMonth.of(2026, 12)));
+
+        assertThat(info.currentAmount()).isZero();
+        assertThat(info.isAchieved()).isFalse();
     }
 }

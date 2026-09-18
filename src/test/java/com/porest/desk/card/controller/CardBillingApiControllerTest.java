@@ -65,7 +65,7 @@ class CardBillingApiControllerTest {
     @DisplayName("GET /asset/{id}/billing — id·로그인 사용자로 청구 조회 위임")
     void getCardBilling() throws Exception {
         CardPaymentServiceDto.CardBillingInfo info = new CardPaymentServiceDto.CardBillingInfo(
-                50L, 12000L, 2000L, 0L, 3000L,
+                50L, 12000L, 2000L, 0L,
                 List.of(new CardPaymentServiceDto.InstallmentDue(
                         7L, "가맹점", null, 60000L, 6, 2, 10000L, false)),
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
@@ -78,8 +78,8 @@ class CardBillingApiControllerTest {
                 .andExpect(jsonPath("$.data.cardAssetRowId").value(50))
                 .andExpect(jsonPath("$.data.upcomingAmount").value(12000))
                 .andExpect(jsonPath("$.data.upcomingLumpSumAmount").value(2000))
-                // 잔액(한도 사용)과 청구가 갈리는 만큼 — 화면이 이걸로 차이를 설명한다.
-                .andExpect(jsonPath("$.data.upcomingScheduledAmount").value(3000))
+                // 예정분 칸은 없앴다 — 청구가 아예 "지금까지" 만 세므로 설명할 차이가 없다(D1).
+                .andExpect(jsonPath("$.data.upcomingScheduledAmount").doesNotExist())
                 .andExpect(jsonPath("$.data.upcomingInstallments[0].sequence").value(2))
                 .andExpect(jsonPath("$.data.upcomingInstallments[0].installmentMonths").value(6))
                 .andExpect(jsonPath("$.data.upcomingInstallments[0].principalAmount").value(60000))

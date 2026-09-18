@@ -35,6 +35,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -1108,29 +1109,33 @@ class CardPaymentServiceImplTest {
     }
 
     /**
-     * 청구 예정액 중 <b>아직 오지 않은 분</b>을 따로 내려준다.
+     * 청구는 <b>아직 오지 않은 거래를 세지 않는다</b>(D1, 2026-09-18 결정).
      *
-     * <p>자산 목록·한도 사용에 쓰는 잔액은 {@code effective_at <= 지금} 인 이력만 세고,
-     * 청구 예정액은 회차 기간 전체를 센다. 그래서 반복 거래가 미리 만들어 둔 거래나 시각이
-     * 뒤인 오늘 거래가 있으면 <b>같은 카드인데 두 숫자가 다르게</b> 보인다
-     * (2026-09-18 사용자 제보: 466,800 vs 527,100). 화면이 그 차이를 설명하려면 서버가
-     * 그만큼을 따로 알려 줘야 한다.
+     * <p>종전엔 회차 기간 전체를 세서, 같은 카드인데 한도 사용(잔액)과 청구 예정이 다르게
+     * 보였다 — 사용자 제보 466,800 vs 527,100. 잔액은 {@code effective_at <= 지금} 인
+     * 이력만 세므로, 청구도 같은 규칙으로 맞춘다. 가계부 합계도 같은 규칙이다.
      *
-     * <p>Long 질의는 회차마다 둘이다 — ① 기간 전체 합 ② 지금까지의 합. 순서대로 답한다.
+     * <p>합계는 mock 이라 값으로는 못 본다 — 대신 질의에 넘기는 <b>상한</b>을 본다.
+     * 회차 끝이 아니라 지금으로 조여 있어야 한다.
      */
     @Nested
-    @DisplayName("예정분 분리")
-    class ScheduledPortion {
+    @DisplayName("청구는 지금까지만 센다(D1)")
+    class CountUntilNow {
 
-        private void givenLumpSums(Long... sums) {
+        private final LocalDateTime NOW = LocalDate.of(2026, 9, 18).atTime(10, 30);
+
+        private org.mockito.ArgumentCaptor<Object> givenCycleCapturingBounds() {
             @SuppressWarnings("unchecked")
             TypedQuery<Long> query = mock(TypedQuery.class);
-            lenient().when(entityManager.createQuery(anyString(), eq(Long.class))).thenReturn(query);
-            lenient().when(query.setParameter(anyString(), any())).thenReturn(query);
-            Long first = sums[0];
-            Long[] rest = java.util.Arrays.copyOfRange(sums, 1, sums.length);
-            lenient().when(query.getSingleResult()).thenReturn(first, rest);
+            org.mockito.ArgumentCaptor<Object> values =
+                org.mockito.ArgumentCaptor.forClass(Object.class);
+            lenient().when(entityManager.createQuery(anyString(), eq(Long.class)))
+                .thenReturn(query);
+            lenient().when(query.setParameter(anyString(), values.capture()))
+                .thenReturn(query);
+            lenient().when(query.getSingleResult()).thenReturn(0L);
             givenInstallments();
+            return values;
         }
 
         private void givenCard() {
@@ -1139,47 +1144,51 @@ class CardPaymentServiceImplTest {
             given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
             given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
                 .willReturn(0L);
-            doReturn(LocalDate.of(2026, 9, 18)).when(userClock).today(USER_ID);
+            doReturn(NOW.toLocalDate()).when(userClock).today(USER_ID);
+            doReturn(NOW).when(userClock).now(USER_ID);
         }
 
         @Test
-        @DisplayName("아직 안 온 거래가 있으면 그만큼을 예정분으로 알려 준다")
-        void reportsScheduledPortion() {
+        @DisplayName("진행 중인 회차의 상한은 회차 끝이 아니라 지금이다")
+        void clampsUpperBoundToNow() {
             givenCard();
-            // 이번 회차: 기간 전체 130,000 / 지금까지 100,000 → 예정 30,000
-            // 다음 회차: 둘 다 0
-            givenLumpSums(130_000L, 100_000L, 0L, 0L);
+            org.mockito.ArgumentCaptor<Object> values = givenCycleCapturingBounds();
 
-            CardPaymentServiceDto.CardBillingInfo info =
-                sut.getCardBilling(CARD_ID, USER_ID);
+            sut.getCardBilling(CARD_ID, USER_ID);
 
-            assertThat(info.upcomingAmount()).isEqualTo(130_000L);
-            assertThat(info.upcomingScheduledAmount()).isEqualTo(30_000L);
+            // 이번 회차 9/1~9/30 — 상한이 9/30 23:59 로 나가면 미래 거래까지 센다.
+            assertThat(values.getAllValues())
+                .as("상한이 지금(%s)으로 조여 있어야 한다", NOW)
+                .contains(NOW)
+                .doesNotContain(LocalDate.of(2026, 9, 30).atTime(LocalTime.MAX));
         }
 
+        /** 이미 다 지난 회차는 조일 것이 없다 — 기간 끝이 그대로 상한이다. */
         @Test
-        @DisplayName("다 지난 거래뿐이면 예정분은 0 — 잔액과 어긋날 이유가 없다")
-        void noScheduledPortionWhenAllPast() {
+        @DisplayName("지난 회차는 기간 끝이 그대로 상한")
+        void pastCycleKeepsPeriodEnd() {
             givenCard();
-            givenLumpSums(100_000L, 100_000L, 0L, 0L);
+            org.mockito.ArgumentCaptor<Object> values = givenCycleCapturingBounds();
 
-            CardPaymentServiceDto.CardBillingInfo info =
-                sut.getCardBilling(CARD_ID, USER_ID);
+            sut.getCardBilling(CARD_ID, USER_ID);
 
-            assertThat(info.upcomingScheduledAmount()).isZero();
+            // 다음 회차(10/12 결제 → 9/1~9/30)의 앞 회차는 8/1~8/31 이 아니라, 여기서는
+            // nextCycle(11/12 결제 → 10/1~10/31)이 통째로 미래다. 그 회차의 상한도 지금이다.
+            assertThat(values.getAllValues()).contains(NOW);
         }
 
-        /** 다음 회차는 통째로 미래다 — 거기 잡힌 건 전부 예정분이다. */
+        /** 회차가 통째로 미래면 셀 것이 없다 — 질의 자체를 건너뛴다. */
         @Test
-        @DisplayName("통째로 미래인 회차는 전액이 예정분")
-        void wholeFutureCycleIsAllScheduled() {
+        @DisplayName("통째로 미래인 회차는 0 이다")
+        void wholeFutureCycleIsZero() {
             givenCard();
-            givenLumpSums(0L, 0L, 50_000L, 0L);
+            givenCycleCapturingBounds();
 
-            CardPaymentServiceDto.CardBillingInfo info =
-                sut.getCardBilling(CARD_ID, USER_ID);
+            CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
 
-            assertThat(info.nextCycle().scheduledAmount()).isEqualTo(50_000L);
+            // nextCycle = 11/12 결제 → 10/1~10/31, 지금은 9/18 이라 전부 미래다.
+            assertThat(info.nextCycle().lumpSumAmount()).isZero();
+            assertThat(info.nextCycle().amount()).isZero();
         }
     }
 }
