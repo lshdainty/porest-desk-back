@@ -56,8 +56,6 @@ public class CardBillingApiDto {
         Long upcomingAmount,
         Long upcomingLumpSumAmount,
         Long upcomingAlreadyPaidAmount,
-        /** 이 회차 금액 중 아직 오지 않은 분 — 잔액(한도 사용)과의 차이를 설명한다. */
-        Long upcomingScheduledAmount,
         List<InstallmentDueResponse> upcomingInstallments,
         LocalDate upcomingPeriodStart,
         LocalDate upcomingPeriodEnd,
@@ -72,7 +70,6 @@ public class CardBillingApiDto {
                 info.upcomingAmount(),
                 info.upcomingLumpSumAmount(),
                 info.upcomingAlreadyPaidAmount(),
-                info.upcomingScheduledAmount(),
                 info.upcomingInstallments().stream().map(InstallmentDueResponse::from).toList(),
                 info.upcomingPeriodStart(),
                 info.upcomingPeriodEnd(),
@@ -92,14 +89,11 @@ public class CardBillingApiDto {
         Long amount,
         Long lumpSumAmount,
         Long alreadyPaidAmount,
-        /** 이 회차 금액 중 아직 오지 않은 분. */
-        Long scheduledAmount,
         List<InstallmentDueResponse> installments
     ) {
         public static UpcomingCycleResponse from(CardPaymentServiceDto.UpcomingCycle c) {
             return new UpcomingCycleResponse(c.paymentDate(), c.periodStart(), c.periodEnd(),
-                c.amount(), c.lumpSumAmount(), c.alreadyPaidAmount(), c.scheduledAmount(),
-                c.installments().stream().map(InstallmentDueResponse::from).toList());
+                c.amount(), c.lumpSumAmount(), c.alreadyPaidAmount(), c.installments().stream().map(InstallmentDueResponse::from).toList());
         }
     }
 }

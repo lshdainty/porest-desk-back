@@ -96,8 +96,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             LocalDate following = nextPaymentDate(card.getPaymentDay(), nextPaymentDate.plusDays(1));
             BillingCycle c2 = upcomingCycle(card, following);
             nextCycle = new CardPaymentServiceDto.UpcomingCycle(following, c2.periodStart(), c2.periodEnd(),
-                c2.amount(), c2.lumpSumAmount(), c2.alreadyPaid(), c2.scheduledAmount(),
-                c2.installments());
+                c2.amount(), c2.lumpSumAmount(), c2.alreadyPaid(), c2.installments());
         }
 
         return new CardPaymentServiceDto.CardBillingInfo(
@@ -105,7 +104,6 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             cycle.amount(),
             cycle.lumpSumAmount(),
             cycle.alreadyPaid(),
-            cycle.scheduledAmount(),
             cycle.installments(),
             cycle.periodStart(),
             cycle.periodEnd(),
@@ -427,7 +425,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * @param installments  이 회차에 빠지는 할부 회차들 — 명세서가 원금·회차를 그릴 재료
      */
     record BillingCycle(LocalDate periodStart, LocalDate periodEnd, long amount,
-                        long lumpSumAmount, long alreadyPaid, long scheduledAmount,
+                        long lumpSumAmount, long alreadyPaid,
                         List<CardPaymentServiceDto.InstallmentDue> installments) {}
 
     /**
@@ -503,6 +501,10 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     }
 
     private BillingCycle upcomingCycle(Asset card, LocalDate nextPaymentDate) {
+        // 아직 오지 않은 거래는 세지 않는다 — 가계부 합계·자산 잔액과 같은 규칙(D1,
+        // 2026-09-18 결정). 종전엔 청구만 기간 전체를 세서, 같은 카드인데 한도 사용과
+        // 청구 예정이 다르게 보였다.
+        LocalDateTime now = userClock.now(card.getUser().getRowId());
         LocalDate periodStart;
         LocalDate periodEnd;
         if (nextPaymentDate == null) {
@@ -516,33 +518,31 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             periodStart = periodStartFor(nextPaymentDate);
             periodEnd = periodEndFor(nextPaymentDate);
         }
-        long lumpSum = lumpSumNet(card.getRowId(), periodStart, periodEnd);
+        long lumpSum = lumpSumNet(card.getRowId(), periodStart, periodEnd, now);
         List<CardPaymentServiceDto.InstallmentDue> installments =
-            installmentDuesIn(card.getRowId(), periodStart, periodEnd);
+            installmentDuesIn(card.getRowId(), periodStart, periodEnd, now);
         long installmentSum = installments.stream()
             .mapToLong(CardPaymentServiceDto.InstallmentDue::amount).sum();
         long alreadyPaid = cardBillingRepository
             .sumCompletedAmountByCardAndPeriod(card.getRowId(), periodStart, periodEnd);
         return new BillingCycle(periodStart, periodEnd,
             Math.max(0L, lumpSum + installmentSum - alreadyPaid),
-            lumpSum, alreadyPaid, scheduledPortion(card, periodStart, periodEnd, lumpSum),
-            installments);
-    }
-
-    /** 일시불 순사용액 — EXPENSE 합 − INCOME(환불/취소) 합. 할부 거래는 제외한다. */
-    private long lumpSumNet(Long cardRowId, LocalDate start, LocalDate end) {
-        // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
-        return lumpSumNetBetween(cardRowId, start.atStartOfDay(), end.atTime(LocalTime.MAX));
+            lumpSum, alreadyPaid, installments);
     }
 
     /**
-     * 같은 셈을 <b>시각</b> 범위로 한다 — "지금까지 쓴 분" 을 떼어 내려고 나눴다.
+     * 일시불 순사용액 — EXPENSE 합 − INCOME(환불/취소) 합. 할부 거래는 제외한다.
      *
-     * <p>잔액(한도 사용)은 {@code effective_at <= 지금} 인 이력만 세고, 청구 예정액은 회차
-     * 기간 전체를 센다. 그래서 아직 오지 않은 거래(반복 거래가 미리 만들어 둔 것 · 오늘이지만
-     * 시각이 뒤인 것)가 있으면 두 숫자가 갈린다. 그 차이를 화면이 설명할 수 있어야 한다.
+     * <p><b>아직 오지 않은 거래는 세지 않는다.</b> 상한을 회차 끝이 아니라 {@code min(회차 끝,
+     * 지금)} 으로 조인다. 잔액(한도 사용)은 {@code effective_at <= 지금} 인 이력만 세므로,
+     * 여기만 기간 전체를 세면 같은 카드인데 두 숫자가 다르게 보인다(D1, 2026-09-18 결정).
+     * 반복 거래가 미리 만들어 둔 거래와 "오늘이지만 시각이 뒤인" 거래가 그렇게 샜다.
      */
-    private long lumpSumNetBetween(Long cardRowId, LocalDateTime from, LocalDateTime to) {
+    private long lumpSumNet(Long cardRowId, LocalDate start, LocalDate end, LocalDateTime now) {
+        // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
+        LocalDateTime from = start.atStartOfDay();
+        LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
+        LocalDateTime to = now.isBefore(periodEnd) ? now : periodEnd;
         if (!from.isBefore(to)) {
             return 0L;
         }
@@ -563,21 +563,6 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     }
 
     /**
-     * 이 회차 일시불 중 <b>아직 오지 않은 분</b>.
-     *
-     * <p>잔액은 이걸 안 세고 청구는 센다 — 딱 이만큼 청구가 더 커 보인다. 회차가 통째로
-     * 미래면 전액이, 이미 끝난 회차면 0 이 된다.
-     *
-     * <p>이미 낸 기간 합({@code fullLumpSum})을 받아 쓴다 — 같은 값을 두 번 묻지 않는다.
-     */
-    private long scheduledPortion(Asset card, LocalDate start, LocalDate end, long fullLumpSum) {
-        LocalDateTime now = userClock.now(card.getUser().getRowId());
-        LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
-        LocalDateTime until = now.isBefore(periodEnd) ? now : periodEnd;
-        return fullLumpSum - lumpSumNetBetween(card.getRowId(), start.atStartOfDay(), until);
-    }
-
-    /**
      * 이 청구 기간에 빠질 할부 회차 합.
      *
      * <p>거래가 속한 청구 기간을 1회차로 보고, 이번 기간이 몇 회차인지를 <b>기간 시작월의 차이</b>로
@@ -592,8 +577,11 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * "이 숫자가 어디서 왔는지" 를 화면이 설명할 수 없었다.
      */
     private List<CardPaymentServiceDto.InstallmentDue> installmentDuesIn(
-            Long cardRowId, LocalDate start, LocalDate end) {
+            Long cardRowId, LocalDate start, LocalDate end, LocalDateTime now) {
         // 아직 회차가 남아 있을 수 있는 할부 거래만 — 이 기간보다 미래 거래는 볼 필요가 없다.
+        // 상한은 **지금** 까지다(D1) — 아직 사지도 않은 할부를 청구에 세면 안 된다.
+        LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
+        LocalDateTime upTo = now.isBefore(periodEnd) ? now : periodEnd;
         List<Expense> installments = entityManager.createQuery(
             "SELECT e FROM Expense e " +
             "WHERE e.asset.rowId = :cardRowId " +
@@ -604,7 +592,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "ORDER BY e.expenseDate", Expense.class)
             .setParameter("cardRowId", cardRowId)
             .setParameter("expenseType", ExpenseType.EXPENSE)
-            .setParameter("end", end.atTime(LocalTime.MAX))
+            .setParameter("end", upTo)
             .setParameter("isDeleted", YNType.N)
             .getResultList();
 
