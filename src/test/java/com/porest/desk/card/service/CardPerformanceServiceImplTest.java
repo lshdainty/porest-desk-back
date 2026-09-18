@@ -197,4 +197,38 @@ class CardPerformanceServiceImplTest {
                     .isInstanceOf(ForbiddenException.class);
         }
     }
+
+    /**
+     * 실적에서 환불·취소를 <b>뺀다</b>.
+     *
+     * <p>종전엔 지출만 더했다. 산 것을 되돌려도 실적이 그대로 남아 "이번 달 실적 달성" 이
+     * 켜졌고, 사용자는 그 표시를 믿고 어느 카드를 쓸지 정한다. 같은 화면의 청구 예정액은
+     * 처음부터 환불을 빼고 있어 두 숫자가 서로 어긋나 있었다(2026-09-18 사용자 제보).
+     *
+     * <p>합계 자체는 mock 이라 값으로는 못 본다 — 그래서 <b>질의가 무엇을 세는지</b>를 본다.
+     * 되돌아가면(=`SUM(e.amount)` 로) 여기서 걸린다.
+     */
+    @Test
+    @DisplayName("실적 합계는 환불을 빼고 센다 — 청구 예정액과 같은 규칙")
+    void performanceNetsRefunds() {
+        Asset asset = assetWithCatalog(requiredCatalog(300_000, "30만원"));
+        given(assetRepository.findById(ASSET_ID)).willReturn(Optional.of(asset));
+
+        @SuppressWarnings("unchecked")
+        TypedQuery<Long> typedQuery = mock(TypedQuery.class);
+        org.mockito.ArgumentCaptor<String> jpql = org.mockito.ArgumentCaptor.forClass(String.class);
+        given(entityManager.createQuery(jpql.capture(), eq(Long.class))).willReturn(typedQuery);
+        given(typedQuery.setParameter(anyString(), any())).willReturn(typedQuery);
+        given(typedQuery.getSingleResult()).willReturn(100_000L);
+
+        sut.getPerformance(new CardPerformanceServiceDto.PerformanceQuery(USER_ID, ASSET_ID, YM));
+
+        String q = jpql.getValue().replaceAll("\\s+", " ");
+        assertThat(q)
+                .as("지출만 더하고 있으면(SUM(e.amount)) 환불이 안 빠진다")
+                .contains("CASE WHEN e.expenseType = :expenseType THEN e.amount ELSE -e.amount END");
+        assertThat(q)
+                .as("타입으로 걸러 버리면 환불 행이 아예 안 보인다")
+                .doesNotContain("AND e.expenseType = :expenseType");
+    }
 }

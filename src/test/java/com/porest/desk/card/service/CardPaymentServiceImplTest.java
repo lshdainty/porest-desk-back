@@ -21,6 +21,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -1104,5 +1105,81 @@ class CardPaymentServiceImplTest {
         sut.processDueCardPayments(LocalDate.of(2026, 7, 24));
 
         verify(cardBillingRepository, never()).save(any(CardBilling.class));
+    }
+
+    /**
+     * 청구 예정액 중 <b>아직 오지 않은 분</b>을 따로 내려준다.
+     *
+     * <p>자산 목록·한도 사용에 쓰는 잔액은 {@code effective_at <= 지금} 인 이력만 세고,
+     * 청구 예정액은 회차 기간 전체를 센다. 그래서 반복 거래가 미리 만들어 둔 거래나 시각이
+     * 뒤인 오늘 거래가 있으면 <b>같은 카드인데 두 숫자가 다르게</b> 보인다
+     * (2026-09-18 사용자 제보: 466,800 vs 527,100). 화면이 그 차이를 설명하려면 서버가
+     * 그만큼을 따로 알려 줘야 한다.
+     *
+     * <p>Long 질의는 회차마다 둘이다 — ① 기간 전체 합 ② 지금까지의 합. 순서대로 답한다.
+     */
+    @Nested
+    @DisplayName("예정분 분리")
+    class ScheduledPortion {
+
+        private void givenLumpSums(Long... sums) {
+            @SuppressWarnings("unchecked")
+            TypedQuery<Long> query = mock(TypedQuery.class);
+            lenient().when(entityManager.createQuery(anyString(), eq(Long.class))).thenReturn(query);
+            lenient().when(query.setParameter(anyString(), any())).thenReturn(query);
+            Long first = sums[0];
+            Long[] rest = java.util.Arrays.copyOfRange(sums, 1, sums.length);
+            lenient().when(query.getSingleResult()).thenReturn(first, rest);
+            givenInstallments();
+        }
+
+        private void givenCard() {
+            Asset card = creditCard(12);
+            given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+            given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
+            given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+                .willReturn(0L);
+            doReturn(LocalDate.of(2026, 9, 18)).when(userClock).today(USER_ID);
+        }
+
+        @Test
+        @DisplayName("아직 안 온 거래가 있으면 그만큼을 예정분으로 알려 준다")
+        void reportsScheduledPortion() {
+            givenCard();
+            // 이번 회차: 기간 전체 130,000 / 지금까지 100,000 → 예정 30,000
+            // 다음 회차: 둘 다 0
+            givenLumpSums(130_000L, 100_000L, 0L, 0L);
+
+            CardPaymentServiceDto.CardBillingInfo info =
+                sut.getCardBilling(CARD_ID, USER_ID);
+
+            assertThat(info.upcomingAmount()).isEqualTo(130_000L);
+            assertThat(info.upcomingScheduledAmount()).isEqualTo(30_000L);
+        }
+
+        @Test
+        @DisplayName("다 지난 거래뿐이면 예정분은 0 — 잔액과 어긋날 이유가 없다")
+        void noScheduledPortionWhenAllPast() {
+            givenCard();
+            givenLumpSums(100_000L, 100_000L, 0L, 0L);
+
+            CardPaymentServiceDto.CardBillingInfo info =
+                sut.getCardBilling(CARD_ID, USER_ID);
+
+            assertThat(info.upcomingScheduledAmount()).isZero();
+        }
+
+        /** 다음 회차는 통째로 미래다 — 거기 잡힌 건 전부 예정분이다. */
+        @Test
+        @DisplayName("통째로 미래인 회차는 전액이 예정분")
+        void wholeFutureCycleIsAllScheduled() {
+            givenCard();
+            givenLumpSums(0L, 0L, 50_000L, 0L);
+
+            CardPaymentServiceDto.CardBillingInfo info =
+                sut.getCardBilling(CARD_ID, USER_ID);
+
+            assertThat(info.nextCycle().scheduledAmount()).isEqualTo(50_000L);
+        }
     }
 }

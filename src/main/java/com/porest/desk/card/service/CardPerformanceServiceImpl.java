@@ -69,11 +69,22 @@ public class CardPerformanceServiceImpl implements CardPerformanceService {
         );
     }
 
+    /**
+     * 실적 사용액 — <b>환불·취소는 뺀다.</b>
+     *
+     * <p>종전엔 지출만 더하고 환불을 안 뺐다. 그래서 산 것을 되돌려도 실적은 그대로 남아
+     * "이번 달 실적 달성" 이 켜졌고, 사용자는 그 표시를 믿고 혜택이 붙는다고 여긴다 —
+     * 되돌릴 수 없는 판단(어느 카드를 쓸까)에 쓰이는 숫자라 더 그렇다. 실제 카드사도
+     * 취소분은 실적에서 뺀다.
+     *
+     * <p>같은 화면의 청구 예정액({@code lumpSumNet})과 셈법을 맞춘다 — 한 화면에서 두
+     * 숫자가 서로 다른 규칙을 쓰면 사용자는 어느 쪽이 맞는지 알 수 없다.
+     */
     private long sumExpenseAmount(Long assetRowId, LocalDate start, LocalDate end) {
         Long sum = entityManager.createQuery(
-            "SELECT COALESCE(SUM(e.amount), 0) FROM Expense e " +
+            "SELECT COALESCE(SUM(CASE WHEN e.expenseType = :expenseType " +
+            "THEN e.amount ELSE -e.amount END), 0) FROM Expense e " +
             "WHERE e.asset.rowId = :assetRowId " +
-            "AND e.expenseType = :expenseType " +
             "AND e.expenseDate >= :start AND e.expenseDate <= :end " +
             "AND e.isDeleted = :isDeleted", Long.class)
             .setParameter("assetRowId", assetRowId)

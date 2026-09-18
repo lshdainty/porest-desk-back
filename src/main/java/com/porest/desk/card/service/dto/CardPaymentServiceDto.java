@@ -82,6 +82,14 @@ public class CardPaymentServiceDto {
         Long upcomingAmount,
         Long upcomingLumpSumAmount,
         Long upcomingAlreadyPaidAmount,
+        /**
+         * 이 회차 금액 중 <b>아직 오지 않은 분</b>.
+         *
+         * <p>자산 목록·한도 사용에 쓰는 잔액은 지금 이전 이력만 세고, 청구 예정액은 회차
+         * 기간 전체를 센다. 그래서 반복 거래가 미리 만들어 둔 거래나 시각이 뒤인 오늘 거래가
+         * 있으면 딱 이만큼 청구가 더 커 보인다 — 화면이 그 차이를 말할 수 있어야 한다.
+         */
+        Long upcomingScheduledAmount,
         List<InstallmentDue> upcomingInstallments,
         LocalDate upcomingPeriodStart,
         LocalDate upcomingPeriodEnd,
@@ -105,6 +113,8 @@ public class CardPaymentServiceDto {
         Long amount,
         Long lumpSumAmount,
         Long alreadyPaidAmount,
+        /** {@link CardBillingInfo#upcomingScheduledAmount} 와 같은 뜻 — 이 회차의 예정분. */
+        Long scheduledAmount,
         List<InstallmentDue> installments
     ) {}
 }
