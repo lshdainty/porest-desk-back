@@ -26,10 +26,25 @@ public final class ExpenseAggregates {
 
     /** 집계 대상만 남긴다 — 기준 시각 이후(예정)와 <b>환불된 것</b>을 뺀다. */
     public static List<Expense> countable(List<Expense> all, LocalDateTime now) {
+        return notFuture(all, now).filter(Expense::isCountable).toList();
+    }
+
+    /**
+     * <b>가계부</b> 집계 대상만 남긴다 — {@link #countable} 에서 카드 이월을 더 뺀다.
+     *
+     * <p>카드를 만들 때 적은 "이전 미결제 사용액"(D4)은 앱을 쓰기 전에 이미 쓴 돈이라
+     * 등록한 달의 지출이 아니다. 지출 합계·예산·통계·홈·카테고리가 이걸 쓴다.
+     *
+     * <p>카드 쪽(청구·할부 회차·실적·한도 사용·카드 상세 이용 내역)은 {@link #countable}
+     * 그대로다 — 그 거래가 곧 카드의 미결제 잔액이라 빼면 D4 가 풀린다.
+     */
+    public static List<Expense> ledgerCountable(List<Expense> all, LocalDateTime now) {
+        return notFuture(all, now).filter(Expense::isLedgerCountable).toList();
+    }
+
+    private static java.util.stream.Stream<Expense> notFuture(List<Expense> all, LocalDateTime now) {
         return all.stream()
-            .filter(Expense::isCountable)
-            .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now))
-            .toList();
+            .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now));
     }
 
     /** 수입 합계. */

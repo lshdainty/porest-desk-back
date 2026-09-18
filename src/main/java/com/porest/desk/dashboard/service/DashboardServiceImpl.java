@@ -171,6 +171,6 @@ public class DashboardServiceImpl implements DashboardService {
 
     /** 아직 오지 않은 거래는 집계에서 뺀다 — 규칙은 ExpenseAggregates 에 하나뿐이다. */
     private static List<Expense> notFuture(List<Expense> all, LocalDateTime now) {
-        return ExpenseAggregates.countable(all, now);
+        return ExpenseAggregates.ledgerCountable(all, now);
     }
 }

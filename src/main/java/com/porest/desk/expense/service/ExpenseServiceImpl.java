@@ -572,7 +572,7 @@ public class ExpenseServiceImpl implements ExpenseService {
      * <p>목록·캘린더에서는 여전히 보인다 — 거기서는 "예정" 으로 표시한다.
      */
     private List<Expense> aggregatable(List<Expense> all, Long userRowId) {
-        return ExpenseAggregates.countable(all, userClock.now(userRowId));
+        return ExpenseAggregates.ledgerCountable(all, userClock.now(userRowId));
     }
 
     @Override
