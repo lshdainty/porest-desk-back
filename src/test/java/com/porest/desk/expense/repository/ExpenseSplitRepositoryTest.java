@@ -53,7 +53,7 @@ class ExpenseSplitRepositoryTest {
     }
 
     private Expense persistExpense(User user, ExpenseCategory cat, ExpenseType type, long amount, LocalDateTime when) {
-        return em.persist(Expense.createExpense(user, cat, null, type, amount, "거래", when, "가게", "CARD", null, null,
+        return em.persist(Expense.createExpense(user, cat, null, type, amount, "거래", when, "가게", "CARD", null,
             null,
             null,
             null));

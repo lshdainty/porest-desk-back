@@ -72,7 +72,7 @@ class ExpenseServiceSummaryTest {
 
     private Expense expense(ExpenseType type, long amount, String merchant) {
         return Expense.createExpense(null, null, null, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), merchant, "CARD", null, null,
+                LocalDateTime.of(2026, 6, 15, 12, 0), merchant, "CARD", null,
             null,
             null,
             null);
@@ -86,14 +86,14 @@ class ExpenseServiceSummaryTest {
 
     private Expense expenseIn(ExpenseCategory cat, ExpenseType type, long amount) {
         return Expense.createExpense(null, cat, null, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null,
             null,
             null,
             null);
     }
 
     private Expense expenseOn(ExpenseCategory cat, ExpenseType type, long amount, LocalDateTime at) {
-        return Expense.createExpense(null, cat, null, type, amount, null, at, null, null, null, null,
+        return Expense.createExpense(null, cat, null, type, amount, null, at, null, null, null,
             null,
             null,
             null);
@@ -109,7 +109,7 @@ class ExpenseServiceSummaryTest {
 
     private Expense expenseWithAsset(Asset asset, ExpenseType type, long amount) {
         return Expense.createExpense(null, null, asset, type, amount, null,
-                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 15, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -373,23 +373,22 @@ class ExpenseServiceSummaryTest {
     }
 
     @Test
-    @DisplayName("getRangeSummary — 환불은 원거래의 카테고리에서 빠진다 (환불 자신의 수입 카테고리가 아니라)")
-    void rangeSummaryOffsetsRefundInOriginCategory() {
-        // 사용자는 환불을 수입 폼으로 입력해 수입 카테고리(급여)를 고른다.
-        // 상계가 그 카테고리로 꽂히면 급여의 진짜 수입까지 지출 breakdown 에
-        // 끌려 나온다 (dev 에서 급여 1,995,000 이 지출 도넛에 떴다).
+    @DisplayName("getRangeSummary — 환불된 지출은 그 카테고리에서 통째로 빠진다")
+    void rangeSummaryExcludesRefundedFromItsCategory() {
+        // 마크 모델에서는 환불이 **수입 행을 만들지 않는다.** 그래서 "환불 입력 때 고른
+        // 수입 카테고리로 상계가 꽂혀 급여가 지출 도넛에 끌려 나온다" 는 사고 자체가
+        // 성립하지 않는다 — 원거래가 그 카테고리에서 빠지는 것으로 끝난다.
         ExpenseCategory food = category(20L, "식비", null);
         ExpenseCategory salaryCat = category(30L, "급여", null);
 
-        Expense origin = expenseIn(food, ExpenseType.EXPENSE, 45_000L);
-        ReflectionTestUtils.setField(origin, "rowId", 100L);
-        Expense refundTx = Expense.createExpense(null, salaryCat, null, ExpenseType.INCOME, 5_000L, null,
-                LocalDateTime.of(2026, 6, 16, 12, 0), null, null, null, 100L, null, null, null);
+        Expense kept = expenseIn(food, ExpenseType.EXPENSE, 40_000L);
+        Expense refunded = expenseIn(food, ExpenseType.EXPENSE, 5_000L);
+        refunded.markRefunded(LocalDateTime.of(2026, 6, 16, 12, 0));
         Expense salary = expenseIn(salaryCat, ExpenseType.INCOME, 2_000_000L);
 
         given(expenseSplitRepository.findByExpenseIds(anyList())).willReturn(List.of());
         given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class), isNull()))
-                .willReturn(List.of(origin, refundTx, salary));
+                .willReturn(List.of(kept, refunded, salary));
 
         ExpenseServiceDto.RangeSummary summary = sut.getRangeSummary(
                 USER_ID, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
@@ -399,77 +398,77 @@ class ExpenseServiceSummaryTest {
 
         var foodEntry = summary.categoryBreakdown().stream()
                 .filter(b -> Long.valueOf(20L).equals(b.categoryRowId())).findFirst().orElseThrow();
-        assertThat(foodEntry.totalAmount()).isEqualTo(40_000L);          // 45,000 − 5,000
+        assertThat(foodEntry.totalAmount()).isEqualTo(40_000L);   // 환불 5,000 은 안 센다
         assertThat(foodEntry.expenseType()).isEqualTo(ExpenseType.EXPENSE);
 
         var salaryEntry = summary.categoryBreakdown().stream()
                 .filter(b -> Long.valueOf(30L).equals(b.categoryRowId())).findFirst().orElseThrow();
-        assertThat(salaryEntry.expenseType()).isEqualTo(ExpenseType.INCOME); // 지출로 오태깅 금지
+        assertThat(salaryEntry.expenseType()).isEqualTo(ExpenseType.INCOME);
         assertThat(salaryEntry.totalAmount()).isEqualTo(2_000_000L);
 
-        // breakdown 지출 합 == 총지출 (환불이 다른 카테고리로 새면 안 맞는다)
+        // breakdown 지출 합 == 총지출
         long expenseSum = summary.categoryBreakdown().stream()
                 .filter(b -> b.expenseType() == ExpenseType.EXPENSE)
                 .mapToLong(ExpenseServiceDto.CategoryBreakdown::totalAmount).sum();
         assertThat(expenseSum).isEqualTo(40_000L);
     }
 
-    // ── 환불 상계·미래 제외 ─────────────────────────────────────────────
+    // ── 환불 제외·미래 제외 ─────────────────────────────────────────────
 
     private Expense at(ExpenseType type, long amount, LocalDateTime when, String merchant) {
         return Expense.createExpense(null, null, null, type, amount, null,
-            when, merchant, "CARD", null, null, null, null, null);
+            when, merchant, "CARD", null, null, null, null);
     }
 
-    /** 환불 = INCOME + 원거래 지정. 수입이 아니라 지출을 깎는다. */
-    private Expense refund(long amount, LocalDateTime when, String merchant) {
-        return Expense.createExpense(null, null, null, ExpenseType.INCOME, amount, null,
-            when, merchant, "CARD", null, 999L, null, null, null);
+    /** 환불로 표시한 지출 — 원거래에 표식이 찍히고 집계에서 통째로 빠진다. */
+    private Expense refunded(long amount, LocalDateTime when, String merchant) {
+        Expense e = at(ExpenseType.EXPENSE, amount, when, merchant);
+        e.markRefunded(when.plusDays(1));
+        return e;
     }
 
     @Test
-    @DisplayName("추이(trend)도 환불을 상계한다 — 기간 요약과 같은 값이어야 한다")
-    void trendOffsetsRefund() {
+    @DisplayName("추이(trend)도 환불된 거래를 뺀다 — 기간 요약과 같은 값이어야 한다")
+    void trendExcludesRefunded() {
         // 이번 달 1일 00:00 — now().minusDays(3) 을 쓰면 매월 1~3 일에 지난 달로 떨어져
         // 이번 달 추이 버킷에서 빠진다(9월 1일에 실제로 깨졌다).
         LocalDateTime past = LocalDate.now().withDayOfMonth(1).atStartOfDay();
         List<Expense> rows = List.of(
-            at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
-            refund(3_000L, past, "쿠팡"));
+            at(ExpenseType.EXPENSE, 47_000L, past, "쿠팡"),
+            refunded(3_000L, past, "쿠팡"));
         given(expenseRepository.findByDateRange(anyLong(), any(LocalDate.class), any(LocalDate.class), isNull()))
             .willReturn(rows);
 
         var trend = sut.getMonthlyTrend(USER_ID, 1);
 
-        // 상계 전에는 수입 3,000 / 지출 50,000 으로 나와 기간 요약과 어긋났다.
+        // 환불된 3,000 은 수입으로도, 지출로도 잡히지 않는다.
         assertThat(trend.get(0).totalIncome()).isZero();
         assertThat(trend.get(0).totalExpense()).isEqualTo(47_000L);
     }
 
     @Test
-    @DisplayName("거래처별 요약도 환불을 상계한다 — 건수는 실제 지출 건만 센다")
-    void merchantOffsetsRefund() {
+    @DisplayName("거래처별 요약도 환불된 거래를 뺀다 — 건수도 함께 줄어든다")
+    void merchantExcludesRefunded() {
         LocalDateTime past = LocalDateTime.now().minusDays(3);
         given(expenseRepository.findByUser(anyLong(), any(), any(), any(), any()))
             .willReturn(List.of(
-                at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
-                refund(3_000L, past, "쿠팡")));
+                at(ExpenseType.EXPENSE, 47_000L, past, "쿠팡"),
+                refunded(3_000L, past, "쿠팡")));
 
         var result = sut.getMerchantSummary(USER_ID, null, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).totalAmount()).isEqualTo(47_000L);
-        assertThat(result.get(0).count()).isEqualTo(1); // 환불이 방문 횟수를 늘리면 안 된다
+        // 환불한 건은 "간 적 없는 것" 으로 본다 — 삭제와 같은 취급이다.
+        assertThat(result.get(0).count()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("전액 환불된 가맹점은 거래처 목록에서 빠진다")
+    @DisplayName("전부 환불된 가맹점은 거래처 목록에서 빠진다")
     void fullyRefundedMerchantDisappears() {
         LocalDateTime past = LocalDateTime.now().minusDays(3);
         given(expenseRepository.findByUser(anyLong(), any(), any(), any(), any()))
-            .willReturn(List.of(
-                at(ExpenseType.EXPENSE, 50_000L, past, "쿠팡"),
-                refund(50_000L, past, "쿠팡")));
+            .willReturn(List.of(refunded(50_000L, past, "쿠팡")));
 
         assertThat(sut.getMerchantSummary(USER_ID, null, null)).isEmpty();
     }

@@ -121,7 +121,6 @@ public class SmsImportServiceImpl implements SmsImportService {
                 command.merchant(),
                 paymentMethodOf(command.paymentMethod()),
                 command.installmentMonths(),
-                null,
                 command.originalAmount(),
                 command.originalCurrency(),
                 command.exchangeRate(),

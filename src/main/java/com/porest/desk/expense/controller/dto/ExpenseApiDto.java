@@ -60,7 +60,13 @@ public class ExpenseApiDto {
         String paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
         Integer installmentMonths,
-        /** 환불 원거래 행 아이디 (null = 환불 아님). */
+        /**
+         * <b>폐기된 칸.</b> 환불은 이제 원거래에 찍는 표식이라(`POST /expense/{id}/refund`)
+         * 수입 행을 만들지 않는다. 값이 실려 오면 400 {@code EXP_044} 로 <b>눈에 보이게</b>
+         * 막는다 — 조용히 일반 수입으로 저장되면 사용자는 환불한 줄 알고 통계는 부푼다.
+         * 옛 앱이 이 키를 보내므로 칸 자체는 남겨 둔다(없으면 Jackson 이 무시해 버린다).
+         */
+        @Deprecated
         Long refundOfExpenseRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
         java.math.BigDecimal originalAmount,
@@ -102,7 +108,13 @@ public class ExpenseApiDto {
         Optional<String> paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
         Optional<Integer> installmentMonths,
-        /** 환불 원거래 행 아이디 (null = 환불 아님). */
+        /**
+         * <b>폐기된 칸.</b> 환불은 이제 원거래에 찍는 표식이라(`POST /expense/{id}/refund`)
+         * 수입 행을 만들지 않는다. 값이 실려 오면 400 {@code EXP_044} 로 <b>눈에 보이게</b>
+         * 막는다 — 조용히 일반 수입으로 저장되면 사용자는 환불한 줄 알고 통계는 부푼다.
+         * 옛 앱이 이 키를 보내므로 칸 자체는 남겨 둔다(없으면 Jackson 이 무시해 버린다).
+         */
+        @Deprecated
         Optional<Long> refundOfExpenseRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
         Optional<java.math.BigDecimal> originalAmount,
@@ -134,8 +146,10 @@ public class ExpenseApiDto {
         String paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
         Integer installmentMonths,
-        /** 환불 원거래 행 아이디 (null = 환불 아님). */
-        Long refundOfExpenseRowId,
+        /** 환불 처리 시각 (null = 환불 아님). 화면이 취소선·"환불됨" 배지로 그린다. */
+        LocalDateTime refundedAt,
+        /** 환불 마크가 만든 카드→결제계좌 환급 이체 (null = 없음). */
+        Long refundTransferRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
         java.math.BigDecimal originalAmount,
         /** 원 통화 (ISO 4217, 예: USD). */
@@ -149,9 +163,6 @@ public class ExpenseApiDto {
          * 값이 있으면 금액·날짜·자산이 잠긴다 — 화면이 입력을 막을 수 있게 내려 준다.
          */
         String autoSource,
-        /** 이 거래에 달린 환불 건수·합계 — 지우면 함께 사라지므로 화면이 미리 알린다. */
-        int refundCount,
-        long refundedAmount,
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터 split-aware 용.
@@ -174,15 +185,14 @@ public class ExpenseApiDto {
                 info.merchant(),
                 info.paymentMethod(),
                 info.installmentMonths(),
-                info.refundOfExpenseRowId(),
+                info.refundedAt(),
+                info.refundTransferRowId(),
                 info.originalAmount(),
                 info.originalCurrency(),
                 info.exchangeRate(),
                 info.calendarEventRowId(),
                 info.todoRowId(),
                 info.autoSource(),
-                info.refundCount(),
-                info.refundedAmount(),
                 info.createAt(),
                 info.modifyAt(),
                 info.splitCategoryRowIds()
@@ -343,4 +353,10 @@ public class ExpenseApiDto {
             return new HeatmapResponse(cells.stream().map(HeatmapCellResponse::from).toList());
         }
     }
+
+    /** 환불 마크 요청 — 환불일만 받는다. 비우면 지금. */
+    public record RefundRequest(
+        /** 환불 처리 시각 (ISO, 예 2026-09-18T10:00:00). 비우면 서버의 지금. */
+        String refundedAt
+    ) {}
 }

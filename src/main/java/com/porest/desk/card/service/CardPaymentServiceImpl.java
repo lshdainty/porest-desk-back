@@ -33,6 +33,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 @Service
@@ -500,6 +502,89 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         return new PayoffTarget(expense, anchor);
     }
 
+    @Override
+    @Transactional
+    public Long refundCreditIfOverpaid(Long cardRowId, long cap, String memo,
+                                       LocalDateTime at, Long userRowId) {
+        Asset card = findAssetOrThrow(cardRowId);
+        if (card.getAssetType() != AssetType.CREDIT_CARD) {
+            return null;
+        }
+        Asset account = card.getPaymentAsset();
+        if (account == null) {
+            // 결제계좌를 안 걸어 둔 카드는 기록용이다(결정 3). 돌려줄 곳이 없고, 잔액은
+            // flow 제거로 이미 줄었으며 다음 결제가 min(청구, 빚) 이라 저절로 상계된다.
+            log.info("카드 환급 건너뜀(결제계좌 없음): cardRowId={}", cardRowId);
+            return null;
+        }
+        long refund = Math.min(overpaidCredit(card, at), cap);
+        if (refund <= 0L) {
+            return null;
+        }
+        AssetServiceDto.TransferInfo info = assetService.createTransfer(
+            new AssetServiceDto.CreateTransferCommand(
+                userRowId, card.getRowId(), account.getRowId(), refund, 0L, 0L,
+                memo != null ? memo : "카드사 환급", at,
+                // 과납 스윕이 만드는 환급과 같은 출처 — 사용자가 따로 고치면 잔액이 어긋난다.
+                "CARD_REFUND"));
+        log.info("카드 환급 이체 생성: cardRowId={}, amount={}, transferRowId={}",
+            cardRowId, refund, info.rowId());
+        return info.rowId();
+    }
+
+    /**
+     * 회차별 크레딧의 합 − 이미 나간 환급.
+     *
+     * <p>회차마다 {@code max(0, 낸 이체액 − 지금 청구액)} 을 더한다. 회차별로 0 에서
+     * 끊는 이유 — 어느 회차가 아직 덜 냈다고 해서 다른 회차에서 받을 환급이 줄어들면
+     * 안 된다. 같은 회차에 여러 번 낸(부분 선결제) 경우는 이체액을 합쳐서 한 번 센다.
+     */
+    private long overpaidCredit(Asset card, LocalDateTime at) {
+        Map<String, Long> paidByPeriod = new LinkedHashMap<>();
+        Map<String, LocalDate[]> periods = new LinkedHashMap<>();
+        for (CardBilling b : cardBillingRepository.findByCardAssetRowId(card.getRowId())) {
+            if (b.getIsDeleted() == YNType.Y || b.getStatus() != BillingStatus.COMPLETED) {
+                continue;
+            }
+            // 실제로 나간 돈만 센다 — 이체가 없는 회차(결제계좌 없이 기록만)는 돌려줄 게 없다.
+            long paid = b.getTransfer() != null && b.getTransfer().getAmount() != null
+                ? b.getTransfer().getAmount() : 0L;
+            if (paid <= 0L) {
+                continue;
+            }
+            String key = b.getPeriodStart() + "~" + b.getPeriodEnd();
+            paidByPeriod.merge(key, paid, Long::sum);
+            periods.putIfAbsent(key, new LocalDate[] {b.getPeriodStart(), b.getPeriodEnd()});
+        }
+        long credit = 0L;
+        for (Map.Entry<String, Long> e : paidByPeriod.entrySet()) {
+            LocalDate[] p = periods.get(e.getKey());
+            credit += Math.max(0L, e.getValue() - grossBill(card.getRowId(), p[0], p[1], at));
+        }
+        return credit - alreadyRefunded(card.getRowId());
+    }
+
+    /** 그 회차의 지금 청구액 — 일시불 + 할부 회차분. 이미 낸 금액은 빼지 않는다(그쪽이 비교 대상). */
+    private long grossBill(Long cardRowId, LocalDate start, LocalDate end, LocalDateTime at) {
+        long lump = lumpSumNet(cardRowId, start, end, at);
+        long inst = installmentDuesIn(cardRowId, start, end, at).stream()
+            .mapToLong(CardPaymentServiceDto.InstallmentDue::amount).sum();
+        return lump + inst;
+    }
+
+    /** 이 카드에서 이미 나간 환급 합 — 같은 크레딧을 두 번 돌려주지 않게 뺀다. */
+    private long alreadyRefunded(Long cardRowId) {
+        Long sum = entityManager.createQuery(
+            "SELECT COALESCE(SUM(t.amount), 0) FROM AssetTransfer t " +
+            "WHERE t.fromAsset.rowId = :cardRowId AND t.autoSource = :autoSource " +
+            "AND t.isDeleted = :isDeleted", Long.class)
+            .setParameter("cardRowId", cardRowId)
+            .setParameter("autoSource", "CARD_REFUND")
+            .setParameter("isDeleted", YNType.N)
+            .getSingleResult();
+        return sum == null ? 0L : sum;
+    }
+
     private BillingCycle upcomingCycle(Asset card, LocalDate nextPaymentDate) {
         // 아직 오지 않은 거래는 세지 않는다 — 가계부 합계·자산 잔액과 같은 규칙(D1,
         // 2026-09-18 결정). 종전엔 청구만 기간 전체를 세서, 같은 카드인데 한도 사용과
@@ -552,6 +637,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "WHERE e.asset.rowId = :cardRowId " +
             "AND e.expenseDate >= :start AND e.expenseDate <= :end " +
             "AND (e.installmentMonths IS NULL OR e.installmentMonths <= 1) " +
+            // 환불된 거래는 삭제와 똑같이 뺀다 — 원거래가 빠져 청구가 저절로 줄어든다.
+            "AND e.refundedAt IS NULL " +
             "AND e.isDeleted = :isDeleted", Long.class)
             .setParameter("expenseType", ExpenseType.EXPENSE)
             .setParameter("cardRowId", cardRowId)
@@ -588,6 +675,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "AND e.expenseType = :expenseType " +
             "AND e.installmentMonths > 1 " +
             "AND e.expenseDate <= :end " +
+            // 환불된 할부는 남은 회차가 통째로 사라진다(설계 결정 8).
+            "AND e.refundedAt IS NULL " +
             "AND e.isDeleted = :isDeleted " +
             "ORDER BY e.expenseDate", Expense.class)
             .setParameter("cardRowId", cardRowId)

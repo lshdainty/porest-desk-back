@@ -136,7 +136,7 @@ class CardPaymentServiceImplTest {
     private Expense installment(LocalDate purchasedOn, long amount, int months) {
         return Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, amount, "할부 결제",
-            purchasedOn.atTime(14, 0), "테스트가맹점", "CARD", months, null,
+            purchasedOn.atTime(14, 0), "테스트가맹점", "CARD", months,
             null,
             null,
             null);
@@ -242,7 +242,7 @@ class CardPaymentServiceImplTest {
         lenient().doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
         Expense lump = Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, 50_000L, null,
-            LocalDate.of(2026, 8, 10).atTime(12, 0), "커피", "CARD", null, null,
+            LocalDate.of(2026, 8, 10).atTime(12, 0), "커피", "CARD", null,
             null, null, null);
         ReflectionTestUtils.setField(lump, "asset", cardAssetStub());
         given(entityManager.find(Expense.class, 77L)).willReturn(lump);

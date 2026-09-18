@@ -45,4 +45,11 @@ public interface ExpenseService {
      * 각 leaf 금액을 leaf 키와 부모 키 모두에 누적(롤업)한다. 예산 알림 등 카테고리 귀속이 필요한 곳에서 사용.
      */
     Map<Long, Long> getMonthlyExpenseSpendByCategory(Long userRowId, int year, int month);
+
+    /** 환불 마크 — 삭제 대신. {@code refundedAt} 이 null 이면 지금. */
+    ExpenseServiceDto.ExpenseInfo refund(Long expenseId, Long userRowId,
+                                        java.time.LocalDateTime refundedAt);
+
+    /** 환불 취소 — 표식·환급 이체를 무르고 원거래 흐름을 되살린다. */
+    ExpenseServiceDto.ExpenseInfo cancelRefund(Long expenseId, Long userRowId);
 }

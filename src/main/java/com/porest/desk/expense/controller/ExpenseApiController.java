@@ -37,6 +37,7 @@ public class ExpenseApiController {
     public ApiResponse<ExpenseApiDto.Response> createExpense(
             @LoginUser UserPrincipal loginUser,
             @Valid @RequestBody ExpenseApiDto.CreateRequest request) {
+        rejectDeprecatedRefundField(request.refundOfExpenseRowId());
         ExpenseServiceDto.ExpenseInfo info = expenseService.createExpense(new ExpenseServiceDto.CreateCommand(
             loginUser.getRowId(),
             request.categoryRowId(),
@@ -48,7 +49,6 @@ public class ExpenseApiController {
             request.merchant(),
             request.paymentMethod(),
             request.installmentMonths(),
-            request.refundOfExpenseRowId(),
             request.originalAmount(), request.originalCurrency(), request.exchangeRate(),
             request.calendarEventRowId(),
             request.todoRowId()
@@ -83,6 +83,7 @@ public class ExpenseApiController {
                     s.rowId(), s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
                 .toList();
 
+        rejectDeprecatedRefundField(request.refundOfExpenseRowId());
         ExpenseServiceDto.ExpenseInfo info = expenseService.updateExpense(id, loginUser.getRowId(), new ExpenseServiceDto.UpdateCommand(
             Patch.from(request.categoryRowId()),
             Patch.from(request.assetRowId()),
@@ -93,7 +94,6 @@ public class ExpenseApiController {
             Patch.from(request.merchant()),
             Patch.from(request.paymentMethod()),
             Patch.from(request.installmentMonths()),
-            Patch.from(request.refundOfExpenseRowId()),
             Patch.from(request.originalAmount()),
             Patch.from(request.originalCurrency()),
             Patch.from(request.exchangeRate()),
@@ -204,5 +204,54 @@ public class ExpenseApiController {
     /** expenseDate 문자열 → LocalDateTime. 규칙은 {@link WallClockDateTimeParser} 참조. */
     private static LocalDateTime parseExpenseDate(String s) {
         return WallClockDateTimeParser.parse(s);
+    }
+
+    /**
+     * 환불 마크 — 원거래에 표식을 찍는다. 수입 행을 만들지 않는다.
+     *
+     * <p>{@code refundedAt} 을 안 보내면 지금이다. 카드였고 그 회차를 이미 냈다면
+     * 남는 돈만큼 결제계좌로 환급 이체가 함께 생긴다(응답의 {@code refundTransferRowId}).
+     */
+    @PostMapping("/expense/{id}/refund")
+    public ApiResponse<ExpenseApiDto.Response> refund(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestBody(required = false) ExpenseApiDto.RefundRequest request) {
+        LocalDateTime at = request != null && request.refundedAt() != null
+            ? parseExpenseDate(request.refundedAt()) : null;
+        ExpenseServiceDto.ExpenseInfo info =
+            expenseService.refund(id, loginUser.getRowId(), at);
+        return ApiResponse.success(ExpenseApiDto.Response.from(info));
+    }
+
+    /** 환불 취소 — 표식·환급 이체를 무르고 원거래 흐름을 되살린다. */
+    @DeleteMapping("/expense/{id}/refund")
+    public ApiResponse<ExpenseApiDto.Response> cancelRefund(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id) {
+        ExpenseServiceDto.ExpenseInfo info =
+            expenseService.cancelRefund(id, loginUser.getRowId());
+        return ApiResponse.success(ExpenseApiDto.Response.from(info));
+    }
+
+    /**
+     * 폐기된 환불 칸을 <b>눈에 보이게</b> 막는다.
+     *
+     * <p>조용히 무시하면 옛 앱의 환불이 일반 수입으로 저장된다 — 사용자는 환불한 줄 알고
+     * 통계는 부푼다. 400 으로 끊으면 "앱을 업데이트해 주세요" 가 화면에 뜨므로 강제
+     * 업데이트가 필요 없다(설계서 6절).
+     */
+    private static void rejectDeprecatedRefundField(java.util.Optional<Long> field) {
+        // PUT 은 "키가 없으면 유지" 라 안 실린 칸은 **Optional 자체가 null** 이다
+        // (Jackson 이 없는 키를 Optional.empty 로 채우지 않는다). null 검사를 빼면
+        // 환불과 무관한 모든 수정이 500 으로 죽는다 — 테스트가 그렇게 잡혔다.
+        rejectDeprecatedRefundField(field != null ? field.orElse(null) : null);
+    }
+
+    private static void rejectDeprecatedRefundField(Long refundOfExpenseRowId) {
+        if (refundOfExpenseRowId != null) {
+            throw new com.porest.core.exception.InvalidValueException(
+                com.porest.desk.common.exception.DeskErrorCode.DEPRECATED_FIELD);
+        }
     }
 }

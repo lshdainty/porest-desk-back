@@ -202,30 +202,6 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
     }
 
     @Override
-    public List<Expense> findActiveRefundsOfMany(List<Long> expenseRowIds) {
-        if (expenseRowIds == null || expenseRowIds.isEmpty()) {
-            return List.of();
-        }
-        return queryFactory.selectFrom(expense)
-            .where(
-                expense.refundOfExpenseRowId.in(expenseRowIds),
-                expense.isDeleted.eq(YNType.N)
-            )
-            .fetch();
-    }
-
-    @Override
-    public List<Expense> findActiveRefundsOf(Long expenseRowId) {
-        return queryFactory.selectFrom(expense)
-            .where(
-                expense.refundOfExpenseRowId.eq(expenseRowId),
-                expense.isDeleted.eq(YNType.N)
-            )
-            .orderBy(expense.expenseDate.asc())
-            .fetch();
-    }
-
-    @Override
     public List<Expense> findByCalendarEvent(Long calendarEventRowId) {
         return queryFactory.selectFrom(expense)
             .leftJoin(expense.category).fetchJoin()

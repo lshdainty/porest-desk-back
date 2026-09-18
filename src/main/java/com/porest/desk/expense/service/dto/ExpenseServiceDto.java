@@ -24,7 +24,6 @@ public class ExpenseServiceDto {
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
         Integer installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). INCOME 이면서 이 값이 있으면 지출 상계로 집계. */
-        Long refundOfExpenseRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
         java.math.BigDecimal originalAmount,
         /** 원 통화 (ISO 4217, 예: USD). */
@@ -51,7 +50,6 @@ public class ExpenseServiceDto {
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
         Patch<Integer> installmentMonths,
         /** 환불 원거래 행 아이디 (null = 환불 아님). INCOME 이면서 이 값이 있으면 지출 상계로 집계. */
-        Patch<Long> refundOfExpenseRowId,
         /** 원 통화 금액 (해외 결제 시). null 이면 원화 결제. */
         Patch<java.math.BigDecimal> originalAmount,
         /** 원 통화 (ISO 4217, 예: USD). */
@@ -82,8 +80,13 @@ public class ExpenseServiceDto {
         String paymentMethod,
         /** 할부 개월 (null = 일시불). */
         Integer installmentMonths,
-        /** 환불 원거래 행 아이디 (null = 환불 아님). */
-        Long refundOfExpenseRowId,
+        /**
+         * 환불 처리 시각 (null = 환불 아님). 있으면 화면이 취소선·"환불됨" 배지로 그리고
+         * 합계에서 빠진 상태다.
+         */
+        LocalDateTime refundedAt,
+        /** 환불 마크가 만든 카드→결제계좌 환급 이체 (null = 없음). */
+        Long refundTransferRowId,
         /** 원 통화 금액 (해외 결제 시). */
         java.math.BigDecimal originalAmount,
         /** 원 통화 (ISO 4217). */
@@ -97,12 +100,6 @@ public class ExpenseServiceDto {
          * 값이 있으면 금액·날짜·자산이 잠긴다 — 화면이 입력을 막을 수 있게 내려 준다.
          */
         String autoSource,
-        /**
-         * 이 거래에 달린 환불 건수·합계. 지우면 함께 사라지므로 화면이 미리 알려 줄 수 있다.
-         * 환불이 없으면 0 이다.
-         */
-        int refundCount,
-        long refundedAmount,
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
@@ -113,11 +110,6 @@ public class ExpenseServiceDto {
         }
 
         public static ExpenseInfo from(Expense expense, List<Long> splitCategoryRowIds) {
-            return from(expense, splitCategoryRowIds, List.of());
-        }
-
-        public static ExpenseInfo from(Expense expense, List<Long> splitCategoryRowIds,
-                                       List<Expense> refunds) {
             return new ExpenseInfo(
                 expense.getRowId(),
                 expense.getUser().getRowId(),
@@ -135,15 +127,14 @@ public class ExpenseServiceDto {
                 expense.getMerchant(),
                 expense.getPaymentMethod(),
                 expense.getInstallmentMonths(),
-                expense.getRefundOfExpenseRowId(),
+                expense.getRefundedAt(),
+                expense.getRefundTransferRowId(),
                 expense.getOriginalAmount(),
                 expense.getOriginalCurrency(),
                 expense.getExchangeRate(),
                 expense.getCalendarEvent() != null ? expense.getCalendarEvent().getRowId() : null,
                 expense.getTodo() != null ? expense.getTodo().getRowId() : null,
                 expense.getAutoSource(),
-                refunds.size(),
-                refunds.stream().mapToLong(Expense::getAmount).sum(),
                 expense.getCreateAt(),
                 expense.getModifyAt(),
                 splitCategoryRowIds != null ? splitCategoryRowIds : List.of()

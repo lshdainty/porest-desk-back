@@ -6,6 +6,9 @@ import com.porest.core.exception.InvalidValueException;
 import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
+import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.service.CardPaymentService;
+import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.repository.CalendarEventRepository;
 import com.porest.desk.common.exception.DeskErrorCode;
@@ -63,6 +66,8 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final CalendarEventRepository calendarEventRepository;
     private final TodoRepository todoRepository;
     private final UserRepository userRepository;
+    private final CardPaymentService cardPaymentService;
+    private final AssetService assetService;
 
     @Override
     @Transactional
@@ -120,10 +125,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             validateAssetOwnership(asset, command.userRowId());
         }
 
-        // 환불 상한 — 원거래에 달린 환불 합계가 원거래 금액을 넘지 못한다(#152).
-        validateRefundWithinOriginal(
-            command.expenseType(), command.refundOfExpenseRowId(), command.amount(), null);
-
         Expense expense = Expense.createExpense(
             user, category, asset,
             command.expenseType(),
@@ -133,7 +134,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.merchant(),
             command.paymentMethod(),
             command.installmentMonths(),
-            command.refundOfExpenseRowId(),
             command.originalAmount(), command.originalCurrency(), command.exchangeRate()
         );
 
@@ -186,22 +186,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
         Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(allExpenses);
-        // 환불 연결도 bulk 로 — 상세 화면이 목록 항목을 그대로 쓰므로 여기서 채워야 한다.
-        Map<Long, List<Expense>> refundsByExpense = loadRefundsByExpense(allExpenses);
         return allExpenses.stream()
             .map(e -> ExpenseServiceDto.ExpenseInfo.from(
                 e,
-                splitCatsByExpense.getOrDefault(e.getRowId(), List.of()),
-                refundsByExpense.getOrDefault(e.getRowId(), List.of())))
+                splitCatsByExpense.getOrDefault(e.getRowId(), List.of())))
             .toList();
-    }
-
-    /** 원거래별 환불 목록 (N+1 회피용 bulk 적재). */
-    private Map<Long, List<Expense>> loadRefundsByExpense(List<Expense> expenses) {
-        List<Long> ids = expenses.stream().map(Expense::getRowId).filter(java.util.Objects::nonNull).toList();
-        if (ids.isEmpty()) return Map.of();
-        return expenseRepository.findActiveRefundsOfMany(ids).stream()
-            .collect(Collectors.groupingBy(Expense::getRefundOfExpenseRowId));
     }
 
     /** 거래 목록의 활성 분할 카테고리 id 를 거래별로 묶어 반환(N+1 회피용 bulk 적재). */
@@ -227,6 +216,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
+        // 환불된 거래는 손댈 수 없다 — 돈은 이미 자산으로 돌아가 있어서, 여기서 금액을
+        // 고치면 되돌릴 기준이 사라진다. 먼저 환불을 취소하게 한다(설계 2절 잠금).
+        if (expense.isRefunded()) {
+            throw new InvalidValueException(DeskErrorCode.REFUNDED_READONLY);
+        }
 
         // 시스템이 만든 거래는 금액·자산·유형·일자를 못 고친다 — 원 거래(매도·이체)가 정한다.
         // 카테고리·메모·거래처만 반영하고, 잔액 이력은 손대지 않는다(원래 없는 게 맞다).
@@ -283,34 +277,6 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 환불 상한 — 생성과 같은 검사를 수정에도 건다. orKeep 이라 연결이 그대로여도 금액만 오를 수
         // 있고, 다른 원거래로 옮기면 그쪽 합계 기준으로 다시 봐야 한다.
-        // 합계에서 자기 자신을 뺀다(excludeRowId=expenseId) — 안 빼면 금액을 그대로 두고
-        // 저장만 해도 자기 금액이 두 번 세어져 400 이 난다.
-        validateRefundWithinOriginal(
-            expenseType,
-            command.refundOfExpenseRowId().orKeep(expense.getRefundOfExpenseRowId()),
-            amount,
-            expenseId);
-
-        // 원거래 금액 축소도 같은 불변식을 깬다 — 13,000원 지출에 13,000원 환불을 정상으로 넣은 뒤
-        // 원거래를 5,000원으로 줄이면 환불이 초과가 되어 #155(월 지출 음수)가 그대로 재현된다.
-        // 환불 쪽만 막으면 뒷문이 열려 있으므로 같은 규칙으로 막는다.
-        //
-        // 줄일 때만 본다. 무조건 보면 (a) 금액을 안 실은 수정(설명만 고치기)과 (b) 같은 금액을
-        // 다시 저장하는 요청까지 400 이 되고, 이 규칙 이전에 이미 초과로 쌓인 행은 금액을 올려 바로잡는
-        // 길까지 막힌다 — 환불 쪽에서 자기 자신을 빼는 이유와 같다.
-        if (command.amount().present() && amount != null && expense.getAmount() != null
-                && amount < expense.getAmount()) {
-            long attachedRefunds = expenseRepository.findActiveRefundsOf(expenseId).stream()
-                .filter(r -> r.getAmount() != null)
-                .mapToLong(Expense::getAmount)
-                .sum();
-            if (attachedRefunds > amount) {
-                log.warn("환불 합계 초과로 원거래 금액 축소 거부 - expenseId={}, 환불합계={}, 새금액={}",
-                    expenseId, attachedRefunds, amount);
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_AMOUNT_BELOW_REFUNDS);
-            }
-        }
-
         expense.updateExpense(
             category, asset,
             expenseType,
@@ -320,7 +286,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.merchant().orKeep(expense.getMerchant()),
             command.paymentMethod().orKeep(expense.getPaymentMethod()),
             command.installmentMonths().orKeep(expense.getInstallmentMonths()),
-            command.refundOfExpenseRowId().orKeep(expense.getRefundOfExpenseRowId()),
             command.originalAmount().orKeep(expense.getOriginalAmount()),
             command.originalCurrency().orKeep(expense.getOriginalCurrency()),
             command.exchangeRate().orKeep(expense.getExchangeRate())
@@ -373,6 +338,103 @@ public class ExpenseServiceImpl implements ExpenseService {
         return ExpenseServiceDto.ExpenseInfo.from(expense);
     }
 
+    /**
+     * 환불 마크 — <b>삭제 대신</b>이다(설계 결정 1, 2026-09-18).
+     *
+     * <p>돈과 집계는 삭제와 똑같이 다룬다: 원거래 잔액 흐름을 지워 금액이 그 자산으로
+     * 돌아가고, {@link ExpenseAggregates#countable} 이 이 거래를 빼므로 모든 합계·청구·
+     * 실적에서 사라진다. 삭제와 다른 점은 <b>내역에 남고 되돌릴 수 있다</b>는 것뿐이다.
+     *
+     * <p>종전 모델(수입 행 + 원거래 연결)에서는 환불이 카드에 {@code +금액} 흐름을 남기고
+     * 동시에 <b>환불 날짜</b> 회차의 청구에서 또 빠져, 두 날짜가 다른 회차면 한 번 산 것을
+     * 두 번 깎아 유령 빚이 남았다. 여기엔 "환불 날짜 회차" 라는 개념이 없다.
+     */
+    @Override
+    @Transactional
+    public ExpenseServiceDto.ExpenseInfo refund(Long expenseId, Long userRowId,
+                                                LocalDateTime refundedAt) {
+        log.debug("환불 마크 시작: expenseId={}", expenseId);
+
+        Expense expense = findExpenseOrThrow(expenseId);
+        validateExpenseOwnership(expense, userRowId);
+        if (expense.getExpenseType() != ExpenseType.EXPENSE) {
+            throw new InvalidValueException(DeskErrorCode.REFUND_NOT_EXPENSE);
+        }
+        if (expense.isAutoGenerated()) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_AUTO_GENERATED_READONLY);
+        }
+        if (expense.isRefunded()) {
+            throw new InvalidValueException(DeskErrorCode.ALREADY_REFUNDED);
+        }
+
+        LocalDateTime now = userClock.now(userRowId);
+        Asset card = creditCardOf(expense);
+
+        balanceHistoryService.removeExpense(expenseId);
+        expense.markRefunded(refundedAt != null ? refundedAt : now);
+
+        Long transferRowId = refundCardCredit(
+            card, expense.getAmount(), cardRefundMemo(expense), userRowId);
+        if (transferRowId != null) {
+            expense.linkRefundTransfer(transferRowId);
+        }
+
+        log.info("환불 마크 완료: expenseId={}, refundedAt={}, 환급이체={}",
+            expenseId, expense.getRefundedAt(), transferRowId);
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of());
+    }
+
+    /** 환불 취소 — 표식을 지우고 흐름을 되살린다. 환급 이체가 있었으면 그것도 무른다. */
+    @Override
+    @Transactional
+    public ExpenseServiceDto.ExpenseInfo cancelRefund(Long expenseId, Long userRowId) {
+        log.debug("환불 취소 시작: expenseId={}", expenseId);
+
+        Expense expense = findExpenseOrThrow(expenseId);
+        validateExpenseOwnership(expense, userRowId);
+        if (!expense.isRefunded()) {
+            throw new InvalidValueException(DeskErrorCode.NOT_REFUNDED);
+        }
+
+        Long transferRowId = expense.getRefundTransferRowId();
+        expense.clearRefund();
+        // 환급 이체를 무른다 — 사용자 경로(deleteTransferByUser)는 CARD_REFUND 를 막으므로
+        // 내부 경로를 쓴다. 되돌리기는 환불 취소로만 할 수 있어야 한다.
+        if (transferRowId != null) {
+            assetService.deleteTransfer(transferRowId, userRowId);
+        }
+        // 원거래 흐름을 다시 적재한다 — 카드는 다시 빚이 되고 청구도 다시 늘어난다.
+        balanceHistoryService.recordExpense(expense.getAsset(), expense.getRowId(),
+            expense.getExpenseType(), expense.getAmount(), expense.getExpenseDate());
+
+        log.info("환불 취소 완료: expenseId={}, 되돌린 환급이체={}", expenseId, transferRowId);
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of());
+    }
+
+    /** 이 거래의 자산이 신용카드면 그 자산, 아니면 null. */
+    private Asset creditCardOf(Expense expense) {
+        Asset asset = expense.getAsset();
+        return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD ? asset : null;
+    }
+
+    /** 삭제된 거래는 가리킬 수 없으므로 이체 메모에 무엇의 환급인지 남긴다. */
+    private String cardRefundMemo(Expense expense) {
+        String what = expense.getMerchant() != null && !expense.getMerchant().isBlank()
+            ? expense.getMerchant()
+            : (expense.getDescription() != null ? expense.getDescription() : "카드 거래");
+        return "카드사 환급 · " + what + " "
+            + (expense.getExpenseDate() != null ? expense.getExpenseDate().toLocalDate() : "");
+    }
+
+    /** 결제 완료 회차의 카드 거래가 줄었을 때 남는 돈을 결제계좌로 돌려준다. */
+    private Long refundCardCredit(Asset card, Long cap, String memo, Long userRowId) {
+        if (card == null || cap == null || cap <= 0L) {
+            return null;
+        }
+        return cardPaymentService.refundCreditIfOverpaid(
+            card.getRowId(), cap, memo, userClock.now(userRowId), userRowId);
+    }
+
     @Override
     @Transactional
     public void deleteExpense(Long expenseId, Long userRowId) {
@@ -386,19 +448,19 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_AUTO_GENERATED_READONLY);
         }
 
-        // 이 거래를 원거래로 삼는 환불도 함께 지운다. 남겨 두면 "없는 지출" 을 계속
-        // 상계해 지출 총액이 조용히 깎이고, 사용자는 원인을 추적할 방법이 없다.
-        List<Expense> refunds = expenseRepository.findActiveRefundsOf(expenseId);
-        for (Expense r : refunds) {
-            r.deleteExpense();
-            balanceHistoryService.removeExpense(r.getRowId());
-        }
+        Asset cardBefore = creditCardOf(expense);
+        Long deletedAmount = expense.getAmount();
+        String memo = cardRefundMemo(expense);
 
         expense.deleteExpense();
         // 자산 잔액 이력: 해당 거래 flow soft-delete
         balanceHistoryService.removeExpense(expenseId);
 
-        log.info("지출 삭제 완료: expenseId={}, 함께 지운 환불={}건", expenseId, refunds.size());
+        // 이미 결제된 회차의 카드 거래였다면 낸 돈이 남는다 — 그만큼 결제계좌로 돌려준다
+        // (설계 결정 9). 결제 전이었다면 크레딧이 0 이라 아무 일도 일어나지 않는다.
+        refundCardCredit(cardBefore, deletedAmount, memo, userRowId);
+
+        log.info("지출 삭제 완료: expenseId={}", expenseId);
     }
 
     /**
@@ -481,57 +543,20 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<Expense> expenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
         if (expenses.isEmpty()) return List.of();
 
-        Map<Long, ExpenseCategory> refundOrigin = refundOriginCategories(expenses);
+
         Map<Long, ExpenseServiceDto.CategoryBreakdown> agg = new HashMap<>();
         for (Expense e : expenses) {
-            // 환불은 수입 항목으로 따로 서지 않고, 원래 지출 카테고리에서 음수로 빠진다
-            // (식비에서 환불받으면 그 달 식비가 줄어야지 수입이 생기는 게 아니다).
-            // 여기서 "원래" 는 원거래의 카테고리다 — 환불 거래 자신의 카테고리를 쓰면
-            // 사용자가 환불 입력 때 고른 수입 카테고리(예: 급여)에 지출 상계가 꽂혀
-            // 그 카테고리의 수입 총액까지 지출 breakdown 으로 끌려 나온다.
-            ExpenseType breakdownType = e.isRefund() ? ExpenseType.EXPENSE : e.getExpenseType();
-            long sign = e.isRefund() ? -1L : 1L;
-            if (e.isRefund()) {
-                accumulateBreakdown(agg,
-                    refundOrigin.getOrDefault(e.getRowId(), e.getCategory()),
-                    breakdownType, sign * e.getAmount());
-                continue;
-            }
+            ExpenseType breakdownType = e.getExpenseType();
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
-                    accumulateBreakdown(agg, s.getCategory(), breakdownType, sign * s.getAmount());
+                    accumulateBreakdown(agg, s.getCategory(), breakdownType, s.getAmount());
                 }
             } else {
-                accumulateBreakdown(agg, e.getCategory(), breakdownType, sign * e.getAmount());
+                accumulateBreakdown(agg, e.getCategory(), breakdownType, e.getAmount());
             }
         }
         return List.copyOf(agg.values());
-    }
-
-    /**
-     * 환불 거래 rowId → 원거래 카테고리.
-     *
-     * <p>원거래는 대개 같은 조회 결과 안에 있어 그 자리에서 찾고, 기간 밖이면
-     * (지난달 지출을 이번 달에 환불) 건별로 조회한다 — 환불은 드물어 N+1 무해.
-     * 원거래가 없거나(삭제) 찾지 못하면 환불 자신의 카테고리로 폴백한다.
-     * 원거래가 분할이면 분할 배분이 모호하므로 원거래의 대표 카테고리를 쓴다.
-     */
-    private Map<Long, ExpenseCategory> refundOriginCategories(List<Expense> expenses) {
-        Map<Long, Expense> byId = new HashMap<>();
-        for (Expense e : expenses) byId.put(e.getRowId(), e);
-        Map<Long, ExpenseCategory> origin = new HashMap<>();
-        for (Expense e : expenses) {
-            if (!e.isRefund()) continue;
-            Expense src = byId.get(e.getRefundOfExpenseRowId());
-            if (src == null) {
-                src = expenseRepository.findById(e.getRefundOfExpenseRowId()).orElse(null);
-            }
-            if (src != null && src.getCategory() != null) {
-                origin.put(e.getRowId(), src.getCategory());
-            }
-        }
-        return origin;
     }
 
     /**
@@ -587,27 +612,17 @@ public class ExpenseServiceImpl implements ExpenseService {
      */
     private List<ExpenseServiceDto.CategoryAmount> expenseCategoryAmounts(
             List<Expense> monthExpenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
-        Map<Long, ExpenseCategory> refundOrigin = refundOriginCategories(monthExpenses);
         Map<Long, Long> agg = new HashMap<>();
         for (Expense e : monthExpenses) {
-            // 환불은 수입 타입이지만 여기선 원래 지출 카테고리에서 음수로 빼야 한다.
-            // breakdown 과 같은 이유로 "원래" = 원거래의 카테고리다.
-            boolean refund = e.isRefund();
-            if (!refund && e.getExpenseType() != ExpenseType.EXPENSE) continue;
-            long sign = refund ? -1L : 1L;
-            if (refund) {
-                ExpenseCategory oc = refundOrigin.getOrDefault(e.getRowId(), e.getCategory());
-                agg.merge(categoryKey(oc), sign * e.getAmount(), Long::sum);
-                continue;
-            }
+            if (e.getExpenseType() != ExpenseType.EXPENSE) continue;
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
                     // 카테고리 없는 분할도 미분류(null 키)로 남긴다 — 합이 그 달 지출과 맞아야 한다.
-                    agg.merge(categoryKey(s.getCategory()), sign * s.getAmount(), Long::sum);
+                    agg.merge(categoryKey(s.getCategory()), s.getAmount(), Long::sum);
                 }
             } else {
-                agg.merge(categoryKey(e.getCategory()), sign * e.getAmount(), Long::sum);
+                agg.merge(categoryKey(e.getCategory()), e.getAmount(), Long::sum);
             }
         }
         return agg.entrySet().stream()
@@ -658,17 +673,16 @@ public class ExpenseServiceImpl implements ExpenseService {
         List<Expense> expenses = aggregatable(
             expenseRepository.findByUser(userRowId, null, null, startDate, endDate), userRowId);
 
-        // 환불도 같은 가맹점으로 묶어 빼 준다 — 지출만 세면 환불한 건도 쓴 걸로 남는다.
-        // 건수는 실제 지출 건만 센다(환불이 건수를 늘리면 "몇 번 갔나" 가 틀린다).
+        // 환불된 거래는 `countable` 에서 이미 빠졌다 — 여기서 따로 셀 것이 없다.
         return expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE || e.isRefund())
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
             .filter(e -> e.getMerchant() != null && !e.getMerchant().isBlank())
             .collect(Collectors.groupingBy(Expense::getMerchant))
             .entrySet().stream()
             .map(entry -> new ExpenseServiceDto.MerchantSummary(
                 entry.getKey(),
                 entry.getValue().stream().mapToLong(Expense::expenseContribution).sum(),
-                (int) entry.getValue().stream().filter(e -> !e.isRefund()).count()
+                entry.getValue().size()
             ))
             .filter(m -> m.totalAmount() != 0L)  // 전액 환불된 가맹점은 목록에서 뺀다
             .sorted((a, b) -> Long.compare(b.totalAmount(), a.totalAmount()))
@@ -683,9 +697,9 @@ public class ExpenseServiceImpl implements ExpenseService {
         List<Expense> expenses = aggregatable(
             expenseRepository.findByUser(userRowId, null, null, startDate, endDate), userRowId);
 
-        // 거래처별 요약과 같은 규칙 — 환불을 상계한다.
+        // 거래처별 요약과 같은 규칙 — 환불된 거래는 이미 빠져 있다.
         return expenses.stream()
-            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE || e.isRefund())
+            .filter(e -> e.getExpenseType() == ExpenseType.EXPENSE)
             .filter(e -> e.getAsset() != null)
             .collect(Collectors.groupingBy(e -> e.getAsset().getRowId()))
             .entrySet().stream()
@@ -696,7 +710,7 @@ public class ExpenseServiceImpl implements ExpenseService {
                     first.getAsset().getRowId(),
                     first.getAsset().getAssetName(),
                     assetExpenses.stream().mapToLong(Expense::expenseContribution).sum(),
-                    (int) assetExpenses.stream().filter(e -> !e.isRefund()).count()
+                    assetExpenses.size()
                 );
             })
             .sorted((a, b) -> Long.compare(b.totalAmount(), a.totalAmount()))
@@ -979,44 +993,4 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
     }
 
-    /**
-     * 환불 상한 — 한 원거래에 달린 활성 환불의 합이 <b>원거래 금액을 넘지 못한다</b>(사용자 결정, QA #152).
-     *
-     * <p>넘으면 그 달 지출이 음수가 된다. {@link Expense#expenseContribution()} 이 환불을 음수로
-     * 상계하므로 13,000원 지출에 99,999원 환불이 붙으면 그 달 지출이 -86,999원이 되고, 통계·예산
-     * 이행률이 그 음수를 그대로 더한다(#155). 화면에 그럴듯한 숫자가 뜨는 자리라 들어오는 입구에서 막는다.
-     *
-     * <p>판정 기준은 {@link Expense#isRefund()} 와 같다 — 원거래 연결이 있고 유형이 INCOME 일 때만
-     * 환불이다. EXPENSE 로 들어온 행은 상계하지 않으므로 상한도 없다.
-     *
-     * <p>원거래를 못 찾으면 그냥 통과시킨다. 이 연결은 FK 가 아니고, 원거래가 soft delete 됐거나
-     * 가져오기로 들어온 행처럼 애초에 없을 수 있다({@code Expense#refundOfExpenseRowId} 주석).
-     * 비교할 기준이 없으면 상한도 정할 수 없고, 여기서 404 를 내면 지금까지 되던 등록이 깨진다.
-     *
-     * @param excludeRowId 합계에서 뺄 행 — 수정 중인 환불 <b>자신</b>이다. 생성이면 {@code null}.
-     *                     안 빼면 자기 금액이 두 번 세어져 <b>금액을 그대로 저장만 해도</b> 400 이 난다.
-     */
-    private void validateRefundWithinOriginal(ExpenseType expenseType, Long originalRowId,
-                                              Long amount, Long excludeRowId) {
-        if (originalRowId == null || expenseType != ExpenseType.INCOME || amount == null) {
-            return;
-        }
-
-        Expense original = expenseRepository.findById(originalRowId).orElse(null);
-        if (original == null || original.getAmount() == null) {
-            return;
-        }
-
-        long others = expenseRepository.findActiveRefundsOf(originalRowId).stream()
-            .filter(r -> !java.util.Objects.equals(r.getRowId(), excludeRowId))
-            .filter(r -> r.getAmount() != null)
-            .mapToLong(Expense::getAmount)
-            .sum();
-
-        if (others + amount > original.getAmount()) {
-            log.warn("환불 상한 초과로 거부 - originalRowId={}, 기존환불합계={}, 이번환불={}, 원거래금액={}",
-                originalRowId, others, amount, original.getAmount());
-            throw new InvalidValueException(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
-        }
-    }
 }

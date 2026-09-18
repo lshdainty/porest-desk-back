@@ -10,8 +10,10 @@ import java.util.List;
  * <ol>
  *   <li><b>아직 오지 않은 건 안 센다.</b> 반복거래는 미래분을 미리 만들어 둔다. 그걸 더하면
  *       통장에 없는 급여가 이번 달 수입으로 잡히고, 현재 시각 기준인 잔액과 어긋난다.</li>
- *   <li><b>환불은 수입이 아니라 지출 상계다.</b> 지출 50,000 + 환불 3,000 이면 47,000 이다.
- *       수입으로 세면 수입도 지출도 같이 부푼다.</li>
+ *   <li><b>환불된 거래는 안 센다.</b> 환불은 원거래에 찍는 표식이라(`refunded_at`)
+ *       삭제와 똑같이 빠진다 — 목록엔 남지만 합계에는 없는 것으로 본다.
+ *       종전엔 수입 행을 만들어 음수로 상계했는데, 그러면 환불 날짜 회차에서 또 빠져
+ *       카드 청구가 두 번 깎였다(2026-09-18 마크 모델로 바꾼 이유).</li>
  * </ol>
  *
  * <p>이 규칙이 서비스마다 흩어져 있어서 실제로 빠뜨린 적이 있다 — 예산 이행률 차트만 옛
@@ -22,19 +24,20 @@ public final class ExpenseAggregates {
 
     private ExpenseAggregates() {}
 
-    /** 집계 대상만 남긴다 — 기준 시각 이후(예정)는 뺀다. */
+    /** 집계 대상만 남긴다 — 기준 시각 이후(예정)와 <b>환불된 것</b>을 뺀다. */
     public static List<Expense> countable(List<Expense> all, LocalDateTime now) {
         return all.stream()
+            .filter(Expense::isCountable)
             .filter(e -> e.getExpenseDate() == null || !e.getExpenseDate().isAfter(now))
             .toList();
     }
 
-    /** 수입 합계 — 환불은 수입이 아니므로 빠진다. */
+    /** 수입 합계. */
     public static long incomeSum(List<Expense> countable) {
         return countable.stream().mapToLong(Expense::incomeContribution).sum();
     }
 
-    /** 지출 합계 — 환불이 음수로 상계된다. */
+    /** 지출 합계. */
     public static long expenseSum(List<Expense> countable) {
         return countable.stream().mapToLong(Expense::expenseContribution).sum();
     }

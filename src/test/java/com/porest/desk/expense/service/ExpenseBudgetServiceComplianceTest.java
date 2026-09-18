@@ -88,7 +88,7 @@ class ExpenseBudgetServiceComplianceTest {
      */
     private Expense expense(ExpenseType type, long amount) {
         return Expense.createExpense(null, null, null, type, amount, null,
-                LocalDate.now().withDayOfMonth(1).atStartOfDay(), null, null, null, null,
+                LocalDate.now().withDayOfMonth(1).atStartOfDay(), null, null, null,
             null,
             null,
             null);
@@ -198,12 +198,14 @@ class ExpenseBudgetServiceComplianceTest {
 
     private Expense expenseAt(long amount, LocalDateTime when) {
         return Expense.createExpense(null, null, null, ExpenseType.EXPENSE, amount, null,
-            when, null, null, null, null, null, null, null);
+            when, null, null, null, null, null, null);
     }
 
-    private Expense refundAt(long amount, LocalDateTime when) {
-        return Expense.createExpense(null, null, null, ExpenseType.INCOME, amount, null,
-            when, null, null, null, 999L, null, null, null);
+    /** 환불로 표시한 지출 — 마크 모델에서는 수입 행이 아니라 원거래에 표식이 찍힌다. */
+    private Expense refundedAt(long amount, LocalDateTime when) {
+        Expense e = expenseAt(amount, when);
+        e.markRefunded(when.plusDays(1));
+        return e;
     }
 
     @Test
@@ -222,15 +224,16 @@ class ExpenseBudgetServiceComplianceTest {
     }
 
     @Test
-    @DisplayName("환불은 이행률에서도 지출을 깎는다")
-    void complianceOffsetsRefund() {
+    @DisplayName("환불된 지출은 이행률에서도 빠진다")
+    void complianceExcludesRefunded() {
         givenBudgets(List.of(overallBudget(500_000L)));
         givenExpenses(List.of(
             expenseAt(100_000L, thisMonthPast()),
-            refundAt(30_000L, thisMonthPast())));
+            // 환불된 거래는 삭제와 똑같이 빠진다 — 옛 모델은 수입 행으로 30,000 을 깎았다.
+            refundedAt(30_000L, thisMonthPast())));
 
         var result = sut.getCompliance(USER_ID, 1);
 
-        assertThat(result.get(0).totalSpent()).isEqualTo(70_000L);
+        assertThat(result.get(0).totalSpent()).isEqualTo(100_000L);
     }
 }
