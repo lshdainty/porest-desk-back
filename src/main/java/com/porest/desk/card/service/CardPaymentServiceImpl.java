@@ -96,7 +96,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             LocalDate following = nextPaymentDate(card.getPaymentDay(), nextPaymentDate.plusDays(1));
             BillingCycle c2 = upcomingCycle(card, following);
             nextCycle = new CardPaymentServiceDto.UpcomingCycle(following, c2.periodStart(), c2.periodEnd(),
-                c2.amount(), c2.lumpSumAmount(), c2.alreadyPaid(), c2.installments());
+                c2.amount(), c2.lumpSumAmount(), c2.alreadyPaid(), c2.scheduledAmount(),
+                c2.installments());
         }
 
         return new CardPaymentServiceDto.CardBillingInfo(
@@ -104,6 +105,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             cycle.amount(),
             cycle.lumpSumAmount(),
             cycle.alreadyPaid(),
+            cycle.scheduledAmount(),
             cycle.installments(),
             cycle.periodStart(),
             cycle.periodEnd(),
@@ -425,7 +427,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * @param installments  이 회차에 빠지는 할부 회차들 — 명세서가 원금·회차를 그릴 재료
      */
     record BillingCycle(LocalDate periodStart, LocalDate periodEnd, long amount,
-                        long lumpSumAmount, long alreadyPaid,
+                        long lumpSumAmount, long alreadyPaid, long scheduledAmount,
                         List<CardPaymentServiceDto.InstallmentDue> installments) {}
 
     /**
@@ -523,11 +525,27 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             .sumCompletedAmountByCardAndPeriod(card.getRowId(), periodStart, periodEnd);
         return new BillingCycle(periodStart, periodEnd,
             Math.max(0L, lumpSum + installmentSum - alreadyPaid),
-            lumpSum, alreadyPaid, installments);
+            lumpSum, alreadyPaid, scheduledPortion(card, periodStart, periodEnd, lumpSum),
+            installments);
     }
 
     /** 일시불 순사용액 — EXPENSE 합 − INCOME(환불/취소) 합. 할부 거래는 제외한다. */
     private long lumpSumNet(Long cardRowId, LocalDate start, LocalDate end) {
+        // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
+        return lumpSumNetBetween(cardRowId, start.atStartOfDay(), end.atTime(LocalTime.MAX));
+    }
+
+    /**
+     * 같은 셈을 <b>시각</b> 범위로 한다 — "지금까지 쓴 분" 을 떼어 내려고 나눴다.
+     *
+     * <p>잔액(한도 사용)은 {@code effective_at <= 지금} 인 이력만 세고, 청구 예정액은 회차
+     * 기간 전체를 센다. 그래서 아직 오지 않은 거래(반복 거래가 미리 만들어 둔 것 · 오늘이지만
+     * 시각이 뒤인 것)가 있으면 두 숫자가 갈린다. 그 차이를 화면이 설명할 수 있어야 한다.
+     */
+    private long lumpSumNetBetween(Long cardRowId, LocalDateTime from, LocalDateTime to) {
+        if (!from.isBefore(to)) {
+            return 0L;
+        }
         Long sum = entityManager.createQuery(
             "SELECT COALESCE(SUM(CASE WHEN e.expenseType = :expenseType THEN e.amount ELSE -e.amount END), 0) " +
             "FROM Expense e " +
@@ -537,12 +555,26 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             "AND e.isDeleted = :isDeleted", Long.class)
             .setParameter("expenseType", ExpenseType.EXPENSE)
             .setParameter("cardRowId", cardRowId)
-            // expenseDate 는 LocalDateTime 이므로 LocalDate 범위를 경계 일시로 변환
-            .setParameter("start", start.atStartOfDay())
-            .setParameter("end", end.atTime(LocalTime.MAX))
+            .setParameter("start", from)
+            .setParameter("end", to)
             .setParameter("isDeleted", YNType.N)
             .getSingleResult();
         return sum == null ? 0L : sum;
+    }
+
+    /**
+     * 이 회차 일시불 중 <b>아직 오지 않은 분</b>.
+     *
+     * <p>잔액은 이걸 안 세고 청구는 센다 — 딱 이만큼 청구가 더 커 보인다. 회차가 통째로
+     * 미래면 전액이, 이미 끝난 회차면 0 이 된다.
+     *
+     * <p>이미 낸 기간 합({@code fullLumpSum})을 받아 쓴다 — 같은 값을 두 번 묻지 않는다.
+     */
+    private long scheduledPortion(Asset card, LocalDate start, LocalDate end, long fullLumpSum) {
+        LocalDateTime now = userClock.now(card.getUser().getRowId());
+        LocalDateTime periodEnd = end.atTime(LocalTime.MAX);
+        LocalDateTime until = now.isBefore(periodEnd) ? now : periodEnd;
+        return fullLumpSum - lumpSumNetBetween(card.getRowId(), start.atStartOfDay(), until);
     }
 
     /**
