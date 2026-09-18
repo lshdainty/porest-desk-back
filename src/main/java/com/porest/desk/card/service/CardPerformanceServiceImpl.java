@@ -87,6 +87,8 @@ public class CardPerformanceServiceImpl implements CardPerformanceService {
      *       실적이 먼저 달성돼 보이면 안 된다. 실적은 예측이 아니라 <b>달성도</b>다</li>
      *   <li><b>할부는 뺀다</b>(D2, 2026-09-18 결정). 종전엔 구매한 달에 전액을 실적으로
      *       쳤다 — 실제 카드사는 할부를 실적에서 빼는 쪽이 많다</li>
+     *   <li><b>환불된 거래는 안 센다.</b> 환불은 원거래에 찍는 표식이라 삭제와 똑같이
+     *       빠진다 — 되돌린 결제로 혜택이 붙으면 안 된다</li>
      * </ol>
      */
     private long sumExpenseAmount(Long assetRowId, LocalDate start, LocalDate end,
@@ -105,6 +107,8 @@ public class CardPerformanceServiceImpl implements CardPerformanceService {
             "WHERE e.asset.rowId = :assetRowId " +
             "AND e.expenseDate >= :start AND e.expenseDate <= :end " +
             "AND (e.installmentMonths IS NULL OR e.installmentMonths <= 1) " +
+            // 환불된 거래는 실적에서도 빠진다 — 되돌린 결제로 혜택이 붙으면 안 된다.
+            "AND e.refundedAt IS NULL " +
             "AND e.isDeleted = :isDeleted", Long.class)
             .setParameter("assetRowId", assetRowId)
             .setParameter("expenseType", ExpenseType.EXPENSE)

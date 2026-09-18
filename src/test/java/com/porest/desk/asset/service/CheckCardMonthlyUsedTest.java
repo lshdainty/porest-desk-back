@@ -38,7 +38,7 @@ import static org.mockito.BDDMockito.given;
  *
  * <p>체크카드는 결제가 연결 계좌에서 즉시 빠져 잔액이 항상 0 이다 — 목록·상세가
  * "이 카드로 이번 달 얼마 썼는지" 를 보여줄 수 있게, 캘린더 월(1일~) 사용 합계를
- * 응답에 싣는다. 합산은 집계 규칙(예정 제외·환불 상계)을 그대로 따라야 한다.
+ * 응답에 싣는다. 합산은 집계 규칙(예정 제외·환불 제외)을 그대로 따라야 한다.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -92,25 +92,25 @@ class CheckCardMonthlyUsedTest {
 
     private Expense expense(Asset asset, ExpenseType type, long amount, LocalDateTime at) {
         Expense e = Expense.createExpense(user, null, asset, type, amount,
-            "테스트", at, null, "CARD", null, null, null, null, null);
+            "테스트", at, null, "CARD", null, null, null, null);
         return e;
     }
 
     @Test
-    @DisplayName("체크카드 — 이번 달 사용 합계가 실린다 (환불 상계·예정 제외·타 자산 제외)")
+    @DisplayName("체크카드 — 이번 달 사용 합계가 실린다 (환불 제외·예정 제외·타 자산 제외)")
     void monthlyUsedForCheckCard() {
         Expense spent1 = expense(checkCard, ExpenseType.EXPENSE, 30_000L, NOW.minusDays(3));
         Expense spent2 = expense(checkCard, ExpenseType.EXPENSE, 20_000L, NOW.minusDays(1));
-        // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계다.
-        Expense refund = Expense.createExpense(user, null, checkCard, ExpenseType.INCOME, 5_000L,
-            "환불", NOW.minusDays(1), null, "CARD", null, 999L, null, null, null);
+        // 환불은 **원거래에 찍는 표식**이다 — 수입 행을 만들지 않고, 그 거래가 통째로 빠진다.
+        Expense refunded = expense(checkCard, ExpenseType.EXPENSE, 5_000L, NOW.minusDays(1));
+        refunded.markRefunded(NOW);
         // 아직 오지 않은 예정(반복거래 미리 생성분)은 안 센다.
         Expense future = expense(checkCard, ExpenseType.EXPENSE, 99_000L, NOW.plusDays(5));
         // 다른 자산(통장) 지출은 카드 사용액이 아니다.
         Expense other = expense(bank, ExpenseType.EXPENSE, 70_000L, NOW.minusDays(2));
 
         given(expenseRepository.findByDateRange(eq(USER_ID), any(LocalDate.class), any(LocalDate.class)))
-            .willReturn(List.of(spent1, spent2, refund, future, other));
+            .willReturn(List.of(spent1, spent2, refunded, future, other));
 
         List<AssetServiceDto.AssetInfo> assets = sut.getAssets(USER_ID);
 
@@ -119,7 +119,7 @@ class CheckCardMonthlyUsedTest {
         AssetServiceDto.AssetInfo account = assets.stream()
             .filter(a -> a.assetType() == AssetType.BANK_ACCOUNT).findFirst().orElseThrow();
 
-        assertThat(card.monthlyUsedAmount()).isEqualTo(45_000L); // 30,000 + 20,000 − 5,000
+        assertThat(card.monthlyUsedAmount()).isEqualTo(50_000L); // 30,000 + 20,000 (환불 5,000 은 아예 안 센다)
         assertThat(account.monthlyUsedAmount()).isNull();        // 체크카드가 아니면 없다
     }
 

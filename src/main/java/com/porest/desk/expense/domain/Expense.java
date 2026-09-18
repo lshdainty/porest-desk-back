@@ -94,17 +94,28 @@ public class Expense extends AuditingFieldsWithIp {
     private LocalDate installmentPayoffDate;
 
     /**
-     * 환불 원거래 행 아이디 (null = 환불 아님).
+     * 환불 처리 시각 — 있으면 <b>환불된 거래</b>다. 없으면 보통 거래.
      *
-     * <p>환불·취소는 INCOME 으로 기록하는데, 그대로 두면 수입 통계가 부풀려진다
-     * (5만원 옷을 사고 환불하면 지출 5만 + 수입 5만). 이 값이 있으면 수입이 아니라
-     * <b>지출 상계</b>로 집계한다 — 위 예에서 그 달 지출은 0, 수입도 0 이 된다.
+     * <p><b>삭제 대신 환불 마크</b>다(사용자 결정 2026-09-18). 돈과 집계는 삭제와 똑같이
+     * 다룬다 — 원거래 잔액 흐름을 지워 금액이 그 자산으로 돌아가고, 모든 합계·청구·실적에서
+     * 빠진다. 삭제와 다른 점은 내역에 남고 되돌릴 수 있다는 것뿐이다.
      *
-     * <p>FK 를 걸지 않는다: 원거래가 soft delete 되어도 환불 기록은 남아야 하고,
-     * 가져오기로 들어온 행처럼 원거래가 없을 수도 있다.
+     * <p>종전 모델(수입 행 + 원거래 연결)에서는 환불이 카드에 {@code +금액} 흐름을 남기고
+     * 동시에 <b>환불 날짜</b> 회차의 청구에서 또 빠져, 두 날짜가 다른 회차면 한 번 산 것을
+     * 두 번 깎아 유령 빚이 남았다. 마크 모델에는 "환불 날짜 회차" 라는 개념이 아예 없다.
      */
-    @Column(name = "refund_of_expense_row_id")
-    private Long refundOfExpenseRowId;
+    @Column(name = "refunded_at")
+    private LocalDateTime refundedAt;
+
+    /**
+     * 환불 마크가 만든 카드→결제계좌 환급 이체 — 환불 취소가 이걸 되돌린다.
+     *
+     * <p>원거래가 속한 회차에 <b>결제 완료 기록</b>이 있을 때만 생긴다(이미 낸 돈이라
+     * 돌려받아야 한다). 결제 전이면 그 회차 청구가 저절로 줄어드니 이체가 없고,
+     * 결제계좌를 안 걸어 둔 카드는 기록용이라 역시 없다.
+     */
+    @Column(name = "refund_transfer_row_id")
+    private Long refundTransferRowId;
 
     /**
      * 자동 생성 출처 — 시스템이 계산해 만든 거래다. null 이면 사용자가 직접 만든 것.
@@ -154,7 +165,7 @@ public class Expense extends AuditingFieldsWithIp {
     public static Expense createExpense(User user, ExpenseCategory category, Asset asset,
                                         ExpenseType expenseType, Long amount, String description,
                                         LocalDateTime expenseDate, String merchant, String paymentMethod,
-                                        Integer installmentMonths, Long refundOfExpenseRowId,
+                                        Integer installmentMonths,
                                         BigDecimal originalAmount, String originalCurrency,
                                         BigDecimal exchangeRate) {
         Expense expense = new Expense();
@@ -168,7 +179,6 @@ public class Expense extends AuditingFieldsWithIp {
         expense.merchant = merchant;
         expense.paymentMethod = paymentMethod;
         expense.installmentMonths = normalizeInstallment(installmentMonths);
-        expense.refundOfExpenseRowId = refundOfExpenseRowId;
         expense.applyForeignCurrency(originalAmount, originalCurrency, exchangeRate);
         expense.isDeleted = YNType.N;
         return expense;
@@ -204,26 +214,50 @@ public class Expense extends AuditingFieldsWithIp {
         this.merchant = merchant;
     }
 
-    public boolean isRefund() {
-        return refundOfExpenseRowId != null && expenseType == ExpenseType.INCOME;
+    public boolean isRefunded() {
+        return refundedAt != null;
     }
 
     /**
-     * 수입 집계에 더할 금액 — 환불은 수입이 아니므로 0.
+     * 집계에 셀 거래인가 — 지워지지도, 환불되지도 않은 것.
+     *
+     * <p>환불된 거래는 <b>삭제와 똑같이</b> 빠진다. 목록·검색·상세에는 남지만 합계·예산·
+     * 통계·청구·실적·내보내기 합계에서는 없는 것으로 본다. 한 자리라도 빠뜨리면 그 화면만
+     * 환불을 안 뺀 숫자를 보여 주므로, 집계 조건은 이 판정 하나를 쓴다.
+     */
+    public boolean isCountable() {
+        return isDeleted != YNType.Y && refundedAt == null;
+    }
+
+    /** 환불로 표시한다 — 돈을 되돌리는 것은 서비스(잔액 흐름 제거)가 한다. */
+    public void markRefunded(LocalDateTime at) {
+        this.refundedAt = at;
+    }
+
+    /** 환불 취소 — 표식과 환급 이체 연결을 함께 지운다. */
+    public void clearRefund() {
+        this.refundedAt = null;
+        this.refundTransferRowId = null;
+    }
+
+    /** 결제 완료 회차라 만들어진 카드→계좌 환급 이체를 걸어 둔다. */
+    public void linkRefundTransfer(Long transferRowId) {
+        this.refundTransferRowId = transferRowId;
+    }
+
+    /**
+     * 수입 집계에 더할 금액.
+     *
+     * <p>마크 모델에서는 <b>수입은 수입, 지출은 지출</b>이다. 환불이 수입 행을 만들지
+     * 않으므로 상계 분기가 필요 없다 — 환불된 거래는 애초에 집계에 들어오지 않는다
+     * ({@link #isCountable()}).
      */
     public long incomeContribution() {
-        return (expenseType == ExpenseType.INCOME && !isRefund()) ? amount : 0L;
+        return expenseType == ExpenseType.INCOME ? amount : 0L;
     }
 
-    /**
-     * 지출 집계에 더할 금액 — 환불은 <b>음수</b>로 상계한다.
-     *
-     * <p>지출 50,000 + 환불 50,000 → 합 0. 부분 환불(20,000)이면 30,000 이 남는다.
-     */
+    /** 지출 집계에 더할 금액. */
     public long expenseContribution() {
-        if (isRefund()) {
-            return -amount;
-        }
         return expenseType == ExpenseType.EXPENSE ? amount : 0L;
     }
 
@@ -347,10 +381,9 @@ public class Expense extends AuditingFieldsWithIp {
     public void updateExpense(ExpenseCategory category, Asset asset, ExpenseType expenseType,
                               Long amount, String description, LocalDateTime expenseDate,
                               String merchant, String paymentMethod, Integer installmentMonths,
-                              Long refundOfExpenseRowId, BigDecimal originalAmount,
+                              BigDecimal originalAmount,
                               String originalCurrency, BigDecimal exchangeRate) {
         this.installmentMonths = normalizeInstallment(installmentMonths);
-        this.refundOfExpenseRowId = refundOfExpenseRowId;
         applyForeignCurrency(originalAmount, originalCurrency, exchangeRate);
         this.category = category;
         this.asset = asset;

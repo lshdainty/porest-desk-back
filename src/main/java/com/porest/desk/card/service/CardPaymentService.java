@@ -42,4 +42,21 @@ public interface CardPaymentService {
 
     /** 스케줄러용 — today 가 결제일(말일 보정 포함)인 모든 신용카드 자동결제 처리. */
     void processDueCardPayments(LocalDate today);
+
+    /**
+     * 이미 낸 돈이 지금 청구보다 많으면 그만큼 결제계좌로 돌려준다.
+     *
+     * <p>환불 마크·삭제·감액으로 <b>결제 완료 회차의 카드 거래가 줄어들었을 때</b> 부른다.
+     * 회차마다 {@code 크레딧 = 실제 낸 이체액 합 − 지금 다시 계산한 회차 청구액} 을 재고
+     * 양수만 더한 뒤, 이미 나간 환급을 빼고 {@code cap}(환불·감액된 금액)까지만 돌려준다.
+     *
+     * <p>"COMPLETED 가 있으면 전액" 으로 하면 <b>부분 선결제 회차와 할부에서 과다 환급</b>
+     * 된다 — 남은 청구가 있는데도 낸 돈 전부를 돌려주게 된다. 잔액 부호로 판정하는 것도
+     * 틀린다: 뒤에 쌓인 지출 때문에 잔액이 여전히 음수일 수 있다(네이버 현대카드 실사례).
+     *
+     * @param cap 돌려줄 상한 — 환불액 또는 줄어든 금액
+     * @return 만든 환급 이체 rowId. 돌려줄 크레딧이 없거나 결제계좌가 없으면 {@code null}
+     */
+    Long refundCreditIfOverpaid(Long cardRowId, long cap, String memo,
+                                java.time.LocalDateTime at, Long userRowId);
 }

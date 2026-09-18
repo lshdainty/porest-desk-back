@@ -20,6 +20,9 @@ import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.repository.ExpenseSplitRepository;
 import com.porest.desk.expense.service.dto.ExpenseServiceDto;
 import com.porest.desk.expense.service.dto.ExpenseSplitServiceDto;
+import com.porest.desk.card.service.CardPaymentService;
+import com.porest.desk.asset.service.AssetService;
+import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.service.NotificationMessages;
 import com.porest.desk.notification.service.NotificationService;
@@ -52,6 +55,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -87,6 +91,8 @@ class ExpenseServiceImplTest {
     @Mock private CalendarEventRepository calendarEventRepository;
     @Mock private TodoRepository todoRepository;
     @Mock private UserRepository userRepository;
+    @Mock private CardPaymentService cardPaymentService;
+    @Mock private AssetService assetService;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
@@ -112,7 +118,7 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.CreateCommand createCmd(long categoryRowId) {
         return new ExpenseServiceDto.CreateCommand(
                 USER_ID, categoryRowId, null, ExpenseType.EXPENSE, 10_000L,
-                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null, null,
+                "점심", LocalDateTime.of(2026, 6, 1, 12, 0), "식당", "CARD", null,
             null,
             null,
             null, null, null);
@@ -121,7 +127,7 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.UpdateCommand updateCmd(long categoryRowId) {
         return new ExpenseServiceDto.UpdateCommand(
                 Patch.set(categoryRowId), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
-                Patch.set("점심"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.set("식당"), Patch.set("CARD"), Patch.absent(), Patch.absent(),
+                Patch.set("점심"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.set("식당"), Patch.set("CARD"), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), null);
@@ -163,7 +169,7 @@ class ExpenseServiceImplTest {
         // INCOME 거래를 EXPENSE 카테고리에 등록 시도
         var cmd = new ExpenseServiceDto.CreateCommand(
                 USER_ID, 10L, null, ExpenseType.INCOME, 10_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null, null, null);
@@ -214,7 +220,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 Patch.set(10L), Patch.set(20L), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
-                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.set("식당"), Patch.set("CARD"), Patch.absent(), Patch.absent(),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.set("식당"), Patch.set("CARD"), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), null);
@@ -251,13 +257,13 @@ class ExpenseServiceImplTest {
         ReflectionTestUtils.setField(child, "rowId", 10L);
 
         Expense e1 = Expense.createExpense(u, child, null, ExpenseType.EXPENSE, 3_000L, "a",
-                LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null);
         ReflectionTestUtils.setField(e1, "rowId", 1L);
         Expense e2 = Expense.createExpense(u, child, null, ExpenseType.EXPENSE, 2_000L, "b",
-                LocalDateTime.of(2026, 6, 2, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 2, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -295,7 +301,7 @@ class ExpenseServiceImplTest {
         ExpenseCategory leaf = category(10L, u);
         // 수정 전 1,000원 거래(예산 10,000 중 10%)
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 1_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -317,7 +323,7 @@ class ExpenseServiceImplTest {
         // 1,000 → 9,900 으로 상향 수정
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 Patch.set(10L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(9_900L),
-                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), null);
@@ -334,7 +340,7 @@ class ExpenseServiceImplTest {
         User u = user(USER_ID);
         ExpenseCategory leaf = category(10L, u);
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 1_000L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -367,7 +373,7 @@ class ExpenseServiceImplTest {
     private ExpenseServiceDto.CreateCommand createCmdAmount(long categoryRowId, long amount) {
         return new ExpenseServiceDto.CreateCommand(
                 USER_ID, categoryRowId, null, ExpenseType.EXPENSE, amount,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null, null, null);
@@ -380,7 +386,7 @@ class ExpenseServiceImplTest {
         given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(warnPct);
         given(expenseRepository.findByDateRange(eq(USER_ID), any(), any())).willReturn(List.of(
                 Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, monthlyTotal,
-                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null)));
@@ -405,7 +411,7 @@ class ExpenseServiceImplTest {
         lenient().when(userService.getBudgetAlertThreshold(USER_ID)).thenReturn(85);
         lenient().when(expenseRepository.findByDateRange(eq(USER_ID), any(), any()))
                 .thenReturn(List.of(Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
-                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                        "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
                         null, null, null)));
 
         var info = sut.createExpense(createCmdAmount(10L, 9_900L));
@@ -557,7 +563,7 @@ class ExpenseServiceImplTest {
         User u = user(USER_ID);
         ExpenseCategory leaf = category(10L, u);
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -572,7 +578,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 Patch.set(10L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(9_999L),
-                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), null);
@@ -588,7 +594,7 @@ class ExpenseServiceImplTest {
         User u = user(USER_ID);
         ExpenseCategory leaf = category(10L, u);
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 9_900L,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -603,7 +609,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 Patch.set(10L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
-                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), null);
@@ -639,7 +645,7 @@ class ExpenseServiceImplTest {
     // ── 분할 합 일치화 (거래 금액 ↔ 분할 합 불변식) ─────────────────────────────
     private Expense expenseWithRowId(User u, ExpenseCategory leaf, long amount) {
         Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, amount,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -651,7 +657,7 @@ class ExpenseServiceImplTest {
             long categoryRowId, long amount, List<ExpenseSplitServiceDto.SplitCommand> splits) {
         return new ExpenseServiceDto.UpdateCommand(
                 Patch.set(categoryRowId), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(amount),
-                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), splits);
@@ -767,14 +773,14 @@ class ExpenseServiceImplTest {
 
         // A: 비분할 거래 5,000 (식비 l2)
         Expense a = Expense.createExpense(u, l2, null, ExpenseType.EXPENSE, 5_000L, "a",
-                LocalDateTime.of(2026, 6, 3, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 3, 12, 0), null, null, null,
             null,
             null,
             null);
         ReflectionTestUtils.setField(a, "rowId", 100L);
         // B: 쿠팡 10,000, 분할 [생활용품 6,000 + 식비 4,000] (선언 카테고리는 l8)
         Expense b = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -805,7 +811,7 @@ class ExpenseServiceImplTest {
 
         // 거래: 선언 카테고리 생활용품(8), 10,000원, 분할 없음 상태에서 시작.
         Expense expense = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -828,7 +834,7 @@ class ExpenseServiceImplTest {
 
         var cmd = new ExpenseServiceDto.UpdateCommand(
                 Patch.set(8L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(10_000L),
-                Patch.set("쿠팡"), Patch.set(LocalDateTime.of(2026, 6, 5, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("쿠팡"), Patch.set(LocalDateTime.of(2026, 6, 5, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(),
             Patch.absent(),
             Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(),
@@ -855,7 +861,7 @@ class ExpenseServiceImplTest {
         ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
         ExpenseCategory l2 = leafUnder(2L, u, p1);
         Expense e = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -881,7 +887,7 @@ class ExpenseServiceImplTest {
         ExpenseCategory p1 = parentCat(1L, u, "식비/음료");
         ExpenseCategory l2 = leafUnder(2L, u, p1);
         Expense e = Expense.createExpense(u, l8, null, ExpenseType.EXPENSE, 10_000L, "쿠팡",
-                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null, null,
+                LocalDateTime.of(2026, 6, 5, 12, 0), null, null, null,
             null,
             null,
             null);
@@ -923,7 +929,7 @@ class ExpenseServiceImplTest {
         void rejectsNullAmount() {
             ExpenseServiceDto.CreateCommand cmd = new ExpenseServiceDto.CreateCommand(
                 USER_ID, 1L, null, ExpenseType.EXPENSE, null,
-                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null,
+                "x", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null,
                 null, null, null, null, null);
             assertThatThrownBy(() -> sut.createExpense(cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -934,7 +940,7 @@ class ExpenseServiceImplTest {
         void rejectsNegativeAmountOnUpdate() {
             ExpenseServiceDto.UpdateCommand cmd = new ExpenseServiceDto.UpdateCommand(
                 Patch.set(1L), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(-5_000L),
-                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.set("x"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(), Patch.absent(),
                 Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
             assertThatThrownBy(() -> sut.updateExpense(1L, USER_ID, cmd))
                 .isInstanceOf(InvalidValueException.class);
@@ -977,258 +983,176 @@ class ExpenseServiceImplTest {
         }
     }
 
-    @Test
-    @DisplayName("원거래를 지우면 거기 달린 환불도 함께 사라진다 — 없는 지출을 계속 상계하지 않게")
-    void deletingOriginalAlsoDeletesRefunds() {
-        User u = user(USER_ID);
-        Expense original = Expense.createExpense(u, null, null, ExpenseType.EXPENSE, 50_000L, "쿠팡",
-            LocalDateTime.of(2026, 6, 1, 12, 0), "쿠팡", "CARD", null, null, null, null, null);
-        ReflectionTestUtils.setField(original, "rowId", 1L);
-        Expense refund = Expense.createExpense(u, null, null, ExpenseType.INCOME, 3_000L, "환불",
-            LocalDateTime.of(2026, 6, 3, 12, 0), "쿠팡", "CARD", null, 1L, null, null, null);
-        ReflectionTestUtils.setField(refund, "rowId", 2L);
-
-        given(expenseRepository.findById(1L)).willReturn(Optional.of(original));
-        given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(refund));
-
-        sut.deleteExpense(1L, USER_ID);
-
-        assertThat(original.getIsDeleted()).isEqualTo(YNType.Y);
-        assertThat(refund.getIsDeleted()).isEqualTo(YNType.Y);
-        // 잔액 이력도 양쪽 다 되돌린다 — 환불 flow 가 남으면 잔액이 어긋난다.
-        verify(balanceHistoryService).removeExpense(1L);
-        verify(balanceHistoryService).removeExpense(2L);
+    /** 결제계좌까지 필요 없는 신용카드 자산 — 크레딧 계산은 서비스가 따로 본다. */
+    private Asset creditCard(long rowId) {
+        Asset a = Asset.createAsset(user(USER_ID), "현대카드", AssetType.CREDIT_CARD, 0L,
+            null, null, null, null, null, null, null, null, null, null, null);
+        ReflectionTestUtils.setField(a, "rowId", rowId);
+        return a;
     }
 
-    /**
-     * 환불 상한 — 한 원거래에 달린 활성 환불의 합이 원거래 금액을 넘지 못한다(사용자 결정, QA #152).
-     *
-     * <p>이 검사가 없으면 13,000원 지출에 99,999원 환불이 200 으로 들어가고, 환불이 음수로
-     * 상계되므로 그 달 지출이 -86,999원이 된다 — 통계·예산 이행률이 그 음수를 그대로 더한다(#155).
-     *
-     * <p>막아야 하는 자리가 셋이다: 환불 생성 · 환불 수정(금액만 올라도) · 원거래 금액 축소.
-     * 환불 취소는 검사할 게 없다 — 환불 행을 지우는 것이라 합계가 줄기만 한다.
-     */
     @Nested
-    @DisplayName("환불 상한 (환불 합계 ≤ 원거래 금액)")
-    class RefundCap {
+    @DisplayName("환불 마크")
+    class RefundMark {
 
-        private ExpenseCategory incomeCategory(long rowId, User owner) {
-            ExpenseCategory c = ExpenseCategory.createCategory(owner, "환불", "tag", "#fff", ExpenseType.INCOME, null);
-            ReflectionTestUtils.setField(c, "rowId", rowId);
-            return c;
-        }
-
-        private Expense row(long rowId, User u, ExpenseCategory cat, ExpenseType type, long amount, Long refundOf) {
-            Expense e = Expense.createExpense(u, cat, null, type, amount, "쿠팡",
-                LocalDateTime.of(2026, 6, 1, 12, 0), "쿠팡", "CARD", null, refundOf, null, null, null);
+        private Expense card(long rowId, long amount, LocalDateTime at, Asset asset) {
+            User u = user(USER_ID);
+            Expense e = Expense.createExpense(u, null, asset, ExpenseType.EXPENSE, amount,
+                "구매", at, "무신사", "CARD", null, null, null, null);
             ReflectionTestUtils.setField(e, "rowId", rowId);
             return e;
         }
 
-        /** 환불 생성 명령 — 원거래 1L 에 amount 원을 환불한다. */
-        private ExpenseServiceDto.CreateCommand refundCreateCmd(long categoryRowId, long amount, long originalRowId) {
-            return new ExpenseServiceDto.CreateCommand(
-                USER_ID, categoryRowId, null, ExpenseType.INCOME, amount,
-                "환불", LocalDateTime.of(2026, 6, 3, 12, 0), "쿠팡", "CARD", null, originalRowId,
-                null, null, null, null, null);
-        }
+        @Test
+        @DisplayName("지출을 마크하면 흐름이 지워지고 표식이 남는다 — 돈이 자산으로 돌아간다")
+        void marksAndRemovesFlow() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-        /** 금액 한 칸만 실은 수정 명령 — 나머지는 지금 값을 그대로 둔다(orKeep). */
-        private ExpenseServiceDto.UpdateCommand amountOnlyUpdate(Long amount) {
-            return new ExpenseServiceDto.UpdateCommand(
-                Patch.absent(), Patch.absent(), Patch.absent(), Patch.set(amount),
-                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
-                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
-        }
+            var info = sut.refund(1L, USER_ID, LocalDateTime.of(2026, 7, 13, 9, 0));
 
-        private void givenIncomeCategoryLookup(User u, long categoryRowId) {
-            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
-            given(expenseCategoryRepository.findById(categoryRowId))
-                .willReturn(Optional.of(incomeCategory(categoryRowId, u)));
-            given(expenseCategoryRepository.hasChildren(categoryRowId)).willReturn(false);
+            assertThat(info.refundedAt()).isEqualTo(LocalDateTime.of(2026, 7, 13, 9, 0));
+            assertThat(e.isRefunded()).isTrue();
+            assertThat(e.isCountable()).isFalse();
+            then(balanceHistoryService).should().removeExpense(1L);
         }
 
         @Test
-        @DisplayName("생성 — 13,000원 지출에 99,999원 환불은 400(EXP_024). 종전 200")
-        void createRejectsRefundOverOriginal() {
-            User u = user(USER_ID);
-            givenIncomeCategoryLookup(u, 11L);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of());
+        @DisplayName("환불일을 안 주면 지금으로 찍는다")
+        void defaultsToNow() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-            assertThatThrownBy(() -> sut.createExpense(refundCreateCmd(11L, 99_999L, 1L)))
+            var info = sut.refund(1L, USER_ID, null);
+
+            assertThat(info.refundedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("수입은 마크할 수 없다 — 지출만 환불된다")
+        void incomeRejected() {
+            User u = user(USER_ID);
+            Expense income = Expense.createExpense(u, null, null, ExpenseType.INCOME, 10_000L,
+                "급여", LocalDateTime.of(2026, 7, 1, 9, 0), null, null, null, null, null, null);
+            ReflectionTestUtils.setField(income, "rowId", 1L);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(income));
+
+            assertThatThrownBy(() -> sut.refund(1L, USER_ID, null))
                 .isInstanceOf(InvalidValueException.class)
-                .extracting(e -> ((InvalidValueException) e).getErrorCode())
-                .isEqualTo(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
-
-            then(expenseRepository).should(never()).save(any(Expense.class));
+                .hasMessage(DeskErrorCode.REFUND_NOT_EXPENSE.getMessageKey());
         }
 
         @Test
-        @DisplayName("생성 — 원거래와 정확히 같은 금액은 통과(경계값: 전액 환불)")
-        void createAllowsExactlyOriginalAmount() {
-            User u = user(USER_ID);
-            givenIncomeCategoryLookup(u, 11L);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of());
+        @DisplayName("두 번 마크하면 400 — 같은 거래를 두 번 되돌릴 수 없다")
+        void alreadyRefunded() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            e.markRefunded(LocalDateTime.of(2026, 7, 11, 9, 0));
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-            var info = sut.createExpense(refundCreateCmd(11L, 13_000L, 1L));
-
-            assertThat(info.amount()).isEqualTo(13_000L);
-            then(expenseRepository).should().save(any(Expense.class));
-        }
-
-        @Test
-        @DisplayName("생성 — 나눠 넣다 마지막 한 건에서 합계가 넘으면 400")
-        void createRejectsWhenSumOfPartialRefundsOverflows() {
-            User u = user(USER_ID);
-            givenIncomeCategoryLookup(u, 11L);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
-                row(2L, u, null, ExpenseType.INCOME, 10_000L, 1L),
-                row(3L, u, null, ExpenseType.INCOME, 2_000L, 1L)));
-
-            // 12,000 까지 들어가 있다 — 1,000 은 되고 1,500 은 안 된다.
-            assertThatThrownBy(() -> sut.createExpense(refundCreateCmd(11L, 1_500L, 1L)))
+            assertThatThrownBy(() -> sut.refund(1L, USER_ID, null))
                 .isInstanceOf(InvalidValueException.class)
-                .extracting(e -> ((InvalidValueException) e).getErrorCode())
-                .isEqualTo(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
+                .hasMessage(DeskErrorCode.ALREADY_REFUNDED.getMessageKey());
         }
 
         @Test
-        @DisplayName("생성 — 남은 만큼(1,000원)은 통과. 상한은 '원거래 − 이미 환불한 금액' 이다")
-        void createAllowsRemainingHeadroom() {
-            User u = user(USER_ID);
-            givenIncomeCategoryLookup(u, 11L);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
-                row(2L, u, null, ExpenseType.INCOME, 10_000L, 1L),
-                row(3L, u, null, ExpenseType.INCOME, 2_000L, 1L)));
+        @DisplayName("환불된 거래는 수정할 수 없다 — 먼저 취소해야 한다")
+        void refundedIsReadonly() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            e.markRefunded(LocalDateTime.of(2026, 7, 11, 9, 0));
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-            var info = sut.createExpense(refundCreateCmd(11L, 1_000L, 1L));
-
-            assertThat(info.amount()).isEqualTo(1_000L);
-        }
-
-        @Test
-        @DisplayName("수정 — 연결은 그대로인데 금액만 올려도 400(orKeep 이라 링크가 안 실린다)")
-        void updateRejectsRaisingRefundAmountAlone() {
-            User u = user(USER_ID);
-            ExpenseCategory incomeCat = incomeCategory(11L, u);
-            Expense refund = row(2L, u, incomeCat, ExpenseType.INCOME, 3_000L, 1L);
-            given(expenseRepository.findById(2L)).willReturn(Optional.of(refund));
-            given(expenseCategoryRepository.hasChildren(11L)).willReturn(false);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
-                refund,
-                row(3L, u, null, ExpenseType.INCOME, 10_000L, 1L)));
-
-            // 자기(3,000) 를 빼면 10,000 이 남아 있다 — 5,000 을 얹으면 15,000 > 13,000.
-            assertThatThrownBy(() -> sut.updateExpense(2L, USER_ID, amountOnlyUpdate(5_000L)))
+            assertThatThrownBy(() -> sut.updateExpense(1L, USER_ID, new ExpenseServiceDto.UpdateCommand(
+                    Patch.absent(), Patch.absent(), Patch.absent(), Patch.set(1_000L),
+                    Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                    Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null)))
                 .isInstanceOf(InvalidValueException.class)
-                .extracting(e -> ((InvalidValueException) e).getErrorCode())
-                .isEqualTo(DeskErrorCode.EXPENSE_REFUND_EXCEEDS_ORIGINAL);
+                .hasMessage(DeskErrorCode.REFUNDED_READONLY.getMessageKey());
+        }
+
+        @Test
+        @DisplayName("취소하면 표식이 지워지고 흐름이 되살아난다")
+        void cancelRestoresFlow() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            e.markRefunded(LocalDateTime.of(2026, 7, 11, 9, 0));
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+
+            var info = sut.cancelRefund(1L, USER_ID);
+
+            assertThat(info.refundedAt()).isNull();
+            assertThat(e.isCountable()).isTrue();
+            then(balanceHistoryService).should().recordExpense(
+                null, 1L, ExpenseType.EXPENSE, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0));
+        }
+
+        @Test
+        @DisplayName("마크하지 않은 거래의 취소는 400")
+        void cancelNotRefunded() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+
+            assertThatThrownBy(() -> sut.cancelRefund(1L, USER_ID))
+                .isInstanceOf(InvalidValueException.class)
+                .hasMessage(DeskErrorCode.NOT_REFUNDED.getMessageKey());
         }
 
         /**
-         * 합계에서 <b>자기 자신을 빼는지</b> — 안 빼면 자기 금액이 두 번 세어져 아무것도 안 바꾼
-         * 저장까지 400 이 된다. 상한 검사를 넣으면서 가장 쉽게 만드는 회귀라 따로 잠근다.
+         * 카드 원거래는 크레딧 계산을 거친다 — 돌려줄 돈이 있으면 그 이체를 걸어 둔다.
+         *
+         * <p>얼마를 돌려주는지는 {@code CardPaymentServiceImpl} 의 몫이라 여기서는
+         * <b>부르는지</b>와 <b>결과를 연결하는지</b>만 본다.
          */
         @Test
-        @DisplayName("수정 — 전액 환불을 금액 그대로 다시 저장하면 통과(자기 자신을 합계에서 뺀다)")
-        void updateExcludesItselfFromTheSum() {
-            User u = user(USER_ID);
-            ExpenseCategory incomeCat = incomeCategory(11L, u);
-            Expense refund = row(2L, u, incomeCat, ExpenseType.INCOME, 13_000L, 1L);
-            given(expenseRepository.findById(2L)).willReturn(Optional.of(refund));
-            given(expenseCategoryRepository.hasChildren(11L)).willReturn(false);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, null, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(refund));
+        @DisplayName("카드 거래면 환급 크레딧을 확인하고, 이체가 생기면 걸어 둔다")
+        void linksCardRefundTransfer() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+            given(cardPaymentService.refundCreditIfOverpaid(eq(9L), eq(50_000L), any(), any(), eq(USER_ID)))
+                .willReturn(77L);
 
-            var info = sut.updateExpense(2L, USER_ID, amountOnlyUpdate(13_000L));
+            var info = sut.refund(1L, USER_ID, null);
 
-            assertThat(info.amount()).isEqualTo(13_000L);
+            assertThat(info.refundTransferRowId()).isEqualTo(77L);
         }
 
         @Test
-        @DisplayName("원거래 축소 — 13,000원 환불이 달린 지출을 5,000원으로 줄이면 400(EXP_025)")
-        void updateRejectsShrinkingOriginalBelowRefunds() {
-            User u = user(USER_ID);
-            ExpenseCategory expenseCat = category(10L, u);
-            Expense original = row(1L, u, expenseCat, ExpenseType.EXPENSE, 13_000L, null);
-            given(expenseRepository.findById(1L)).willReturn(Optional.of(original));
-            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
-                row(2L, u, null, ExpenseType.INCOME, 13_000L, 1L)));
+        @DisplayName("돌려줄 크레딧이 없으면 이체를 걸지 않는다 — 결제 전 환불")
+        void noTransferWhenNoCredit() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
+            given(cardPaymentService.refundCreditIfOverpaid(any(), anyLong(), any(), any(), any()))
+                .willReturn(null);
 
-            assertThatThrownBy(() -> sut.updateExpense(1L, USER_ID, amountOnlyUpdate(5_000L)))
-                .isInstanceOf(InvalidValueException.class)
-                .extracting(e -> ((InvalidValueException) e).getErrorCode())
-                .isEqualTo(DeskErrorCode.EXPENSE_AMOUNT_BELOW_REFUNDS);
+            var info = sut.refund(1L, USER_ID, null);
 
-            assertThat(original.getAmount()).isEqualTo(13_000L);
+            assertThat(info.refundTransferRowId()).isNull();
         }
 
         @Test
-        @DisplayName("원거래 축소 — 환불 합계까지는 줄일 수 있다(경계값)")
-        void updateAllowsShrinkingDownToRefundSum() {
-            User u = user(USER_ID);
-            ExpenseCategory expenseCat = category(10L, u);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, expenseCat, ExpenseType.EXPENSE, 20_000L, null)));
-            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
-            given(expenseRepository.findActiveRefundsOf(1L)).willReturn(List.of(
-                row(2L, u, null, ExpenseType.INCOME, 13_000L, 1L)));
+        @DisplayName("카드가 아니면 크레딧 계산을 아예 안 부른다")
+        void nonCardSkipsCredit() {
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), null);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-            var info = sut.updateExpense(1L, USER_ID, amountOnlyUpdate(13_000L));
+            sut.refund(1L, USER_ID, null);
 
-            assertThat(info.amount()).isEqualTo(13_000L);
+            then(cardPaymentService).should(never())
+                .refundCreditIfOverpaid(any(), anyLong(), any(), any(), any());
         }
 
-        /**
-         * 줄이지 않는 수정은 검사조차 하지 않는다 — 이 규칙 이전에 이미 초과로 쌓인 행이
-         * 설명 한 줄도 못 고치게 잠기면 안 되고, 금액을 올려 바로잡는 길도 열어 둬야 한다.
-         */
+        /** 결정 9 — 이미 낸 회차의 카드 거래를 지우면 남는 돈을 돌려준다. */
         @Test
-        @DisplayName("원거래 축소 — 금액을 안 실은 수정은 이미 초과인 행에서도 통과")
-        void updateWithoutAmountNeverChecksRefunds() {
-            User u = user(USER_ID);
-            ExpenseCategory expenseCat = category(10L, u);
-            given(expenseRepository.findById(1L))
-                .willReturn(Optional.of(row(1L, u, expenseCat, ExpenseType.EXPENSE, 13_000L, null)));
-            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+        @DisplayName("결제된 회차의 카드 거래를 지우면 환급 크레딧을 확인한다")
+        void deleteChecksCredit() {
+            Asset cardAsset = creditCard(9L);
+            Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
+            given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
 
-            var cmd = new ExpenseServiceDto.UpdateCommand(
-                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
-                Patch.set("메모만 고침"), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
-                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
+            sut.deleteExpense(1L, USER_ID);
 
-            var info = sut.updateExpense(1L, USER_ID, cmd);
-
-            assertThat(info.description()).isEqualTo("메모만 고침");
-            then(expenseRepository).should(never()).findActiveRefundsOf(any());
-        }
-
-        @Test
-        @DisplayName("환불이 아닌 일반 거래는 상한 검사를 타지 않는다(조회도 안 한다)")
-        void plainTransactionIsUntouched() {
-            User u = user(USER_ID);
-            ExpenseCategory leaf = category(10L, u);
-            given(userRepository.findById(USER_ID)).willReturn(Optional.of(u));
-            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
-            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
-
-            var info = sut.createExpense(createCmd(10L));
-
-            assertThat(info.amount()).isEqualTo(10_000L);
-            then(expenseRepository).should(never()).findActiveRefundsOf(any());
+            then(cardPaymentService).should()
+                .refundCreditIfOverpaid(eq(9L), eq(50_000L), any(), any(), eq(USER_ID));
         }
     }
 }

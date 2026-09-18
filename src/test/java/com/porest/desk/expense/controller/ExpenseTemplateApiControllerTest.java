@@ -72,12 +72,11 @@ class ExpenseTemplateApiControllerTest {
                 10L, 1L, 5L, "식비", "utensils", "#ffffff",
                 2L, "현금", ExpenseType.EXPENSE, 9000L, "회사 근처",
                 LocalDateTime.of(2026, 7, 3, 12, 0), "김밥천국", "CARD",
-                null, null,
-            null,
-            null,
-            null, null, null,
-            null, // autoSource — 손으로 쓴 거래
-            0, 0L, // 환불 없음
+                null,       // installmentMonths — 일시불
+            null, null, // refundedAt · refundTransferRowId — 환불 아님
+            null, null, null, // 원 통화 셋 — 원화 결제
+            null, null, // 일정·할 일 연결 없음
+            null,       // autoSource — 손으로 쓴 거래
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of());
     }

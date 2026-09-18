@@ -95,7 +95,10 @@ public class ExportDataService {
     // ── 타입별 표 ─────────────────────────────────────────────
 
     private ExportTable expenseTable(Long userRowId, LocalDate start, LocalDate end, boolean mask) {
-        List<String> headers = List.of("날짜", "유형", "카테고리", "자산", "금액", "설명", "거래처", "결제수단");
+        // 환불된 거래도 **행으로는 싣는다** — 받아 간 자료가 화면과 달라지면 안 된다.
+        // 다만 합계에는 안 들어가므로 그 사실을 칸으로 알려 준다(설계 5절).
+        List<String> headers = List.of("날짜", "유형", "카테고리", "자산", "금액", "설명",
+            "거래처", "결제수단", "환불");
         List<List<String>> rows = new ArrayList<>();
         expenseRepository.findByDateRange(userRowId, start, end).forEach(e -> {
             ExpenseServiceDto.ExpenseInfo i = ExpenseServiceDto.ExpenseInfo.from(e);
@@ -107,7 +110,8 @@ public class ExportDataService {
                 money(mask, i.amount()),
                 cell(i.description()),
                 cell(i.merchant()),
-                cell(i.paymentMethod())
+                cell(i.paymentMethod()),
+                i.refundedAt() != null ? "Y" : "N"
             ));
         });
         return new ExportTable(ExportType.EXPENSE, headers, rows);

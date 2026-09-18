@@ -1,9 +1,11 @@
 package com.porest.desk.expense.domain;
 
+import com.porest.core.type.YNType;
 import com.porest.desk.expense.type.ExpenseType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -11,184 +13,189 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 환불 상계 — 실제로 물건을 사고 무르는 상황을 그대로 넣어 검증한다.
+ * 환불 마크 — <b>삭제 대신</b>이다(설계 결정 1, 2026-09-18).
  *
- * <p>핵심 규칙: 환불은 <b>수입이 아니다</b>. 5만원 옷을 사고 환불하면 그 달 지출도 수입도 0 이어야지,
- * 지출 5만 + 수입 5만이 되면 안 된다(수입이 부풀려지고 저축률·수지 통계가 전부 틀어진다).
+ * <p>종전에는 환불이 <b>수입 행 + 원거래 연결</b>이었고 집계에서 음수로 상계했다. 그 모델은
+ * 카드에서 두 번 깎였다 — 환불 수입이 카드에 {@code +금액} 흐름을 남기고, 동시에 <b>환불
+ * 날짜</b> 회차의 청구에서 또 빠졌다. 두 날짜가 다른 회차면 한 번 산 것을 두 번 깎아
+ * 유령 빚이 남았다.
+ *
+ * <p>지금은 원거래에 {@code refunded_at} 을 찍고 <b>집계에서 통째로 뺀다</b>. 그래서
+ * 이 파일이 잠그는 것은 "상계가 맞나" 가 아니라 <b>"세지 않는가"</b> 다.
  */
-@DisplayName("환불 상계")
+@DisplayName("환불 마크")
 class ExpenseRefundTest {
 
     private static final LocalDateTime BOUGHT_AT = LocalDateTime.of(2026, 7, 10, 14, 30);
+    private static final LocalDateTime REFUNDED_AT = LocalDateTime.of(2026, 7, 13, 9, 0);
+    /** 집계 기준 시각 — 위 거래들보다 뒤로 둔다(예정 거래 제외 규칙에 안 걸리게). */
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 7, 31, 23, 0);
 
-    /** 카드 지출. */
     private Expense spend(long amount) {
         return Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, amount, "구매",
-            BOUGHT_AT, "무신사", "CARD", null, null,
-            null,
-            null,
-            null);
+            BOUGHT_AT, "무신사", "CARD", null, null, null, null);
     }
 
-    /** 환불 — INCOME 이면서 원거래를 가리킨다. */
-    private Expense refund(long amount, long ofExpenseRowId) {
-        return Expense.createExpense(
-            null, null, null, ExpenseType.INCOME, amount, "환불",
-            BOUGHT_AT.plusDays(3), "무신사", "CARD", null, ofExpenseRowId,
-            null,
-            null,
-            null);
-    }
-
-    /** 순수 수입 — 원거래가 없다. */
     private Expense income(long amount) {
         return Expense.createExpense(
             null, null, null, ExpenseType.INCOME, amount, "급여",
-            BOUGHT_AT, "회사", "TRANSFER", null, null,
-            null,
-            null,
-            null);
+            BOUGHT_AT, "회사", "TRANSFER", null, null, null, null);
     }
 
-    private long sumIncome(List<Expense> list) {
-        return list.stream().mapToLong(Expense::incomeContribution).sum();
+    /** 집계에 들어가는 것만 남긴 뒤 합한다 — 서비스가 쓰는 규칙 그대로. */
+    private long income(List<Expense> all) {
+        return ExpenseAggregates.incomeSum(ExpenseAggregates.countable(all, NOW));
     }
 
-    private long sumExpense(List<Expense> list) {
-        return list.stream().mapToLong(Expense::expenseContribution).sum();
-    }
-
-    @Nested
-    @DisplayName("전액 환불")
-    class FullRefund {
-
-        @Test
-        @DisplayName("5만원 코트를 사고 전액 환불 — 그 달 지출 0, 수입 0")
-        void coatFullyRefunded() {
-            Expense bought = spend(50_000L);
-            Expense refunded = refund(50_000L, 100L);
-
-            assertThat(refunded.isRefund()).isTrue();
-            assertThat(sumExpense(List.of(bought, refunded))).isZero();
-            assertThat(sumIncome(List.of(bought, refunded))).isZero();
-        }
-
-        @Test
-        @DisplayName("환불만 있고 원거래가 이 기간 밖이면 지출이 음수로 남는다 — 실제 현금 흐름과 같다")
-        void refundOnlyInPeriod() {
-            // 6월에 산 물건을 7월에 환불 — 7월만 보면 돈이 들어온 것이라 지출이 −5만
-            Expense refunded = refund(50_000L, 100L);
-
-            assertThat(sumExpense(List.of(refunded))).isEqualTo(-50_000L);
-            assertThat(sumIncome(List.of(refunded))).isZero();
-        }
+    private long expense(List<Expense> all) {
+        return ExpenseAggregates.expenseSum(ExpenseAggregates.countable(all, NOW));
     }
 
     @Nested
-    @DisplayName("부분 환불")
-    class PartialRefund {
+    @DisplayName("마크하면 집계에서 빠진다")
+    class Marked {
 
         @Test
-        @DisplayName("12만원 운동화 중 사이즈 교환 차액 3만원 환불 — 지출 9만원만 남는다")
-        void sneakersPartialRefund() {
-            Expense bought = spend(120_000L);
-            Expense refunded = refund(30_000L, 100L);
+        @DisplayName("5만원 코트를 사고 환불 — 그 달 지출 0, 수입 0")
+        void coatRefunded() {
+            Expense coat = spend(50_000L);
+            coat.markRefunded(REFUNDED_AT);
 
-            assertThat(sumExpense(List.of(bought, refunded))).isEqualTo(90_000L);
-            assertThat(sumIncome(List.of(bought, refunded))).isZero();
+            assertThat(coat.isRefunded()).isTrue();
+            assertThat(coat.isCountable()).isFalse();
+            assertThat(expense(List.of(coat))).isZero();
+            // 환불 달에 수입이 생기지 않는다 — 옛 모델이 여기서 18만원씩 부풀었다.
+            assertThat(income(List.of(coat))).isZero();
         }
 
         @Test
-        @DisplayName("여러 번 나눠 환불받아도 합계가 맞는다 (8만원 중 3만 + 2만)")
-        void multipleRefunds() {
-            Expense bought = spend(80_000L);
-            List<Expense> all = List.of(bought, refund(30_000L, 100L), refund(20_000L, 100L));
+        @DisplayName("환불한 거래의 금액·통화·가맹점은 그대로 남는다 — 내역에 보여야 한다")
+        void keepsItsData() {
+            Expense coat = spend(50_000L);
+            coat.markRefunded(REFUNDED_AT);
 
-            assertThat(sumExpense(all)).isEqualTo(30_000L);
-            assertThat(sumIncome(all)).isZero();
+            assertThat(coat.getAmount()).isEqualTo(50_000L);
+            assertThat(coat.getMerchant()).isEqualTo("무신사");
+            assertThat(coat.getRefundedAt()).isEqualTo(REFUNDED_AT);
+        }
+
+        /**
+         * 마크 모델의 성질 — 환불은 <b>원거래 달</b>의 합계를 소급해 줄인다.
+         *
+         * <p>옛 모델은 환불 달에 음수를 더해 그 달 지출이 줄었다(6월에 산 것을 7월에
+         * 환불하면 7월 지출이 −5만). 지금은 6월 지출이 0 이 되고 7월은 아무 일도 없다.
+         */
+        @Test
+        @DisplayName("원거래 달이 줄고, 환불한 달에는 아무 흔적이 없다")
+        void reducesOriginalMonth() {
+            Expense june = spend(50_000L);
+            june.markRefunded(REFUNDED_AT);
+
+            // 6월 목록에 이 거래만 있다고 보면 — 0
+            assertThat(expense(List.of(june))).isZero();
+            // 7월 목록에는 이 거래가 아예 없다(행이 하나도 안 생긴다)
+            assertThat(expense(List.of())).isZero();
+            assertThat(income(List.of())).isZero();
         }
     }
 
     @Nested
-    @DisplayName("환불이 아닌 수입")
-    class NotRefund {
+    @DisplayName("환불 취소")
+    class Cancelled {
 
         @Test
-        @DisplayName("급여 300만원은 원거래가 없어 그대로 수입 — 상계 대상이 아니다")
+        @DisplayName("취소하면 다시 세어진다")
+        void countsAgain() {
+            Expense coat = spend(50_000L);
+            coat.markRefunded(REFUNDED_AT);
+            coat.clearRefund();
+
+            assertThat(coat.isRefunded()).isFalse();
+            assertThat(coat.isCountable()).isTrue();
+            assertThat(expense(List.of(coat))).isEqualTo(50_000L);
+        }
+
+        @Test
+        @DisplayName("환급 이체 연결도 함께 지운다 — 남으면 없는 이체를 또 무르려 한다")
+        void clearsTransferLink() {
+            Expense coat = spend(50_000L);
+            coat.markRefunded(REFUNDED_AT);
+            coat.linkRefundTransfer(77L);
+            assertThat(coat.getRefundTransferRowId()).isEqualTo(77L);
+
+            coat.clearRefund();
+
+            assertThat(coat.getRefundTransferRowId()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("수입은 수입, 지출은 지출")
+    class NoMoreOffset {
+
+        @Test
+        @DisplayName("급여 300만원은 그대로 수입 — 상계 개념이 사라졌다")
         void salaryIsIncome() {
             Expense salary = income(3_000_000L);
 
-            assertThat(salary.isRefund()).isFalse();
-            assertThat(sumIncome(List.of(salary))).isEqualTo(3_000_000L);
-            assertThat(sumExpense(List.of(salary))).isZero();
+            assertThat(salary.incomeContribution()).isEqualTo(3_000_000L);
+            assertThat(salary.expenseContribution()).isZero();
         }
 
         @Test
-        @DisplayName("적금 이자 12,340원도 수입 — 예·적금 계좌로 들어오는 돈은 환불이 아니다")
-        void interestIsIncome() {
-            assertThat(sumIncome(List.of(income(12_340L)))).isEqualTo(12_340L);
-        }
+        @DisplayName("수입 행은 어떤 경우에도 지출을 깎지 않는다")
+        void incomeNeverOffsetsExpense() {
+            List<Expense> month = List.of(income(3_000_000L), spend(250_000L));
 
-        @Test
-        @DisplayName("원거래를 가리켜도 EXPENSE 면 환불이 아니다 — 타입이 기준")
-        void expenseWithRefundLinkIsNotRefund() {
-            Expense e = Expense.createExpense(
-                null, null, null, ExpenseType.EXPENSE, 10_000L, "이상한 데이터",
-                BOUGHT_AT, "가맹점", "CARD", null, 100L,
-            null,
-            null,
-            null);
-
-            assertThat(e.isRefund()).isFalse();
-            assertThat(sumExpense(List.of(e))).isEqualTo(10_000L);
+            assertThat(income(month)).isEqualTo(3_000_000L);
+            assertThat(expense(month)).isEqualTo(250_000L);
         }
     }
 
     @Nested
-    @DisplayName("한 달 전체 시나리오")
+    @DisplayName("한 달 전체")
     class MonthlyScenario {
 
         @Test
-        @DisplayName("급여 300만 · 장보기 25만 · 코트 18만 구매 후 환불 → 수입 300만, 지출 25만")
+        @DisplayName("급여 300만 · 장보기 25만 · 코트 18만 사고 환불 → 수입 300만, 지출 25만")
         void realisticMonth() {
-            List<Expense> month = List.of(
-                income(3_000_000L),        // 급여
-                spend(250_000L),           // 장보기
-                spend(180_000L),           // 코트
-                refund(180_000L, 100L)     // 코트 환불
-            );
+            Expense coat = spend(180_000L);
+            coat.markRefunded(REFUNDED_AT);
+            List<Expense> month = List.of(income(3_000_000L), spend(250_000L), coat);
 
-            assertThat(sumIncome(month)).isEqualTo(3_000_000L);
-            assertThat(sumExpense(month)).isEqualTo(250_000L);
-            // 수지 = 수입 − 지출
-            assertThat(sumIncome(month) - sumExpense(month)).isEqualTo(2_750_000L);
-        }
-
-        @Test
-        @DisplayName("환불을 수입으로 잡던 옛 방식과의 차이 — 수입이 18만원 부풀지 않는다")
-        void doesNotInflateIncome() {
-            List<Expense> month = List.of(spend(180_000L), refund(180_000L, 100L));
-
-            // 옛 방식이면 수입 180,000 / 지출 180,000 으로 잡혔다
-            assertThat(sumIncome(month)).isZero();
-            assertThat(sumExpense(month)).isZero();
+            assertThat(income(month)).isEqualTo(3_000_000L);
+            assertThat(expense(month)).isEqualTo(250_000L);
+            assertThat(income(month) - expense(month)).isEqualTo(2_750_000L);
         }
     }
 
-    @Test
-    @DisplayName("수정으로 원거래 연결을 지우면 다시 일반 수입이 된다")
-    void unlinkMakesItIncomeAgain() {
-        Expense e = refund(50_000L, 100L);
-        assertThat(e.isRefund()).isTrue();
+    @Nested
+    @DisplayName("삭제와의 관계")
+    class VersusDelete {
 
-        e.updateExpense(null, null, ExpenseType.INCOME, 50_000L, "잘못 연결한 것 해제",
-            BOUGHT_AT, "무신사", "CARD", null, null,
-            null,
-            null,
-            null);
+        @Test
+        @DisplayName("지운 거래도, 환불한 거래도 집계에서 빠진다 — 판정이 하나다")
+        void bothLeaveTotals() {
+            Expense deleted = spend(10_000L);
+            ReflectionTestUtils.setField(deleted, "isDeleted", YNType.Y);
+            Expense refunded = spend(20_000L);
+            refunded.markRefunded(REFUNDED_AT);
 
-        assertThat(e.isRefund()).isFalse();
-        assertThat(e.incomeContribution()).isEqualTo(50_000L);
+            assertThat(deleted.isCountable()).isFalse();
+            assertThat(refunded.isCountable()).isFalse();
+            assertThat(expense(List.of(deleted, refunded))).isZero();
+        }
+
+        /** 아직 오지 않은 거래도 같은 판정을 지난다 — 세 조건이 한 자리에 모여 있다. */
+        @Test
+        @DisplayName("예정 거래도 그 자리에서 함께 걸러진다")
+        void scheduledAlsoFiltered() {
+            Expense future = Expense.createExpense(
+                null, null, null, ExpenseType.EXPENSE, 30_000L, "다음 달 구독",
+                NOW.plusDays(5), "넷플릭스", "CARD", null, null, null, null);
+
+            assertThat(expense(List.of(future))).isZero();
+        }
     }
 }

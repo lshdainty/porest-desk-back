@@ -526,7 +526,7 @@ class ExpenseCategoryServiceImplTest {
             ExpenseCategory src = category(10L, u, null, ExpenseType.EXPENSE);
             ExpenseCategory dst = category(11L, u, null, ExpenseType.EXPENSE);
             Expense e = Expense.createExpense(u, src, null, ExpenseType.EXPENSE, 1000L,
-                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null, null,
+                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null,
             null,
             null,
             null);
@@ -588,7 +588,7 @@ class ExpenseCategoryServiceImplTest {
             User u = user(USER_ID);
             ExpenseCategory src = category(10L, u, null, ExpenseType.EXPENSE);
             Expense e = Expense.createExpense(u, src, null, ExpenseType.EXPENSE, 1000L,
-                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null, null,
+                null, LocalDateTime.of(2026, 5, 1, 0, 0), null, null, null,
             null,
             null,
             null);

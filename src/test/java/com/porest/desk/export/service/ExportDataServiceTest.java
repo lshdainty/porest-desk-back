@@ -99,7 +99,7 @@ class ExportDataServiceTest {
 
     private Expense expense(LocalDateTime expenseDate) {
         return Expense.createExpense(user(), null, null, ExpenseType.EXPENSE, 1000L, "커피",
-            expenseDate, "카페", "CARD", null, null, null, null, null);
+            expenseDate, "카페", "CARD", null, null, null, null);
     }
 
     private CalendarEvent event(LocalDateTime start, LocalDateTime end) {
@@ -186,6 +186,28 @@ class ExportDataServiceTest {
 
             assertThat(t.headers().get(0)).isEqualTo("날짜");
             assertThat(t.rows().get(0).get(0)).isEqualTo("2026-09-03 09:22");
+        }
+
+        /**
+         * 환불된 거래도 <b>행으로는 실린다</b> — 받아 간 자료가 화면과 달라지면 안 된다.
+         *
+         * <p>다만 합계에는 안 들어가므로 그 사실을 칸으로 알려 준다. 칸이 없으면 사용자가
+         * 스프레드시트에서 직접 더했을 때 앱이 보여 준 합계와 어긋난다(설계 5절).
+         */
+        @Test
+        @DisplayName("거래 — 환불된 행은 '환불' 칸이 Y 다")
+        void refundedRowIsMarked() {
+            Expense refunded = expense(LocalDateTime.of(2026, 9, 3, 9, 22));
+            refunded.markRefunded(LocalDateTime.of(2026, 9, 5, 10, 0));
+            given(expenseRepository.findByDateRange(USER_ID, START, END))
+                .willReturn(List.of(expense(LocalDateTime.of(2026, 9, 2, 9, 0)), refunded));
+
+            ExportTable t = sutInSeoul().buildTable(ExportType.EXPENSE, USER_ID, START, END, false);
+
+            assertThat(t.headers()).endsWith("환불");
+            assertThat(t.rows()).hasSize(2);
+            assertThat(t.rows().get(0)).endsWith("N");
+            assertThat(t.rows().get(1)).endsWith("Y");
         }
 
         @Test

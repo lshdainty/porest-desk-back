@@ -25,7 +25,7 @@ class ExpenseForeignCurrencyTest {
     private Expense pay(long krw, BigDecimal originalAmount, String currency, BigDecimal rate) {
         return Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, krw,
-            "해외 결제", PAID_AT, null, "CREDIT_CARD", null, null,
+            "해외 결제", PAID_AT, null, "CREDIT_CARD", null,
             originalAmount, currency, rate);
     }
 
@@ -155,7 +155,7 @@ class ExpenseForeignCurrencyTest {
             Expense e = pay(7_700L, new BigDecimal("5.50"), "USD", new BigDecimal("1400"));
 
             e.updateExpense(null, null, ExpenseType.EXPENSE, 7_590L, "해외 결제", PAID_AT,
-                null, "CREDIT_CARD", null, null,
+                null, "CREDIT_CARD", null,
                 new BigDecimal("5.50"), "USD", new BigDecimal("1380"));
 
             assertThat(e.getAmount()).isEqualTo(7_590L);
@@ -168,7 +168,7 @@ class ExpenseForeignCurrencyTest {
             Expense e = pay(7_700L, new BigDecimal("5.50"), "USD", new BigDecimal("1400"));
 
             e.updateExpense(null, null, ExpenseType.EXPENSE, 7_700L, "국내 결제", PAID_AT,
-                null, "CREDIT_CARD", null, null, null, null, null);
+                null, "CREDIT_CARD", null, null, null, null);
 
             assertThat(e.isForeignCurrency()).isFalse();
             assertThat(e.getOriginalAmount()).isNull();
@@ -186,7 +186,7 @@ class ExpenseForeignCurrencyTest {
         void foreignInstallment() {
             Expense e = Expense.createExpense(
                 null, null, null, ExpenseType.EXPENSE, 840_000L,
-                "면세점", PAID_AT, null, "CREDIT_CARD", 3, null,
+                "면세점", PAID_AT, null, "CREDIT_CARD", 3,
                 new BigDecimal("600"), "USD", new BigDecimal("1400"));
 
             assertThat(e.isInstallment()).isTrue();
@@ -198,15 +198,19 @@ class ExpenseForeignCurrencyTest {
         @Test
         @DisplayName("해외 결제 환불 $5.50(7,700원) — 지출을 상계하면서 원 통화도 남는다")
         void foreignRefund() {
-            Expense refund = Expense.createExpense(
-                null, null, null, ExpenseType.INCOME, 7_700L,
-                "해외 결제 취소", PAID_AT, null, "CREDIT_CARD", null, 42L,
+            // 환불은 이제 **원거래에 찍는 표식**이라 별도 행이 없다 — 외화 지출을 마크하면
+            // 그 행의 통화 정보가 그대로 남고, 집계에서는 통째로 빠진다.
+            Expense paid = Expense.createExpense(
+                null, null, null, ExpenseType.EXPENSE, 7_700L,
+                "해외 결제", PAID_AT, null, "CREDIT_CARD", null,
                 new BigDecimal("5.50"), "USD", new BigDecimal("1400"));
 
-            assertThat(refund.isRefund()).isTrue();
-            assertThat(refund.expenseContribution()).isEqualTo(-7_700L);
-            assertThat(refund.incomeContribution()).isZero();          // 수입으로 잡히면 안 된다
-            assertThat(refund.getOriginalCurrency()).isEqualTo("USD");
+            paid.markRefunded(PAID_AT.plusDays(3));
+
+            assertThat(paid.isRefunded()).isTrue();
+            assertThat(paid.isCountable()).isFalse();                  // 합계에서 빠진다
+            assertThat(paid.getOriginalCurrency()).isEqualTo("USD");   // 통화 정보는 남는다
+            assertThat(paid.getOriginalAmount()).isEqualByComparingTo(new BigDecimal("5.50"));
         }
     }
 }

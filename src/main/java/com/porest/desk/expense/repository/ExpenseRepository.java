@@ -27,12 +27,6 @@ public interface ExpenseRepository {
     /** 카테고리 + 그 하위 카테고리들의 기간 내 지출 합계 (예산 알림 roll-up용). */
     long sumAmountByCategoryRollup(Long userRowId, Long categoryRowId, ExpenseType expenseType,
                                    LocalDate startDate, LocalDate endDate);
-    /** 이 거래를 원거래로 삼는 활성 환불들 — 원거래를 지울 때 함께 지우려고 찾는다. */
-    List<Expense> findActiveRefundsOf(Long expenseRowId);
-
-    /** 여러 원거래의 환불을 한 번에 — 목록에서 건별로 조회하면 N+1 이 된다. */
-    List<Expense> findActiveRefundsOfMany(List<Long> expenseRowIds);
-
     List<Expense> findByCalendarEvent(Long calendarEventRowId);
     List<Expense> findByTodo(Long todoRowId);
     Expense save(Expense expense);
