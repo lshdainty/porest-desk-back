@@ -85,11 +85,23 @@ class CreditCardBalanceSignTest {
             assertThat(savedAmount()).isEqualTo(-356_800L);
         }
 
+        /**
+         * 카드의 INIT 앵커는 **늘 0** 이다(D4, 2026-09-18). 사용액은 앵커가 아니라
+         * "이전 미결제 사용액" 거래가 들고 있다 — 두 군데 적으면 두 번 세어진다.
+         * 부호 규약은 통장·대출의 앵커와 수동 수정(MANUAL)에 그대로 남아 있다.
+         */
         @Test
-        @DisplayName("자산 등록 시 초기 사용액도 음수로")
-        void initNormalized() {
+        @DisplayName("카드 등록 앵커는 사용액과 무관하게 0 — 사용액은 거래가 든다")
+        void initCardAnchorIsZero() {
             sut.recordInit(asset(AssetType.CREDIT_CARD, 100_000_000L), AT);
-            assertThat(savedAmount()).isEqualTo(-100_000_000L);
+            assertThat(savedAmount()).isZero();
+        }
+
+        @Test
+        @DisplayName("통장 초기 잔액은 그대로 앵커에 남는다")
+        void initBankKeepsAnchor() {
+            sut.recordInit(asset(AssetType.BANK_ACCOUNT, 500_000L), AT);
+            assertThat(savedAmount()).isEqualTo(500_000L);
         }
 
         @Test
@@ -127,8 +139,8 @@ class CreditCardBalanceSignTest {
     }
 
     @Nested
-    @DisplayName("사용액 0 신용카드 — INIT 앵커를 먼 과거에 둔다(앵커 없음)")
-    class ZeroUsageCardHasNoSnapshot {
+    @DisplayName("신용카드 — INIT 앵커를 먼 과거에 둔다(앵커 없음, D4)")
+    class CreditCardHasNoSnapshot {
 
         private LocalDateTime savedEffectiveAt() {
             ArgumentCaptor<AssetBalanceHistory> c = ArgumentCaptor.forClass(AssetBalanceHistory.class);
@@ -143,11 +155,16 @@ class CreditCardBalanceSignTest {
             assertThat(savedEffectiveAt()).isEqualTo(AssetBalanceHistoryService.NO_SNAPSHOT_ANCHOR);
         }
 
+        /**
+         * 종전엔 사용액을 적은 카드만 생성 시각 앵커를 썼다. 그런데 그 카드도 같은 사고를
+         * 겪는다 — 앵커 이전 날짜의 지출이 청구에는 들고 잔액에는 안 잡힌다. D4 는 카드를
+         * 통째로 앵커 없이 간다.
+         */
         @Test
-        @DisplayName("사용액을 적은 카드 — 사용자가 선언한 스냅샷이라 생성 시각(분) 앵커 유지")
-        void positiveUsageCardKeepsCreationAnchor() {
+        @DisplayName("사용액을 적은 카드도 앵커 없음 — 지난 날짜 지출이 잔액에서 새지 않게")
+        void positiveUsageCardAlsoAnchorsAtEpoch() {
             sut.recordInit(asset(AssetType.CREDIT_CARD, 100_000L), AT);
-            assertThat(savedEffectiveAt()).isEqualTo(AT.withSecond(0).withNano(0));
+            assertThat(savedEffectiveAt()).isEqualTo(AssetBalanceHistoryService.NO_SNAPSHOT_ANCHOR);
         }
 
         @Test

@@ -63,12 +63,18 @@ public class AssetBalanceHistoryService {
      */
     public void recordInit(Asset asset, LocalDateTime effectiveAt) {
         long initial = asset.getInitialBalance() != null ? asset.getInitialBalance() : 0L;
-        LocalDateTime anchorAt = isNoSnapshotCard(asset, initial)
-            ? NO_SNAPSHOT_ANCHOR
-            : effectiveAt.withSecond(0).withNano(0);
+        if (isNoSnapshotCard(asset)) {
+            // 신용카드 잔액은 **거래의 합**이다(D4). 앵커를 먼 과거에 0 으로 두면 그 뒤의
+            // 모든 지출이 그대로 미결제로 쌓인다 — 사용액은 앵커가 아니라 "이전 미결제
+            // 사용액" 거래 한 건이 들고 있다(AssetServiceImpl 이 만든다).
+            repository.save(AssetBalanceHistory.of(
+                asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(),
+                0L, NO_SNAPSHOT_ANCHOR));
+            return;
+        }
         repository.save(AssetBalanceHistory.of(
             asset.getUser(), asset, BalanceSourceType.INIT, asset.getRowId(),
-            normalizeAnchor(asset, initial), anchorAt));
+            normalizeAnchor(asset, initial), effectiveAt.withSecond(0).withNano(0)));
     }
 
     /**
@@ -86,8 +92,19 @@ public class AssetBalanceHistoryService {
      */
     static final LocalDateTime NO_SNAPSHOT_ANCHOR = LocalDateTime.of(1970, 1, 1, 0, 0);
 
-    private static boolean isNoSnapshotCard(Asset asset, long initial) {
-        return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD && initial == 0L;
+    /**
+     * 앵커를 두지 않는 자산인가 — <b>신용카드 전부</b>다(D4, 2026-09-18 결정).
+     *
+     * <p>종전엔 사용액 0 인 카드만 그랬다. 그런데 사용액을 적어 넣은 카드도 같은 사고를
+     * 겪는다: 한도 사용(잔액)은 "마지막 앵커 + 그 뒤 흐름" 이고 청구는 "회차 거래 합" 이라
+     * 재료가 다르다. 달 중간에 카드를 만들며 사용액을 넣고 지난 날짜 지출을 나중에 적으면
+     * 앵커 이전 지출이 잔액에서만 빠져 두 숫자가 어긋난다(운영 ZERO 카드 사고와 같은 기전).
+     *
+     * <p>신용카드는 원래 "거래의 기록" 이므로 앵커 없이 거래 합으로만 센다. 그러면 두 숫자가
+     * 같은 재료에서 나온다. 통장·대출은 잔액이 사용자가 정확히 아는 값이라 그대로 앵커를 쓴다.
+     */
+    private static boolean isNoSnapshotCard(Asset asset) {
+        return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD;
     }
 
     /** 사용자의 수동 잔액 수정 — 절대 앵커(점프). 가계부 통계엔 영향 없음. */
