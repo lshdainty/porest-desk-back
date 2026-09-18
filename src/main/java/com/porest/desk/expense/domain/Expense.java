@@ -225,6 +225,24 @@ public class Expense extends AuditingFieldsWithIp {
      * 통계·청구·실적·내보내기 합계에서는 없는 것으로 본다. 한 자리라도 빠뜨리면 그 화면만
      * 환불을 안 뺀 숫자를 보여 주므로, 집계 조건은 이 판정 하나를 쓴다.
      */
+    /** 카드를 만들 때 적은 "이전 미결제 사용액"(D4) — 가계부 집계에서만 빠진다. */
+    public static final String AUTO_SOURCE_CARD_CARRYOVER = "CARD_CARRYOVER";
+
+    /** 카드 이월 거래인가 — 등록 전에 이미 쓴 돈이라 그 달의 지출이 아니다. */
+    public boolean isCardCarryover() {
+        return AUTO_SOURCE_CARD_CARRYOVER.equals(autoSource);
+    }
+
+    /**
+     * <b>가계부</b> 집계에 넣을 거래인가 — {@link #isCountable()} 에서 카드 이월을 뺀다.
+     *
+     * <p>카드 쪽(청구·할부·실적·잔액)은 {@link #isCountable()} 을 쓴다. 이월 거래가 곧
+     * 카드의 미결제 잔액이라 거기서 빼면 D4(잔액 = 거래 합)가 풀린다.
+     */
+    public boolean isLedgerCountable() {
+        return isCountable() && !isCardCarryover();
+    }
+
     public boolean isCountable() {
         return isDeleted != YNType.Y && refundedAt == null;
     }
