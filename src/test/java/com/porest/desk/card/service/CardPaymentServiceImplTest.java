@@ -1191,4 +1191,194 @@ class CardPaymentServiceImplTest {
             assertThat(info.nextCycle().amount()).isZero();
         }
     }
+
+    /**
+     * 환급 <b>미리보기</b> — 확인창이 "얼마가 돌아오나" 를 말할 수 있어야 한다(설계 13-1).
+     *
+     * <p>여기서 잠그는 것은 금액 자체가 아니라 <b>가정을 어떻게 세는가</b>다. 실제 실행은
+     * DB 가 바뀐 뒤에 세지만 미리보기는 바뀌기 전에 세야 해서, 그 거래를 질의에서 빼고
+     * 가정한 값으로 다시 더한다. 그 더하기가 틀리면 확인창 금액과 실제 이체액이 갈린다.
+     */
+    @Nested
+    @DisplayName("환급 미리보기(13-1)")
+    class RefundPreviewCalc {
+
+        private final LocalDateTime NOW = LocalDate.of(2026, 9, 18).atTime(10, 30);
+
+        /** 8/1~8/31 회차를 9/1 에 60,000 낸 카드 — 그 뒤 지출이 줄면 그만큼 남는다. */
+        private Asset givenPaidCycle(long paid, boolean withPaymentAsset) {
+            Asset card = creditCard(1);
+            Asset account = mock(Asset.class);
+            lenient().when(account.getRowId()).thenReturn(2L);
+            lenient().when(card.getPaymentAsset()).thenReturn(withPaymentAsset ? account : null);
+            given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+
+            AssetTransfer transfer = mock(AssetTransfer.class);
+            lenient().when(transfer.getAmount()).thenReturn(paid);
+            CardBilling b = mock(CardBilling.class);
+            lenient().when(b.getIsDeleted()).thenReturn(YNType.N);
+            lenient().when(b.getStatus()).thenReturn(BillingStatus.COMPLETED);
+            lenient().when(b.getTransfer()).thenReturn(transfer);
+            lenient().when(b.getPeriodStart()).thenReturn(LocalDate.of(2026, 8, 1));
+            lenient().when(b.getPeriodEnd()).thenReturn(LocalDate.of(2026, 8, 31));
+            // 결제계좌 없는 카드는 회차를 보지도 않고 끝난다 — 그 경로에선 이 스터빙이
+            // 안 쓰이므로 lenient 다.
+            lenient().when(cardBillingRepository.findByCardAssetRowId(CARD_ID))
+                .thenReturn(List.of(b));
+            return card;
+        }
+
+        /**
+         * 이 거래를 뺀 회차 청구액. 이미 나간 환급은 0 으로 둔다.
+         *
+         * <p>둘이 같은 {@code Long} 질의를 타므로 한 값으로 뭉뚱그리면 크레딧이 그만큼
+         * 깎여 테스트가 뜻하지 않은 숫자를 보게 된다 — JPQL 본문으로 가른다.
+         */
+        private void givenBillExcludingExpense(long bill) {
+            @SuppressWarnings("unchecked")
+            TypedQuery<Long> lump = mock(TypedQuery.class);
+            lenient().when(lump.setParameter(anyString(), any())).thenReturn(lump);
+            lenient().when(lump.getSingleResult()).thenReturn(bill);
+            @SuppressWarnings("unchecked")
+            TypedQuery<Long> refunded = mock(TypedQuery.class);
+            lenient().when(refunded.setParameter(anyString(), any())).thenReturn(refunded);
+            lenient().when(refunded.getSingleResult()).thenReturn(0L);
+            lenient().when(entityManager.createQuery(anyString(), eq(Long.class)))
+                .thenAnswer(inv -> ((String) inv.getArgument(0)).contains("AssetTransfer")
+                    ? refunded : lump);
+            givenInstallments();
+        }
+
+        /** 8월 회차에 든 카드 일시불 지출. */
+        private Expense lumpSum(long amount) {
+            Expense e = Expense.createExpense(
+                null, null, null, ExpenseType.EXPENSE, amount, "버스",
+                LocalDate.of(2026, 8, 10).atTime(12, 0), "고속버스", "CARD", null,
+                null, null, null);
+            ReflectionTestUtils.setField(e, "rowId", 77L);
+            return e;
+        }
+
+        @Test
+        @DisplayName("삭제 미리보기 — 낸 돈에서 남은 청구를 뺀 만큼, 거래 금액을 넘지 않는다")
+        void deletionPreview() {
+            givenPaidCycle(60_000L, true);
+            // 이 거래(50,000)를 뺀 8월 청구가 10,000 → 낸 60,000 − 10,000 = 50,000 이 남는다.
+            givenBillExcludingExpense(10_000L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 50_000L,
+                CardPaymentServiceDto.ExpenseChange.deletion(lumpSum(50_000L)), NOW);
+
+            assertThat(preview.applies()).isTrue();
+            assertThat(preview.refundAmount()).isEqualTo(50_000L);
+            assertThat(preview.reason()).isEqualTo(CardPaymentServiceDto.RefundPreview.OK);
+        }
+
+        @Test
+        @DisplayName("감액 미리보기 — 남는 금액은 줄어든 만큼이다(가정한 금액을 다시 더한다)")
+        void reducePreview() {
+            givenPaidCycle(60_000L, true);
+            // 이 거래를 뺀 청구 10,000 + 가정한 새 금액 20,000 = 30,000 → 60,000 − 30,000.
+            givenBillExcludingExpense(10_000L);
+            Expense e = lumpSum(50_000L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 30_000L,
+                new CardPaymentServiceDto.ExpenseChange(
+                    e, 20_000L, CARD_ID, e.getExpenseDate()), NOW);
+
+            assertThat(preview.refundAmount()).isEqualTo(30_000L);
+        }
+
+        @Test
+        @DisplayName("증액은 대상이 아니다 — 상한이 0 이면 돌려줄 게 없다")
+        void increaseIsNotRefund() {
+            givenPaidCycle(60_000L, true);
+            givenBillExcludingExpense(10_000L);
+            Expense e = lumpSum(50_000L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 0L,
+                new CardPaymentServiceDto.ExpenseChange(
+                    e, 80_000L, CARD_ID, e.getExpenseDate()), NOW);
+
+            assertThat(preview.applies()).isFalse();
+            assertThat(preview.reason())
+                .isEqualTo(CardPaymentServiceDto.RefundPreview.NOT_PAID_CYCLE);
+        }
+
+        @Test
+        @DisplayName("자산을 카드에서 빼면 전액이 남는다 — 그 회차 청구에서 통째로 사라진다")
+        void assetLeftCard() {
+            givenPaidCycle(60_000L, true);
+            givenBillExcludingExpense(10_000L);
+            Expense e = lumpSum(50_000L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 50_000L,
+                new CardPaymentServiceDto.ExpenseChange(
+                    e, 50_000L, 99L, e.getExpenseDate()), NOW);
+
+            assertThat(preview.refundAmount()).isEqualTo(50_000L);
+        }
+
+        @Test
+        @DisplayName("날짜를 회차 밖으로 옮겨도 전액이 남는다")
+        void dateMovedOutOfCycle() {
+            givenPaidCycle(60_000L, true);
+            givenBillExcludingExpense(10_000L);
+            Expense e = lumpSum(50_000L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 50_000L,
+                new CardPaymentServiceDto.ExpenseChange(
+                    e, 50_000L, CARD_ID, LocalDate.of(2026, 9, 10).atTime(12, 0)), NOW);
+
+            assertThat(preview.refundAmount()).isEqualTo(50_000L);
+        }
+
+        /** 할부는 원금이 아니라 <b>그 회차분</b>만 기여한다 — 같은 산식(가정한 원금)을 쓴다. */
+        @Test
+        @DisplayName("할부 감액 — 회차분 차이만 남는다")
+        void installmentReduce() {
+            givenPaidCycle(60_000L, true);
+            // 8/10 에 3개월 할부 30,000 → 회차분 10,000. 감액해 15,000 이 되면 회차분 5,000.
+            givenBillExcludingExpense(50_000L);
+            Expense e = Expense.createExpense(
+                null, null, null, ExpenseType.EXPENSE, 30_000L, "할부",
+                LocalDate.of(2026, 8, 10).atTime(12, 0), "가맹점", "CARD", 3,
+                null, null, null);
+            ReflectionTestUtils.setField(e, "rowId", 77L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 15_000L,
+                new CardPaymentServiceDto.ExpenseChange(
+                    e, 15_000L, CARD_ID, e.getExpenseDate()), NOW);
+
+            // 청구 = 50,000 + 회차분 5,000 = 55,000 → 낸 60,000 − 55,000 = 5,000
+            assertThat(preview.refundAmount()).isEqualTo(5_000L);
+        }
+
+        @Test
+        @DisplayName("결제계좌가 없으면 예고하지 않는다 — 실제 실행도 이체를 안 만든다")
+        void noPaymentAsset() {
+            givenPaidCycle(60_000L, false);
+            givenBillExcludingExpense(10_000L);
+
+            var preview = sut.previewRefundCredit(CARD_ID, 50_000L,
+                CardPaymentServiceDto.ExpenseChange.deletion(lumpSum(50_000L)), NOW);
+
+            assertThat(preview.applies()).isFalse();
+            assertThat(preview.reason())
+                .isEqualTo(CardPaymentServiceDto.RefundPreview.NO_PAYMENT_ASSET);
+        }
+
+        /** 미리보기는 읽기만 한다 — 이체를 만들면 확인창이 돈을 움직인다. */
+        @Test
+        @DisplayName("미리보기는 이체를 만들지 않는다")
+        void previewCreatesNothing() {
+            givenPaidCycle(60_000L, true);
+            givenBillExcludingExpense(10_000L);
+
+            sut.previewRefundCredit(CARD_ID, 50_000L,
+                CardPaymentServiceDto.ExpenseChange.deletion(lumpSum(50_000L)), NOW);
+
+            then(assetService).should(never()).createTransfer(any());
+        }
+    }
 }

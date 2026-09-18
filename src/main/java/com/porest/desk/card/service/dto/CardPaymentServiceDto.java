@@ -1,6 +1,7 @@
 package com.porest.desk.card.service.dto;
 
 import com.porest.desk.card.domain.CardBilling;
+import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.card.type.BillingStatus;
 
 import java.time.LocalDate;
@@ -107,4 +108,63 @@ public class CardPaymentServiceDto {
         Long alreadyPaidAmount,
         List<InstallmentDue> installments
     ) {}
+
+    /**
+     * 실제로 만든 환급 — 이체 아이디와 <b>금액</b>을 함께 돌려준다.
+     *
+     * <p>아이디는 환불 마크가 취소 때 되돌릴 이체를 가리키는 데 쓰고, 금액은 화면이
+     * "결제계좌로 N원이 환급됐어요" 를 말하는 데 쓴다(설계 13-1의 사후 토스트).
+     */
+    public record RefundResult(Long transferRowId, long amount) {}
+
+    /**
+     * 카드 환급 미리보기 — 확인창이 "얼마가 돌아오나" 를 그릴 재료(설계 13-1).
+     *
+     * <p>{@code applies=false} 면 이 변경으로 돌려줄 돈이 없다. {@code reason} 은 화면이
+     * 문구를 고르는 데 쓴다 — 금액 줄 · "이미 환급된 거래" 줄 · 줄 없음 세 갈래다.
+     */
+    public record RefundPreview(boolean applies, long refundAmount, String reason) {
+        /** 카드가 아니다 — 돌려줄 자리 자체가 없다. */
+        public static final String NOT_CARD = "NOT_CARD";
+        /** 신용카드지만 결제계좌가 없다 — 기록용 카드다(결정 3). */
+        public static final String NO_PAYMENT_ASSET = "NO_PAYMENT_ASSET";
+        /** 결제 완료 회차에 낸 돈이 없거나, 아직 청구가 남아 있다. */
+        public static final String NOT_PAID_CYCLE = "NOT_PAID_CYCLE";
+        /** 이미 환불 마크된 거래 — 환급은 그때 끝났다. */
+        public static final String ALREADY_REFUNDED = "ALREADY_REFUNDED";
+        public static final String OK = "OK";
+
+        public static RefundPreview none(String reason) {
+            return new RefundPreview(false, 0L, reason);
+        }
+
+        public static RefundPreview of(long refundAmount) {
+            return new RefundPreview(true, refundAmount, OK);
+        }
+    }
+
+    /**
+     * 아직 저장하지 않은 변경 — 미리보기가 "이 거래가 이렇게 바뀌면 회차 청구가 얼마가
+     * 되나" 를 세는 데 쓴다.
+     *
+     * <p>실제 환급은 DB 가 이미 바뀐 뒤에 세므로 이런 게 필요 없다. 미리보기는 바뀌기
+     * <b>전</b>에 세야 해서, 이 거래를 질의에서 빼고 <b>가정한 값으로 다시 더한다</b>.
+     * 그래야 두 값이 같은 산식에서 나온다.
+     *
+     * <p>{@code amountAfter} 가 null 이면 삭제다(기여가 통째로 사라진다).
+     */
+    public record ExpenseChange(
+        Expense expense,
+        Long amountAfter,
+        Long assetRowIdAfter,
+        LocalDateTime dateAfter
+    ) {
+        public static ExpenseChange deletion(Expense expense) {
+            return new ExpenseChange(expense, null, null, null);
+        }
+
+        public boolean isDeletion() {
+            return amountAfter == null;
+        }
+    }
 }

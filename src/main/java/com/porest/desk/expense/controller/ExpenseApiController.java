@@ -105,11 +105,11 @@ public class ExpenseApiController {
     }
 
     @DeleteMapping("/expense/{id}")
-    public ApiResponse<Void> deleteExpense(
+    public ApiResponse<ExpenseApiDto.DeleteResponse> deleteExpense(
             @LoginUser UserPrincipal loginUser,
             @PathVariable Long id) {
-        expenseService.deleteExpense(id, loginUser.getRowId());
-        return ApiResponse.success();
+        Long refundedAmount = expenseService.deleteExpense(id, loginUser.getRowId());
+        return ApiResponse.success(ExpenseApiDto.DeleteResponse.of(refundedAmount));
     }
 
     @GetMapping("/expenses/summary/daily")
@@ -222,6 +222,26 @@ public class ExpenseApiController {
         ExpenseServiceDto.ExpenseInfo info =
             expenseService.refund(id, loginUser.getRowId(), at);
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
+    }
+
+    /**
+     * 지우거나 고치면 결제계좌로 얼마가 돌아오는지 미리 센다(설계 13-1).
+     *
+     * <p>쿼리를 비우면 <b>삭제</b> 미리보기다. 수정 미리보기는 바뀔 값만 싣는다 —
+     * {@code amount}(감액) · {@code assetRowId}(자산 변경) · {@code expenseDate}(날짜 이동).
+     * DB 는 바뀌지 않는다.
+     */
+    @GetMapping("/expense/{id}/refund-preview")
+    public ApiResponse<ExpenseApiDto.RefundPreviewResponse> refundPreview(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @RequestParam(required = false) Long amount,
+            @RequestParam(required = false) Long assetRowId,
+            @RequestParam(required = false) String expenseDate) {
+        ExpenseServiceDto.RefundPreviewInfo info = expenseService.refundPreview(
+            id, loginUser.getRowId(), amount, assetRowId,
+            expenseDate != null ? parseExpenseDate(expenseDate) : null);
+        return ApiResponse.success(ExpenseApiDto.RefundPreviewResponse.from(info));
     }
 
     /** 환불 취소 — 표식·환급 이체를 무르고 원거래 흐름을 되살린다. */

@@ -166,7 +166,12 @@ public class ExpenseApiDto {
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         // 활성 분할 항목들의 카테고리 id (없으면 빈 리스트). 목록 카테고리 필터 split-aware 용.
-        List<Long> splitCategoryRowIds
+        List<Long> splitCategoryRowIds,
+        /**
+         * 이 저장이 <b>방금 만든</b> 카드 환급액 (없으면 null) — 거래의 속성이 아니라
+         * 그 요청의 결과다. 조회에는 늘 null 이다(설계 13-1).
+         */
+        Long refundedAmount
     ) {
         public static Response from(ExpenseServiceDto.ExpenseInfo info) {
             return new Response(
@@ -195,7 +200,8 @@ public class ExpenseApiDto {
                 info.autoSource(),
                 info.createAt(),
                 info.modifyAt(),
-                info.splitCategoryRowIds()
+                info.splitCategoryRowIds(),
+                info.refundedAmount()
             );
         }
     }
@@ -351,6 +357,31 @@ public class ExpenseApiDto {
     public record HeatmapResponse(List<HeatmapCellResponse> cells) {
         public static HeatmapResponse from(List<ExpenseServiceDto.HeatmapCell> cells) {
             return new HeatmapResponse(cells.stream().map(HeatmapCellResponse::from).toList());
+        }
+    }
+
+    /**
+     * 삭제 응답 — 결제계좌로 돌려준 금액(없으면 null).
+     *
+     * <p>종전엔 {@code ApiResponse<Void>} 였다. 결제 완료 회차의 카드 거래를 지우면 돈이
+     * 실제로 움직이는데 화면이 그걸 알 방법이 없었다(설계 13-1의 사후 토스트).
+     */
+    public record DeleteResponse(Long refundedAmount) {
+        public static DeleteResponse of(Long refundedAmount) {
+            return new DeleteResponse(refundedAmount);
+        }
+    }
+
+    /**
+     * 환급 미리보기 응답 — 삭제·수정 확인창이 금액을 예고할 재료(설계 13-1).
+     *
+     * <p>{@code applies=false} 면 돌려줄 돈이 없다. {@code reason} 으로 화면이 문구를 고른다:
+     * {@code OK}(금액 줄) · {@code ALREADY_REFUNDED}("이미 환급된 거래") · 나머지(줄 없음).
+     */
+    @Schema(name = "ExpenseRefundPreviewResponse")
+    public record RefundPreviewResponse(boolean applies, long refundAmount, String reason) {
+        public static RefundPreviewResponse from(ExpenseServiceDto.RefundPreviewInfo info) {
+            return new RefundPreviewResponse(info.applies(), info.refundAmount(), info.reason());
         }
     }
 
