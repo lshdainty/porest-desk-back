@@ -251,10 +251,13 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 수정 전 이 거래의 EXPENSE 기여분 (수정 후 임계 돌파 판정용 delta 기준) — 총액 + 카테고리별(split-aware).
         // 변경 전 값으로 캡처해야 하므로 expense.updateExpense(...) 전에 계산한다. 분할이 있으면 그 분할로 귀속.
-        long previousTotal = (expense.getExpenseType() == ExpenseType.EXPENSE
+        // 합계에 없던 거래(예정·환불·카드 이월)는 기여가 0 이다 — 월 합계와 같은 규칙으로 센다.
+        boolean countedBefore = countsInLedgerNow(expense);
+        long previousTotal = (countedBefore && expense.getExpenseType() == ExpenseType.EXPENSE
                 && expense.getAmount() != null) ? expense.getAmount() : 0L;
-        Map<Long, Long> previousByCat = expenseSpendRollup(
-                List.of(expense), loadSplitsByExpense(List.of(expense)));
+        Map<Long, Long> previousByCat = countedBefore
+                ? expenseSpendRollup(List.of(expense), loadSplitsByExpense(List.of(expense)))
+                : Map.of();
 
         // 실린 칸만 바꾼다 — 안 온 칸은 지금 값이 그대로 남는다(QA #96).
         // 조회가 필요한 칸(카테고리·자산·일정·할 일)은 <b>실렸을 때만</b> 찾는다.
@@ -917,8 +920,22 @@ public class ExpenseServiceImpl implements ExpenseService {
     public Map<Long, Long> getMonthlyExpenseSpendByCategory(Long userRowId, int year, int month) {
         LocalDate ms = LocalDate.of(year, month, 1);
         LocalDate me = ms.plusMonths(1).minusDays(1);
-        List<Expense> monthly = expenseRepository.findByDateRange(userRowId, ms, me);
+        // 예산 알림도 가계부 숫자다 — 예정·환불·카드 이월을 뺀다. 종전엔 날것 합이라 환불한
+        // 거래와 아직 안 온 반복거래까지 예산을 깎아, 화면 이행률과 알림 문구가 달랐다.
+        List<Expense> monthly = aggregatable(
+            expenseRepository.findByDateRange(userRowId, ms, me), userRowId);
         return expenseSpendRollup(monthly, loadSplitsByExpense(monthly));
+    }
+
+    /**
+     * 이 거래가 **지금** 가계부 합계에 들어가는가 — 예산 알림의 delta 를 세는 기준.
+     *
+     * <p>월 합계를 {@link #aggregatable} 로 세면서 이 거래의 기여분만 날것으로 세면, 합계에
+     * 없는 금액을 빼게 되어 "돌파 전" 값이 틀린다(예: 미래 날짜로 적은 지출).
+     */
+    private boolean countsInLedgerNow(Expense expense) {
+        return !ExpenseAggregates.ledgerCountable(
+            List.of(expense), userClock.now(expense.getUser().getRowId())).isEmpty();
     }
 
     /** 거래 id 목록의 활성 분할을 거래별로 묶어 반환. */
@@ -1011,7 +1028,9 @@ public class ExpenseServiceImpl implements ExpenseService {
             // 해당 월의 split-aware 카테고리 지출(leaf+부모 롤업) + 전체 합계 (방금 저장된 이 expense 포함)
             LocalDate ms = LocalDate.of(year, month, 1);
             LocalDate me = ms.plusMonths(1).minusDays(1);
-            List<Expense> monthly = expenseRepository.findByDateRange(userRowId, ms, me);
+            // 화면의 예산 이행률과 같은 규칙 — 예정·환불·카드 이월을 뺀다.
+            List<Expense> monthly = aggregatable(
+                expenseRepository.findByDateRange(userRowId, ms, me), userRowId);
             Map<Long, List<ExpenseSplit>> splitsByExpense = loadSplitsByExpense(monthly);
             Map<Long, Long> spentByCat = expenseSpendRollup(monthly, splitsByExpense);
             long totalSpent = monthly.stream()
@@ -1019,8 +1038,13 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .mapToLong(Expense::getAmount).sum();
 
             // 이번 거래의 현재 기여분(leaf+부모) — delta(=현재−이전) 산정용
-            Map<Long, Long> currentByCat = expenseSpendRollup(List.of(expense), splitsByExpense);
-            long currentTotal = expense.getAmount();
+            // 합계에 안 들어가는 거래(미래 날짜 등)는 기여도 0 — 안 그러면 합계에 없는 금액을
+            // 빼서 "돌파 전" 값이 틀린다. 그 날이 오면 09:00 배치가 같은 규칙으로 잡는다.
+            boolean countedNow = countsInLedgerNow(expense);
+            Map<Long, Long> currentByCat = countedNow
+                ? expenseSpendRollup(List.of(expense), splitsByExpense)
+                : Map.of();
+            long currentTotal = countedNow ? expense.getAmount() : 0L;
 
             for (ExpenseBudget budget : budgets) {
                 if (budget.getBudgetAmount() == null || budget.getBudgetAmount() <= 0) continue;
