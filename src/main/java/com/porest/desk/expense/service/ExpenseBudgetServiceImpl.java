@@ -194,8 +194,10 @@ public class ExpenseBudgetServiceImpl implements ExpenseBudgetService {
         // 달마다 쿼리를 날리면 24개월에 24번이다 — 한 번 받아 월별로 접는다.
         LocalDate from = now.minusMonths(n - 1L).withDayOfMonth(1);
         LocalDate to = now.withDayOfMonth(1).plusMonths(1).minusDays(1);
+        // 예산은 **가계부** 숫자다 — 카드 이월(등록 전에 이미 쓴 돈)은 뺀다. countable 을 쓰면
+        // 카드를 등록한 달만 이행률이 솟는다(D4 후속 결정, 2026-09-18).
         Map<String, List<Expense>> byMonth = ExpenseAggregates
-            .countable(expenseRepository.findByDateRange(userRowId, from, to, null),
+            .ledgerCountable(expenseRepository.findByDateRange(userRowId, from, to, null),
                 userClock.now(userRowId))
             .stream()
             .collect(Collectors.groupingBy(
