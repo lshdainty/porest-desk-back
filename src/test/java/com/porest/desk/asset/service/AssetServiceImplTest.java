@@ -247,7 +247,7 @@ class AssetServiceImplTest {
         given(payment.getUser()).willReturn(user(USER_ID));
         given(assetTransferRepository.findById(900L)).willReturn(Optional.of(payment));
         CardBilling billing = mock(CardBilling.class);
-        given(cardBillingRepository.findActiveByTransfer(900L)).willReturn(Optional.of(billing));
+        given(cardBillingRepository.findAllActiveByTransfer(900L)).willReturn(List.of(billing));
 
         sut.deleteTransfer(900L, USER_ID);
 
@@ -263,7 +263,7 @@ class AssetServiceImplTest {
         AssetTransfer plain = mock(AssetTransfer.class);
         given(plain.getUser()).willReturn(user(USER_ID));
         given(assetTransferRepository.findById(901L)).willReturn(Optional.of(plain));
-        given(cardBillingRepository.findActiveByTransfer(901L)).willReturn(Optional.empty());
+        given(cardBillingRepository.findAllActiveByTransfer(901L)).willReturn(List.of());
 
         sut.deleteTransfer(901L, USER_ID);
 

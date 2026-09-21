@@ -225,6 +225,56 @@ public class AssetBalanceHistoryService {
         softDeleteAndRecompute(repository.findActiveBySource(BalanceSourceType.TRADE, tradeId, YNType.N));
     }
 
+    /**
+     * 이 거래가 이 카드에 남긴 상계(CARD_SETTLED) 금액 — 없으면 0.
+     *
+     * <p>거래·카드별로 <b>활성 한 줄</b>만 둔다({@link #setCardSettled}). 자산을 옮기면 옛 카드에
+     * 남은 줄(기한 안 환급의 짝)과 새 카드의 줄이 따로 있을 수 있어 카드까지 본다.
+     */
+    public long cardSettledAmount(Long expenseId, Long cardRowId) {
+        return repository.findActiveBySource(BalanceSourceType.CARD_SETTLED, expenseId, YNType.N)
+            .stream()
+            .filter(h -> h.getAsset() != null && cardRowId.equals(h.getAsset().getRowId()))
+            .mapToLong(AssetBalanceHistory::getAmount)
+            .sum();
+    }
+
+    /**
+     * 이 거래가 이 카드에 남기는 상계 금액을 {@code amount} 로 맞춘다(0 이면 지운다).
+     *
+     * <p>+금액은 "앱 밖에서 이미 결제된 기록용 빚" 을 지우고, −금액은 "기한 지나 돌려주지
+     * 않는 결제분" 의 잔액을 붙잡는다 — 붙잡지 않으면 카드가 양수가 되어 자정 과납 스윕이
+     * 돈을 돌려준다(닫힌 회차 규칙 R6).
+     */
+    public void setCardSettled(Asset card, Long expenseId, long amount, LocalDateTime effectiveAt) {
+        repository.findActiveBySource(BalanceSourceType.CARD_SETTLED, expenseId, YNType.N).stream()
+            .filter(h -> h.getAsset() != null && card.getRowId().equals(h.getAsset().getRowId()))
+            .forEach(AssetBalanceHistory::softDelete);
+        if (amount != 0L) {
+            repository.save(AssetBalanceHistory.of(
+                card.getUser(), card, BalanceSourceType.CARD_SETTLED, expenseId, amount, effectiveAt));
+        }
+    }
+
+    /**
+     * 환불 마크 때 붙잡은 몫 — 기한이 지나 돌려주지 않는 결제분·기록용을 카드에 묶어 둔다.
+     *
+     * <p>{@link BalanceSourceType#CARD_REFUND_HOLD} 로 따로 남겨 환불 취소가 이것만 지운다.
+     */
+    public void setCardRefundHold(Asset card, Long expenseId, long amount, LocalDateTime effectiveAt) {
+        removeCardRefundHold(expenseId);
+        if (amount != 0L) {
+            repository.save(AssetBalanceHistory.of(
+                card.getUser(), card, BalanceSourceType.CARD_REFUND_HOLD, expenseId, amount, effectiveAt));
+        }
+    }
+
+    /** 환불 취소 — 환불 때 붙잡은 몫을 지운다. */
+    public void removeCardRefundHold(Long expenseId) {
+        repository.findActiveBySource(BalanceSourceType.CARD_REFUND_HOLD, expenseId, YNType.N)
+            .forEach(AssetBalanceHistory::softDelete);
+    }
+
     /** 거래 변경/삭제 시 해당 expense 의 이력 row 들을 soft-delete 후 영향 자산 재산정. */
     public void removeExpense(Long expenseId) {
         softDeleteAndRecompute(repository.findActiveBySource(BalanceSourceType.EXPENSE, expenseId, YNType.N));

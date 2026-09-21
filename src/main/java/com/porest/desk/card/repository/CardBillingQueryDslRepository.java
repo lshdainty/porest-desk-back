@@ -77,17 +77,33 @@ public class CardBillingQueryDslRepository implements CardBillingRepository {
     }
 
     @Override
-    public Optional<CardBilling> findActiveByTransfer(Long transferRowId) {
-        return Optional.ofNullable(queryFactory.selectFrom(billing)
-            .where(billing.transfer.rowId.eq(transferRowId), billing.isDeleted.eq(YNType.N))
-            .fetchFirst());
-    }
-
-    @Override
     public List<CardBilling> findByStatus(BillingStatus status) {
         return queryFactory.selectFrom(billing)
             .where(billing.status.eq(status), billing.isDeleted.eq(YNType.N))
             .orderBy(billing.paymentDate.desc(), billing.rowId.desc())
+            .fetch();
+    }
+
+    @Override
+    public long sumRefundedAmountByCardAndPeriod(Long cardAssetRowId, LocalDate periodStart,
+                                                 LocalDate periodEnd) {
+        List<Long> amounts = queryFactory.select(billing.billingAmount)
+            .from(billing)
+            .where(
+                billing.cardAsset.rowId.eq(cardAssetRowId),
+                billing.periodStart.eq(periodStart),
+                billing.periodEnd.eq(periodEnd),
+                billing.status.eq(BillingStatus.REFUNDED),
+                billing.isDeleted.eq(YNType.N)
+            )
+            .fetch();
+        return amounts.stream().filter(java.util.Objects::nonNull).mapToLong(Long::longValue).sum();
+    }
+
+    @Override
+    public List<CardBilling> findAllActiveByTransfer(Long transferRowId) {
+        return queryFactory.selectFrom(billing)
+            .where(billing.transfer.rowId.eq(transferRowId), billing.isDeleted.eq(YNType.N))
             .fetch();
     }
 }

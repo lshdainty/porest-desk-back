@@ -1280,7 +1280,8 @@ public class AssetServiceImpl implements AssetService {
         // 카드 결제로 만들어진 이체였다면 그 청구 회차도 함께 무른다. COMPLETED 로 남겨두면
         // '이미 낸 회차' 로 집계돼(선결제 차감) 다음 청구액이 0 이 되고, 잔액만 되돌아온 채
         // 카드 부채가 영원히 안 갚아진다.
-        cardBillingRepository.findActiveByTransfer(transferId).ifPresent(CardBilling::cancel);
+        // 환급 이체 하나가 여러 회차의 REFUNDED 행에 묶일 수 있다 — 전부 무른다.
+        cardBillingRepository.findAllActiveByTransfer(transferId).forEach(CardBilling::cancel);
         log.info("자산 이체 삭제 완료: transferId={}", transferId);
     }
 

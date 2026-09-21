@@ -22,9 +22,14 @@ public interface CardBillingRepository {
     /** 상태별 조회. */
     List<CardBilling> findByStatus(BillingStatus status);
 
-    /** 정산 이체로 청구 회차 찾기 — 이체가 지워질 때 함께 무르기 위해. */
-    Optional<CardBilling> findActiveByTransfer(Long transferRowId);
-
     /** 결제 취소 대상 회차 조회. */
     Optional<CardBilling> findById(Long rowId);
+
+    /**
+     * 그 회차에서 결제계좌로 돌려준 환급(REFUNDED) 합 — 순 납부액 = COMPLETED − REFUNDED.
+     */
+    long sumRefundedAmountByCardAndPeriod(Long cardAssetRowId, LocalDate periodStart, LocalDate periodEnd);
+
+    /** 이 이체에 묶인 활성 청구 행 전부 — 환급 이체 하나가 여러 회차에 걸칠 수 있다. */
+    java.util.List<CardBilling> findAllActiveByTransfer(Long transferRowId);
 }

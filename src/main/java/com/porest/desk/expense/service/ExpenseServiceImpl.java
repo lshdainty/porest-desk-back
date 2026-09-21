@@ -7,6 +7,7 @@ import com.porest.desk.asset.domain.Asset;
 import com.porest.desk.asset.repository.AssetRepository;
 import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.type.AssetType;
+import com.porest.desk.card.service.CardCycleMath;
 import com.porest.desk.card.service.CardPaymentService;
 import com.porest.desk.card.service.dto.CardPaymentServiceDto;
 import com.porest.desk.asset.service.AssetService;
@@ -156,6 +157,10 @@ public class ExpenseServiceImpl implements ExpenseService {
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
 
+        // 닫힌 회차에 떨어진 카드 지출은 기록용, 결제일 당일이면 그 자리 결제(R2·R3).
+        settleCard(expense, CardCycleMath.Side.none(), sideOf(expense), null, command.userRowId(),
+            CardPaymentServiceDto.SettlementMode.CHANGE);
+
         // 예산 임계 도달 시 알림 (생성이므로 이전 기여분 없음). 생성 시점엔 분할이 아직 없어 거래 카테고리로 귀속.
         // 대량 적재에선 건너뛴다 — 행 수만큼 알림이 쏟아지고 매번 집계 쿼리가 돈다.
         if (!bulk) {
@@ -248,6 +253,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         Long amountBefore = expense.getAmount();
         LocalDateTime dateBefore = expense.getExpenseDate();
         String refundMemoBase = cardRefundMemo(expense, false);
+        CardCycleMath.Side sideBefore = sideOf(expense);
 
         // 수정 전 이 거래의 EXPENSE 기여분 (수정 후 임계 돌파 판정용 delta 기준) — 총액 + 카테고리별(split-aware).
         // 변경 전 값으로 캡처해야 하므로 expense.updateExpense(...) 전에 계산한다. 분할이 있으면 그 분할로 귀속.
@@ -342,31 +348,27 @@ public class ExpenseServiceImpl implements ExpenseService {
             }
         }
 
-        // 이미 결제된 회차의 카드 거래가 줄었다면 낸 돈이 남는다 — 삭제와 같은 순서로
-        // 돌려준다(설계 13-3). 증액·회차 안 날짜 이동은 상한이 0 이라 아무 일도 없다.
+        // 카드 회차 규칙으로 다시 판정한다 — 표식·상계·환급(결제한 달까지)·결제일 당일 결제.
+        // 닫힌 회차끼리 날짜만 옮기면 돈이 안 움직인다(R7).
         boolean assetLeftCard = cardBefore != null
             && (asset == null || !cardBefore.getRowId().equals(asset.getRowId()));
         boolean dateMoved = dateBefore != null && !dateBefore.equals(expenseDate);
         boolean amountReduced = amountBefore != null && amount != null && amount < amountBefore;
-        long cap = (assetLeftCard || dateMoved)
-            ? (amountBefore != null ? amountBefore : 0L)
-            : (amountReduced ? amountBefore - amount : 0L);
         // 날짜를 옮기거나 자산을 바꾼 것은 "감액" 이 아니다 — 메모를 나눠 이체 목록에서
         // 무슨 일이 있었는지 읽을 수 있게 한다.
         String memo = (!assetLeftCard && !dateMoved && amountReduced)
             ? refundMemoBase + " · 감액분"
             : refundMemoBase;
-        CardPaymentServiceDto.RefundResult refunded =
-            refundCardCredit(cardBefore, cap, memo, userRowId);
+        CardPaymentServiceDto.SettlementResult settled = settleCard(expense, sideBefore, sideOf(expense),
+            memo, userRowId, CardPaymentServiceDto.SettlementMode.CHANGE);
+        Long refundedAmount = refundedAmountOf(settled);
 
         // 예산 임계 도달 시 알림 — 분할 영속화 이후에 실행해 새 분할까지 반영된 카테고리 귀속으로 판정.
         notifyBudgetThresholdIfCrossed(expense, previousTotal, previousByCat);
 
-        log.info("지출 수정 완료: expenseId={}, 환급={}", expenseId,
-            refunded != null ? refunded.amount() : null);
+        log.info("지출 수정 완료: expenseId={}, 환급={}", expenseId, refundedAmount);
 
-        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(),
-            refunded != null ? refunded.amount() : null);
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(), refundedAmount);
     }
 
     /**
@@ -399,22 +401,23 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
 
         LocalDateTime now = userClock.now(userRowId);
-        Asset card = creditCardOf(expense);
+        CardCycleMath.Side sideBefore = sideOf(expense);
 
         balanceHistoryService.removeExpense(expenseId);
         expense.markRefunded(refundedAt != null ? refundedAt : now);
 
-        CardPaymentServiceDto.RefundResult refunded = refundCardCredit(
-            card, expense.getAmount(), cardRefundMemo(expense, false), userRowId);
-        if (refunded != null) {
-            expense.linkRefundTransfer(refunded.transferRowId());
+        // 결제한 달 안이면 결제계좌로 돌려주고, 지났으면 기록만 정리한다(R6).
+        CardPaymentServiceDto.SettlementResult settled = settleCard(expense, sideBefore,
+            CardCycleMath.Side.none(), cardRefundMemo(expense, false), userRowId,
+            CardPaymentServiceDto.SettlementMode.REFUND);
+        if (settled != null && settled.refundTransferRowId() != null) {
+            expense.linkRefundTransfer(settled.refundTransferRowId());
         }
 
         log.info("환불 마크 완료: expenseId={}, refundedAt={}, 환급이체={}",
             expenseId, expense.getRefundedAt(),
-            refunded != null ? refunded.transferRowId() : null);
-        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(),
-            refunded != null ? refunded.amount() : null);
+            settled != null ? settled.refundTransferRowId() : null);
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(), refundedAmountOf(settled));
     }
 
     /** 환불 취소 — 표식을 지우고 흐름을 되살린다. 환급 이체가 있었으면 그것도 무른다. */
@@ -436,77 +439,153 @@ public class ExpenseServiceImpl implements ExpenseService {
         if (transferRowId != null) {
             assetService.deleteTransfer(transferRowId, userRowId);
         }
+        // 환불 때 붙잡은 몫도 무른다 — 표식·상계는 환불 전 그대로라 이것으로 환불 전 모습이 된다.
+        balanceHistoryService.removeCardRefundHold(expenseId);
         // 원거래 흐름을 다시 적재한다 — 카드는 다시 빚이 되고 청구도 다시 늘어난다.
         balanceHistoryService.recordExpense(expense.getAsset(), expense.getRowId(),
             expense.getExpenseType(), expense.getAmount(), expense.getExpenseDate());
+        // 환불 동안 결제일이 지난 회차는 그 결제에 이 거래가 빠져 있었다 — 기록용·당일 결제로 채운다.
+        settleCard(expense, CardCycleMath.Side.none(), sideOf(expense), null, userRowId,
+            CardPaymentServiceDto.SettlementMode.CANCEL_REFUND);
 
         log.info("환불 취소 완료: expenseId={}, 되돌린 환급이체={}", expenseId, transferRowId);
         return ExpenseServiceDto.ExpenseInfo.from(expense, List.of());
     }
 
     /**
-     * 지우거나 고치면 결제계좌로 얼마가 돌아오는지 미리 센다(설계 13-1).
+     * 지우거나 고치면 돈이 어떻게 움직이는지 미리 센다(설계 13-1, 닫힌 회차 R2·R3·R6).
      *
      * <p>실제 실행은 DB 가 바뀐 뒤에 세지만 확인창은 바뀌기 <b>전</b>에 물어야 한다. 그래서
-     * "이 거래는 빼고, 가정한 값으로 다시 더한" 회차 청구액을 같은 함수에 넘긴다 — 산식을
-     * 복사해 두면 확인창 금액과 실제 이체액이 갈린다.
+     * 바뀐 뒤 모습을 저장하지 않은 채 만들어 실행과 같은 판정에 넘긴다 — 산식을 복사해 두면
+     * 확인창 금액과 실제 이체액이 갈린다.
      */
     @Override
     @Transactional(readOnly = true)
     public ExpenseServiceDto.RefundPreviewInfo refundPreview(
             Long expenseId, Long userRowId, Long amountAfter, Long assetRowIdAfter,
-            LocalDateTime dateAfter) {
+            LocalDateTime dateAfter, Integer installmentMonthsAfter) {
         Expense expense = findExpenseOrThrow(expenseId);
         validateExpenseOwnership(expense, userRowId);
 
         if (expense.isRefunded()) {
             // 환급은 마크할 때 이미 끝났다 — 지워도 추가 이체가 없다(alreadyRefunded).
-            return preview(CardPaymentServiceDto.RefundPreview.none(
-                CardPaymentServiceDto.RefundPreview.ALREADY_REFUNDED));
+            return ExpenseServiceDto.RefundPreviewInfo.none(CardPaymentServiceDto.RefundPreview.ALREADY_REFUNDED);
         }
-        Asset card = creditCardOf(expense);
-        if (card == null) {
-            return preview(CardPaymentServiceDto.RefundPreview.none(
-                CardPaymentServiceDto.RefundPreview.NOT_CARD));
-        }
-
-        long before = expense.getAmount() != null ? expense.getAmount() : 0L;
-        boolean deletion = amountAfter == null && assetRowIdAfter == null && dateAfter == null;
-
-        long cap;
-        CardPaymentServiceDto.ExpenseChange change;
-        if (deletion) {
-            cap = before;
-            change = CardPaymentServiceDto.ExpenseChange.deletion(expense);
-        } else {
-            long after = amountAfter != null ? amountAfter : before;
-            Long assetAfter = assetRowIdAfter != null
-                ? assetRowIdAfter
-                : (expense.getAsset() != null ? expense.getAsset().getRowId() : null);
-            LocalDateTime dateResolved = dateAfter != null ? dateAfter : expense.getExpenseDate();
-            boolean assetLeftCard = !card.getRowId().equals(assetAfter);
-            boolean dateMoved = dateResolved != null
-                && !dateResolved.equals(expense.getExpenseDate());
-            // 날짜가 같은 회차 안에서 움직이면 청구가 안 변해 크레딧이 0 이 된다 —
-            // 상한을 전액으로 둬도 결과는 같다. 회차 경계를 여기서 다시 계산하지 않는다.
-            cap = (assetLeftCard || dateMoved) ? before : Math.max(0L, before - after);
-            change = new CardPaymentServiceDto.ExpenseChange(
-                expense, after, assetAfter, dateResolved);
-        }
-
-        return preview(cardPaymentService.previewRefundCredit(
-            card.getRowId(), cap, change, userClock.now(userRowId)));
+        boolean deletion = amountAfter == null && assetRowIdAfter == null && dateAfter == null
+            && installmentMonthsAfter == null;
+        CardCycleMath.Side before = sideOf(expense);
+        CardCycleMath.Side after = deletion
+            ? CardCycleMath.Side.none()
+            : sideOf(draftOf(expense.getUser(), expense,
+                assetRowIdAfter != null ? findOwnedAsset(assetRowIdAfter, userRowId) : expense.getAsset(),
+                amountAfter != null ? amountAfter : expense.getAmount(),
+                dateAfter != null ? dateAfter : expense.getExpenseDate(),
+                installmentMonthsAfter != null ? installmentMonthsAfter : expense.getInstallmentMonths()));
+        return previewCard(expense, before, after, userRowId);
     }
 
-    private static ExpenseServiceDto.RefundPreviewInfo preview(
-            CardPaymentServiceDto.RefundPreview p) {
-        return new ExpenseServiceDto.RefundPreviewInfo(p.applies(), p.refundAmount(), p.reason());
+    /**
+     * 새 카드 지출을 저장하면 어떻게 되는지 — 닫힌 회차면 기록만, 결제일 당일이면 추가 결제(R2·R3).
+     *
+     * <p>저장 확인창의 재료다. DB 를 바꾸지 않는다.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ExpenseServiceDto.RefundPreviewInfo cardSavePreview(
+            Long userRowId, Long assetRowId, Long amount, LocalDateTime expenseDate,
+            Integer installmentMonths) {
+        validateAmount(amount);
+        User user = userRepository.findById(userRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.USER_NOT_FOUND));
+        Asset asset = findOwnedAsset(assetRowId, userRowId);
+        CardCycleMath.Side after = sideOf(draftOf(user, null, asset, amount, expenseDate, installmentMonths));
+        return previewCard(null, CardCycleMath.Side.none(), after, userRowId);
+    }
+
+    private ExpenseServiceDto.RefundPreviewInfo previewCard(Expense expense, CardCycleMath.Side before,
+                                                            CardCycleMath.Side after, Long userRowId) {
+        if (!before.isCard() && !after.isCard()) {
+            return ExpenseServiceDto.RefundPreviewInfo.none(CardPaymentServiceDto.RefundPreview.NOT_CARD);
+        }
+        CardPaymentServiceDto.SettlementPreview p = cardPaymentService.previewExpenseChange(
+            new CardPaymentServiceDto.SettlementCommand(expense, before, after, null, userRowId,
+                CardPaymentServiceDto.SettlementMode.CHANGE));
+        String reason;
+        if (p.refundAmount() > 0L) {
+            reason = p.recordOnlyRefund()
+                ? CardPaymentServiceDto.RefundPreview.RECORD_ONLY_OK
+                : CardPaymentServiceDto.RefundPreview.OK;
+        } else if (p.windowClosed()) {
+            reason = CardPaymentServiceDto.RefundPreview.REFUND_WINDOW_CLOSED;
+        } else if (p.noPaymentAsset()) {
+            reason = CardPaymentServiceDto.RefundPreview.NO_PAYMENT_ASSET;
+        } else {
+            reason = CardPaymentServiceDto.RefundPreview.NOT_PAID_CYCLE;
+        }
+        return new ExpenseServiceDto.RefundPreviewInfo(p.refundAmount() > 0L, p.refundAmount(), reason,
+            p.newRecordAmount(), p.sameDayExtraPayment());
+    }
+
+    /**
+     * 저장하지 않은 거래 — 미리보기가 "바뀐 뒤 모습" 의 회차분을 셀 때 쓴다.
+     *
+     * <p>회차 산식(할부 나머지·중도 상환)은 엔티티 한 곳에만 있다. 값을 따로 들고 다시 세면
+     * 확인창과 실제 청구가 갈리므로, 같은 엔티티를 영속화하지 않고 만든다.
+     */
+    private static Expense draftOf(User user, Expense source, Asset asset, Long amount,
+                                   LocalDateTime expenseDate, Integer installmentMonths) {
+        Expense draft = Expense.createExpense(user, source != null ? source.getCategory() : null, asset,
+            source != null ? source.getExpenseType() : ExpenseType.EXPENSE, amount, null, expenseDate,
+            null, null, installmentMonths, null, null, null);
+        if (source != null) {
+            if (source.getInstallmentPayoffDate() != null && draft.isInstallment()) {
+                draft.payoffInstallment(source.getInstallmentPayoffDate());
+            }
+            draft.markCardSettledThrough(source.getCardSettledThrough());
+        }
+        return draft;
+    }
+
+    private Asset findOwnedAsset(Long assetRowId, Long userRowId) {
+        Asset asset = assetRepository.findById(assetRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.ASSET_NOT_FOUND));
+        validateAssetOwnership(asset, userRowId);
+        return asset;
     }
 
     /** 이 거래의 자산이 신용카드면 그 자산, 아니면 null. */
     private Asset creditCardOf(Expense expense) {
         Asset asset = expense.getAsset();
         return asset != null && asset.getAssetType() == AssetType.CREDIT_CARD ? asset : null;
+    }
+
+    /**
+     * 이 거래가 카드 회차 규칙을 따르는 모습 — 결제일이 있는 신용카드에 사용자가 쓴 살아 있는
+     * 지출일 때만. 시스템이 만든 거래(카드 이월 등)는 원 거래가 정하므로 규칙 밖이다.
+     */
+    private CardCycleMath.Side sideOf(Expense e) {
+        Asset card = creditCardOf(e);
+        if (card == null || card.getPaymentDay() == null || e.isAutoGenerated() || !e.isCountable()) {
+            return CardCycleMath.Side.none();
+        }
+        return new CardCycleMath.Side(card.getRowId(), card.getPaymentDay(),
+            CardCycleMath.duesByCycle(e), e.getCardSettledThrough());
+    }
+
+    /** 카드 회차 규칙으로 정산 — 앞뒤 모두 카드가 아니면 할 일이 없다. */
+    private CardPaymentServiceDto.SettlementResult settleCard(
+            Expense expense, CardCycleMath.Side before, CardCycleMath.Side after, String memo,
+            Long userRowId, CardPaymentServiceDto.SettlementMode mode) {
+        if (!before.isCard() && !after.isCard()) {
+            return null;
+        }
+        return cardPaymentService.settleExpenseChange(new CardPaymentServiceDto.SettlementCommand(
+            expense, before, after, memo, userRowId, mode));
+    }
+
+    /** 이번 저장이 만든 환급액 — 없으면 null(화면이 토스트를 안 띄운다). */
+    private static Long refundedAmountOf(CardPaymentServiceDto.SettlementResult settled) {
+        return settled != null && settled.refundedAmount() > 0L ? settled.refundedAmount() : null;
     }
 
     /**
@@ -524,16 +603,6 @@ public class ExpenseServiceImpl implements ExpenseService {
             + (reduced ? " · 감액분" : "");
     }
 
-    /** 결제 완료 회차의 카드 거래가 줄었을 때 남는 돈을 결제계좌로 돌려준다. */
-    private CardPaymentServiceDto.RefundResult refundCardCredit(
-            Asset card, Long cap, String memo, Long userRowId) {
-        if (card == null || cap == null || cap <= 0L) {
-            return null;
-        }
-        return cardPaymentService.refundCreditIfOverpaid(
-            card.getRowId(), cap, memo, userClock.now(userRowId), userRowId);
-    }
-
     @Override
     @Transactional
     public Long deleteExpense(Long expenseId, Long userRowId) {
@@ -547,22 +616,20 @@ public class ExpenseServiceImpl implements ExpenseService {
             throw new InvalidValueException(DeskErrorCode.EXPENSE_AUTO_GENERATED_READONLY);
         }
 
-        Asset cardBefore = creditCardOf(expense);
-        Long deletedAmount = expense.getAmount();
+        CardCycleMath.Side sideBefore = sideOf(expense);
         String memo = cardRefundMemo(expense, false);
 
         expense.deleteExpense();
         // 자산 잔액 이력: 해당 거래 flow soft-delete
         balanceHistoryService.removeExpense(expenseId);
 
-        // 이미 결제된 회차의 카드 거래였다면 낸 돈이 남는다 — 그만큼 결제계좌로 돌려준다
-        // (설계 결정 9). 결제 전이었다면 크레딧이 0 이라 아무 일도 일어나지 않는다.
-        CardPaymentServiceDto.RefundResult refunded =
-            refundCardCredit(cardBefore, deletedAmount, memo, userRowId);
+        // 결제된 회차의 카드 거래였다면 결제한 달 안에서는 결제계좌로 돌려주고, 지났으면
+        // 기록만 정리한다(R6). 결제 전이었다면 아무 일도 일어나지 않는다.
+        Long refundedAmount = refundedAmountOf(settleCard(expense, sideBefore, CardCycleMath.Side.none(),
+            memo, userRowId, CardPaymentServiceDto.SettlementMode.CHANGE));
 
-        log.info("지출 삭제 완료: expenseId={}, 환급={}", expenseId,
-            refunded != null ? refunded.amount() : null);
-        return refunded != null ? refunded.amount() : null;
+        log.info("지출 삭제 완료: expenseId={}, 환급={}", expenseId, refundedAmount);
+        return refundedAmount;
     }
 
     /**

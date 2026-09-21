@@ -118,6 +118,17 @@ public class Expense extends AuditingFieldsWithIp {
     private Long refundTransferRowId;
 
     /**
+     * 이 날짜(회차 말일)까지의 카드 회차분은 <b>앱 밖에서 이미 결제된 기록용</b>이다.
+     * null 이면 정상(앱이 청구·결제한다).
+     *
+     * <p>결제일이 지난 회차에 소급 입력한 카드 지출은 현실에서 이미 결제가 끝났다. 가계부에는
+     * 정상 집계하되, 계좌에서 돈을 빼거나 뒤 회차 청구에 얹지 않는다(닫힌 회차 규칙 R2).
+     * 일시불은 거래 전체, 할부는 이 날짜 이전 회차분만 기록용이다(R5).
+     */
+    @Column(name = "card_settled_through")
+    private LocalDate cardSettledThrough;
+
+    /**
      * 자동 생성 출처 — 시스템이 계산해 만든 거래다. null 이면 사용자가 직접 만든 것.
      *
      * <p>매도 실현손익(TRADE_REALIZED)·대출 이자(TRANSFER_INTEREST)는 원 거래에서 파생된
@@ -261,6 +272,11 @@ public class Expense extends AuditingFieldsWithIp {
     /** 결제 완료 회차라 만들어진 카드→계좌 환급 이체를 걸어 둔다. */
     public void linkRefundTransfer(Long transferRowId) {
         this.refundTransferRowId = transferRowId;
+    }
+
+    /** 기록용 회차분 표식 — 서버가 저장·수정 때 회차 규칙으로 정한다. */
+    public void markCardSettledThrough(LocalDate through) {
+        this.cardSettledThrough = through;
     }
 
     /**

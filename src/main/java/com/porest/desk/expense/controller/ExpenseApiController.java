@@ -225,11 +225,11 @@ public class ExpenseApiController {
     }
 
     /**
-     * 지우거나 고치면 결제계좌로 얼마가 돌아오는지 미리 센다(설계 13-1).
+     * 지우거나 고치면 돈이 어떻게 움직이는지 미리 센다(설계 13-1, 닫힌 회차 R2·R3·R6).
      *
      * <p>쿼리를 비우면 <b>삭제</b> 미리보기다. 수정 미리보기는 바뀔 값만 싣는다 —
-     * {@code amount}(감액) · {@code assetRowId}(자산 변경) · {@code expenseDate}(날짜 이동).
-     * DB 는 바뀌지 않는다.
+     * {@code amount}(감액) · {@code assetRowId}(자산 변경) · {@code expenseDate}(날짜 이동) ·
+     * {@code installmentMonths}(할부 개월). DB 는 바뀌지 않는다.
      */
     @GetMapping("/expense/{id}/refund-preview")
     public ApiResponse<ExpenseApiDto.RefundPreviewResponse> refundPreview(
@@ -237,10 +237,27 @@ public class ExpenseApiController {
             @PathVariable Long id,
             @RequestParam(required = false) Long amount,
             @RequestParam(required = false) Long assetRowId,
-            @RequestParam(required = false) String expenseDate) {
+            @RequestParam(required = false) String expenseDate,
+            @RequestParam(required = false) Integer installmentMonths) {
         ExpenseServiceDto.RefundPreviewInfo info = expenseService.refundPreview(
             id, loginUser.getRowId(), amount, assetRowId,
-            expenseDate != null ? parseExpenseDate(expenseDate) : null);
+            expenseDate != null ? parseExpenseDate(expenseDate) : null, installmentMonths);
+        return ApiResponse.success(ExpenseApiDto.RefundPreviewResponse.from(info));
+    }
+
+    /**
+     * 새 카드 지출을 저장하면 어떻게 되는지 미리 센다 — 닫힌 회차면 기록만(R2), 결제일
+     * 당일이면 결제계좌에서 추가로 빠진다(R3). DB 는 바뀌지 않는다.
+     */
+    @GetMapping("/expense/card-save-preview")
+    public ApiResponse<ExpenseApiDto.RefundPreviewResponse> cardSavePreview(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam Long assetRowId,
+            @RequestParam Long amount,
+            @RequestParam String expenseDate,
+            @RequestParam(required = false) Integer installmentMonths) {
+        ExpenseServiceDto.RefundPreviewInfo info = expenseService.cardSavePreview(
+            loginUser.getRowId(), assetRowId, amount, parseExpenseDate(expenseDate), installmentMonths);
         return ApiResponse.success(ExpenseApiDto.RefundPreviewResponse.from(info));
     }
 

@@ -97,6 +97,26 @@ public class CardBilling extends AuditingFieldsWithIp {
             BillingStatus.COMPLETED, transfer, null);
     }
 
+    /**
+     * 그 회차에서 결제계좌로 돌려준 환급(REFUNDED) — 환급 이체와 묶는다.
+     *
+     * <p>이체를 지우면(환불 취소) {@code findAllActiveByTransfer} 가 이 행도 같이 무른다.
+     */
+    public static CardBilling refunded(Asset cardAsset, Asset paymentAsset, Long amount,
+                                       LocalDate periodStart, LocalDate periodEnd, LocalDate refundDate,
+                                       AssetTransfer transfer) {
+        return new CardBilling(cardAsset, paymentAsset, amount, periodStart, periodEnd, refundDate,
+            BillingStatus.REFUNDED, transfer, null);
+    }
+
+    /** 기록용 몫의 환급 — 앱이 낸 돈과 무관해 순 납부액에 안 들어간다. */
+    public static CardBilling recordRefunded(Asset cardAsset, Asset paymentAsset, Long amount,
+                                             LocalDate periodStart, LocalDate periodEnd,
+                                             LocalDate refundDate, AssetTransfer transfer) {
+        return new CardBilling(cardAsset, paymentAsset, amount, periodStart, periodEnd, refundDate,
+            BillingStatus.RECORD_REFUNDED, transfer, null);
+    }
+
     /** 청구액 0 — 건너뜀(SKIPPED). */
     public static CardBilling skipped(Asset cardAsset, Asset paymentAsset,
                                       LocalDate periodStart, LocalDate periodEnd, LocalDate paymentDate) {
