@@ -9,6 +9,7 @@ import com.porest.desk.support.security.WithLoginUser;
 import com.porest.desk.asset.service.dto.AssetServiceDto;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.core.type.YNType;
+import com.porest.desk.common.patch.Patch;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,6 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +37,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -234,5 +237,35 @@ class AssetApiControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"balance\":1000}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("PUT /asset/{id} — 이월 금액은 carryoverAmount 키로 넘긴다(D7), 응답에 카드 상태가 실린다")
+    void updateCarriesCarryoverAmount() throws Exception {
+        given(assetService.updateAsset(any(Long.class), any(Long.class), any())).willReturn(
+                sampleAsset().withCardState(70_000L, true, LocalDate.of(2026, 8, 31)));
+
+        mockMvc.perform(put("/api/v1/asset/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"carryoverAmount\":70000}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.carryoverAmount").value(70000))
+                .andExpect(jsonPath("$.data.carryoverLocked").value(true))
+                .andExpect(jsonPath("$.data.cardClosedThrough").value("2026-08-31"));
+
+        ArgumentCaptor<AssetServiceDto.UpdateAssetCommand> c =
+                ArgumentCaptor.forClass(AssetServiceDto.UpdateAssetCommand.class);
+        verify(assetService).updateAsset(eq(100L), eq(1L), c.capture());
+        assertThat(c.getValue().carryoverAmount()).isEqualTo(Patch.set(70_000L));
+        assertThat(c.getValue().balance()).isEqualTo(Patch.absent());
+    }
+
+    @Test
+    @DisplayName("PUT /asset/{id} — 음수 이월 금액은 400")
+    void negativeCarryoverRejected() throws Exception {
+        mockMvc.perform(put("/api/v1/asset/{id}", 100L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"carryoverAmount\":-1}"))
+                .andExpect(status().isBadRequest());
     }
 }

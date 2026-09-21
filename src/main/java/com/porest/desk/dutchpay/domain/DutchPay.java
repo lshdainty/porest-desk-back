@@ -120,6 +120,11 @@ public class DutchPay extends AuditingFieldsWithIp {
             .toList();
     }
 
+    /** 원거래를 고쳐 쓴 새 거래로 옮긴다(D13) — 옛 거래는 지워졌다. */
+    public void relinkSourceExpense(Expense expense) {
+        this.sourceExpense = expense;
+    }
+
     public static DutchPay createDutchPay(User user, Expense sourceExpense,
                                            String title, String description,
                                            Long totalAmount, String currency,

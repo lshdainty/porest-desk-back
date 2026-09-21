@@ -128,7 +128,14 @@ public class AssetApiDto {
         Optional<Integer> paymentDay,
         Optional<Long> paymentAssetRowId,
         // 투자 보유 목록 — null=무변경, 리스트=전체 교체
-        List<HoldingRequest> holdings
+        List<HoldingRequest> holdings,
+        /**
+         * 신용카드의 이월 금액("이전 미결제 사용액", D7) — 키가 없으면 유지. 신용카드는 {@code balance} 를
+         * 무시한다(옛 앱이 보내는 지금 잔액이 이월 거래를 덮어쓰던 결함). 결제가 끝난 회차의 이월은 못 고친다(D15).
+         */
+        Optional<@Min(value = 0, message = "이월 금액은 0원 이상이어야 해요")
+                 @Max(value = AmountLimits.MAX_BALANCE, message = "이월 금액은 1,000억원까지 입력할 수 있어요")
+                 Long> carryoverAmount
     ) {}
 
     /**
@@ -253,7 +260,13 @@ public class AssetApiDto {
         LocalDateTime createAt,
         LocalDateTime modifyAt,
         /** 체크카드의 이번 달(1일~) 사용 합계. 체크카드만 값, 그 외 null — 잔액이 항상 0 이라 화면 표시용. */
-        Long monthlyUsedAmount
+        Long monthlyUsedAmount,
+        /** 신용카드만: 이월 금액("이전 미결제 사용액"), 없으면 0. 그 외 null. */
+        Long carryoverAmount,
+        /** 신용카드: 이월 거래가 든 회차의 결제일이 됐으면 true — 이월 금액 칸 읽기 전용(D15). */
+        boolean carryoverLocked,
+        /** 결제일 있는 신용카드: 이 날짜 이하 거래는 닫힌 회차. 그 외 null. */
+        java.time.LocalDate cardClosedThrough
     ) {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
@@ -267,7 +280,8 @@ public class AssetApiDto {
                 info.marketCode(), info.symbol(), info.quantity(),
                 info.holdings().stream().map(HoldingResponse::from).toList(),
                 info.createAt(), info.modifyAt(),
-                info.monthlyUsedAmount()
+                info.monthlyUsedAmount(),
+                info.carryoverAmount(), info.carryoverLocked(), info.cardClosedThrough()
             );
         }
     }

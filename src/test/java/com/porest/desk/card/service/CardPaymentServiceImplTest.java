@@ -73,6 +73,13 @@ class CardPaymentServiceImplTest {
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
     // 배치는 카드 한 장마다 새 트랜잭션을 연다 — 단위 테스트에서는 상태만 돌려주고 커밋은 no-op.
     @Mock private PlatformTransactionManager transactionManager;
+    // 회차별 결제일(D5) — 이력이 비어 있으면 카드의 지금 결제일 하나로 센다. 닫힌 회차의 "오늘"은 서울 시계(D11).
+    private final com.porest.desk.asset.repository.AssetPaymentDayHistoryRepository paymentDayHistory =
+        org.mockito.Mockito.mock(com.porest.desk.asset.repository.AssetPaymentDayHistoryRepository.class);
+    @org.mockito.Spy private com.porest.desk.card.service.PaymentScheduleService paymentScheduleService =
+        new com.porest.desk.card.service.PaymentScheduleService(paymentDayHistory);
+    @org.mockito.Spy private com.porest.core.time.ServiceClock serviceClock =
+        new com.porest.core.time.ServiceClock("Asia/Seoul");
 
     @InjectMocks private CardPaymentServiceImpl sut;
 
@@ -216,7 +223,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 오늘 8/24 → 다음 결제일 9/12 → 청구 기간 8/1~8/31 (7월 구매 기준 2회차)
-        doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 8, 24)).when(serviceClock).today();
         givenCycleSpend(0L);
         Expense e = installment(LocalDate.of(2026, 7, 10), 1_000_000L, 3);
         e.payoffInstallment(LocalDate.of(2026, 8, 1));
@@ -239,7 +246,7 @@ class CardPaymentServiceImplTest {
     void payoffRejectsNonInstallment() {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
-        lenient().doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        lenient().doReturn(LocalDate.of(2026, 8, 24)).when(serviceClock).today();
         Expense lump = Expense.createExpense(
             null, null, null, ExpenseType.EXPENSE, 50_000L, null,
             LocalDate.of(2026, 8, 10).atTime(12, 0), "커피", "CARD", null,
@@ -257,7 +264,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         // 다가오는 회차 2027-01 — 2026-07 구매 3개월 할부는 7회차라 끝났다
-        doReturn(LocalDate.of(2027, 1, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2027, 1, 24)).when(serviceClock).today();
         Expense e = installment(LocalDate.of(2026, 7, 10), 300_000L, 3);
         ReflectionTestUtils.setField(e, "asset", cardAssetStub());
         given(entityManager.find(Expense.class, 77L)).willReturn(e);
@@ -272,7 +279,7 @@ class CardPaymentServiceImplTest {
     void payoffRejectsForeignExpense() {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
-        lenient().doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        lenient().doReturn(LocalDate.of(2026, 8, 24)).when(serviceClock).today();
         given(entityManager.find(Expense.class, 77L)).willReturn(null);
 
         assertThatThrownBy(() -> sut.payoffInstallment(CARD_ID, 77L, USER_ID))
@@ -300,7 +307,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 오늘 8/10 → 다음 결제일 9/6 → 청구 기간 8/1~8/31 (구매월 8월 기준 1회차)
-        doReturn(LocalDate.of(2026, 8, 10)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 8, 10)).when(serviceClock).today();
         givenCycleSpend(30_000L);
         Expense phone = installment(LocalDate.of(2026, 8, 4), 100_000_000L, 24);
         ReflectionTestUtils.setField(phone, "rowId", 66_814L);
@@ -329,7 +336,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 청구 기간 2027-02 — 2026-08 구매 3개월 할부(회차 1..3)는 7회차라 이미 끝났다
-        doReturn(LocalDate.of(2027, 2, 10)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2027, 2, 10)).when(serviceClock).today();
         givenCycleSpend(0L);
         givenInstallments(installment(LocalDate.of(2026, 8, 4), 300_000L, 3));
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -348,7 +355,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(280_000L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(100_000L);
@@ -376,7 +383,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 오늘 7/24 → 다음 결제일 8/12 → 청구 기간 7/1~7/31
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(30_000L); // 7월 일시불 사용분(커피·편의점 등)
         givenInstallments(installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6));
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -394,7 +401,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 오늘 8/24 → 다음 결제일 9/12 → 청구 기간 8/1~8/31 (구매월 7월 기준 2회차)
-        doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 8, 24)).when(serviceClock).today();
         givenCycleSpend(0L); // 8월엔 일시불 사용 없음
         givenInstallments(installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6));
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -410,7 +417,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 오늘 2027-01-24 → 다음 결제일 2027-02-12 → 청구 기간 2027-01 (구매월 2026-07 기준 7회차)
-        doReturn(LocalDate.of(2027, 1, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2027, 1, 24)).when(serviceClock).today();
         givenCycleSpend(0L);
         givenInstallments(installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6));
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -425,7 +432,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(0L);
         givenInstallments(installment(LocalDate.of(2026, 7, 5), 1_000_000L, 3));
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -441,7 +448,7 @@ class CardPaymentServiceImplTest {
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
         // 청구 기간 8/1~8/31 — 7월 구매분은 2회차, 8월 구매분은 1회차
-        doReturn(LocalDate.of(2026, 8, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 8, 24)).when(serviceClock).today();
         givenCycleSpend(15_000L);
         givenInstallments(
             installment(LocalDate.of(2026, 7, 10), 1_500_000L, 6),   // 2회차 250,000
@@ -493,7 +500,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(null);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(33_800L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(0L);
@@ -514,7 +521,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(null);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCardBalance(228_600L); // 과납 상태
         givenCycleSpend(50_000L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -531,7 +538,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(500_000L);          // 기록상 사용액
         givenCardBalance(-120_000L);        // 실제 남은 빚(수동 보정으로 줄어듦)
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -547,7 +554,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(500_000L);
         givenCardBalance(228_600L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
@@ -562,7 +569,7 @@ class CardPaymentServiceImplTest {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
         given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
-        doReturn(LocalDate.of(2026, 7, 24)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 7, 24)).when(serviceClock).today();
         givenCycleSpend(280_000L);
         // 할부는 구매 시 전액이 잔액에 잡히므로 빚이 회차 청구보다 크다 — 정상 상태
         givenCardBalance(-1_530_000L);
@@ -746,7 +753,7 @@ class CardPaymentServiceImplTest {
             .willAnswer(inv -> inv.getArgument(0));
         // 11:40 에 눌렀다 — 같은 날 11:30 에 만든 통장 INIT 앵커보다 뒤여야 잔액에 잡힌다.
         LocalDateTime pressedAt = LocalDateTime.of(2026, 9, 2, 11, 40);
-        doReturn(pressedAt.toLocalDate()).when(userClock).today(USER_ID);
+        doReturn(pressedAt.toLocalDate()).when(serviceClock).today();
         doReturn(pressedAt).when(userClock).now(USER_ID);
 
         sut.payCard(CARD_ID, USER_ID, null);
@@ -768,7 +775,7 @@ class CardPaymentServiceImplTest {
         givenCycleSpend(100_000L);
         given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
             .willReturn(30_000L);
-        doReturn(LocalDate.of(2026, 9, 2)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 9, 2)).when(serviceClock).today();
 
         CardPaymentServiceDto.CardBillingInfo info = sut.getCardBilling(CARD_ID, USER_ID);
 
@@ -803,7 +810,7 @@ class CardPaymentServiceImplTest {
             .willReturn(0L);
         given(cardBillingRepository.save(any(CardBilling.class))).willAnswer(inv -> inv.getArgument(0));
         LocalDateTime pressedAt = LocalDateTime.of(2026, 9, 2, 11, 40);
-        doReturn(pressedAt.toLocalDate()).when(userClock).today(USER_ID);
+        doReturn(pressedAt.toLocalDate()).when(serviceClock).today();
         doReturn(pressedAt).when(userClock).now(USER_ID);
 
         CardPaymentServiceDto.BillingInfo billed =
@@ -825,7 +832,7 @@ class CardPaymentServiceImplTest {
             .willReturn(0L);
         given(cardBillingRepository.save(any(CardBilling.class))).willAnswer(inv -> inv.getArgument(0));
         LocalDateTime pressedAt = LocalDateTime.of(2026, 9, 2, 11, 40);
-        doReturn(pressedAt.toLocalDate()).when(userClock).today(USER_ID);
+        doReturn(pressedAt.toLocalDate()).when(serviceClock).today();
         doReturn(pressedAt).when(userClock).now(USER_ID);
 
         CardPaymentServiceDto.BillingInfo billed =
@@ -840,7 +847,7 @@ class CardPaymentServiceImplTest {
     void payCardRejectsOtherCycleDates() {
         Asset card = creditCard(12);
         given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
-        doReturn(LocalDate.of(2026, 9, 2)).when(userClock).today(USER_ID);
+        doReturn(LocalDate.of(2026, 9, 2)).when(serviceClock).today();
 
         assertThatThrownBy(() -> sut.payCard(CARD_ID, USER_ID, null, LocalDate.of(2026, 11, 12)))
             .isInstanceOf(InvalidValueException.class)
@@ -1144,7 +1151,7 @@ class CardPaymentServiceImplTest {
             given(cardBillingRepository.findByCardAssetRowId(CARD_ID)).willReturn(List.of());
             given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
                 .willReturn(0L);
-            doReturn(NOW.toLocalDate()).when(userClock).today(USER_ID);
+            doReturn(NOW.toLocalDate()).when(serviceClock).today();
             doReturn(NOW).when(userClock).now(USER_ID);
         }
 

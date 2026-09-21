@@ -3,12 +3,9 @@ package com.porest.desk.notification.scheduler;
 import com.porest.desk.calendar.domain.CalendarEvent;
 import com.porest.desk.calendar.domain.EventReminder;
 import com.porest.desk.calendar.repository.EventReminderRepository;
-import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.domain.ExpenseBudget;
 import com.porest.desk.expense.repository.ExpenseBudgetRepository;
-import com.porest.desk.expense.repository.ExpenseRepository;
 import com.porest.desk.expense.service.ExpenseService;
-import com.porest.desk.expense.type.ExpenseType;
 import com.porest.desk.notification.repository.NotificationRepository;
 import com.porest.desk.notification.service.NotificationMessages;
 import com.porest.desk.notification.service.NotificationService;
@@ -42,7 +39,6 @@ public class NotificationTriggerScheduler {
     private final NotificationRepository notificationRepository;
     private final EventReminderRepository eventReminderRepository;
     private final ExpenseBudgetRepository expenseBudgetRepository;
-    private final ExpenseRepository expenseRepository;
     private final ExpenseService expenseService;
     private final ServiceClock serviceClock;
     private final UserClock userClock;
@@ -107,6 +103,7 @@ public class NotificationTriggerScheduler {
 
         // 사용자별 split-aware 카테고리 지출(leaf+부모 롤업) 캐시 — 같은 사용자 예산이 여럿이어도 1회만 집계.
         Map<Long, Map<Long, Long>> spendByUser = new HashMap<>();
+        Map<Long, Long> totalByUser = new HashMap<>();
 
         for (ExpenseBudget budget : budgets) {
             try {
@@ -131,7 +128,6 @@ public class NotificationTriggerScheduler {
                 Long categoryRowId = budget.getCategory() != null ? budget.getCategory().getRowId() : null;
 
                 LocalDate startDate = LocalDate.of(year, month, 1);
-                LocalDate endDate = startDate.plusMonths(1).minusDays(1);
 
                 // 카테고리 예산은 자식 지출까지 합산(roll-up, split-aware), 전체(=null)는 월 전체 지출.
                 // 분할이 있는 거래는 분할 항목 카테고리로 귀속(거래의 단일 카테고리가 아님).
@@ -141,9 +137,10 @@ public class NotificationTriggerScheduler {
                         userRowId, u -> expenseService.getMonthlyExpenseSpendByCategory(u, year, month));
                     totalSpending = userSpend.getOrDefault(categoryRowId, 0L);
                 } else {
-                    totalSpending = expenseRepository.findByUser(
-                        userRowId, null, ExpenseType.EXPENSE, startDate, endDate)
-                        .stream().mapToLong(Expense::getAmount).sum();
+                    // 전체 예산도 가계부 합계와 같은 규칙 — 예정·환불·카드 이월을 뺀다(23차 12). 날것 합이면
+                    // 환불한 거래와 아직 안 온 반복거래까지 더해 화면 이행률과 알림이 갈렸다.
+                    totalSpending = totalByUser.computeIfAbsent(
+                        userRowId, u -> expenseService.getMonthlyExpenseTotal(u, year, month));
                 }
 
                 // 임계값은 사용자 설정(user.budget_alert_threshold, %) 사용 — 미설정 시 85%.

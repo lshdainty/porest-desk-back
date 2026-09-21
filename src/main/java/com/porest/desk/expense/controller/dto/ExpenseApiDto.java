@@ -178,7 +178,12 @@ public class ExpenseApiDto {
          */
         java.time.LocalDate cardSettledThrough,
         /** 기록만 남긴 금액 — 할부는 지난 회차분만이라 거래 금액보다 작을 수 있다 (null = 없음). */
-        Long recordOnlyAmount
+        Long recordOnlyAmount,
+        /**
+         * 돈 칸 잠금(D12) — true 면 금액·날짜·시간·자산·할부·유형·통화 3칸·결제수단을 못 고친다.
+         * 카테고리·가맹점·메모만 고치고, 돈 칸은 {@code POST /expense/{id}/replace}(고쳐 쓰기)로 바꾼다.
+         */
+        boolean moneyLocked
     ) {
         public static Response from(ExpenseServiceDto.ExpenseInfo info) {
             return new Response(
@@ -210,7 +215,8 @@ public class ExpenseApiDto {
                 info.splitCategoryRowIds(),
                 info.refundedAmount(),
                 info.cardSettledThrough(),
-                info.recordOnlyAmount()
+                info.recordOnlyAmount(),
+                info.moneyLocked()
             );
         }
     }
@@ -405,6 +411,36 @@ public class ExpenseApiDto {
                 info.newRecordAmount(), info.sameDayExtraPayment());
         }
     }
+
+    /**
+     * 고쳐 쓰기 본문(D13) — 새 거래 생성 본문과 같은 칸 + 선택 {@code splits}.
+     *
+     * <p>{@code splits} 가 없으면 옛 거래의 분할을 옮긴다(합이 새 금액과 안 맞으면 400).
+     */
+    public record ReplaceRequest(
+        @NotNull(message = "카테고리를 골라 주세요")
+        Long categoryRowId,
+        Long assetRowId,
+        @NotNull(message = "거래 종류를 골라 주세요")
+        ExpenseType expenseType,
+        @NotNull(message = "금액을 입력해 주세요")
+        @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
+        Long amount,
+        @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
+        String description,
+        @NotBlank(message = "거래 일시를 입력해 주세요")
+        String expenseDate,
+        @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
+        String merchant,
+        String paymentMethod,
+        Integer installmentMonths,
+        java.math.BigDecimal originalAmount,
+        String originalCurrency,
+        java.math.BigDecimal exchangeRate,
+        Long calendarEventRowId,
+        Long todoRowId,
+        List<ExpenseSplitApiDto.SplitRequest> splits
+    ) {}
 
     /** 환불 마크 요청 — 환불일만 받는다. 비우면 지금. */
     public record RefundRequest(

@@ -18,6 +18,7 @@ import com.porest.core.type.YNType;
 import com.porest.desk.expense.domain.Expense;
 import com.porest.desk.expense.type.ExpenseType;
 import jakarta.persistence.EntityManager;
+import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,6 +50,10 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     /** 결제계좌 없이 카드만 정리할 때 쓴다 — 이체를 못 만드니 카드에 직접 상계 flow 를 쌓는다. */
     private final AssetBalanceHistoryService balanceHistoryService;
     private final EntityManager entityManager;
+    /** 닫힌 회차 판정의 "오늘" — 자정 배치와 같은 서울 시계(D11). */
+    private final ServiceClock serviceClock;
+    /** 회차별 결제일(D5) — 결제일을 바꿔도 지난 회차의 결제일은 그대로다. */
+    private final PaymentScheduleService paymentScheduleService;
 
     /**
      * 자정 배치에서 <b>카드 한 장마다</b> 새 트랜잭션을 여는 템플릿.
@@ -64,13 +69,17 @@ public class CardPaymentServiceImpl implements CardPaymentService {
                                   AssetService assetService,
                                   AssetBalanceHistoryService balanceHistoryService,
                                   EntityManager entityManager,
-                                  PlatformTransactionManager transactionManager) {
+                                  PlatformTransactionManager transactionManager,
+                                  ServiceClock serviceClock,
+                                  PaymentScheduleService paymentScheduleService) {
         this.cardBillingRepository = cardBillingRepository;
         this.userClock = userClock;
         this.assetRepository = assetRepository;
         this.assetService = assetService;
         this.balanceHistoryService = balanceHistoryService;
         this.entityManager = entityManager;
+        this.serviceClock = serviceClock;
+        this.paymentScheduleService = paymentScheduleService;
         this.newTransaction = new TransactionTemplate(transactionManager);
         this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -83,7 +92,10 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         validateOwnership(card, userRowId);
         validateCreditCard(card);
 
-        LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), userClock.today(userRowId));
+        // 결제일 당일부터 그 회차는 닫힌 회차다(D2) — 다가오는 결제는 결제일이 오늘보다 뒤인 첫 회차.
+        LocalDate today = cycleToday();
+        PaymentSchedule schedule = scheduleOf(card);
+        LocalDate nextPaymentDate = schedule.firstOpenPaymentDate(today);
         BillingCycle cycle = upcomingCycle(card, nextPaymentDate);
 
         List<CardPaymentServiceDto.BillingInfo> history = cardBillingRepository
@@ -95,7 +107,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         // 미리 얼마를 낼 수 있는지 보여 주려고 하나 더 내려준다.
         CardPaymentServiceDto.UpcomingCycle nextCycle = null;
         if (nextPaymentDate != null) {
-            LocalDate following = nextPaymentDate(card.getPaymentDay(), nextPaymentDate.plusDays(1));
+            LocalDate following = schedule.followingPaymentDate(nextPaymentDate);
             BillingCycle c2 = upcomingCycle(card, following);
             nextCycle = new CardPaymentServiceDto.UpcomingCycle(following, c2.periodStart(), c2.periodEnd(),
                 c2.amount(), c2.lumpSumAmount(), c2.alreadyPaid(), c2.installments());
@@ -114,7 +126,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             card.getPaymentAsset() != null ? card.getPaymentAsset().getRowId() : null,
             history,
             nextCycle,
-            closedCycles(card, userClock.today(userRowId))
+            closedCycles(card, schedule, today)
         );
     }
 
@@ -144,11 +156,12 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         // (종전엔 잔액 전액 + 실행일의 전월 라벨이라 회차·기간·금액이 어긋났음)
         // paymentDate 가 없으면 다가오는 회차, 있으면 다가오는 회차 또는 그 다음 회차(지금 쌓이는
         // 이용분)만 허용한다 — 그 밖의 날짜는 화면이 내려준 회차가 아니므로 거절한다.
-        LocalDate today = userClock.today(userRowId);
-        LocalDate nextPaymentDate = nextPaymentDate(card.getPaymentDay(), today);
+        LocalDate today = cycleToday();
+        PaymentSchedule schedule = scheduleOf(card);
+        LocalDate nextPaymentDate = schedule.firstOpenPaymentDate(today);
         LocalDate target = nextPaymentDate;
         if (paymentDate != null && nextPaymentDate != null && !paymentDate.equals(nextPaymentDate)) {
-            LocalDate following = nextPaymentDate(card.getPaymentDay(), nextPaymentDate.plusDays(1));
+            LocalDate following = schedule.followingPaymentDate(nextPaymentDate);
             if (!paymentDate.equals(following)) {
                 throw new InvalidValueException(DeskErrorCode.CARD_BILLING_INVALID_CYCLE);
             }
@@ -201,6 +214,17 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         // 이미 무른 회차(취소·건너뜀)는 되돌릴 게 없다.
         if (billing.getStatus() != BillingStatus.COMPLETED) {
             throw new InvalidValueException(DeskErrorCode.CARD_BILLING_NOT_CANCELABLE);
+        }
+        // 결제일이 된 회차는 무를 수 없다(D6) — 되돌리면 그 회차를 다시 낼 길이 없어 빚이 떠돈다.
+        Asset card = billing.getCardAsset();
+        if (billing.getPeriodStart() != null
+                && scheduleOf(card).isClosed(billing.getPeriodStart(), cycleToday())) {
+            throw new InvalidValueException(DeskErrorCode.CARD_BILLING_CYCLE_CLOSED);
+        }
+        // 그 회차에서 환급이 나갔으면 무를 수 없다(D6) — 결제만 되돌리면 환급은 통장에 남아 유령 빚이 된다.
+        if (billing.getPeriodStart() != null && cardBillingRepository.sumRefundedAmountByCardAndPeriod(
+                card.getRowId(), billing.getPeriodStart(), billing.getPeriodEnd()) > 0L) {
+            throw new InvalidValueException(DeskErrorCode.CARD_BILLING_REFUNDED);
         }
 
         // 결제로 만든 이체를 무른다. 그 안에서 잔액 이력이 되돌아가고 청구 회차도 cancel 된다
@@ -273,7 +297,8 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         Asset card = findAssetOrThrow(cardRowId);
 
         PayOutcome outcome = null;
-        if (isPaymentDay(card.getPaymentDay(), today)) {
+        // 오늘이 결제일인 회차 — 결제일을 바꿨어도 그 회차에 적용된 결제일로 본다(D5).
+        if (scheduleOf(card).cycleDueOn(today) != null) {
             outcome = payDueCard(card, today);
         }
         // 환급은 결제일과 무관하게 매일 본다 — 환불은 아무 날에나 들어오고,
@@ -473,6 +498,11 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         if (t.expense().getInstallmentPayoffDate() == null) {
             throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_NOT_PAID_OFF);
         }
+        // 몰아 받은 회차가 이미 결제됐으면 되돌릴 수 없다 — 남은 회차가 다시 청구돼 두 번 낸다(D6 과 같은 이유).
+        LocalDate payoffCycle = CardCycleMath.cycleStartOf(t.expense().getInstallmentPayoffDate());
+        if (scheduleOf(t.expense().getAsset()).isClosed(payoffCycle, cycleToday())) {
+            throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_PAYOFF_CLOSED);
+        }
         t.expense().cancelInstallmentPayoff();
         log.info("할부 상환 취소: expenseRowId={}", expenseRowId);
     }
@@ -496,39 +526,46 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             throw new InvalidValueException(DeskErrorCode.CARD_INSTALLMENT_NOT_INSTALLMENT);
         }
 
-        LocalDate today = userClock.today(userRowId);
-        LocalDate next = nextPaymentDate(card.getPaymentDay(), today);
+        LocalDate today = cycleToday();
+        LocalDate next = scheduleOf(card).firstOpenPaymentDate(today);
         // upcomingCycle 과 같은 규칙 — 결제일이 없으면 당월 1일~말일 회차.
         LocalDate anchor = next == null ? today.withDayOfMonth(1) : periodStartFor(next);
         return new PayoffTarget(expense, anchor);
     }
 
+    /** 회차 판정의 "오늘" — 자정 배치와 같은 서울 시계(D11). 사용자 시간대로 보면 결제일 경계에서 배치와 어긋난다. */
+    private LocalDate cycleToday() {
+        return serviceClock.today();
+    }
+
+    private PaymentSchedule scheduleOf(Asset card) {
+        PaymentSchedule s = paymentScheduleService.scheduleOf(card);
+        return s != null ? s : PaymentSchedule.of(null);
+    }
+
     /**
-     * 거래 변경을 닫힌 회차 규칙으로 정산한다 — 표식 · 상계 · 회차별 환급 · 결제일 당일 결제.
+     * 거래 변경을 회차 규칙으로 정산한다 — 표식 · 상계 · 열린 회차 선결제 환급.
      *
-     * <p>무엇을 할지는 {@link CardCycleMath#plan} 이 정하고, 여기서는 돈의 기록을 봐야 하는 것만
-     * 한다: 앱이 결제한 몫의 환급은 그 회차의 <b>크레딧</b>(순 납부액 − 지금 청구액)을 넘지 않고,
-     * 넘는 몫은 상계로 붙잡는다 — 붙잡지 않으면 카드가 양수가 되어 자정 스윕이 또 돌려준다.
+     * <p>무엇을 할지는 {@link CardCycleMath#plan} 이 정하고, 여기서는 돈의 기록을 봐야 하는 것만 한다.
+     * 결제가 덮고 있던 몫이 빠지면 닫힌 회차는 그만큼을 상계로 붙잡고(통장 그대로, D1), 열린 회차는
+     * 미리 낸 돈이 남을 때만 결제계좌로 돌려준다(D3). 덮이지 않은 몫(결제가 모자랐던 회차)은 원래
+     * 빚이라 빚이 줄 뿐이다 — 붙잡으면 빚이 영원히 남는다.
      */
     @Override
     @Transactional
     public CardPaymentServiceDto.SettlementResult settleExpenseChange(
             CardPaymentServiceDto.SettlementCommand cmd) {
         Long userRowId = cmd.userRowId();
-        LocalDate today = userClock.today(userRowId);
+        LocalDate today = cycleToday();
         LocalDateTime now = userClock.now(userRowId);
         Expense expense = cmd.expense();
         Asset cardBefore = cmd.before().isCard() ? findAssetOrThrow(cmd.before().cardRowId()) : null;
         Asset cardAfter = cmd.after().isCard() ? findAssetOrThrow(cmd.after().cardRowId()) : null;
-        boolean hasAccount = cardBefore != null && cardBefore.getPaymentAsset() != null;
-        long backing = cardBefore != null
-            ? balanceHistoryService.cardSettledAmount(expense.getRowId(), cardBefore.getRowId())
-            : 0L;
-
         CardPaymentServiceDto.SettlementMode mode = cmd.mode();
+
         CardCycleMath.Plan plan = mode == CardPaymentServiceDto.SettlementMode.CANCEL_REFUND
             ? coveragePlan(cardAfter, cmd.after(), expense.getRowId(), today, now)
-            : CardCycleMath.plan(cmd.before(), cmd.after(), hasAccount, backing, today);
+            : CardCycleMath.plan(cmd.before(), cmd.after(), today);
 
         // 표식을 먼저 박는다 — 아래 크레딧 계산이 이 거래의 기록용 몫을 청구에서 빼고 센다.
         // 환불은 표식을 그대로 둔다 — 환불된 거래는 어느 청구에도 안 들어가고, 취소하면 그대로 돌아온다.
@@ -540,134 +577,131 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             expense.markCardSettledThrough(plan.newMark());
         }
 
-        Refunds refunds = computeRefunds(cardBefore, plan, now, null, null);
-        Long transferRowId = refunds.total() > 0L
-            ? issueRefund(cardBefore, refunds, cmd.refundMemo(), today, now, userRowId)
-            : null;
+        Refunds before = computeRefunds(cardBefore, removalsOf(plan, cardBefore), now, null, null);
+        Refunds after = cardAfter != null && (cardBefore == null || !cardAfter.getRowId().equals(cardBefore.getRowId()))
+            ? computeRefunds(cardAfter, removalsOf(plan, cardAfter), now, null, null)
+            : Refunds.NONE;
+
+        Long transferRowId = null;
+        long refunded = 0L;
+        String memo = cmd.refundMemo() != null ? cmd.refundMemo() : "미리 낸 돈 환급";
+        if (before.total() > 0L) {
+            transferRowId = issueRefund(cardBefore, before, memo, today, now, userRowId);
+            refunded += before.total();
+        }
+        if (after.total() > 0L) {
+            Long id = issueRefund(cardAfter, after, memo, today, now, userRowId);
+            transferRowId = transferRowId != null ? transferRowId : id;
+            refunded += after.total();
+        }
 
         LocalDateTime settleAt = settleTime(expense, now);
-        long deltaBefore = plan.settleDeltaBefore() - refunds.heldBack();
-        if (cardBefore != null && deltaBefore != 0L) {
+        long deltaBefore = plan.settleDeltaBefore() - before.heldBack();
+        if (cardBefore != null) {
             if (mode == CardPaymentServiceDto.SettlementMode.REFUND) {
-                balanceHistoryService.setCardRefundHold(cardBefore, expense.getRowId(), deltaBefore, settleAt);
+                if (deltaBefore != 0L) {
+                    balanceHistoryService.setCardRefundHold(cardBefore, expense.getRowId(), deltaBefore, settleAt);
+                }
             } else {
                 long current = balanceHistoryService.cardSettledAmount(expense.getRowId(), cardBefore.getRowId());
-                balanceHistoryService.setCardSettled(cardBefore, expense.getRowId(), current + deltaBefore, settleAt);
+                // 변화가 없어도 거래 날짜가 옮겨졌으면 상계 행 시각을 따라 옮긴다 — 옛 앵커 카드에서
+                // 잔액 시점이 어긋나지 않게(24차 10⑨).
+                if (deltaBefore != 0L || current != 0L) {
+                    balanceHistoryService.setCardSettled(cardBefore, expense.getRowId(), current + deltaBefore, settleAt);
+                }
             }
         }
-        if (cardAfter != null && plan.settleDeltaAfter() != 0L) {
-            long current = balanceHistoryService.cardSettledAmount(expense.getRowId(), cardAfter.getRowId());
-            balanceHistoryService.setCardSettled(cardAfter, expense.getRowId(),
-                current + plan.settleDeltaAfter(), settleAt);
+        if (cardAfter != null && (cardBefore == null || !cardAfter.getRowId().equals(cardBefore.getRowId()))) {
+            long deltaAfter = plan.settleDeltaAfter() - after.heldBack();
+            if (deltaAfter != 0L) {
+                long current = balanceHistoryService.cardSettledAmount(expense.getRowId(), cardAfter.getRowId());
+                balanceHistoryService.setCardSettled(cardAfter, expense.getRowId(), current + deltaAfter, settleAt);
+            }
         }
 
-        long sameDayPaid = plan.sameDayCycle() != null && cardAfter != null
-            ? payTodayIfDue(cardAfter, userRowId, today, now)
-            : 0L;
-
-        log.info("카드 회차 정산: expenseId={}, 표식={}, 환급={}, 새기록용={}, 당일결제={}",
-            expense.getRowId(), plan.newMark(), refunds.total(), plan.newRecordAmount(), sameDayPaid);
-        return new CardPaymentServiceDto.SettlementResult(
-            transferRowId, refunds.total(), plan.newMark(), plan.newRecordAmount(), sameDayPaid);
+        log.info("카드 회차 정산: expenseId={}, 표식={}, 선결제환급={}, 새기록용={}",
+            expense.getRowId(), plan.newMark(), refunded, plan.newRecordAmount());
+        return new CardPaymentServiceDto.SettlementResult(transferRowId, refunded, plan.newMark(),
+            plan.newRecordAmount());
     }
 
     /**
-     * 같은 판정을 <b>DB 를 바꾸지 않고</b> — 삭제·수정·저장 확인창의 재료(13-1, 닫힌 회차 R2·R3·R6).
+     * 같은 판정을 <b>DB 를 바꾸지 않고</b> — 옛 앱의 확인창 재료(새 웹·앱은 부르지 않는다, D4).
      *
      * <p>실제 실행과 같은 함수({@link CardCycleMath#plan}, {@link #computeRefunds})를 부르되, 청구액은
-     * "이 거래를 뺀 청구 + 바뀐 뒤 이 거래가 청구에 남기는 몫" 으로 센다. 산식을 복사해 두면
-     * 확인창 금액과 실제 이체액이 갈린다.
+     * "이 거래를 뺀 청구 + 바뀐 뒤 이 거래가 청구에 남기는 몫" 으로 센다.
      */
     @Override
     @Transactional(readOnly = true)
     public CardPaymentServiceDto.SettlementPreview previewExpenseChange(
             CardPaymentServiceDto.SettlementCommand cmd) {
-        Long userRowId = cmd.userRowId();
-        LocalDate today = userClock.today(userRowId);
-        LocalDateTime now = userClock.now(userRowId);
+        LocalDate today = cycleToday();
+        LocalDateTime now = userClock.now(cmd.userRowId());
         Asset cardBefore = cmd.before().isCard() ? findAssetOrThrow(cmd.before().cardRowId()) : null;
-        Asset cardAfter = cmd.after().isCard() ? findAssetOrThrow(cmd.after().cardRowId()) : null;
-        boolean hasAccount = cardBefore != null && cardBefore.getPaymentAsset() != null;
         Long exclude = cmd.expense() != null ? cmd.expense().getRowId() : null;
-        long backing = cardBefore != null && exclude != null
-            ? balanceHistoryService.cardSettledAmount(exclude, cardBefore.getRowId())
-            : 0L;
 
-        CardCycleMath.Plan plan = CardCycleMath.plan(cmd.before(), cmd.after(), hasAccount, backing, today);
-        Refunds refunds = computeRefunds(cardBefore, plan, now, exclude, plan.afterBillable());
-
-        long extra = 0L;
-        if (plan.sameDayCycle() != null && cardAfter != null && cardAfter.getPaymentAsset() != null) {
-            LocalDate start = plan.sameDayCycle();
-            LocalDate end = CardCycleMath.cycleEndOf(start);
-            long mine = CardCycleMath.isRecordOnly(start, plan.newMark())
-                ? 0L
-                : cmd.after().dues().getOrDefault(start, 0L);
-            long bill = grossBill(cardAfter.getRowId(), start, end, now, exclude) + mine;
-            extra = Math.max(0L, bill - netBilledPaid(cardAfter.getRowId(), start, end));
-        }
-        boolean removing = !plan.paidRemovals().isEmpty() || !plan.recordRefunds().isEmpty()
-            || plan.recordHeld() > 0L;
+        CardCycleMath.Plan plan = CardCycleMath.plan(cmd.before(), cmd.after(), today);
+        Refunds refunds = computeRefunds(cardBefore, removalsOf(plan, cardBefore), now, exclude,
+            plan.afterBillable());
+        boolean removing = !removalsOf(plan, cardBefore).isEmpty();
         return new CardPaymentServiceDto.SettlementPreview(
             refunds.total(),
-            refunds.recordOnly(),
-            hasAccount && refunds.total() == 0L && plan.windowClosedRemoval(),
-            cardBefore != null && !hasAccount && removing,
-            plan.newRecordAmount(),
-            extra);
+            cardBefore != null && usablePaymentAsset(cardBefore) == null && removing,
+            plan.newRecordAmount());
     }
 
-    /**
-     * 이번 정산에서 돌려줄 것 — 회차별 결제분·기록용 금액과 상계로 붙잡을 몫.
-     *
-     * <p>둘을 나눠 기록하는 까닭: 결제분 환급은 그 회차 크레딧을 쓰지만 기록용 환급은 앱이 낸
-     * 돈과 무관하다. 한 줄로 합치면 기록용을 돌려준 만큼 같은 회차 결제분 환급이 줄어든다.
-     */
-    private record Refunds(Map<LocalDate, Long> paidByCycle, Map<LocalDate, Long> recordByCycle,
-                           long heldBack) {
-        long total() {
-            return paidByCycle.values().stream().mapToLong(Long::longValue).sum()
-                + recordByCycle.values().stream().mapToLong(Long::longValue).sum();
-        }
-
-        boolean recordOnly() {
-            return !recordByCycle.isEmpty();
-        }
-    }
-
-    /**
-     * 회차별 환급액.
-     *
-     * <p>앱이 결제한 몫은 그 회차 크레딧까지만 — 크레딧 = 실제 낸 돈 − 그 회차에서 이미 돌려준 돈
-     * − 지금 청구액. 회차에 묶이지 않은 옛 환급(과납 스윕 등)이 있으면 카드 전체 크레딧에서 그만큼을
-     * 이미 돌려준 것으로 본다 — 두 번 돌려주지 않는다. 기록용 몫은 전액(현실에선 결제일에 이미
-     * 빠졌고 환불로 돌아온 돈이다).
-     *
-     * @param excludeRowId  미리보기 — 이 거래를 청구에서 빼고 {@code afterBillable} 을 더한다
-     */
-    private Refunds computeRefunds(Asset card, CardCycleMath.Plan plan, LocalDateTime at,
-                                   Long excludeRowId, Map<LocalDate, Long> afterBillable) {
-        Map<LocalDate, Long> byCycle = new java.util.TreeMap<>();
-        Map<LocalDate, Long> recordByCycle = new java.util.TreeMap<>();
+    private static List<CardCycleMath.PaidRemoval> removalsOf(CardCycleMath.Plan plan, Asset card) {
         if (card == null) {
-            return new Refunds(byCycle, recordByCycle, 0L);
+            return List.of();
         }
+        return plan.paidRemovals().stream().filter(r -> card.getRowId().equals(r.cardRowId())).toList();
+    }
+
+    /** 이번 정산에서 한 카드가 돌려줄 것 — 회차별 선결제 환급액과 상계로 붙잡을 몫. */
+    private record Refunds(Map<LocalDate, Long> byCycle, long heldBack) {
+        static final Refunds NONE = new Refunds(Map.of(), 0L);
+
+        long total() {
+            return byCycle.values().stream().mapToLong(Long::longValue).sum();
+        }
+    }
+
+    /**
+     * 빠진 몫마다 결제가 덮고 있던 금액(크레딧 = 낸 돈 − 그 회차에서 돌려준 돈 − 지금 청구액)을 잰다.
+     *
+     * <p>닫힌 회차는 덮인 만큼 상계로 붙잡는다(통장 그대로, D1). 열린 회차는 결제계좌가 있으면 덮인 만큼
+     * 돌려주고(D3), 없으면 붙잡는다. 회차에 안 묶인 옛 환급(과납 스윕·이 규칙 전 환급)이 있으면 카드 전체
+     * 크레딧에서 그만큼을 이미 돌려준 것으로 본다 — 두 번 돌려주지 않는다.
+     *
+     * @param excludeRowId 미리보기 — 이 거래를 청구에서 빼고 {@code afterBillable} 을 더한다
+     */
+    private Refunds computeRefunds(Asset card, List<CardCycleMath.PaidRemoval> removals, LocalDateTime at,
+                                   Long excludeRowId, Map<LocalDate, Long> afterBillable) {
+        if (card == null || removals.isEmpty()) {
+            return Refunds.NONE;
+        }
+        Map<LocalDate, Long> byCycle = new java.util.TreeMap<>();
+        List<CardBilling> rows = activeRows(card.getRowId());
+        // 결제계좌는 돌려줄 때만 본다 — 지운 계좌·없는 계좌면 붙잡는다(23차 11).
+        Asset account = usablePaymentAsset(card);
         long heldBack = 0L;
         long paidTotal = 0L;
-        List<CardBilling> rows = activeRows(card.getRowId());
-        for (CardCycleMath.PaidRemoval r : plan.paidRemovals()) {
+        for (CardCycleMath.PaidRemoval r : removals) {
             LocalDate start = r.cycleStart();
-            // 결제로 덮였던 만큼만 — 덮이지 않은 몫(결제가 모자랐던 회차)은 원래 빚이라 빚이 줄 뿐이다.
-            long cover = Math.min(
-                cycleCredit(card.getRowId(), rows, start, at, excludeRowId, afterBillable), r.amount());
+            // 닫힌 회차는 "결제로 정리된 청구" 를 본다 — 빚 캡으로 이체가 청구보다 작았어도(잔액 보정·
+            // 카드 수입이 나머지를 덮음) 그 회차는 전부 정리됐다. 이체액만 붙잡으면 나머지가 카드 잔액을
+            // 양수로 띄워 자정 스윕이 통장으로 보낸다(D1 위반, 인계 25 G2).
+            long credit = r.closed()
+                ? settledCredit(card.getRowId(), rows, start, at, excludeRowId, afterBillable)
+                : cycleCredit(card.getRowId(), rows, start, at, excludeRowId, afterBillable);
+            long cover = Math.min(credit, r.amount());
             if (cover <= 0L) {
                 continue;
             }
-            if (r.refundable()) {
+            if (!r.closed() && account != null) {
                 byCycle.merge(start, cover, Long::sum);
                 paidTotal += cover;
             } else {
-                // 기한이 지났거나 결제계좌가 없다 — 카드가 양수로 떠 스윕이 돌려주지 않게 붙잡는다.
                 heldBack += cover;
             }
         }
@@ -691,40 +725,38 @@ public class CardPaymentServiceImpl implements CardPaymentService {
                 }
             }
         }
-        for (CardCycleMath.Removal r : plan.recordRefunds()) {
-            recordByCycle.merge(r.cycleStart(), r.amount(), Long::sum);
-        }
-        return new Refunds(byCycle, recordByCycle, heldBack);
+        return new Refunds(byCycle, heldBack);
     }
 
-    /** 환급 이체 한 건 + 회차별 REFUNDED 기록(이체에 묶는다 — 환불 취소가 함께 무른다). */
+    /** 돌려줄 결제계좌 — 없거나 지운 계좌면 null. */
+    private static Asset usablePaymentAsset(Asset card) {
+        Asset a = card.getPaymentAsset();
+        return a != null && a.getIsDeleted() != YNType.Y ? a : null;
+    }
+
+    /** 선결제 환급 이체 한 건 + 회차별 REFUNDED 기록(이체에 묶는다 — 환불 취소가 함께 무른다). */
     private Long issueRefund(Asset card, Refunds refunds, String memo, LocalDate today,
                              LocalDateTime at, Long userRowId) {
-        Asset account = card.getPaymentAsset();
+        Asset account = usablePaymentAsset(card);
         AssetServiceDto.TransferInfo info = assetService.createTransfer(
             new AssetServiceDto.CreateTransferCommand(
-                userRowId, card.getRowId(), account.getRowId(), refunds.total(), 0L, 0L,
-                memo != null ? memo : "카드사 환급", at,
+                userRowId, card.getRowId(), account.getRowId(), refunds.total(), 0L, 0L, memo, at,
                 // 과납 스윕이 만드는 환급과 같은 출처 — 사용자가 따로 고치면 잔액이 어긋난다.
                 "CARD_REFUND"));
         AssetTransfer ref = transferRef(info.rowId());
-        refunds.paidByCycle().forEach((start, amount) -> cardBillingRepository.save(CardBilling.refunded(
+        refunds.byCycle().forEach((start, amount) -> cardBillingRepository.save(CardBilling.refunded(
             card, account, amount, start, CardCycleMath.cycleEndOf(start), today, ref)));
-        refunds.recordByCycle().forEach((start, amount) -> cardBillingRepository.save(
-            CardBilling.recordRefunded(card, account, amount, start, CardCycleMath.cycleEndOf(start),
-                today, ref)));
-        log.info("카드 환급 이체 생성: cardRowId={}, amount={}, 결제분={}, 기록용={}, transferRowId={}",
-            card.getRowId(), refunds.total(), refunds.paidByCycle(), refunds.recordByCycle(), info.rowId());
+        log.info("선결제 환급 이체 생성: cardRowId={}, amount={}, 회차={}, transferRowId={}",
+            card.getRowId(), refunds.total(), refunds.byCycle().keySet(), info.rowId());
         return info.rowId();
     }
 
     /**
      * 환불 취소 — 환불 전 모습은 호출자가 이미 되살렸다(환급 이체·붙잡은 몫을 지우고 흐름을 다시
-     * 적재). 여기서는 <b>환불 동안 결제일이 지난 회차</b>만 챙긴다.
+     * 적재). 여기서는 <b>환불 동안 결제일이 된 회차</b>만 챙긴다.
      *
-     * <p>그 회차 결제에는 이 거래가 빠져 있었다. 표식이 덮지 않는 닫힌 회차분 가운데 그 회차
-     * 결제가 덮지 못하는 만큼은 기록용(상계 +)이 되고, 오늘이 결제일인 회차는 그 자리 결제로 채운다.
-     * 환불 전에 이미 결제된 회차는 크레딧이 그대로라 덮인다 — 결제분으로 돌아간다.
+     * <p>그 회차 결제에는 이 거래가 빠져 있었다. 표식이 덮지 않는 닫힌 회차분 가운데 그 회차 결제가
+     * 덮지 못하는 만큼은 기록용(상계 +)이 된다. 환불 전에 이미 결제된 회차는 크레딧이 그대로라 덮인다.
      */
     private CardCycleMath.Plan coveragePlan(Asset card, CardCycleMath.Side after, Long expenseRowId,
                                             LocalDate today, LocalDateTime at) {
@@ -734,49 +766,22 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         long settle = 0L;
         long newRecord = 0L;
         LocalDate lastRecord = null;
-        LocalDate sameDay = null;
         List<CardBilling> rows = activeRows(card.getRowId());
         for (Map.Entry<LocalDate, Long> e : after.dues().entrySet()) {
             LocalDate start = e.getKey();
-            if (CardCycleMath.isRecordOnly(start, after.mark())) {
+            if (CardCycleMath.isRecordOnly(start, after.mark()) || !after.isClosed(start, today)) {
                 continue;
             }
-            if (CardCycleMath.isClosed(start, after.paymentDay(), today)) {
-                long credit = cycleCredit(card.getRowId(), rows, start, at, expenseRowId, null);
-                long record = e.getValue() - Math.min(e.getValue(), credit);
-                if (record > 0L) {
-                    settle += record;
-                    newRecord += record;
-                    lastRecord = start;
-                }
-            } else if (CardCycleMath.isPaymentToday(start, after.paymentDay(), today)) {
-                sameDay = start;
+            long credit = settledCredit(card.getRowId(), rows, start, at, expenseRowId, null);
+            long record = e.getValue() - Math.min(e.getValue(), credit);
+            if (record > 0L) {
+                settle += record;
+                newRecord += record;
+                lastRecord = start;
             }
         }
         LocalDate mark = lastRecord == null ? null : CardCycleMath.cycleEndOf(lastRecord);
-        return new CardCycleMath.Plan(mark, 0L, settle, List.of(), List.of(), 0L, newRecord, sameDay,
-            Map.of(), false);
-    }
-
-    /**
-     * R3 — 결제일 당일에 얹힌 몫을 그 자리에서 결제한다.
-     *
-     * <p>자정 배치는 이미 돌았다. 오늘 저장한 몫은 그 회차의 "남은 청구" 로 잡히니, 늘어난 만큼만
-     * 결제계좌에서 추가로 뺀다(빚 캡 그대로, 결제계좌 없으면 상계).
-     */
-    private long payTodayIfDue(Asset card, Long userRowId, LocalDate today, LocalDateTime now) {
-        if (!isPaymentDay(card.getPaymentDay(), today)) {
-            return 0L;
-        }
-        BillingCycle cycle = upcomingCycle(card, today);
-        long amount = cycle.amount();
-        if (amount <= 0L) {
-            return 0L;
-        }
-        cardBillingRepository.save(payoff(card, card.getPaymentAsset(), amount,
-            cycle.periodStart(), cycle.periodEnd(), today, userRowId, now));
-        log.info("결제일 당일 추가 결제: cardRowId={}, amount={}", card.getRowId(), amount);
-        return amount;
+        return new CardCycleMath.Plan(mark, 0L, settle, List.of(), newRecord, Map.of());
     }
 
     /** 상계 이력의 효력 시각 — 거래 날짜(미래면 지금). */
@@ -789,7 +794,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
      * 회차 하나의 크레딧 — max(0, 실제 낸 돈 − 그 회차에서 돌려준 돈 − 지금 청구액).
      *
      * <p>청구액은 앱이 결제할 몫만 센다(기록용은 뺀다) — 그래야 소급 입력한 거래가 같은 회차의
-     * 다른 거래 환급을 깎지 않는다(케이스 12).
+     * 다른 거래 몫을 깎지 않는다.
      *
      * @param rows 이 카드의 살아 있는 청구 행 — 한 번 읽어 여러 회차에 돌려 쓴다
      */
@@ -799,6 +804,24 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         long bill = grossBill(cardRowId, start, end, at, excludeRowId)
             + (afterBillable != null ? afterBillable.getOrDefault(start, 0L) : 0L);
         return Math.max(0L, paidMoney(rows, start) - statusSum(rows, start, BillingStatus.REFUNDED) - bill);
+    }
+
+    /**
+     * 닫힌 회차의 크레딧 — max(0, 결제로 정리된 청구 − 돌려준 몫 − 지금 청구액).
+     *
+     * <p>{@link #cycleCredit} 은 실제로 나간 돈(이체액)을 보지만, 닫힌 회차는 돈을 돌려주지 않고 카드
+     * 잔액을 그대로 두는 게 목적이라 <b>정리된 청구액</b>(결제 완료 행의 청구액)을 본다. 빚 캡으로 이체가
+     * 적었던 회차·결제계좌 없이 상계로 정리한 회차도 청구 전체가 정리됐다.
+     */
+    private long settledCredit(Long cardRowId, List<CardBilling> rows, LocalDate start, LocalDateTime at,
+                               Long excludeRowId, Map<LocalDate, Long> afterBillable) {
+        LocalDate end = CardCycleMath.cycleEndOf(start);
+        long bill = grossBill(cardRowId, start, end, at, excludeRowId)
+            + (afterBillable != null ? afterBillable.getOrDefault(start, 0L) : 0L);
+        long settled = statusSum(rows, start, BillingStatus.COMPLETED)
+            - statusSum(rows, start, BillingStatus.REFUNDED)
+            - statusSum(rows, start, BillingStatus.RECORD_REFUNDED);
+        return Math.max(0L, settled - bill);
     }
 
     /** 카드 전체 크레딧 — 결제한 회차마다 {@link #cycleCredit} 의 합. */
@@ -846,7 +869,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         return sum;
     }
 
-    /** 그 회차의 순 납부 기록 = 결제 완료 − 환급(결함 2). 다가오는 회차 "이미 낸 돈" 의 재료. */
+    /** 그 회차의 순 납부 기록 = 결제 완료 − 환급(23차 결함 2). 다가오는 회차 "이미 낸 돈" 의 재료. */
     private long netBilledPaid(Long cardRowId, LocalDate start, LocalDate end) {
         // 결제를 취소하면 그 회차 환급 기록이 남아 음수가 될 수 있다 — 음수면 청구가 부풀므로 0 에서 멈춘다.
         return Math.max(0L, cardBillingRepository.sumCompletedAmountByCardAndPeriod(cardRowId, start, end)
@@ -888,53 +911,67 @@ public class CardPaymentServiceImpl implements CardPaymentService {
     }
 
     /**
-     * 닫힌 회차 목록 — 결제 기록이 있는 회차 ∪ 기록용 거래가 떨어진 회차(R2·R4).
+     * 닫힌 회차 목록 — 결제 기록이 있거나 거래가 있는 회차(R4·D10).
      *
-     * <p>결제 기록만 보던 시절엔 소급 입력한 거래가 떨어진 회차를 고를 수 없었다. 기록용 금액은
-     * "현실에선 결제됐지만 앱은 계좌에서 안 뺀 돈" 이라 머리 금액과 따로 내려 준다.
+     * <p>머리 금액은 <b>지금 기록 합</b>이다(D10) — 결제한 뒤 적은 거래·지운 거래까지 반영된 그 회차의
+     * 명세서. 실제로 계좌에서 나간 돈은 따로 내려 화면이 "계좌에서 나간 돈은 …" 을 말하게 한다. 할부는
+     * 거래 날짜가 앞 달이라 이용 내역 목록에 안 나오므로 회차분 구성을 같이 내린다(24차 8).
      */
-    private List<CardPaymentServiceDto.ClosedCycle> closedCycles(Asset card, LocalDate today) {
-        Integer paymentDay = card.getPaymentDay();
-        if (paymentDay == null) {
+    private List<CardPaymentServiceDto.ClosedCycle> closedCycles(Asset card, PaymentSchedule schedule,
+                                                                LocalDate today) {
+        if (!schedule.hasDay()) {
             return List.of();
         }
-        Map<LocalDate, Long> recordByCycle = new java.util.TreeMap<>();
-        List<Expense> marked = entityManager.createQuery(
+        LocalDateTime now = userClock.now(card.getUser().getRowId());
+        List<Expense> txs = entityManager.createQuery(
             "SELECT e FROM Expense e WHERE e.asset.rowId = :cardRowId " +
-            "AND e.cardSettledThrough IS NOT NULL AND e.refundedAt IS NULL " +
-            "AND e.isDeleted = :isDeleted", Expense.class)
+            "AND e.refundedAt IS NULL AND e.expenseDate <= :now AND e.isDeleted = :isDeleted", Expense.class)
             .setParameter("cardRowId", card.getRowId())
+            .setParameter("now", now)
             .setParameter("isDeleted", YNType.N)
             .getResultList();
-        for (Expense e : marked) {
-            CardCycleMath.duesByCycle(e).forEach((start, amount) -> {
-                if (CardCycleMath.isRecordOnly(start, e.getCardSettledThrough())) {
-                    recordByCycle.merge(start, amount, Long::sum);
+        Map<LocalDate, Long> recorded = new java.util.TreeMap<>();
+        Map<LocalDate, List<CardPaymentServiceDto.InstallmentDue>> dues = new java.util.TreeMap<>();
+        for (Expense e : txs) {
+            LocalDate first = CardCycleMath.cycleStartOf(e.getExpenseDate().toLocalDate());
+            Integer payoffSeq = e.isInstallment() ? e.installmentPayoffSequence() : null;
+            for (Map.Entry<LocalDate, Long> part : CardCycleMath.duesByCycle(e).entrySet()) {
+                LocalDate c = part.getKey();
+                if (!schedule.isClosed(c, today)) {
+                    continue;
                 }
-            });
+                recorded.merge(c, part.getValue(), Long::sum);
+                if (e.isInstallment()) {
+                    int seq = (int) java.time.temporal.ChronoUnit.MONTHS.between(first, c) + 1;
+                    dues.computeIfAbsent(c, k -> new ArrayList<>()).add(new CardPaymentServiceDto.InstallmentDue(
+                        e.getRowId(), e.getMerchant(), e.getDescription(), e.getAmount(),
+                        e.getInstallmentMonths(), seq, part.getValue(),
+                        payoffSeq != null && payoffSeq == seq,
+                        CardCycleMath.isRecordOnly(c, e.getCardSettledThrough())));
+                }
+            }
         }
-        java.util.TreeSet<LocalDate> starts = new java.util.TreeSet<>(recordByCycle.keySet());
+        java.util.TreeSet<LocalDate> starts = new java.util.TreeSet<>(recorded.keySet());
         List<CardBilling> rows = activeRows(card.getRowId());
         for (CardBilling b : rows) {
-            if (b.getStatus() == BillingStatus.COMPLETED && b.getPeriodStart() != null) {
+            if (b.getStatus() == BillingStatus.COMPLETED && b.getPeriodStart() != null
+                    && schedule.isClosed(b.getPeriodStart(), today)) {
                 starts.add(b.getPeriodStart());
             }
         }
         LocalDate registered = card.getCreateAt() != null ? card.getCreateAt().toLocalDate() : null;
         List<CardPaymentServiceDto.ClosedCycle> result = new ArrayList<>();
         for (LocalDate start : starts.descendingSet()) {
-            if (!CardCycleMath.isClosed(start, paymentDay, today)) {
-                continue;
-            }
-            LocalDate end = CardCycleMath.cycleEndOf(start);
-            LocalDate paymentDate = CardCycleMath.paymentDateOf(start, paymentDay);
+            LocalDate paymentDate = schedule.paymentDateOf(start);
+            long paid = Math.max(0L, statusSum(rows, start, BillingStatus.COMPLETED)
+                - statusSum(rows, start, BillingStatus.REFUNDED));
+            long rec = recorded.getOrDefault(start, 0L);
             result.add(new CardPaymentServiceDto.ClosedCycle(
-                start, end, paymentDate,
-                Math.max(0L, statusSum(rows, start, BillingStatus.COMPLETED)
-                    - statusSum(rows, start, BillingStatus.REFUNDED)),
-                recordByCycle.getOrDefault(start, 0L),
+                start, CardCycleMath.cycleEndOf(start), paymentDate,
+                paid, rec, Math.max(0L, rec - paid),
                 registered != null && paymentDate.isBefore(registered),
-                CardCycleMath.refundableUntil(start, paymentDay)));
+                null,
+                dues.getOrDefault(start, List.of())));
         }
         return result;
     }
@@ -950,7 +987,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             // 결제일 미설정 — 회차를 당월 1일~말일로 본다(체크카드 월 사용액과 같은 기준).
             // 종전엔 잔액 전액을 청구했는데, 절대값이라 잔액이 양수여도 그만큼 또 청구해
             // 결제할수록 더 양수가 되는 결함이 있었다.
-            LocalDate today = userClock.today(card.getUser().getRowId());
+            LocalDate today = cycleToday();
             periodStart = today.withDayOfMonth(1);
             periodEnd = today.withDayOfMonth(today.lengthOfMonth());
         } else {
@@ -1074,7 +1111,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             dues.add(new CardPaymentServiceDto.InstallmentDue(
                 e.getRowId(), e.getMerchant(), e.getDescription(),
                 e.getAmount(), e.getInstallmentMonths(), seq, due,
-                payoffSeq != null && payoffSeq == seq));
+                payoffSeq != null && payoffSeq == seq, false));
         }
         return dues;
     }

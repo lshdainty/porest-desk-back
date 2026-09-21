@@ -94,7 +94,7 @@ class NotificationTriggerSchedulerTest {
     private NotificationTriggerScheduler scheduler() {
         return new NotificationTriggerScheduler(
                 notificationService, notificationMessages, notificationRepository, eventReminderRepository,
-                expenseBudgetRepository, expenseRepository, expenseService,
+                expenseBudgetRepository, expenseService,
                 serviceClock, userClock, todoRepository, userService);
     }
 
@@ -181,10 +181,9 @@ class NotificationTriggerSchedulerTest {
         given(expenseBudgetRepository.findAllByYearAndMonth(today.getYear(), today.getMonthValue()))
                 .willReturn(List.of(budget));
         given(userService.getBudgetAlertThreshold(USER_ID)).willReturn(85);
-        // 전체 예산은 카테고리 집계가 아니라 월 전체 지출 합을 본다.
-        given(expenseRepository.findByUser(eq(USER_ID), any(), eq(ExpenseType.EXPENSE), any(), any()))
-                .willReturn(List.of(Expense.createExpense(u, category(u, "식비"), null, ExpenseType.EXPENSE,
-                        9_000L, "x", today.atStartOfDay(), null, null, null, null, null, null)));
+        // 전체 예산은 카테고리 집계가 아니라 월 전체 지출 합을 본다(가계부 합계와 같은 규칙).
+        given(expenseService.getMonthlyExpenseTotal(USER_ID, today.getYear(), today.getMonthValue()))
+                .willReturn(9_000L);
         given(notificationRepository.existsByUserAndReferenceAndCreatedAfter(
                 eq(USER_ID), any(), anyLong(), any())).willReturn(false);
 

@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -40,6 +41,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
@@ -75,6 +77,13 @@ class CardCarryoverTest {
     @Mock private SecuritiesPriceProvider priceProvider;
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
     @Mock private com.porest.desk.stock.service.StockMasterResolver stockMasterResolver;
+    // 회차별 결제일(D5) — 이력이 비어 있으면 카드의 지금 결제일 하나로 센다. 닫힌 회차의 "오늘"은 서울 시계(D11).
+    private final com.porest.desk.asset.repository.AssetPaymentDayHistoryRepository paymentDayHistory =
+        org.mockito.Mockito.mock(com.porest.desk.asset.repository.AssetPaymentDayHistoryRepository.class);
+    @org.mockito.Spy private com.porest.desk.card.service.PaymentScheduleService paymentScheduleService =
+        new com.porest.desk.card.service.PaymentScheduleService(paymentDayHistory);
+    @org.mockito.Spy private com.porest.core.time.ServiceClock serviceClock =
+        new com.porest.core.time.ServiceClock("Asia/Seoul");
 
     @InjectMocks private AssetServiceImpl sut;
 
@@ -91,6 +100,8 @@ class CardCarryoverTest {
             .thenReturn(Optional.empty());
         lenient().when(expenseRepository.save(any()))
             .thenAnswer(inv -> inv.getArgument(0));
+        // 이월 거래(9/1)가 든 9월 회차는 10/12 결제 — 그 전으로 고정해 이월 칸이 열려 있게 한다(D15).
+        lenient().doReturn(java.time.LocalDate.of(2026, 9, 10)).when(serviceClock).today();
     }
 
     private User user(long rowId) {
@@ -101,23 +112,45 @@ class CardCarryoverTest {
 
     private Asset card(long rowId) {
         Asset a = Asset.createAsset(user(USER_ID), "현대카드", AssetType.CREDIT_CARD, -100_000L,
-            "KRW", null, null, null, null, 0, YNType.Y, null, null, null, null);
+            "KRW", null, null, null, null, 0, YNType.Y, null, null, 12, null);
         ReflectionTestUtils.setField(a, "rowId", rowId);
         return a;
     }
 
     private AssetServiceDto.CreateAssetCommand createCommand(AssetType type, Long balance) {
+        // 신용카드는 결제일이 있어야 한다(D8).
         return new AssetServiceDto.CreateAssetCommand(
             USER_ID, "현대카드", type, balance, null, "KRW",
             null, null, null, null, 0,
-            YNType.Y, YNType.N, null, null, null, null, List.of());
+            YNType.Y, YNType.N, null, null, type == AssetType.CREDIT_CARD ? 12 : null, null, List.of());
     }
 
+    /** 옛 앱처럼 잔액 칸에 값을 실어 보낸다 — 신용카드는 무시한다(D7). */
     private AssetServiceDto.UpdateAssetCommand balanceTo(Long balance) {
         return new AssetServiceDto.UpdateAssetCommand(
             Patch.absent(), Patch.absent(), Patch.set(balance), Patch.absent(), Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
             Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null);
+    }
+
+    /** 이월 금액 칸(D7) — 신용카드는 이 키로만 이월 거래를 고친다. */
+    private AssetServiceDto.UpdateAssetCommand carryoverTo(Long amount) {
+        return new AssetServiceDto.UpdateAssetCommand(
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+            Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), null,
+            Patch.set(amount));
+    }
+
+    private Expense existingCarryover(Asset asset) {
+        Expense existing = Expense.createExpense(
+            user(USER_ID), null, asset, ExpenseType.EXPENSE, 100_000L, "이전 미결제 사용액",
+            java.time.LocalDateTime.of(2026, 9, 1, 10, 0), "이전 미결제 사용액",
+            null, null, null, null, null);
+        ReflectionTestUtils.setField(existing, "rowId", 7L);
+        given(expenseRepository.findActiveByAssetAndAutoSource(CARD_ID, "CARD_CARRYOVER"))
+            .willReturn(Optional.of(existing));
+        return existing;
     }
 
     private Expense savedCarryover() {
@@ -177,19 +210,41 @@ class CardCarryoverTest {
     class OnUpdate {
 
         @Test
+        @DisplayName("잔액 칸은 무시한다 — 옛 폼이 지금 잔액을 실어 보내 이월 거래를 덮어쓰던 결함(D7)")
+        void balanceIsIgnored() {
+            Asset asset = card(CARD_ID);
+            given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(asset));
+            Expense existing = existingCarryover(asset);
+
+            var info = sut.updateAsset(CARD_ID, USER_ID, balanceTo(-999_000L));
+
+            assertThat(existing.getAmount()).isEqualTo(100_000L);
+            assertThat(info.carryoverAmount()).isEqualTo(100_000L);
+            then(balanceHistoryService).should(never()).removeExpense(7L);
+        }
+
+        @Test
+        @DisplayName("이월 거래가 든 회차의 결제일이 되면 금액을 못 고친다(D15)")
+        void lockedAfterPaymentDay() {
+            Asset asset = card(CARD_ID);
+            given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(asset));
+            Expense existing = existingCarryover(asset);
+            doReturn(java.time.LocalDate.of(2026, 10, 12)).when(serviceClock).today();
+
+            assertThatThrownBy(() -> sut.updateAsset(CARD_ID, USER_ID, carryoverTo(40_000L)))
+                .isInstanceOf(com.porest.core.exception.InvalidValueException.class)
+                .hasMessage(com.porest.desk.common.exception.DeskErrorCode.ASSET_CARD_CARRYOVER_LOCKED.getMessageKey());
+            assertThat(existing.getAmount()).isEqualTo(100_000L);
+        }
+
+        @Test
         @DisplayName("금액을 바꾸면 거래 금액이 바뀌고 앵커는 안 찍는다")
         void editChangesExpenseNotAnchor() {
             Asset asset = card(CARD_ID);
             given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(asset));
-            Expense existing = Expense.createExpense(
-                user(USER_ID), null, asset, ExpenseType.EXPENSE, 100_000L, "이전 미결제 사용액",
-                java.time.LocalDateTime.of(2026, 9, 1, 10, 0), "이전 미결제 사용액",
-                null, null, null, null, null);
-            ReflectionTestUtils.setField(existing, "rowId", 7L);
-            given(expenseRepository.findActiveByAssetAndAutoSource(CARD_ID, "CARD_CARRYOVER"))
-                .willReturn(Optional.of(existing));
+            Expense existing = existingCarryover(asset);
 
-            sut.updateAsset(CARD_ID, USER_ID, balanceTo(40_000L));
+            sut.updateAsset(CARD_ID, USER_ID, carryoverTo(40_000L));
 
             assertThat(existing.getAmount()).isEqualTo(40_000L);
             then(balanceHistoryService).should(never()).recordManual(any(), anyLong(), any());
@@ -204,15 +259,9 @@ class CardCarryoverTest {
         void zeroDeletesExpense() {
             Asset asset = card(CARD_ID);
             given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(asset));
-            Expense existing = Expense.createExpense(
-                user(USER_ID), null, asset, ExpenseType.EXPENSE, 100_000L, "이전 미결제 사용액",
-                java.time.LocalDateTime.of(2026, 9, 1, 10, 0), "이전 미결제 사용액",
-                null, null, null, null, null);
-            ReflectionTestUtils.setField(existing, "rowId", 7L);
-            given(expenseRepository.findActiveByAssetAndAutoSource(CARD_ID, "CARD_CARRYOVER"))
-                .willReturn(Optional.of(existing));
+            Expense existing = existingCarryover(asset);
 
-            sut.updateAsset(CARD_ID, USER_ID, balanceTo(0L));
+            sut.updateAsset(CARD_ID, USER_ID, carryoverTo(0L));
 
             assertThat(existing.getIsDeleted()).isEqualTo(YNType.Y);
             then(balanceHistoryService).should().removeExpense(7L);
