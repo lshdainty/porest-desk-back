@@ -182,7 +182,8 @@ public class AssetServiceImpl implements AssetService {
         return info.withCardState(
             carryover != null ? carryover.getAmount() : 0L,
             carryoverLocked(carryover, schedule, today),
-            schedule != null ? schedule.closedThrough(today) : null);
+            schedule != null ? schedule.closedThrough(today) : null,
+            schedule != null ? schedule.firstOpenPaymentDate(today) : null);
     }
 
     /** 이월 거래가 든 회차의 결제일이 됐는가 — 됐으면 그 금액은 이미 결제에 들어갔다(D15). */

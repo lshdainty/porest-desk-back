@@ -470,6 +470,13 @@ class ClosedCycleRulesScenarioTest {
             today(LocalDate.of(2026, 9, 14));
 
             rejectedWith(() -> moveTo(id, LocalDate.of(2026, 9, 2)), DeskErrorCode.EXPENSE_CARRYOVER_READONLY);
+            // 환불·삭제·고쳐 쓰기도 같은 문구로 카드 설정을 가리킨다 — "원래 거래(매도·이체)" 가 아니다(QA 26 2).
+            rejectedWith(() -> expenseService.refund(id, user.getRowId(), null),
+                DeskErrorCode.EXPENSE_CARRYOVER_READONLY);
+            rejectedWith(() -> expenseService.deleteExpense(id, user.getRowId()),
+                DeskErrorCode.EXPENSE_CARRYOVER_READONLY);
+            rejectedWith(() -> replace(id, LocalDate.of(2026, 9, 1), 50_000L),
+                DeskErrorCode.EXPENSE_CARRYOVER_READONLY);
         }
     }
 
@@ -635,6 +642,7 @@ class ClosedCycleRulesScenarioTest {
         void rejections() {
             augustPaid();
             Long open = spend(LocalDate.of(2026, 9, 14), LocalDate.of(2026, 9, 13), 10_000L);
+            assertThat(info(open).replaceable()).as("잠기지 않은 거래엔 [고쳐 쓰기] 가 없다").isFalse();
             rejectedWith(() -> replace(open, LocalDate.of(2026, 9, 13), 9_000L),
                 DeskErrorCode.EXPENSE_REPLACE_NOT_LOCKED);
 
@@ -644,11 +652,16 @@ class ClosedCycleRulesScenarioTest {
                 DeskErrorCode.REFUNDED_READONLY);
 
             Long installment = spend(LocalDate.of(2026, 9, 14), LocalDate.of(2026, 8, 10), 90_000L, 3, card);
+            assertThat(info(installment).replaceable()).isTrue();
             cardPaymentService.payoffInstallment(card.getRowId(), installment, user.getRowId());
+            var paidOff = info(installment);
+            assertThat(paidOff.moneyLocked()).isTrue();
+            assertThat(paidOff.replaceable()).as("중도 정리한 할부는 잠겼지만 고쳐 쓸 수 없다(QA 26 3)").isFalse();
             rejectedWith(() -> replace(installment, LocalDate.of(2026, 8, 10), 90_000L),
                 DeskErrorCode.EXPENSE_REPLACE_PAID_OFF);
 
             Long paid = spend(LocalDate.of(2026, 9, 14), LocalDate.of(2026, 8, 22), 7_000L);
+            assertThat(info(paid).replaceable()).isTrue();
             var fresh = replace(paid, LocalDate.of(2026, 8, 22), 7_000L);
             assertThat(fresh.rowId()).isNotEqualTo(paid);
             assertThatThrownBy(() -> replace(paid, LocalDate.of(2026, 8, 22), 7_000L))
@@ -917,6 +930,10 @@ class ClosedCycleRulesScenarioTest {
             var b = cardPaymentService.getCardBilling(c.getRowId(), user.getRowId());
             assertThat(b.nextPaymentDate()).isEqualTo(LocalDate.of(2026, 9, 25));
             assertThat(b.nextCycle().paymentDate()).isEqualTo(LocalDate.of(2026, 10, 5));
+            // 자산 응답도 옛 결제일로 나갈 회차의 실제 결제일을 준다 — 화면이 지금 결제일(5일)로 세면 9/5 가 된다(QA 26 4).
+            var asset = assetService.getAsset(c.getRowId(), user.getRowId());
+            assertThat(asset.paymentDay()).isEqualTo(5);
+            assertThat(asset.nextPaymentDate()).isEqualTo(LocalDate.of(2026, 9, 25));
             midnight(LocalDate.of(2026, 9, 25));
             assertThat(balance(bank)).as("8월분은 옛 결제일(9/25)에").isEqualTo(-100_000L);
             midnight(LocalDate.of(2026, 10, 5));
@@ -937,6 +954,8 @@ class ClosedCycleRulesScenarioTest {
             var b = cardPaymentService.getCardBilling(c.getRowId(), user.getRowId());
             assertThat(b.nextPaymentDate()).isEqualTo(LocalDate.of(2026, 10, 5));
             assertThat(b.nextCycle().paymentDate()).isEqualTo(LocalDate.of(2026, 11, 25));
+            assertThat(assetService.getAsset(c.getRowId(), user.getRowId()).nextPaymentDate())
+                .isEqualTo(LocalDate.of(2026, 10, 5));
             midnight(LocalDate.of(2026, 10, 5));
             assertThat(balance(bank)).isEqualTo(-20_000L);
             var info = assetService.getAsset(c.getRowId(), user.getRowId());

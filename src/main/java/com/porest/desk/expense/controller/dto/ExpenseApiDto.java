@@ -183,7 +183,12 @@ public class ExpenseApiDto {
          * 돈 칸 잠금(D12) — true 면 금액·날짜·시간·자산·할부·유형·통화 3칸·결제수단을 못 고친다.
          * 카테고리·가맹점·메모만 고치고, 돈 칸은 {@code POST /expense/{id}/replace}(고쳐 쓰기)로 바꾼다.
          */
-        boolean moneyLocked
+        boolean moneyLocked,
+        /**
+         * [고쳐 쓰기]를 띄울 수 있는가 — 잠겼고 환불·시스템 거래·중도 정리 할부가 아닌 거래.
+         * false 인 잠긴 거래(중도 정리한 할부)는 돈 칸을 바꿀 길이 없다.
+         */
+        boolean replaceable
     ) {
         public static Response from(ExpenseServiceDto.ExpenseInfo info) {
             return new Response(
@@ -216,7 +221,8 @@ public class ExpenseApiDto {
                 info.refundedAmount(),
                 info.cardSettledThrough(),
                 info.recordOnlyAmount(),
-                info.moneyLocked()
+                info.moneyLocked(),
+                info.replaceable()
             );
         }
     }
