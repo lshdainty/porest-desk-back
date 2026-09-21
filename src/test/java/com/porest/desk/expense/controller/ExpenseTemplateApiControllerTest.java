@@ -79,7 +79,8 @@ class ExpenseTemplateApiControllerTest {
             null,       // autoSource — 손으로 쓴 거래
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of(),
-            null);      // refundedAmount — 조회에는 없다
+            null,       // refundedAmount — 조회에는 없다
+            null, null); // cardSettledThrough · recordOnlyAmount — 기록용 아님
     }
 
     @Test

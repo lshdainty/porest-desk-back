@@ -13,6 +13,12 @@ package com.porest.desk.asset.type;
  *   <li>{@link #EXPENSE} (flow) — 수입/지출 거래. INCOME=+amount, EXPENSE=-amount</li>
  *   <li>{@link #TRANSFER} (flow) — 자산 이체. 출금자산=-(amount+fee), 입금자산=+amount</li>
  *   <li>{@link #TRADE} (flow) — 매수·매도. 매수=-(대금+수수료), 매도=+(대금-수수료). 예수금만 움직인다</li>
+ *   <li>{@link #CARD_SETTLED} (flow) — 신용카드 빚을 <b>이체 없이</b> 정리한 몫. source = 거래.
+ *       닫힌 회차에 소급 입력한 지출(기록용)은 현실에서 이미 결제가 끝났으므로 +금액으로 빚을
+ *       상계하고, 기한 지난 결제분을 지우면 −금액으로 잔액을 붙잡아 과납 스윕이 돌려주지 않게 한다</li>
+ *   <li>{@link #CARD_REFUND_HOLD} (flow) — 환불 마크 때 돌려주지 않고 붙잡은 몫. source = 거래.
+ *       {@link #CARD_SETTLED} 와 따로 두는 까닭은 환불 취소가 이것만 지워 환불 전 모습으로 정확히
+ *       돌아가게 하려는 것이다</li>
  * </ul>
  */
 public enum BalanceSourceType {
@@ -21,7 +27,9 @@ public enum BalanceSourceType {
     VALUATION(true),
     EXPENSE(false),
     TRANSFER(false),
-    TRADE(false);
+    TRADE(false),
+    CARD_SETTLED(false),
+    CARD_REFUND_HOLD(false);
 
     private final boolean absolute;
 

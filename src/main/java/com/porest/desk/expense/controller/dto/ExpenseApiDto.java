@@ -171,7 +171,14 @@ public class ExpenseApiDto {
          * 이 저장이 <b>방금 만든</b> 카드 환급액 (없으면 null) — 거래의 속성이 아니라
          * 그 요청의 결과다. 조회에는 늘 null 이다(설계 13-1).
          */
-        Long refundedAmount
+        Long refundedAmount,
+        /**
+         * 이 날짜(회차 말일)까지의 카드 회차분은 계좌 이체 없이 정리된 기록용 (null = 정상).
+         * 화면이 "기록만" 배지를 단다(닫힌 회차 규칙 R2).
+         */
+        java.time.LocalDate cardSettledThrough,
+        /** 기록만 남긴 금액 — 할부는 지난 회차분만이라 거래 금액보다 작을 수 있다 (null = 없음). */
+        Long recordOnlyAmount
     ) {
         public static Response from(ExpenseServiceDto.ExpenseInfo info) {
             return new Response(
@@ -201,7 +208,9 @@ public class ExpenseApiDto {
                 info.createAt(),
                 info.modifyAt(),
                 info.splitCategoryRowIds(),
-                info.refundedAmount()
+                info.refundedAmount(),
+                info.cardSettledThrough(),
+                info.recordOnlyAmount()
             );
         }
     }
@@ -378,10 +387,22 @@ public class ExpenseApiDto {
      * <p>{@code applies=false} 면 돌려줄 돈이 없다. {@code reason} 으로 화면이 문구를 고른다:
      * {@code OK}(금액 줄) · {@code ALREADY_REFUNDED}("이미 환급된 거래") · 나머지(줄 없음).
      */
+    /**
+     * 카드 정산 미리보기.
+     *
+     * <p>{@code reason}: OK · RECORD_ONLY_OK(기록용 몫이 기한 안에 빠져 전액 돌아감) ·
+     * REFUND_WINDOW_CLOSED(결제한 달이 지나 기록만 정리) · NO_PAYMENT_ASSET · NOT_PAID_CYCLE ·
+     * ALREADY_REFUNDED · NOT_CARD.
+     */
     @Schema(name = "ExpenseRefundPreviewResponse")
-    public record RefundPreviewResponse(boolean applies, long refundAmount, String reason) {
+    public record RefundPreviewResponse(boolean applies, long refundAmount, String reason,
+                                        /** 이번 저장으로 기록만 남는 금액 — 닫힌 회차(R2). */
+                                        long newRecordAmount,
+                                        /** 오늘이 결제일이라 결제계좌에서 추가로 빠질 금액(R3). */
+                                        long sameDayExtraPayment) {
         public static RefundPreviewResponse from(ExpenseServiceDto.RefundPreviewInfo info) {
-            return new RefundPreviewResponse(info.applies(), info.refundAmount(), info.reason());
+            return new RefundPreviewResponse(info.applies(), info.refundAmount(), info.reason(),
+                info.newRecordAmount(), info.sameDayExtraPayment());
         }
     }
 

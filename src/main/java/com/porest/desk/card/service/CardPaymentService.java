@@ -44,32 +44,22 @@ public interface CardPaymentService {
     void processDueCardPayments(LocalDate today);
 
     /**
-     * 이미 낸 돈이 지금 청구보다 많으면 그만큼 결제계좌로 돌려준다.
+     * 거래 한 건의 변경을 닫힌 회차 규칙(R1~R8)으로 정산한다.
      *
-     * <p>환불 마크·삭제·감액으로 <b>결제 완료 회차의 카드 거래가 줄어들었을 때</b> 부른다.
-     * 회차마다 {@code 크레딧 = 실제 낸 이체액 합 − 지금 다시 계산한 회차 청구액} 을 재고
-     * 양수만 더한 뒤, 이미 나간 환급을 빼고 {@code cap}(환불·감액된 금액)까지만 돌려준다.
+     * <p>create·update·delete·환불·환불 취소가 DB 를 바꾼 <b>뒤</b> 부른다. 표식을 박고, 기록용
+     * 몫을 상계로 카드에 붙잡거나 걷고, 결제한 달 안에 빠진 몫은 결제계좌로 돌려주고, 결제일
+     * 당일 회차에 얹힌 몫은 그 자리에서 결제한다.
      *
-     * <p>"COMPLETED 가 있으면 전액" 으로 하면 <b>부분 선결제 회차와 할부에서 과다 환급</b>
-     * 된다 — 남은 청구가 있는데도 낸 돈 전부를 돌려주게 된다. 잔액 부호로 판정하는 것도
-     * 틀린다: 뒤에 쌓인 지출 때문에 잔액이 여전히 음수일 수 있다(네이버 현대카드 실사례).
-     *
-     * @param cap 돌려줄 상한 — 환불액 또는 줄어든 금액
-     * @return 만든 환급 이체와 금액. 돌려줄 크레딧이 없거나 결제계좌가 없으면 {@code null}
+     * <p>앱이 결제한 몫의 환급은 그 회차의 크레딧(실제 낸 돈 − 이미 돌려준 돈 − 지금 청구액)을
+     * 넘지 않는다. "빠진 금액 전액" 으로 하면 부분 선결제 회차와 할부에서 과다 환급된다.
      */
-    CardPaymentServiceDto.RefundResult refundCreditIfOverpaid(
-        Long cardRowId, long cap, String memo, java.time.LocalDateTime at, Long userRowId);
+    CardPaymentServiceDto.SettlementResult settleExpenseChange(CardPaymentServiceDto.SettlementCommand cmd);
 
     /**
-     * 같은 크레딧 식으로 <b>미리</b> 센다 — 삭제·감액 확인창이 금액을 보여 줄 수 있게(설계 13-1).
+     * 같은 판정을 <b>미리</b> — 삭제·수정·환불·저장 확인창의 재료. DB 를 바꾸지 않는다.
      *
-     * <p>DB 를 바꾸지 않는다. {@code change} 가 말하는 "바뀐 뒤 모습" 으로 회차 청구액을
-     * 다시 세고, {@link #refundCreditIfOverpaid} 와 <b>같은 함수</b>를 인자만 달리해 부른다 —
-     * 산식을 복사해 두면 확인창 금액과 실제 이체액이 갈린다.
-     *
-     * @param cap 돌려줄 상한 — 삭제면 거래 금액, 감액이면 줄어든 금액
+     * <p>{@code cmd.expense()} 는 바뀌기 <b>전</b> 상태다. 청구액은 이 거래를 질의에서 빼고
+     * 바뀐 뒤 모습의 몫을 다시 더해 센다 — 실행과 같은 함수를 인자만 달리해 부른다.
      */
-    CardPaymentServiceDto.RefundPreview previewRefundCredit(
-        Long cardRowId, long cap, CardPaymentServiceDto.ExpenseChange change,
-        java.time.LocalDateTime at);
+    CardPaymentServiceDto.SettlementPreview previewExpenseChange(CardPaymentServiceDto.SettlementCommand cmd);
 }

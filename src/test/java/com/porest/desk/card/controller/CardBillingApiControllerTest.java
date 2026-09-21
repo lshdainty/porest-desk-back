@@ -70,7 +70,10 @@ class CardBillingApiControllerTest {
                         7L, "가맹점", null, 60000L, 6, 2, 10000L, false)),
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                 LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()),
-            null);
+            null,
+            List.of(new CardPaymentServiceDto.ClosedCycle(
+                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 15),
+                300L, 25000L, true, LocalDate.of(2026, 7, 31))));
         given(cardPaymentService.getCardBilling(50L, 1L)).willReturn(info);
 
         mockMvc.perform(get("/api/v1/asset/{id}/billing", 50L))
@@ -89,7 +92,13 @@ class CardBillingApiControllerTest {
                 .andExpect(jsonPath("$.data.paymentDay").value(15))
                 .andExpect(jsonPath("$.data.paymentAssetRowId").value(200))
                 .andExpect(jsonPath("$.data.history[0].rowId").value(1))
-                .andExpect(jsonPath("$.data.history[0].status").value("COMPLETED"));
+                .andExpect(jsonPath("$.data.history[0].status").value("COMPLETED"))
+                // 닫힌 회차 — 결제한 금액과 기록만 남긴 금액을 따로, 등록 전 회차 표시와 환급 기한까지.
+                .andExpect(jsonPath("$.data.closedCycles[0].paymentDate").value("2026-07-15"))
+                .andExpect(jsonPath("$.data.closedCycles[0].paidAmount").value(300))
+                .andExpect(jsonPath("$.data.closedCycles[0].recordedOnlyAmount").value(25000))
+                .andExpect(jsonPath("$.data.closedCycles[0].preRegistration").value(true))
+                .andExpect(jsonPath("$.data.closedCycles[0].refundableUntil").value("2026-07-31"));
 
         verify(cardPaymentService).getCardBilling(eq(50L), eq(1L));
     }

@@ -57,15 +57,25 @@ public interface ExpenseService {
     ExpenseServiceDto.ExpenseInfo cancelRefund(Long expenseId, Long userRowId);
 
     /**
-     * 이 거래를 지우거나 고치면 결제계좌로 <b>얼마가 돌아오는지</b> 미리 센다(설계 13-1).
+     * 이 거래를 지우거나 고치면 돈이 <b>어떻게 움직이는지</b> 미리 센다(설계 13-1, 닫힌 회차 R2·R3·R6).
      *
-     * <p>DB 를 바꾸지 않는다. 세 인자를 모두 비우면 삭제 미리보기(전액 기준)다.
+     * <p>DB 를 바꾸지 않는다. 네 인자를 모두 비우면 삭제 미리보기다. 환불 확인창도 삭제
+     * 미리보기를 쓴다 — 돈과 집계는 삭제와 똑같이 움직인다.
      *
-     * @param amountAfter     수정 뒤 금액 (null = 그대로)
-     * @param assetRowIdAfter 수정 뒤 자산 (null = 그대로)
-     * @param dateAfter       수정 뒤 일시 (null = 그대로)
+     * @param amountAfter            수정 뒤 금액 (null = 그대로)
+     * @param assetRowIdAfter        수정 뒤 자산 (null = 그대로)
+     * @param dateAfter              수정 뒤 일시 (null = 그대로)
+     * @param installmentMonthsAfter 수정 뒤 할부 개월 (null = 그대로)
      */
     ExpenseServiceDto.RefundPreviewInfo refundPreview(
         Long expenseId, Long userRowId, Long amountAfter, Long assetRowIdAfter,
-        java.time.LocalDateTime dateAfter);
+        java.time.LocalDateTime dateAfter, Integer installmentMonthsAfter);
+
+    /**
+     * 새 카드 지출을 저장하면 어떻게 되는지 미리 센다 — 닫힌 회차면 기록만(R2), 결제일 당일이면
+     * 결제계좌에서 추가로 빠진다(R3). DB 를 바꾸지 않는다.
+     */
+    ExpenseServiceDto.RefundPreviewInfo cardSavePreview(
+        Long userRowId, Long assetRowId, Long amount, java.time.LocalDateTime expenseDate,
+        Integer installmentMonths);
 }

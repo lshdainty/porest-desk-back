@@ -95,7 +95,90 @@ public class CardPaymentServiceDto {
          * 없으면(결제일 미설정) null. 종전엔 다가오는 회차 하나만 내려 지금 쓰는 내역이
          * 결제일이 지나기 전엔 어느 회차에도 안 보였다.
          */
-        UpcomingCycle nextCycle
+        UpcomingCycle nextCycle,
+        /**
+         * 닫힌 회차(결제일이 지난) — 회차 선택기의 과거 칸. 결제 기록이 있는 회차와 기록용
+         * 거래가 있는 회차의 합집합이다. 종전엔 결제 기록이 있는 회차만 골라져서, 소급 입력한
+         * 거래가 떨어진 회차는 볼 방법이 없었다(닫힌 회차 규칙 R2·R4).
+         */
+        List<ClosedCycle> closedCycles
+    ) {}
+
+    /**
+     * 닫힌 회차 하나.
+     *
+     * @param paidAmount          앱이 실제로 결제한 순 금액(결제 − 환급)
+     * @param recordedOnlyAmount  기록만 남긴 금액 — 현실에선 결제됐지만 앱은 계좌에서 안 뺐다
+     * @param preRegistration     카드 등록 전 회차 — 실제와 안 맞을 수 있다는 주의 문구용(R4)
+     * @param refundableUntil     이 회차 거래를 지우거나 환불하면 결제계좌로 돌려주는 기한(R6)
+     */
+    public record ClosedCycle(
+        LocalDate periodStart,
+        LocalDate periodEnd,
+        LocalDate paymentDate,
+        long paidAmount,
+        long recordedOnlyAmount,
+        boolean preRegistration,
+        LocalDate refundableUntil
+    ) {}
+
+    /**
+     * 거래 한 건의 변경을 카드 회차 규칙으로 정산해 달라는 요청.
+     *
+     * @param expense              대상 거래 — 실행은 바뀐 뒤 상태, 미리보기는 바뀌기 전 상태
+     * @param before               바뀌기 전 모습(create 는 none)
+     * @param after                바뀐 뒤 모습(delete·환불은 none)
+     * @param refundMemo           환급 이체 메모
+     * @param mode                 무슨 변경인가 — 환불과 환불 취소는 서로를 정확히 되돌려야 해서 따로 다룬다
+     */
+    public record SettlementCommand(
+        Expense expense,
+        com.porest.desk.card.service.CardCycleMath.Side before,
+        com.porest.desk.card.service.CardCycleMath.Side after,
+        String refundMemo,
+        Long userRowId,
+        SettlementMode mode
+    ) {}
+
+    /**
+     * 정산 종류.
+     *
+     * <ul>
+     *   <li>{@code CHANGE} — 저장·수정·삭제. 표식을 새로 세고 상계를 더하고 뺀다</li>
+     *   <li>{@code REFUND} — 환불 마크. 표식과 상계는 그대로 두고, 이번에 붙잡은 몫은 따로
+     *       ({@code CARD_REFUND_HOLD}) 남긴다 — 환불 취소가 그것만 지우면 환불 전 모습으로 돌아간다</li>
+     *   <li>{@code CANCEL_REFUND} — 환불 취소. 환불 동안 결제일이 지나 그 결제에 이 거래가 빠진
+     *       회차는 기록용으로, 오늘이 결제일인 회차는 그 자리 결제로 채운다</li>
+     * </ul>
+     */
+    public enum SettlementMode { CHANGE, REFUND, CANCEL_REFUND }
+
+    /** 정산 결과 — 환급 이체·금액, 새 표식, 새로 기록용이 된 금액, 결제일 당일 추가 결제액. */
+    public record SettlementResult(
+        Long refundTransferRowId,
+        long refundedAmount,
+        LocalDate newMark,
+        long newRecordAmount,
+        long sameDayPaid
+    ) {}
+
+    /**
+     * 정산 미리보기 — 확인창 재료.
+     *
+     * @param refundAmount        결제계좌로 돌아갈 금액
+     * @param recordOnlyRefund    그 안에 기록용 몫이 있다
+     * @param windowClosed        빠지는 몫이 있지만 환급 기한이 지났다
+     * @param noPaymentAsset      결제계좌가 없는 카드
+     * @param newRecordAmount     새로 기록용이 되는 금액(닫힌 회차 저장)
+     * @param sameDayExtraPayment 결제일 당일 저장으로 추가로 빠질 금액(R3)
+     */
+    public record SettlementPreview(
+        long refundAmount,
+        boolean recordOnlyRefund,
+        boolean windowClosed,
+        boolean noPaymentAsset,
+        long newRecordAmount,
+        long sameDayExtraPayment
     ) {}
 
     /** 회차 하나 — 결제일·청구 기간·예정액(선결제 차감 후)·구성. */
@@ -110,20 +193,11 @@ public class CardPaymentServiceDto {
     ) {}
 
     /**
-     * 실제로 만든 환급 — 이체 아이디와 <b>금액</b>을 함께 돌려준다.
-     *
-     * <p>아이디는 환불 마크가 취소 때 되돌릴 이체를 가리키는 데 쓰고, 금액은 화면이
-     * "결제계좌로 N원이 환급됐어요" 를 말하는 데 쓴다(설계 13-1의 사후 토스트).
+     * 미리보기 사유 — 화면이 확인창 문구를 고르는 키(설계 13-1, 닫힌 회차 R6).
      */
-    public record RefundResult(Long transferRowId, long amount) {}
+    public static final class RefundPreview {
+        private RefundPreview() {}
 
-    /**
-     * 카드 환급 미리보기 — 확인창이 "얼마가 돌아오나" 를 그릴 재료(설계 13-1).
-     *
-     * <p>{@code applies=false} 면 이 변경으로 돌려줄 돈이 없다. {@code reason} 은 화면이
-     * 문구를 고르는 데 쓴다 — 금액 줄 · "이미 환급된 거래" 줄 · 줄 없음 세 갈래다.
-     */
-    public record RefundPreview(boolean applies, long refundAmount, String reason) {
         /** 카드가 아니다 — 돌려줄 자리 자체가 없다. */
         public static final String NOT_CARD = "NOT_CARD";
         /** 신용카드지만 결제계좌가 없다 — 기록용 카드다(결정 3). */
@@ -132,39 +206,10 @@ public class CardPaymentServiceDto {
         public static final String NOT_PAID_CYCLE = "NOT_PAID_CYCLE";
         /** 이미 환불 마크된 거래 — 환급은 그때 끝났다. */
         public static final String ALREADY_REFUNDED = "ALREADY_REFUNDED";
+        /** 기록용 몫이 기한 안에 빠져 전액 돌아간다(R6). */
+        public static final String RECORD_ONLY_OK = "RECORD_ONLY_OK";
+        /** 결제한 달이 지나 돈 이동 없이 기록만 정리된다(R6). */
+        public static final String REFUND_WINDOW_CLOSED = "REFUND_WINDOW_CLOSED";
         public static final String OK = "OK";
-
-        public static RefundPreview none(String reason) {
-            return new RefundPreview(false, 0L, reason);
-        }
-
-        public static RefundPreview of(long refundAmount) {
-            return new RefundPreview(true, refundAmount, OK);
-        }
-    }
-
-    /**
-     * 아직 저장하지 않은 변경 — 미리보기가 "이 거래가 이렇게 바뀌면 회차 청구가 얼마가
-     * 되나" 를 세는 데 쓴다.
-     *
-     * <p>실제 환급은 DB 가 이미 바뀐 뒤에 세므로 이런 게 필요 없다. 미리보기는 바뀌기
-     * <b>전</b>에 세야 해서, 이 거래를 질의에서 빼고 <b>가정한 값으로 다시 더한다</b>.
-     * 그래야 두 값이 같은 산식에서 나온다.
-     *
-     * <p>{@code amountAfter} 가 null 이면 삭제다(기여가 통째로 사라진다).
-     */
-    public record ExpenseChange(
-        Expense expense,
-        Long amountAfter,
-        Long assetRowIdAfter,
-        LocalDateTime dateAfter
-    ) {
-        public static ExpenseChange deletion(Expense expense) {
-            return new ExpenseChange(expense, null, null, null);
-        }
-
-        public boolean isDeletion() {
-            return amountAfter == null;
-        }
     }
 }

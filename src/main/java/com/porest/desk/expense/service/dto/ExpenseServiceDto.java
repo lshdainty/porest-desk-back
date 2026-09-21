@@ -111,7 +111,14 @@ public class ExpenseServiceDto {
          * <p>결제 완료 회차의 카드 거래를 줄이면 그만큼 결제계좌로 돌아간다. 화면이
          * "결제계좌로 N원이 환급됐어요" 를 말할 재료라, 조회에는 늘 null 이다.
          */
-        Long refundedAmount
+        Long refundedAmount,
+        /**
+         * 이 날짜(회차 말일)까지의 카드 회차분은 계좌 이체 없이 정리된 기록용 (null = 정상).
+         * 닫힌 회차에 소급 입력한 카드 지출에 붙는다(닫힌 회차 규칙 R2·R5).
+         */
+        LocalDate cardSettledThrough,
+        /** 그 가운데 기록만 남긴 금액 — 할부는 지난 회차분만이라 거래 금액보다 작을 수 있다 (null = 없음). */
+        Long recordOnlyAmount
     ) {
         public static ExpenseInfo from(Expense expense) {
             return from(expense, List.of());
@@ -151,18 +158,41 @@ public class ExpenseServiceDto {
                 expense.getCreateAt(),
                 expense.getModifyAt(),
                 splitCategoryRowIds != null ? splitCategoryRowIds : List.of(),
-                refundedAmount
+                refundedAmount,
+                expense.getCardSettledThrough(),
+                recordOnlyAmountOf(expense)
             );
+        }
+
+        private static Long recordOnlyAmountOf(Expense expense) {
+            if (expense.getCardSettledThrough() == null) {
+                return null;
+            }
+            long sum = com.porest.desk.card.service.CardCycleMath.duesByCycle(expense).entrySet().stream()
+                .filter(e -> com.porest.desk.card.service.CardCycleMath.isRecordOnly(
+                    e.getKey(), expense.getCardSettledThrough()))
+                .mapToLong(Map.Entry::getValue)
+                .sum();
+            return sum > 0L ? sum : null;
         }
     }
 
     /**
-     * 카드 환급 미리보기 — 삭제·수정 확인창이 금액을 예고할 재료(설계 13-1).
+     * 카드 정산 미리보기 — 저장·삭제·수정·환불 확인창이 돈의 움직임을 예고할 재료
+     * (설계 13-1, 닫힌 회차 R2·R3·R6).
      *
      * <p>{@code applies=false} 면 이 변경으로 돌려줄 돈이 없다. {@code reason} 으로 화면이
-     * 문구를 고른다(금액 줄 · "이미 환급된 거래" 줄 · 줄 없음).
+     * 문구를 고른다 — 금액 줄 · "이미 환급된 거래" 줄 · "결제한 달이 지나 기록만 정리돼요" 줄 · 줄 없음.
+     *
+     * @param newRecordAmount      이번 저장으로 기록만 남는 금액 — 닫힌 회차에 떨어진 몫(R2)
+     * @param sameDayExtraPayment  오늘이 결제일이라 결제계좌에서 추가로 빠질 금액(R3)
      */
-    public record RefundPreviewInfo(boolean applies, long refundAmount, String reason) {}
+    public record RefundPreviewInfo(boolean applies, long refundAmount, String reason,
+                                    long newRecordAmount, long sameDayExtraPayment) {
+        public static RefundPreviewInfo none(String reason) {
+            return new RefundPreviewInfo(false, 0L, reason, 0L, 0L);
+        }
+    }
 
     public record DailySummary(
         LocalDate date,

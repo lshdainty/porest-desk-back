@@ -63,7 +63,9 @@ public class CardBillingApiDto {
         Integer paymentDay,
         Long paymentAssetRowId,
         List<BillingItemResponse> history,
-        UpcomingCycleResponse nextCycle) {
+        UpcomingCycleResponse nextCycle,
+        /** 닫힌 회차(결제일이 지난) — 회차 선택기의 과거 칸. 최신 회차부터. */
+        List<ClosedCycleResponse> closedCycles) {
         public static CardBillingResponse from(CardPaymentServiceDto.CardBillingInfo info) {
             return new CardBillingResponse(
                 info.cardAssetRowId(),
@@ -77,7 +79,31 @@ public class CardBillingApiDto {
                 info.paymentDay(),
                 info.paymentAssetRowId(),
                 info.history().stream().map(BillingItemResponse::from).toList(),
-                info.nextCycle() != null ? UpcomingCycleResponse.from(info.nextCycle()) : null);
+                info.nextCycle() != null ? UpcomingCycleResponse.from(info.nextCycle()) : null,
+                info.closedCycles().stream().map(ClosedCycleResponse::from).toList());
+        }
+    }
+
+    /**
+     * 닫힌 회차 하나 — 명세서 머리 금액은 {@code paidAmount + recordedOnlyAmount} 다.
+     *
+     * @param paidAmount         앱이 결제계좌에서 실제로 뺀 순 금액(결제 − 환급)
+     * @param recordedOnlyAmount 기록만 남긴 금액 — 현실에선 결제됐지만 계좌에서는 안 빠졌다
+     * @param preRegistration    카드 등록 전 회차 — "실제와 맞지 않을 수 있어요" 주의 문구용
+     * @param refundableUntil    이 회차 거래를 지우거나 환불하면 결제계좌로 돌려주는 마지막 날
+     */
+    public record ClosedCycleResponse(
+        LocalDate periodStart,
+        LocalDate periodEnd,
+        LocalDate paymentDate,
+        long paidAmount,
+        long recordedOnlyAmount,
+        boolean preRegistration,
+        LocalDate refundableUntil
+    ) {
+        public static ClosedCycleResponse from(CardPaymentServiceDto.ClosedCycle c) {
+            return new ClosedCycleResponse(c.periodStart(), c.periodEnd(), c.paymentDate(),
+                c.paidAmount(), c.recordedOnlyAmount(), c.preRegistration(), c.refundableUntil());
         }
     }
 
