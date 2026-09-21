@@ -33,6 +33,9 @@ import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.user.service.UserService;
+import com.porest.desk.card.service.PaymentSchedule;
+import com.porest.desk.card.service.PaymentScheduleService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -94,6 +97,10 @@ class ExpenseServiceImplTest {
     @Mock private UserRepository userRepository;
     @Mock private CardPaymentService cardPaymentService;
     @Mock private AssetService assetService;
+    @Mock private PaymentScheduleService paymentScheduleService;
+    // 닫힌 회차 판정의 "오늘"(D11) — 7월 회차가 아직 열려 있는 날(7월분 결제일 8/12 전)로 고정한다.
+    @Mock private ServiceClock serviceClock;
+    @Mock private jakarta.persistence.EntityManager entityManager;
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
@@ -103,6 +110,18 @@ class ExpenseServiceImplTest {
     @InjectMocks private ExpenseServiceImpl sut;
 
     private static final long USER_ID = 1L;
+    private static final LocalDate CYCLE_TODAY = LocalDate.of(2026, 7, 15);
+
+    /** 신용카드는 지금 결제일 하나로 모든 회차를 센다 — 이력 조회는 카드 서비스 테스트가 본다. */
+    @BeforeEach
+    void cardSchedule() {
+        lenient().when(serviceClock.today()).thenReturn(CYCLE_TODAY);
+        lenient().when(paymentScheduleService.scheduleOf(any())).thenAnswer(inv -> {
+            Asset a = inv.getArgument(0);
+            return a != null && a.getAssetType() == AssetType.CREDIT_CARD
+                ? PaymentSchedule.of(a.getPaymentDay()) : null;
+        });
+    }
 
     private User user(long rowId) {
         User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
@@ -1121,7 +1140,7 @@ class ExpenseServiceImplTest {
          * <b>무엇을 넘기는지</b>와 <b>결과를 연결하는지</b>만 본다.
          */
         private CardPaymentServiceDto.SettlementResult settled(Long transferRowId, long refunded) {
-            return new CardPaymentServiceDto.SettlementResult(transferRowId, refunded, null, 0L, 0L);
+            return new CardPaymentServiceDto.SettlementResult(transferRowId, refunded, null, 0L);
         }
 
         private CardPaymentServiceDto.SettlementCommand settleCommand() {
@@ -1138,8 +1157,8 @@ class ExpenseServiceImplTest {
             return cmd.getValue();
         }
 
-        private CardPaymentServiceDto.SettlementPreview previewOf(long refund, boolean windowClosed) {
-            return new CardPaymentServiceDto.SettlementPreview(refund, false, windowClosed, false, 0L, 0L);
+        private CardPaymentServiceDto.SettlementPreview previewOf(long refund) {
+            return new CardPaymentServiceDto.SettlementPreview(refund, false, 0L);
         }
 
         @Test
@@ -1262,7 +1281,7 @@ class ExpenseServiceImplTest {
             Asset cardAsset = creditCard(9L);
             Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
             given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
-            given(cardPaymentService.previewExpenseChange(any())).willReturn(previewOf(50_000L, false));
+            given(cardPaymentService.previewExpenseChange(any())).willReturn(previewOf(50_000L));
 
             var preview = sut.refundPreview(1L, USER_ID, null, null, null, null);
 
@@ -1280,7 +1299,7 @@ class ExpenseServiceImplTest {
             Asset cardAsset = creditCard(9L);
             Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
             given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
-            given(cardPaymentService.previewExpenseChange(any())).willReturn(previewOf(30_000L, false));
+            given(cardPaymentService.previewExpenseChange(any())).willReturn(previewOf(30_000L));
 
             var preview = sut.refundPreview(1L, USER_ID, 20_000L, null, null, null);
 
@@ -1293,18 +1312,19 @@ class ExpenseServiceImplTest {
         }
 
         @Test
-        @DisplayName("기한이 지나 돌려줄 게 없으면 '기록만 정리' 사유로 알린다")
-        void previewWindowClosed() {
+        @DisplayName("돌려줄 게 없으면 NOT_PAID_CYCLE — 옛 앱에 '결제한 달이 지나…' 문구를 띄우지 않는다(인계 25 ⑧)")
+        void previewNothingToRefund() {
             Asset cardAsset = creditCard(9L);
             Expense e = card(1L, 50_000L, LocalDateTime.of(2026, 7, 10, 12, 0), cardAsset);
             given(expenseRepository.findById(1L)).willReturn(Optional.of(e));
-            given(cardPaymentService.previewExpenseChange(any())).willReturn(previewOf(0L, true));
+            given(cardPaymentService.previewExpenseChange(any())).willReturn(previewOf(0L));
 
             var preview = sut.refundPreview(1L, USER_ID, null, null, null, null);
 
             assertThat(preview.applies()).isFalse();
             assertThat(preview.reason())
-                .isEqualTo(CardPaymentServiceDto.RefundPreview.REFUND_WINDOW_CLOSED);
+                .isEqualTo(CardPaymentServiceDto.RefundPreview.NOT_PAID_CYCLE);
+            assertThat(preview.sameDayExtraPayment()).isZero();
         }
 
         @Test
@@ -1337,18 +1357,19 @@ class ExpenseServiceImplTest {
         }
 
         @Test
-        @DisplayName("새 카드 지출 저장 미리보기 — 기록만 남는 금액과 당일 추가 결제를 옮긴다")
-        void savePreviewCarriesRecordAndSameDay() {
+        @DisplayName("새 카드 지출 저장 미리보기 — 기록만 남는 금액을 옮기고, 당일 추가 결제는 없다(U7)")
+        void savePreviewCarriesRecord() {
             Asset cardAsset = creditCard(9L);
             given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
             given(assetRepository.findById(9L)).willReturn(Optional.of(cardAsset));
             given(cardPaymentService.previewExpenseChange(any())).willReturn(
-                new CardPaymentServiceDto.SettlementPreview(0L, false, false, false, 25_000L, 0L));
+                new CardPaymentServiceDto.SettlementPreview(0L, false, 25_000L));
 
             var preview = sut.cardSavePreview(USER_ID, 9L, 25_000L,
                 LocalDateTime.of(2026, 8, 20, 12, 0), null);
 
             assertThat(preview.newRecordAmount()).isEqualTo(25_000L);
+            assertThat(preview.sameDayExtraPayment()).isZero();
             var cmd = previewCommand();
             assertThat(cmd.before().isCard()).isFalse();
             assertThat(cmd.after().dues()).containsEntry(java.time.LocalDate.of(2026, 8, 1), 25_000L);

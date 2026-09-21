@@ -99,9 +99,49 @@ public class ExpenseApiController {
             Patch.from(request.exchangeRate()),
             Patch.from(request.calendarEventRowId()),
             Patch.from(request.todoRowId()),
-            splits
+            splits,
+            isDateOnly(request.expenseDate())
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
+    }
+
+    /**
+     * 고쳐 쓰기(D13) — 결제가 끝난 거래를 지우고 새로 적는다. 본문은 새 거래 생성과 같고 {@code splits} 를
+     * 더 받는다. 응답은 <b>새 거래</b>다(새 rowId).
+     */
+    @PostMapping("/expense/{id}/replace")
+    public ApiResponse<ExpenseApiDto.Response> replaceExpense(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable Long id,
+            @Valid @RequestBody ExpenseApiDto.ReplaceRequest request) {
+        List<ExpenseSplitServiceDto.SplitCommand> splits = request.splits() == null
+            ? null
+            : request.splits().stream()
+                .map(s -> new ExpenseSplitServiceDto.SplitCommand(
+                    null, s.categoryRowId(), s.amount(), s.label(), s.sortOrder()))
+                .toList();
+        ExpenseServiceDto.ExpenseInfo info = expenseService.replaceExpense(id, loginUser.getRowId(),
+            new ExpenseServiceDto.CreateCommand(
+                loginUser.getRowId(),
+                request.categoryRowId(),
+                request.assetRowId(),
+                request.expenseType(),
+                request.amount(),
+                request.description(),
+                parseExpenseDate(request.expenseDate()),
+                request.merchant(),
+                request.paymentMethod(),
+                request.installmentMonths(),
+                request.originalAmount(), request.originalCurrency(), request.exchangeRate(),
+                request.calendarEventRowId(),
+                request.todoRowId()),
+            splits);
+        return ApiResponse.success(ExpenseApiDto.Response.from(info));
+    }
+
+    /** 날짜만(yyyy-MM-dd) 온 일시인가 — 잠긴 거래의 날짜 비교를 날짜로만 한다(D12). */
+    private static boolean isDateOnly(java.util.Optional<String> raw) {
+        return raw != null && raw.isPresent() && raw.get() != null && raw.get().trim().length() == 10;
     }
 
     @DeleteMapping("/expense/{id}")

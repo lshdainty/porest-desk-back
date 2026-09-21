@@ -75,8 +75,26 @@ public class AssetServiceDto {
         Patch<Integer> paymentDay,
         Patch<Long> paymentAssetRowId,
         // 투자 보유 목록 — null=무변경, 리스트=전체 교체(빈 리스트=전부 삭제).
-        List<HoldingCommand> holdings
-    ) {}
+        List<HoldingCommand> holdings,
+        /**
+         * 신용카드의 "이전 미결제 사용액"(이월 금액, D7) — 신용카드는 {@code balance} 를 무시하고 이 칸으로만
+         * 이월 거래를 고친다. 키가 없거나 null 이면 그대로.
+         */
+        Patch<Long> carryoverAmount
+    ) {
+        /** 이월 금액 칸을 모르는 호출자 — 이월은 그대로 둔다. */
+        public UpdateAssetCommand(Patch<String> assetName, Patch<AssetType> assetType, Patch<Long> balance,
+                                  Patch<Boolean> isOverdraft, Patch<String> currency,
+                                  Patch<java.math.BigDecimal> exchangeRate, Patch<String> color,
+                                  Patch<String> institution, Patch<String> memo, Patch<YNType> isIncludedInTotal,
+                                  Patch<YNType> isAmountHidden, Patch<Long> cardCatalogRowId,
+                                  Patch<Long> creditLimit, Patch<Integer> paymentDay,
+                                  Patch<Long> paymentAssetRowId, List<HoldingCommand> holdings) {
+            this(assetName, assetType, balance, isOverdraft, currency, exchangeRate, color, institution, memo,
+                isIncludedInTotal, isAmountHidden, cardCatalogRowId, creditLimit, paymentDay, paymentAssetRowId,
+                holdings, Patch.absent());
+        }
+    }
 
     /**
      * 투자 보유 입력 — linked=true: symbol+quantity 필수 / false: holdingName+holdingValue 필수(quantity 선택).
@@ -190,8 +208,29 @@ public class AssetServiceDto {
          * 화면에서 "이 카드로 얼마 썼는지" 를 알 길이 없다. 순자산 계산과는 무관하다
          * (돈은 이미 계좌에서 빠졌다 — balance 에 실으면 이중 차감이 된다).
          */
-        Long monthlyUsedAmount
+        Long monthlyUsedAmount,
+        /** 신용카드만: 지금 이월 금액("이전 미결제 사용액"), 없으면 0. 그 외 null(D7). */
+        Long carryoverAmount,
+        /** 신용카드: 이월 거래가 든 회차의 결제일이 됐으면 true — 이월 금액 칸 읽기 전용(D15). */
+        boolean carryoverLocked,
+        /** 결제일 있는 신용카드: 이 날짜 이하 거래는 닫힌 회차(D5·D12). 그 외 null. */
+        java.time.LocalDate cardClosedThrough
     ) {
+        /** 카드 상태를 모르는 호출자(테스트 등) — 카드 칸은 비운다. */
+        public AssetInfo(Long rowId, Long userRowId, String assetName, AssetType assetType, Long balance,
+                         Long cashBalance, Long holdingBalance, String currency,
+                         java.math.BigDecimal exchangeRate, String color, String institution, String memo,
+                         Integer sortOrder, YNType isIncludedInTotal, YNType isAmountHidden,
+                         CardCatalogBrief cardCatalog, Long creditLimit, Integer paymentDay,
+                         Long paymentAssetRowId, String marketCode, String symbol, Long quantity,
+                         List<HoldingInfo> holdings, LocalDateTime createAt, LocalDateTime modifyAt,
+                         Long monthlyUsedAmount) {
+            this(rowId, userRowId, assetName, assetType, balance, cashBalance, holdingBalance, currency,
+                exchangeRate, color, institution, memo, sortOrder, isIncludedInTotal, isAmountHidden, cardCatalog,
+                creditLimit, paymentDay, paymentAssetRowId, marketCode, symbol, quantity, holdings, createAt,
+                modifyAt, monthlyUsedAmount, null, false, null);
+        }
+
         /** 잔액 없이(0) 만든다 — 잔액이 화면에 안 쓰이는 응답 전용. */
         public static AssetInfo from(Asset asset) {
             return from(asset, List.of(), null);
@@ -247,7 +286,17 @@ public class AssetServiceDto {
             return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
-                marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsed);
+                marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsed,
+                carryoverAmount, carryoverLocked, cardClosedThrough);
+        }
+
+        /** 신용카드 상태(이월 금액·잠금·닫힌 회차 끝)를 붙인다. */
+        public AssetInfo withCardState(Long carryover, boolean locked, java.time.LocalDate closedThrough) {
+            return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
+                holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
+                isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
+                marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsedAmount,
+                carryover, locked, closedThrough);
         }
     }
 

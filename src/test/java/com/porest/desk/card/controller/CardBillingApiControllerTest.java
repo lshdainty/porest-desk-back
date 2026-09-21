@@ -67,13 +67,15 @@ class CardBillingApiControllerTest {
         CardPaymentServiceDto.CardBillingInfo info = new CardPaymentServiceDto.CardBillingInfo(
                 50L, 12000L, 2000L, 0L,
                 List.of(new CardPaymentServiceDto.InstallmentDue(
-                        7L, "가맹점", null, 60000L, 6, 2, 10000L, false)),
+                        7L, "가맹점", null, 60000L, 6, 2, 10000L, false, false)),
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                 LocalDate.of(2026, 8, 1), 15, 200L, List.of(sampleBilling()),
             null,
             List.of(new CardPaymentServiceDto.ClosedCycle(
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), LocalDate.of(2026, 7, 15),
-                300L, 25000L, true, LocalDate.of(2026, 7, 31))));
+                300L, 25300L, 25000L, true, null,
+                List.of(new CardPaymentServiceDto.InstallmentDue(
+                        8L, "할부가맹점", null, 90000L, 3, 2, 30000L, false, true)))));
         given(cardPaymentService.getCardBilling(50L, 1L)).willReturn(info);
 
         mockMvc.perform(get("/api/v1/asset/{id}/billing", 50L))
@@ -93,12 +95,16 @@ class CardBillingApiControllerTest {
                 .andExpect(jsonPath("$.data.paymentAssetRowId").value(200))
                 .andExpect(jsonPath("$.data.history[0].rowId").value(1))
                 .andExpect(jsonPath("$.data.history[0].status").value("COMPLETED"))
-                // 닫힌 회차 — 결제한 금액과 기록만 남긴 금액을 따로, 등록 전 회차 표시와 환급 기한까지.
+                // 닫힌 회차(D10) — 머리 금액은 지금 기록 합, 결제로 정리된 금액은 따로, 할부 회차분 구성까지.
                 .andExpect(jsonPath("$.data.closedCycles[0].paymentDate").value("2026-07-15"))
                 .andExpect(jsonPath("$.data.closedCycles[0].paidAmount").value(300))
+                .andExpect(jsonPath("$.data.closedCycles[0].recordedAmount").value(25300))
                 .andExpect(jsonPath("$.data.closedCycles[0].recordedOnlyAmount").value(25000))
                 .andExpect(jsonPath("$.data.closedCycles[0].preRegistration").value(true))
-                .andExpect(jsonPath("$.data.closedCycles[0].refundableUntil").value("2026-07-31"));
+                .andExpect(jsonPath("$.data.closedCycles[0].refundableUntil").doesNotExist())
+                .andExpect(jsonPath("$.data.closedCycles[0].installmentDues[0].sequence").value(2))
+                .andExpect(jsonPath("$.data.closedCycles[0].installmentDues[0].recordOnly").value(true))
+                .andExpect(jsonPath("$.data.upcomingInstallments[0].recordOnly").value(false));
 
         verify(cardPaymentService).getCardBilling(eq(50L), eq(1L));
     }

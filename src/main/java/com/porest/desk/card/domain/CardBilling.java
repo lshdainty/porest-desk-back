@@ -109,13 +109,6 @@ public class CardBilling extends AuditingFieldsWithIp {
             BillingStatus.REFUNDED, transfer, null);
     }
 
-    /** 기록용 몫의 환급 — 앱이 낸 돈과 무관해 순 납부액에 안 들어간다. */
-    public static CardBilling recordRefunded(Asset cardAsset, Asset paymentAsset, Long amount,
-                                             LocalDate periodStart, LocalDate periodEnd,
-                                             LocalDate refundDate, AssetTransfer transfer) {
-        return new CardBilling(cardAsset, paymentAsset, amount, periodStart, periodEnd, refundDate,
-            BillingStatus.RECORD_REFUNDED, transfer, null);
-    }
 
     /** 청구액 0 — 건너뜀(SKIPPED). */
     public static CardBilling skipped(Asset cardAsset, Asset paymentAsset,

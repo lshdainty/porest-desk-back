@@ -102,15 +102,14 @@ class ExpenseBudgetDuplicateAlertTest {
 
         LocalDate today = serviceClock.today();
         // 전체 예산은 월 전체 지출 합을 본다 — 10,000 중 9,000 이면 임계 85% 를 넘는다.
-        given(expenseRepository.findByUser(eq(USER_ID), any(), eq(ExpenseType.EXPENSE), any(), any()))
-                .willReturn(List.of(Expense.createExpense(user, null, null, ExpenseType.EXPENSE,
-                        9_000L, "x", today.atStartOfDay(), null, null, null, null, null, null)));
+        given(expenseService.getMonthlyExpenseTotal(USER_ID, today.getYear(), today.getMonthValue()))
+                .willReturn(9_000L);
     }
 
     private NotificationTriggerScheduler scheduler() {
         return new NotificationTriggerScheduler(
                 notificationService, TestMessages.notificationMessages(), notificationRepository,
-                eventReminderRepository, budgetRepository, expenseRepository, expenseService,
+                eventReminderRepository, budgetRepository, expenseService,
                 serviceClock, userClock, todoRepository, userService);
     }
 

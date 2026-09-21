@@ -53,6 +53,7 @@ public class CardPaymentServiceDto {
      * @param amount            이번 회차에 빠지는 금액. 나머지는 1회차에 몰린다(카드사 관행)
      * @param paidOff           이 회차가 중도 전액 상환으로 남은 원금을 몰아 받은 회차인지 —
      *                          화면이 "남은 원금 정리" 표시를 달고 정리 버튼을 숨긴다
+     * @param recordOnly        기록용 회차분 — 결제가 끝난 회차에 뒤늦게 적어 계좌에서 안 빠졌다("· 기록만")
      */
     public record InstallmentDue(
         Long expenseRowId,
@@ -62,7 +63,8 @@ public class CardPaymentServiceDto {
         Integer installmentMonths,
         Integer sequence,
         Long amount,
-        boolean paidOff
+        boolean paidOff,
+        boolean recordOnly
     ) {}
 
     /**
@@ -105,21 +107,26 @@ public class CardPaymentServiceDto {
     ) {}
 
     /**
-     * 닫힌 회차 하나.
+     * 닫힌 회차 하나 — 명세서 머리 금액은 {@code recordedAmount}(지금 기록 합, D10).
      *
+     * @param paymentDate         그 회차에 실제로 적용된 결제일(D5)
      * @param paidAmount          앱이 실제로 결제한 순 금액(결제 − 환급)
-     * @param recordedOnlyAmount  기록만 남긴 금액 — 현실에선 결제됐지만 앱은 계좌에서 안 뺐다
+     * @param recordedAmount      그 회차의 지금 기록 합 — 일시불 지출 − 카드 수입 + 할부 회차분(환불 제외, 기록용 포함)
+     * @param recordedOnlyAmount  하위 호환 — {@code max(0, recorded − paid)}
      * @param preRegistration     카드 등록 전 회차 — 실제와 안 맞을 수 있다는 주의 문구용(R4)
-     * @param refundableUntil     이 회차 거래를 지우거나 환불하면 결제계좌로 돌려주는 기한(R6)
+     * @param refundableUntil     폐지(D1) — 늘 null. 옛 클라이언트가 필드를 기대해 남긴다
+     * @param installmentDues     그 회차의 할부 회차분 — 거래 날짜가 앞 달이라 이용 내역 목록에 안 나오는 몫(24차 8)
      */
     public record ClosedCycle(
         LocalDate periodStart,
         LocalDate periodEnd,
         LocalDate paymentDate,
         long paidAmount,
+        long recordedAmount,
         long recordedOnlyAmount,
         boolean preRegistration,
-        LocalDate refundableUntil
+        LocalDate refundableUntil,
+        List<InstallmentDue> installmentDues
     ) {}
 
     /**
@@ -153,32 +160,25 @@ public class CardPaymentServiceDto {
      */
     public enum SettlementMode { CHANGE, REFUND, CANCEL_REFUND }
 
-    /** 정산 결과 — 환급 이체·금액, 새 표식, 새로 기록용이 된 금액, 결제일 당일 추가 결제액. */
+    /** 정산 결과 — 선결제 환급 이체·금액, 새 표식, 새로 기록용이 된 금액. */
     public record SettlementResult(
         Long refundTransferRowId,
         long refundedAmount,
         LocalDate newMark,
-        long newRecordAmount,
-        long sameDayPaid
+        long newRecordAmount
     ) {}
 
     /**
-     * 정산 미리보기 — 확인창 재료.
+     * 정산 미리보기 — 옛 앱의 확인창 재료(새 웹·앱은 부르지 않는다, D4).
      *
-     * @param refundAmount        결제계좌로 돌아갈 금액
-     * @param recordOnlyRefund    그 안에 기록용 몫이 있다
-     * @param windowClosed        빠지는 몫이 있지만 환급 기한이 지났다
-     * @param noPaymentAsset      결제계좌가 없는 카드
-     * @param newRecordAmount     새로 기록용이 되는 금액(닫힌 회차 저장)
-     * @param sameDayExtraPayment 결제일 당일 저장으로 추가로 빠질 금액(R3)
+     * @param refundAmount    결제계좌로 돌아갈 금액(열린 회차 선결제가 남을 때만)
+     * @param noPaymentAsset  결제계좌가 없는 카드
+     * @param newRecordAmount 새로 기록용이 되는 금액(닫힌 회차 저장)
      */
     public record SettlementPreview(
         long refundAmount,
-        boolean recordOnlyRefund,
-        boolean windowClosed,
         boolean noPaymentAsset,
-        long newRecordAmount,
-        long sameDayExtraPayment
+        long newRecordAmount
     ) {}
 
     /** 회차 하나 — 결제일·청구 기간·예정액(선결제 차감 후)·구성. */
@@ -206,10 +206,6 @@ public class CardPaymentServiceDto {
         public static final String NOT_PAID_CYCLE = "NOT_PAID_CYCLE";
         /** 이미 환불 마크된 거래 — 환급은 그때 끝났다. */
         public static final String ALREADY_REFUNDED = "ALREADY_REFUNDED";
-        /** 기록용 몫이 기한 안에 빠져 전액 돌아간다(R6). */
-        public static final String RECORD_ONLY_OK = "RECORD_ONLY_OK";
-        /** 결제한 달이 지나 돈 이동 없이 기록만 정리된다(R6). */
-        public static final String REFUND_WINDOW_CLOSED = "REFUND_WINDOW_CLOSED";
         public static final String OK = "OK";
     }
 }

@@ -60,8 +60,25 @@ public class ExpenseServiceDto {
         Patch<Long> todoRowId,
         // 분할 내역 동시 수정. null = 분할 미변경(기존 유지), 비어있지 않은 리스트 = 새 분할로 교체.
         // 금액 변경으로 기존 분할 합이 어긋날 때 클라이언트가 맞춘 분할을 함께 전달하면 원자적으로 일치화.
-        List<ExpenseSplitServiceDto.SplitCommand> splits
-    ) {}
+        List<ExpenseSplitServiceDto.SplitCommand> splits,
+        /**
+         * 거래 일시가 날짜만(yyyy-MM-dd) 왔는가 — 잠긴 거래(D12)의 "돈 칸이 달라졌나" 를 날짜로만 본다.
+         * 시각이 없는 형식을 00:00 으로 읽으므로, 이게 없으면 저장된 시각과 달라 보여 오탐한다.
+         */
+        boolean expenseDateDateOnly
+    ) {
+        /** 날짜 형식을 모르는 호출자(가져오기·테스트) — 시각까지 온 것으로 본다. */
+        public UpdateCommand(Patch<Long> categoryRowId, Patch<Long> assetRowId, Patch<ExpenseType> expenseType,
+                             Patch<Long> amount, Patch<String> description, Patch<LocalDateTime> expenseDate,
+                             Patch<String> merchant, Patch<String> paymentMethod, Patch<Integer> installmentMonths,
+                             Patch<java.math.BigDecimal> originalAmount, Patch<String> originalCurrency,
+                             Patch<java.math.BigDecimal> exchangeRate, Patch<Long> calendarEventRowId,
+                             Patch<Long> todoRowId, List<ExpenseSplitServiceDto.SplitCommand> splits) {
+            this(categoryRowId, assetRowId, expenseType, amount, description, expenseDate, merchant, paymentMethod,
+                installmentMonths, originalAmount, originalCurrency, exchangeRate, calendarEventRowId, todoRowId,
+                splits, false);
+        }
+    }
 
     public record ExpenseInfo(
         Long rowId,
@@ -118,8 +135,22 @@ public class ExpenseServiceDto {
          */
         LocalDate cardSettledThrough,
         /** 그 가운데 기록만 남긴 금액 — 할부는 지난 회차분만이라 거래 금액보다 작을 수 있다 (null = 없음). */
-        Long recordOnlyAmount
+        Long recordOnlyAmount,
+        /**
+         * 돈 칸 잠금(D12) — 결제일이 된 회차분이 하나라도 있는(또는 기록용 표식이 있는) 신용카드 거래.
+         * 금액·날짜·시간·자산·할부·유형·통화 3칸·결제수단을 못 고친다. 고치려면 고쳐 쓰기.
+         */
+        boolean moneyLocked
     ) {
+        /** 잠금만 바꾼 사본 — 잠금은 카드의 회차 결제일을 봐야 해서 서비스가 따로 정한다. */
+        public ExpenseInfo withMoneyLocked(boolean locked) {
+            return new ExpenseInfo(rowId, userRowId, categoryRowId, categoryName, categoryIcon, categoryColor,
+                assetRowId, assetName, expenseType, amount, description, expenseDate, merchant, paymentMethod,
+                installmentMonths, refundedAt, refundTransferRowId, originalAmount, originalCurrency,
+                exchangeRate, calendarEventRowId, todoRowId, autoSource, createAt, modifyAt,
+                splitCategoryRowIds, refundedAmount, cardSettledThrough, recordOnlyAmount, locked);
+        }
+
         public static ExpenseInfo from(Expense expense) {
             return from(expense, List.of());
         }
@@ -160,7 +191,8 @@ public class ExpenseServiceDto {
                 splitCategoryRowIds != null ? splitCategoryRowIds : List.of(),
                 refundedAmount,
                 expense.getCardSettledThrough(),
-                recordOnlyAmountOf(expense)
+                recordOnlyAmountOf(expense),
+                false
             );
         }
 
@@ -168,11 +200,11 @@ public class ExpenseServiceDto {
             if (expense.getCardSettledThrough() == null) {
                 return null;
             }
-            long sum = com.porest.desk.card.service.CardCycleMath.duesByCycle(expense).entrySet().stream()
+            long sum = Math.abs(com.porest.desk.card.service.CardCycleMath.duesByCycle(expense).entrySet().stream()
                 .filter(e -> com.porest.desk.card.service.CardCycleMath.isRecordOnly(
                     e.getKey(), expense.getCardSettledThrough()))
                 .mapToLong(Map.Entry::getValue)
-                .sum();
+                .sum());
             return sum > 0L ? sum : null;
         }
     }

@@ -82,7 +82,8 @@ public class AssetApiController {
             Patch.from(request.cardCatalogRowId()),
             Patch.from(request.creditLimit()), Patch.from(request.paymentDay()),
             Patch.from(request.paymentAssetRowId()),
-            AssetApiDto.HoldingRequest.toCommands(request.holdings())
+            AssetApiDto.HoldingRequest.toCommands(request.holdings()),
+            Patch.from(request.carryoverAmount())
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }

@@ -142,6 +142,15 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     ASSET_TRANSFER_AUTO_GENERATED_READONLY("AST_030", "error.asset.transfer.auto.generated.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_PAYMENT_READONLY("AST_031", "error.asset.transfer.card.payment.readonly", HttpStatus.BAD_REQUEST),
     ASSET_TRANSFER_CARD_REFUND_READONLY("AST_032", "error.asset.transfer.card.refund.readonly", HttpStatus.BAD_REQUEST),
+    // 결제가 끝난 카드 거래는 돈 칸을 고칠 수 없다(D12) — 지우고 다시 적거나 고쳐 쓰기.
+    EXPENSE_MONEY_LOCKED("EXP_045", "error.expense.money.locked", HttpStatus.BAD_REQUEST),
+    EXPENSE_REPLACE_NOT_LOCKED("EXP_046", "error.expense.replace.not.locked", HttpStatus.BAD_REQUEST),
+    EXPENSE_REPLACE_PAID_OFF("EXP_047", "error.expense.replace.paid.off", HttpStatus.BAD_REQUEST),
+    REFUND_DATE_OUT_OF_RANGE("EXP_048", "error.expense.refund.date.out.of.range", HttpStatus.BAD_REQUEST),
+    EXPENSE_CARRYOVER_READONLY("EXP_049", "error.expense.carryover.readonly", HttpStatus.BAD_REQUEST),
+    // 신용카드 결제일·이월(D7·D8·D15)
+    ASSET_CARD_PAYMENT_DAY_REQUIRED("AST_033", "error.asset.card.payment.day.required", HttpStatus.BAD_REQUEST),
+    ASSET_CARD_CARRYOVER_LOCKED("AST_034", "error.asset.card.carryover.locked", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),
@@ -223,6 +232,10 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     CARD_INSTALLMENT_ALREADY_PAID_OFF("CARD_014", "error.card.installment.already.paid.off", HttpStatus.BAD_REQUEST),
     CARD_INSTALLMENT_NOT_PAID_OFF("CARD_015", "error.card.installment.not.paid.off", HttpStatus.BAD_REQUEST),
     CARD_BILLING_INVALID_CYCLE("CARD_016", "error.card.billing.invalid.cycle", HttpStatus.BAD_REQUEST),
+    // 결제 취소 차단(D6) — 결제일이 된 회차·환급이 나간 회차.
+    CARD_BILLING_CYCLE_CLOSED("CARD_017", "error.card.billing.cycle.closed", HttpStatus.BAD_REQUEST),
+    CARD_BILLING_REFUNDED("CARD_018", "error.card.billing.refunded", HttpStatus.BAD_REQUEST),
+    CARD_INSTALLMENT_PAYOFF_CLOSED("CARD_019", "error.card.installment.payoff.closed", HttpStatus.BAD_REQUEST),
 
     // Securities (증권사 Open API 연동 — 토스증권 · 나무증권)
     // 메시지에 증권사 이름을 넣지 않는다: 메시지 리졸버가 인자를 받지 않아 파라미터화가 불가능하고,

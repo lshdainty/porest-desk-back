@@ -75,7 +75,8 @@ class ExpenseApiControllerTest {
                 LocalDateTime.of(2026, 7, 3, 12, 0), LocalDateTime.of(2026, 7, 3, 12, 0),
                 List.of(),
             null,       // refundedAmount — 조회에는 없다
-            null, null); // cardSettledThrough · recordOnlyAmount — 기록용 아님
+            null, null, // cardSettledThrough · recordOnlyAmount — 기록용 아님
+            false);     // moneyLocked — 결제 전
     }
 
     @Test
@@ -199,6 +200,75 @@ class ExpenseApiControllerTest {
         assertThat(captor.getValue().splits()).hasSize(2);
         assertThat(captor.getValue().splits().get(0).categoryRowId()).isEqualTo(7L);
         assertThat(captor.getValue().splits().get(0).amount()).isEqualTo(8000L);
+    }
+
+    @Test
+    @DisplayName("PUT /expense/{id} — 날짜만(yyyy-MM-dd) 온 일시는 표시해 넘긴다(잠긴 거래의 날짜 비교, D12)")
+    void updateMarksDateOnly() throws Exception {
+        given(expenseService.updateExpense(eq(10L), eq(1L), any())).willReturn(sampleInfo());
+
+        mockMvc.perform(put("/api/v1/expense/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseDate\":\"2026-07-03\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/expense/{id}", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseDate\":\"2026-07-03T12:30\"}"))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(ExpenseServiceDto.UpdateCommand.class);
+        verify(expenseService, org.mockito.Mockito.times(2)).updateExpense(eq(10L), eq(1L), captor.capture());
+        assertThat(captor.getAllValues().get(0).expenseDateDateOnly()).isTrue();
+        assertThat(captor.getAllValues().get(1).expenseDateDateOnly()).isFalse();
+    }
+
+    @Test
+    @DisplayName("POST /expense/{id}/replace — 생성 본문 + 분할로 고쳐 쓰기 위임, 응답은 새 거래")
+    void replaceExpense() throws Exception {
+        given(expenseService.replaceExpense(eq(10L), eq(1L), any(), any())).willReturn(sampleInfo());
+
+        String body = """
+                {"categoryRowId":5,"assetRowId":2,"expenseType":"EXPENSE","amount":20000,
+                 "expenseDate":"2026-07-03T12:00","merchant":"김밥천국","installmentMonths":3,
+                 "splits":[{"categoryRowId":7,"amount":8000,"label":"커피","sortOrder":0},
+                           {"categoryRowId":8,"amount":12000,"label":"밥","sortOrder":1}]}
+                """;
+
+        mockMvc.perform(post("/api/v1/expense/{id}/replace", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rowId").value(10))
+                .andExpect(jsonPath("$.data.moneyLocked").value(false));
+
+        var cmd = ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<com.porest.desk.expense.service.dto.ExpenseSplitServiceDto.SplitCommand>> splits =
+                ArgumentCaptor.forClass(List.class);
+        verify(expenseService).replaceExpense(eq(10L), eq(1L), cmd.capture(), splits.capture());
+        assertThat(cmd.getValue().userRowId()).isEqualTo(1L);
+        assertThat(cmd.getValue().amount()).isEqualTo(20000L);
+        assertThat(cmd.getValue().expenseDate()).isEqualTo(LocalDateTime.of(2026, 7, 3, 12, 0));
+        assertThat(cmd.getValue().installmentMonths()).isEqualTo(3);
+        assertThat(splits.getValue()).hasSize(2);
+        assertThat(splits.getValue().get(0).rowId()).as("새 거래의 분할 — 옛 행 id 는 쓰지 않는다").isNull();
+    }
+
+    @Test
+    @DisplayName("POST /expense/{id}/replace — 분할을 안 보내면 null(옛 분할을 옮긴다), 금액이 빠지면 400")
+    void replaceWithoutSplits() throws Exception {
+        given(expenseService.replaceExpense(eq(10L), eq(1L), any(), any())).willReturn(sampleInfo());
+
+        mockMvc.perform(post("/api/v1/expense/{id}/replace", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"expenseType\":\"EXPENSE\",\"amount\":1000,\"expenseDate\":\"2026-07-03\"}"))
+                .andExpect(status().isOk());
+        verify(expenseService).replaceExpense(eq(10L), eq(1L), any(), isNull());
+
+        mockMvc.perform(post("/api/v1/expense/{id}/replace", 10L)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryRowId\":5,\"expenseType\":\"EXPENSE\",\"expenseDate\":\"2026-07-03\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

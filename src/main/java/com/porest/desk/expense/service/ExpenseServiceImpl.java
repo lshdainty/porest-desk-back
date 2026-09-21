@@ -9,6 +9,8 @@ import com.porest.desk.asset.service.AssetBalanceHistoryService;
 import com.porest.desk.asset.type.AssetType;
 import com.porest.desk.card.service.CardCycleMath;
 import com.porest.desk.card.service.CardPaymentService;
+import com.porest.desk.card.service.PaymentSchedule;
+import com.porest.desk.card.service.PaymentScheduleService;
 import com.porest.desk.card.service.dto.CardPaymentServiceDto;
 import com.porest.desk.asset.service.AssetService;
 import com.porest.desk.calendar.domain.CalendarEvent;
@@ -36,17 +38,27 @@ import com.porest.desk.todo.repository.TodoRepository;
 import com.porest.desk.user.domain.User;
 import com.porest.desk.user.repository.UserRepository;
 import com.porest.desk.user.service.UserService;
+import com.porest.core.time.ServiceClock;
 import com.porest.core.time.UserClock;
+import com.porest.core.type.YNType;
+import com.porest.desk.dutchpay.domain.DutchPay;
+import com.porest.desk.expense.domain.RecurringTransaction;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 @Service
@@ -70,6 +82,12 @@ public class ExpenseServiceImpl implements ExpenseService {
     private final UserRepository userRepository;
     private final CardPaymentService cardPaymentService;
     private final AssetService assetService;
+    /** 회차별 결제일(D5) — 카드 거래의 닫힌 회차 판정. */
+    private final PaymentScheduleService paymentScheduleService;
+    /** 닫힌 회차 판정의 "오늘" — 자정 배치와 같은 서울 시계(D11). */
+    private final ServiceClock serviceClock;
+    /** 고쳐 쓰기 — 더치페이·반복 규칙의 원거래 연결을 새 거래로 옮긴다. */
+    private final EntityManager entityManager;
 
     @Override
     @Transactional
@@ -100,6 +118,33 @@ public class ExpenseServiceImpl implements ExpenseService {
     public ExpenseServiceDto.ExpenseInfo createExpense(ExpenseServiceDto.CreateCommand command, boolean bulk) {
         log.debug("지출 등록 시작: userRowId={}, amount={}", command.userRowId(), command.amount());
 
+        Created created = persistExpense(command, bulk);
+        Expense expense = created.expense();
+
+        // 예산 임계 도달 시 알림 (생성이므로 이전 기여분 없음). 생성 시점엔 분할이 아직 없어 거래 카테고리로 귀속.
+        // 대량 적재에선 건너뛴다 — 행 수만큼 알림이 쏟아지고 매번 집계 쿼리가 돈다.
+        if (!bulk) {
+            notifyBudgetThresholdIfCrossed(expense, 0L, Map.of());
+        }
+
+        log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
+
+        ExpenseServiceDto.ExpenseInfo info = ExpenseServiceDto.ExpenseInfo.from(
+            expense, List.of(), refundedAmountOf(created.settled()));
+        // 대량 적재는 응답을 안 쓴다 — 행마다 결제일 이력을 읽지 않는다.
+        return bulk ? info : info.withMoneyLocked(moneyLockJudge().test(expense));
+    }
+
+    /** 새로 적은 거래와 그 정산 결과(열린 회차 카드 수입이면 선결제 환급이 실릴 수 있다). */
+    private record Created(Expense expense, CardPaymentServiceDto.SettlementResult settled) {}
+
+    /**
+     * 거래 한 건을 적고 카드 회차 규칙으로 정산한다 — 새 저장과 고쳐 쓰기(D13)가 같은 길을 탄다.
+     *
+     * <p>닫힌 회차에 떨어진 카드 몫은 기록용(표식 + 상계)이 된다(D1·D2). 예산 알림은 호출자가 띄운다
+     * — 고쳐 쓰기는 옛 거래의 기여분을 기준으로 삼아야 같은 금액에 알림이 다시 뜨지 않는다.
+     */
+    private Created persistExpense(ExpenseServiceDto.CreateCommand command, boolean bulk) {
         validateAmount(command.amount());
 
         User user = userRepository.findById(command.userRowId())
@@ -157,19 +202,10 @@ public class ExpenseServiceImpl implements ExpenseService {
         balanceHistoryService.recordExpense(asset, expense.getRowId(),
             command.expenseType(), command.amount(), command.expenseDate());
 
-        // 닫힌 회차에 떨어진 카드 지출은 기록용, 결제일 당일이면 그 자리 결제(R2·R3).
-        settleCard(expense, CardCycleMath.Side.none(), sideOf(expense), null, command.userRowId(),
-            CardPaymentServiceDto.SettlementMode.CHANGE);
-
-        // 예산 임계 도달 시 알림 (생성이므로 이전 기여분 없음). 생성 시점엔 분할이 아직 없어 거래 카테고리로 귀속.
-        // 대량 적재에선 건너뛴다 — 행 수만큼 알림이 쏟아지고 매번 집계 쿼리가 돈다.
-        if (!bulk) {
-            notifyBudgetThresholdIfCrossed(expense, 0L, Map.of());
-        }
-
-        log.info("지출 등록 완료: expenseId={}, userRowId={}", expense.getRowId(), command.userRowId());
-
-        return ExpenseServiceDto.ExpenseInfo.from(expense);
+        // 닫힌 회차에 떨어진 카드 몫은 기록용이다(D1·D2) — 결제일 당일도 닫혔다.
+        CardPaymentServiceDto.SettlementResult settled = settleCard(expense, CardCycleMath.Side.none(),
+            sideOf(expense), null, command.userRowId(), CardPaymentServiceDto.SettlementMode.CHANGE);
+        return new Created(expense, settled);
     }
 
     @Override
@@ -192,10 +228,11 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 목록 카테고리 필터를 split-aware 하게 하기 위해 노출.
         Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(allExpenses);
+        Predicate<Expense> locked = moneyLockJudge();
         return allExpenses.stream()
             .map(e -> ExpenseServiceDto.ExpenseInfo.from(
                 e,
-                splitCatsByExpense.getOrDefault(e.getRowId(), List.of())))
+                splitCatsByExpense.getOrDefault(e.getRowId(), List.of())).withMoneyLocked(locked.test(e)))
             .toList();
     }
 
@@ -227,6 +264,11 @@ public class ExpenseServiceImpl implements ExpenseService {
         if (expense.isRefunded()) {
             throw new InvalidValueException(DeskErrorCode.REFUNDED_READONLY);
         }
+        // 카드 이월 거래("이전 미결제 사용액")는 카드 설정에서만 바꾼다 — 가계부에서 분류·메모를 바꿔도
+        // 이월이라는 뜻이 흐려질 뿐 얻는 게 없다(23차 10).
+        if (expense.isCardCarryover()) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CARRYOVER_READONLY);
+        }
 
         // 시스템이 만든 거래는 금액·자산·유형·일자를 못 고친다 — 원 거래(매도·이체)가 정한다.
         // 카테고리·메모·거래처만 반영하고, 잔액 이력은 손대지 않는다(원래 없는 게 맞다).
@@ -244,6 +286,17 @@ public class ExpenseServiceImpl implements ExpenseService {
                 command.merchant().orKeep(expense.getMerchant()));
             log.info("자동 생성 거래 부분 수정: expenseId={} (카테고리·메모·거래처만)", expenseId);
             return ExpenseServiceDto.ExpenseInfo.from(expense);
+        }
+
+        // 결제가 끝난 카드 거래는 돈 칸을 못 고친다(D12) — 고치려면 고쳐 쓰기(지우고 새로 적기).
+        // 옛 웹·앱은 카테고리만 고쳐도 돈 칸을 늘 실어 보내므로 "실렸으면 거절" 이 아니라
+        // "달라졌으면 거절" 이다. 통과하면 돈 칸은 저장값 그대로 두고 나머지만 반영한다.
+        if (moneyLockJudge().test(expense)) {
+            if (moneyChanged(expense, command)) {
+                log.warn("결제 끝난 거래의 돈 칸 수정 거부: expenseId={}", expenseId);
+                throw new InvalidValueException(DeskErrorCode.EXPENSE_MONEY_LOCKED);
+            }
+            return updateLockedExpense(expense, userRowId, command);
         }
 
         // 결제 완료 회차의 카드 거래가 줄어드는지 보려면 **병합 전** 값이 필요하다
@@ -268,8 +321,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         // 실린 칸만 바꾼다 — 안 온 칸은 지금 값이 그대로 남는다(QA #96).
         // 조회가 필요한 칸(카테고리·자산·일정·할 일)은 <b>실렸을 때만</b> 찾는다.
         ExpenseCategory category = command.categoryRowId()
-            .map(rowId -> expenseCategoryRepository.findById(rowId)
-                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND)))
+            .map(rowId -> findOwnedCategory(rowId, userRowId))
             .orKeep(expense.getCategory());
         ExpenseType expenseType = command.expenseType().orKeep(expense.getExpenseType());
         Long amount = command.amount().orKeep(expense.getAmount());
@@ -348,8 +400,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             }
         }
 
-        // 카드 회차 규칙으로 다시 판정한다 — 표식·상계·환급(결제한 달까지)·결제일 당일 결제.
-        // 닫힌 회차끼리 날짜만 옮기면 돈이 안 움직인다(R7).
+        // 카드 회차 규칙으로 다시 판정한다 — 열린 회차 청구가 줄면 선결제 환급(D3), 닫힌 회차로
+        // 옮기면 기록용(저장 뒤에는 잠긴다, D12).
         boolean assetLeftCard = cardBefore != null
             && (asset == null || !cardBefore.getRowId().equals(asset.getRowId()));
         boolean dateMoved = dateBefore != null && !dateBefore.equals(expenseDate);
@@ -368,7 +420,258 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         log.info("지출 수정 완료: expenseId={}, 환급={}", expenseId, refundedAmount);
 
-        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(), refundedAmount);
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(), refundedAmount)
+            .withMoneyLocked(moneyLockJudge().test(expense));
+    }
+
+    /**
+     * 잠긴 거래의 수정 — 카테고리·메모·가맹점과 일정·할 일 연결, 분할(카테고리 나누기)만 반영한다.
+     *
+     * <p>돈이 안 움직이므로 잔액 이력·카드 정산을 건드리지 않는다. 유형은 못 바꾸므로 카테고리는 지금
+     * 유형의 것이어야 한다.
+     */
+    private ExpenseServiceDto.ExpenseInfo updateLockedExpense(Expense expense, Long userRowId,
+                                                             ExpenseServiceDto.UpdateCommand command) {
+        Long expenseId = expense.getRowId();
+        boolean countedBefore = countsInLedgerNow(expense);
+        long previousTotal = (countedBefore && expense.getExpenseType() == ExpenseType.EXPENSE
+                && expense.getAmount() != null) ? expense.getAmount() : 0L;
+        Map<Long, Long> previousByCat = countedBefore
+                ? expenseSpendRollup(List.of(expense), loadSplitsByExpense(List.of(expense)))
+                : Map.of();
+
+        ExpenseCategory category = command.categoryRowId()
+            .map(rowId -> findOwnedCategory(rowId, userRowId))
+            .orKeep(expense.getCategory());
+        if (category.getExpenseType() != expense.getExpenseType()) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_TYPE_CATEGORY_MISMATCH);
+        }
+        if (expenseCategoryRepository.hasChildren(category.getRowId())) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_NOT_LEAF);
+        }
+        expense.updateEditableFields(category,
+            command.description().orKeep(expense.getDescription()),
+            command.merchant().orKeep(expense.getMerchant()));
+        expense.setCalendarEvent(command.calendarEventRowId()
+            .map(rowId -> calendarEventRepository.findById(rowId)
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.CALENDAR_EVENT_NOT_FOUND)))
+            .orKeep(expense.getCalendarEvent()));
+        expense.setTodo(command.todoRowId()
+            .map(rowId -> todoRepository.findById(rowId)
+                .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.TODO_NOT_FOUND)))
+            .orKeep(expense.getTodo()));
+        if (command.splits() != null) {
+            expenseSplitService.replaceSplits(new ExpenseSplitServiceDto.ReplaceCommand(
+                expenseId, userRowId, command.splits()));
+            expense = findExpenseOrThrow(expenseId);
+        }
+
+        notifyBudgetThresholdIfCrossed(expense, previousTotal, previousByCat);
+        log.info("결제 끝난 거래 부분 수정: expenseId={} (분류·메모·가맹점·연결·분할만)", expenseId);
+        return ExpenseServiceDto.ExpenseInfo.from(expense).withMoneyLocked(true);
+    }
+
+    /**
+     * 돈 칸이 달라졌는가(D12) — 금액·날짜·시간·자산·할부·유형·통화 3칸·결제수단.
+     *
+     * <p>안 실린 칸은 그대로다. 옛 클라이언트가 되돌려 보내는 값의 표기 차이는 같은 값으로 본다 —
+     * 날짜는 분 단위(화면이 HH:mm 으로 보낸다), 날짜만 오면 날짜만, 할부 null ≡ 1, 통화는 저장할 때와
+     * 같은 규칙(원화·빈 통화 = 없음)으로 맞춘 뒤 비교한다.
+     */
+    static boolean moneyChanged(Expense e, ExpenseServiceDto.UpdateCommand c) {
+        if (c.amount().present() && !Objects.equals(c.amount().value(), e.getAmount())) {
+            return true;
+        }
+        if (c.expenseType().present() && c.expenseType().value() != e.getExpenseType()) {
+            return true;
+        }
+        Long assetNow = e.getAsset() != null ? e.getAsset().getRowId() : null;
+        if (c.assetRowId().present() && !Objects.equals(c.assetRowId().value(), assetNow)) {
+            return true;
+        }
+        if (c.installmentMonths().present()
+                && installmentOrOne(c.installmentMonths().value()) != installmentOrOne(e.getInstallmentMonths())) {
+            return true;
+        }
+        if (c.expenseDate().present() && dateChanged(e.getExpenseDate(), c.expenseDate().value(),
+                c.expenseDateDateOnly())) {
+            return true;
+        }
+        if (c.paymentMethod().present()
+                && !Objects.equals(blankToNull(c.paymentMethod().value()), blankToNull(e.getPaymentMethod()))) {
+            return true;
+        }
+        BigDecimal oa = c.originalAmount().orKeep(e.getOriginalAmount());
+        String oc = c.originalCurrency().orKeep(e.getOriginalCurrency());
+        BigDecimal er = c.exchangeRate().orKeep(e.getExchangeRate());
+        boolean foreign = oc != null && !oc.isBlank() && !"KRW".equalsIgnoreCase(oc)
+            && oa != null && oa.signum() > 0;
+        return !sameDecimal(foreign ? oa : null, e.getOriginalAmount())
+            || !Objects.equals(foreign ? oc.toUpperCase() : null, e.getOriginalCurrency())
+            || !sameDecimal(foreign ? er : null, e.getExchangeRate());
+    }
+
+    private static int installmentOrOne(Integer months) {
+        return months == null || months <= 1 ? 1 : months;
+    }
+
+    private static boolean dateChanged(LocalDateTime now, LocalDateTime sent, boolean dateOnly) {
+        if (now == null || sent == null) {
+            return !Objects.equals(now, sent);
+        }
+        if (dateOnly) {
+            return !now.toLocalDate().equals(sent.toLocalDate());
+        }
+        return !now.truncatedTo(ChronoUnit.MINUTES).equals(sent.truncatedTo(ChronoUnit.MINUTES));
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+
+    private static boolean sameDecimal(BigDecimal a, BigDecimal b) {
+        return a == null ? b == null : b != null && a.compareTo(b) == 0;
+    }
+
+    /**
+     * 돈 칸 잠금 판정기(D12) — 신용카드 거래이고 결제일이 된 회차분이 하나라도 있거나 기록용 표식이
+     * 있으면 잠긴다. 회차는 거래 달부터 순서대로 닫히므로 "첫 회차가 닫혔나" = "거래 날짜 ≤ 닫힌 회차의
+     * 끝"이다. 카드마다 결제일 이력을 한 번만 읽는다.
+     *
+     * <p>시스템이 만든 거래는 따로 잠겨 있고(자동 생성 분기), 지운 카드의 거래는 회차 규칙 밖이다.
+     */
+    private Predicate<Expense> moneyLockJudge() {
+        LocalDate today = serviceClock.today();
+        Map<Long, Optional<LocalDate>> closedThrough = new HashMap<>();
+        return e -> {
+            Asset card = creditCardOf(e);
+            if (card == null || card.getIsDeleted() == YNType.Y || e.isAutoGenerated()
+                    || e.getExpenseDate() == null) {
+                return false;
+            }
+            if (e.getCardSettledThrough() != null) {
+                return true;
+            }
+            Optional<LocalDate> through = closedThrough.computeIfAbsent(card.getRowId(),
+                id -> Optional.ofNullable(paymentScheduleService.scheduleOf(card))
+                    .map(schedule -> schedule.closedThrough(today)));
+            return through.isPresent() && !e.getExpenseDate().toLocalDate().isAfter(through.get());
+        };
+    }
+
+    private ExpenseCategory findOwnedCategory(Long categoryRowId, Long userRowId) {
+        ExpenseCategory found = expenseCategoryRepository.findById(categoryRowId)
+            .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.EXPENSE_CATEGORY_NOT_FOUND));
+        validateCategoryOwnership(found, userRowId);
+        return found;
+    }
+
+    /**
+     * 고쳐 쓰기(D13) — 결제가 끝난 거래를 지우고 새로 적는다. 한 트랜잭션이다.
+     *
+     * <p>새 거래는 제 날짜의 회차 규칙을 그대로 따른다(D14) — 표식·상계는 옮기지 않고 생성이 다시
+     * 정한다. 옛 거래가 붙들던 연결(분할·더치페이·반복 규칙의 원거래·일정·할 일)은 새 거래로 옮긴다.
+     *
+     * <p>순서가 뜻이 있다. 새 거래를 먼저 정산해야(닫힌 회차 몫은 기록용이 되어 청구에서 빠진다)
+     * 옛 거래를 뺄 때 같은 회차의 정리된 청구를 옛 거래 몫으로 온전히 붙잡고, 열린 회차에 다시 들어간
+     * 몫은 청구로 남아 선결제를 돌려줬다 다시 걷는 왕복이 생기지 않는다.
+     */
+    @Override
+    @Transactional
+    public ExpenseServiceDto.ExpenseInfo replaceExpense(Long expenseId, Long userRowId,
+                                                        ExpenseServiceDto.CreateCommand command,
+                                                        List<ExpenseSplitServiceDto.SplitCommand> splits) {
+        log.debug("고쳐 쓰기 시작: expenseId={}", expenseId);
+        validateAmount(command.amount());
+
+        // 이미 지운 거래는 404 — 재시도가 새 거래를 한 번 더 만들지 않는다.
+        Expense old = findExpenseOrThrow(expenseId);
+        validateExpenseOwnership(old, userRowId);
+        if (old.isRefunded()) {
+            throw new InvalidValueException(DeskErrorCode.REFUNDED_READONLY);
+        }
+        if (old.isAutoGenerated()) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_AUTO_GENERATED_READONLY);
+        }
+        if (old.getInstallmentPayoffDate() != null) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_REPLACE_PAID_OFF);
+        }
+        if (!moneyLockJudge().test(old)) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_REPLACE_NOT_LOCKED);
+        }
+
+        // 예산 알림 기준은 옛 거래의 기여분 — 같은 금액으로 고쳐 써도 알림이 다시 뜨지 않게.
+        boolean countedBefore = countsInLedgerNow(old);
+        long previousTotal = (countedBefore && old.getExpenseType() == ExpenseType.EXPENSE
+                && old.getAmount() != null) ? old.getAmount() : 0L;
+        Map<Long, Long> previousByCat = countedBefore
+                ? expenseSpendRollup(List.of(old), loadSplitsByExpense(List.of(old)))
+                : Map.of();
+        List<ExpenseSplit> oldSplits = expenseSplitRepository.findByExpense(expenseId);
+        List<ExpenseSplitServiceDto.SplitCommand> newSplits = splits != null ? splits
+            : oldSplits.stream()
+                .map(sp -> new ExpenseSplitServiceDto.SplitCommand(null,
+                    sp.getCategory() != null ? sp.getCategory().getRowId() : null,
+                    sp.getAmount(), sp.getLabel(), sp.getSortOrder()))
+                .toList();
+        CardCycleMath.Side sideBefore = sideOf(old);
+        String memo = cardRefundMemo(old, false);
+
+        // ① 옛 거래를 지운다 — 정산은 새 거래를 적은 뒤에(위 순서 설명).
+        old.deleteExpense();
+        balanceHistoryService.removeExpense(expenseId);
+        oldSplits.forEach(ExpenseSplit::deleteSplit);
+
+        // ② 새 거래 — 일정·할 일을 안 보냈으면 옛 거래의 연결을 잇는다.
+        ExpenseServiceDto.CreateCommand effective = new ExpenseServiceDto.CreateCommand(
+            userRowId, command.categoryRowId(), command.assetRowId(), command.expenseType(),
+            command.amount(), command.description(), command.expenseDate(), command.merchant(),
+            command.paymentMethod(), command.installmentMonths(),
+            command.originalAmount(), command.originalCurrency(), command.exchangeRate(),
+            command.calendarEventRowId() != null ? command.calendarEventRowId()
+                : (old.getCalendarEvent() != null ? old.getCalendarEvent().getRowId() : null),
+            command.todoRowId() != null ? command.todoRowId()
+                : (old.getTodo() != null ? old.getTodo().getRowId() : null));
+        Created created = persistExpense(effective, false);
+        Expense fresh = created.expense();
+
+        // ③ 옛 거래를 뺀 정산 — 삭제와 같다(닫힌 회차 결제분은 붙잡고, 열린 회차 선결제는 돌려준다).
+        CardPaymentServiceDto.SettlementResult removed = settleCard(old, sideBefore, CardCycleMath.Side.none(),
+            memo, userRowId, CardPaymentServiceDto.SettlementMode.CHANGE);
+
+        // ④ 연결을 새 거래로 — 더치페이·반복 규칙이 가리키던 원거래.
+        relinkSources(old, fresh);
+
+        // ⑤ 분할 — 본문에 있으면 그것, 없으면 옛 분할을 옮긴다(합이 새 금액과 다르면 400).
+        Long freshId = fresh.getRowId();
+        if (!newSplits.isEmpty()) {
+            expenseSplitService.replaceSplits(new ExpenseSplitServiceDto.ReplaceCommand(
+                freshId, userRowId, newSplits));
+            // replaceSplits 가 영속성 컨텍스트를 비운다 — 응답은 재조회로.
+            fresh = findExpenseOrThrow(freshId);
+        }
+
+        notifyBudgetThresholdIfCrossed(fresh, previousTotal, previousByCat);
+
+        long refunded = (removed != null ? removed.refundedAmount() : 0L)
+            + (created.settled() != null ? created.settled().refundedAmount() : 0L);
+        log.info("고쳐 쓰기 완료: {} → {}, 환급={}", expenseId, freshId, refunded);
+        return ExpenseServiceDto.ExpenseInfo.from(fresh, List.of(), refunded > 0L ? refunded : null)
+            .withMoneyLocked(moneyLockJudge().test(fresh));
+    }
+
+    /** 더치페이·반복 규칙이 가리키던 원거래를 새 거래로 옮긴다(고쳐 쓰기). */
+    private void relinkSources(Expense from, Expense to) {
+        entityManager.createQuery(
+                "SELECT d FROM DutchPay d WHERE d.sourceExpense.rowId = :id", DutchPay.class)
+            .setParameter("id", from.getRowId())
+            .getResultList()
+            .forEach(d -> d.relinkSourceExpense(to));
+        entityManager.createQuery(
+                "SELECT r FROM RecurringTransaction r WHERE r.sourceExpense.rowId = :id", RecurringTransaction.class)
+            .setParameter("id", from.getRowId())
+            .getResultList()
+            .forEach(r -> r.relinkSourceExpense(to));
     }
 
     /**
@@ -401,12 +704,19 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
 
         LocalDateTime now = userClock.now(userRowId);
+        LocalDateTime at = refundedAt != null ? refundedAt : now;
+        // 환불일은 거래일부터 오늘까지(D16) — 거래 전 날짜나 미래 날짜의 환불은 없다.
+        LocalDate refundDay = at.toLocalDate();
+        if (refundDay.isBefore(expense.getExpenseDate().toLocalDate())
+                || refundDay.isAfter(userClock.today(userRowId))) {
+            throw new InvalidValueException(DeskErrorCode.REFUND_DATE_OUT_OF_RANGE);
+        }
         CardCycleMath.Side sideBefore = sideOf(expense);
 
         balanceHistoryService.removeExpense(expenseId);
-        expense.markRefunded(refundedAt != null ? refundedAt : now);
+        expense.markRefunded(at);
 
-        // 결제한 달 안이면 결제계좌로 돌려주고, 지났으면 기록만 정리한다(R6).
+        // 열린 회차면 청구에서 빠지고 선결제가 남으면 돌려준다(D3), 닫힌 회차면 통계에서만 빠진다(D1).
         CardPaymentServiceDto.SettlementResult settled = settleCard(expense, sideBefore,
             CardCycleMath.Side.none(), cardRefundMemo(expense, false), userRowId,
             CardPaymentServiceDto.SettlementMode.REFUND);
@@ -417,7 +727,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         log.info("환불 마크 완료: expenseId={}, refundedAt={}, 환급이체={}",
             expenseId, expense.getRefundedAt(),
             settled != null ? settled.refundTransferRowId() : null);
-        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(), refundedAmountOf(settled));
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of(), refundedAmountOf(settled))
+            .withMoneyLocked(moneyLockJudge().test(expense));
     }
 
     /** 환불 취소 — 표식을 지우고 흐름을 되살린다. 환급 이체가 있었으면 그것도 무른다. */
@@ -444,12 +755,13 @@ public class ExpenseServiceImpl implements ExpenseService {
         // 원거래 흐름을 다시 적재한다 — 카드는 다시 빚이 되고 청구도 다시 늘어난다.
         balanceHistoryService.recordExpense(expense.getAsset(), expense.getRowId(),
             expense.getExpenseType(), expense.getAmount(), expense.getExpenseDate());
-        // 환불 동안 결제일이 지난 회차는 그 결제에 이 거래가 빠져 있었다 — 기록용·당일 결제로 채운다.
+        // 환불 동안 결제일이 된 회차는 그 결제에 이 거래가 빠져 있었다 — 결제가 덮지 못한 만큼 기록용.
         settleCard(expense, CardCycleMath.Side.none(), sideOf(expense), null, userRowId,
             CardPaymentServiceDto.SettlementMode.CANCEL_REFUND);
 
         log.info("환불 취소 완료: expenseId={}, 되돌린 환급이체={}", expenseId, transferRowId);
-        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of());
+        return ExpenseServiceDto.ExpenseInfo.from(expense, List.of())
+            .withMoneyLocked(moneyLockJudge().test(expense));
     }
 
     /**
@@ -510,20 +822,17 @@ public class ExpenseServiceImpl implements ExpenseService {
         CardPaymentServiceDto.SettlementPreview p = cardPaymentService.previewExpenseChange(
             new CardPaymentServiceDto.SettlementCommand(expense, before, after, null, userRowId,
                 CardPaymentServiceDto.SettlementMode.CHANGE));
+        // 옛 앱만 부른다(D4) — 당일 추가 결제는 없어졌고(U7), 기한 문구(REFUND_WINDOW_CLOSED)는 쓰지 않는다.
         String reason;
         if (p.refundAmount() > 0L) {
-            reason = p.recordOnlyRefund()
-                ? CardPaymentServiceDto.RefundPreview.RECORD_ONLY_OK
-                : CardPaymentServiceDto.RefundPreview.OK;
-        } else if (p.windowClosed()) {
-            reason = CardPaymentServiceDto.RefundPreview.REFUND_WINDOW_CLOSED;
+            reason = CardPaymentServiceDto.RefundPreview.OK;
         } else if (p.noPaymentAsset()) {
             reason = CardPaymentServiceDto.RefundPreview.NO_PAYMENT_ASSET;
         } else {
             reason = CardPaymentServiceDto.RefundPreview.NOT_PAID_CYCLE;
         }
         return new ExpenseServiceDto.RefundPreviewInfo(p.refundAmount() > 0L, p.refundAmount(), reason,
-            p.newRecordAmount(), p.sameDayExtraPayment());
+            p.newRecordAmount(), 0L);
     }
 
     /**
@@ -538,8 +847,13 @@ public class ExpenseServiceImpl implements ExpenseService {
             source != null ? source.getExpenseType() : ExpenseType.EXPENSE, amount, null, expenseDate,
             null, null, installmentMonths, null, null, null);
         if (source != null) {
-            if (source.getInstallmentPayoffDate() != null && draft.isInstallment()) {
-                draft.payoffInstallment(source.getInstallmentPayoffDate());
+            // 개월을 줄이거나 날짜를 옮겨 상환 회차가 할부 밖으로 나가면 상환이 없는 것과 같다 —
+            // 엔티티가 예외를 던지므로(24차 10⑥, 미리보기 500) 여기서 거른다.
+            LocalDate payoff = source.getInstallmentPayoffDate();
+            if (payoff != null && draft.isInstallment() && expenseDate != null
+                    && Expense.installmentSequenceAt(payoff, expenseDate.toLocalDate())
+                        <= draft.getInstallmentMonths()) {
+                draft.payoffInstallment(payoff);
             }
             draft.markCardSettledThrough(source.getCardSettledThrough());
         }
@@ -560,15 +874,22 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     /**
-     * 이 거래가 카드 회차 규칙을 따르는 모습 — 결제일이 있는 신용카드에 사용자가 쓴 살아 있는
-     * 지출일 때만. 시스템이 만든 거래(카드 이월 등)는 원 거래가 정하므로 규칙 밖이다.
+     * 이 거래가 카드 회차 규칙을 따르는 모습 — 신용카드에 사용자가 쓴 살아 있는 거래일 때만.
+     *
+     * <p>시스템이 만든 거래(카드 이월 등)는 원 거래가 정하므로 규칙 밖이다. 지운 카드도 밖이다 — 정리할
+     * 카드가 없는데 정산하려다 404 로 거래 삭제·환불까지 막혔다(23차 11). 결제일 없는 옛 카드는 회차가
+     * 닫히지 않는 카드로 들어온다(D8) — 늘 열린 회차라 선결제 환급은 그대로 된다.
      */
     private CardCycleMath.Side sideOf(Expense e) {
         Asset card = creditCardOf(e);
-        if (card == null || card.getPaymentDay() == null || e.isAutoGenerated() || !e.isCountable()) {
+        if (card == null || card.getIsDeleted() == YNType.Y || e.isAutoGenerated() || !e.isCountable()) {
             return CardCycleMath.Side.none();
         }
-        return new CardCycleMath.Side(card.getRowId(), card.getPaymentDay(),
+        PaymentSchedule schedule = paymentScheduleService.scheduleOf(card);
+        if (schedule == null) {
+            return CardCycleMath.Side.none();
+        }
+        return new CardCycleMath.Side(card.getRowId(), schedule,
             CardCycleMath.duesByCycle(e), e.getCardSettledThrough());
     }
 
@@ -622,9 +943,11 @@ public class ExpenseServiceImpl implements ExpenseService {
         expense.deleteExpense();
         // 자산 잔액 이력: 해당 거래 flow soft-delete
         balanceHistoryService.removeExpense(expenseId);
+        // 분할도 같이 지운다 — 남기면 거래 없는 분할이 고아로 남는다(인계 25 2-1 ⑥).
+        expenseSplitRepository.findByExpense(expenseId).forEach(ExpenseSplit::deleteSplit);
 
-        // 결제된 회차의 카드 거래였다면 결제한 달 안에서는 결제계좌로 돌려주고, 지났으면
-        // 기록만 정리한다(R6). 결제 전이었다면 아무 일도 일어나지 않는다.
+        // 닫힌 회차 결제분은 결제가 덮은 만큼 상계로 붙잡아 카드·통장이 그대로고(D1), 열린 회차면
+        // 선결제가 남을 때만 결제계좌로 돌려준다(D3).
         Long refundedAmount = refundedAmountOf(settleCard(expense, sideBefore, CardCycleMath.Side.none(),
             memo, userRowId, CardPaymentServiceDto.SettlementMode.CHANGE));
 
@@ -898,9 +1221,10 @@ public class ExpenseServiceImpl implements ExpenseService {
 
         // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 검색 결과의 카테고리 필터도 split-aware 하게 (getExpenses 와 대칭).
         Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(expenses);
+        Predicate<Expense> locked = moneyLockJudge();
         return expenses.stream()
             .map(e -> ExpenseServiceDto.ExpenseInfo.from(
-                e, splitCatsByExpense.getOrDefault(e.getRowId(), List.of())))
+                e, splitCatsByExpense.getOrDefault(e.getRowId(), List.of())).withMoneyLocked(locked.test(e)))
             .toList();
     }
 
@@ -908,8 +1232,9 @@ public class ExpenseServiceImpl implements ExpenseService {
     public List<ExpenseServiceDto.ExpenseInfo> getExpensesByCalendarEvent(Long calendarEventRowId) {
         log.debug("일정 연결 지출 조회: calendarEventRowId={}", calendarEventRowId);
 
+        Predicate<Expense> locked = moneyLockJudge();
         return expenseRepository.findByCalendarEvent(calendarEventRowId).stream()
-            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .map(e -> ExpenseServiceDto.ExpenseInfo.from(e).withMoneyLocked(locked.test(e)))
             .toList();
     }
 
@@ -917,8 +1242,9 @@ public class ExpenseServiceImpl implements ExpenseService {
     public List<ExpenseServiceDto.ExpenseInfo> getExpensesByTodo(Long todoRowId) {
         log.debug("할일 연결 지출 조회: todoRowId={}", todoRowId);
 
+        Predicate<Expense> locked = moneyLockJudge();
         return expenseRepository.findByTodo(todoRowId).stream()
-            .map(ExpenseServiceDto.ExpenseInfo::from)
+            .map(e -> ExpenseServiceDto.ExpenseInfo.from(e).withMoneyLocked(locked.test(e)))
             .toList();
     }
 
@@ -992,6 +1318,15 @@ public class ExpenseServiceImpl implements ExpenseService {
         List<Expense> monthly = aggregatable(
             expenseRepository.findByDateRange(userRowId, ms, me), userRowId);
         return expenseSpendRollup(monthly, loadSplitsByExpense(monthly));
+    }
+
+    @Override
+    public long getMonthlyExpenseTotal(Long userRowId, int year, int month) {
+        LocalDate ms = LocalDate.of(year, month, 1);
+        LocalDate me = ms.plusMonths(1).minusDays(1);
+        return aggregatable(expenseRepository.findByDateRange(userRowId, ms, me), userRowId).stream()
+            .mapToLong(Expense::expenseContribution)
+            .sum();
     }
 
     /**

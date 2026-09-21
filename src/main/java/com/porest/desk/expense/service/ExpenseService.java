@@ -24,6 +24,20 @@ public interface ExpenseService {
     void createExpensesChunk(List<ExpenseServiceDto.CreateCommand> commands);
     List<ExpenseServiceDto.ExpenseInfo> getExpenses(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType, LocalDate startDate, LocalDate endDate);
     ExpenseServiceDto.ExpenseInfo updateExpense(Long expenseId, Long userRowId, ExpenseServiceDto.UpdateCommand command);
+
+    /** 그 달의 지출 합계 — 예산 이행률과 같은 규칙(예정·환불·카드 이월 제외). 전체 예산 알림용. */
+    long getMonthlyExpenseTotal(Long userRowId, int year, int month);
+
+    /**
+     * 고쳐 쓰기(D13) — 결제가 끝난 거래를 지우고 새로 적는다. 한 트랜잭션.
+     *
+     * @param command 새 거래(생성 본문과 같다). 일정·할 일이 비면 옛 거래의 연결을 잇는다
+     * @param splits  새 분할. null 이면 옛 분할을 옮긴다(합이 새 금액과 다르면 400)
+     * @return 새 거래
+     */
+    ExpenseServiceDto.ExpenseInfo replaceExpense(Long expenseId, Long userRowId,
+                                                 ExpenseServiceDto.CreateCommand command,
+                                                 List<com.porest.desk.expense.service.dto.ExpenseSplitServiceDto.SplitCommand> splits);
     /**
      * 지운다. 결제 완료 회차의 카드 거래였다면 결제계좌로 돌려준 금액을 돌려준다(없으면 null).
      */

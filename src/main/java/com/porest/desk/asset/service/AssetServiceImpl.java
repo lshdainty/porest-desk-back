@@ -80,6 +80,10 @@ public class AssetServiceImpl implements AssetService {
     private final SecuritiesPriceProviders priceProviders;
     // 저장할 시장코드 확정용 — 조회 규칙과 달리 모호하면 비워 둔다(confirmMarketCode).
     private final StockMasterResolver stockMasterResolver;
+    // 신용카드 회차별 결제일(D5) — 결제일 변경은 다음 회차부터, 닫힌 회차 판정도 이것으로.
+    private final com.porest.desk.card.service.PaymentScheduleService paymentScheduleService;
+    // 닫힌 회차 판정의 "오늘" — 자정 배치와 같은 서울 시계(D11).
+    private final com.porest.core.time.ServiceClock serviceClock;
 
     @Override
     @Transactional
@@ -93,6 +97,11 @@ public class AssetServiceImpl implements AssetService {
         // 저장 전에 한 번 다듬는다 — 종목코드는 대문자·앞뒤공백 제거, 항목명은 trim,
         // 그리고 같은 종목이 두 줄로 온 요청은 여기서 한 줄로 접힌다.
         List<AssetServiceDto.HoldingCommand> holdingCommands = normalizeHoldings(command.holdings());
+
+        // 신용카드는 결제일이 있어야 회차가 선다(D8) — 없으면 닫힌 회차 판정·결제 배치가 전부 비껴간다.
+        if (command.assetType() == AssetType.CREDIT_CARD && command.paymentDay() == null) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_CARD_PAYMENT_DAY_REQUIRED);
+        }
 
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
         Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), command.userRowId());
@@ -137,6 +146,8 @@ public class AssetServiceImpl implements AssetService {
         asset.updateAmountHidden(command.isAmountHidden());
 
         assetRepository.save(asset);
+        // 신용카드는 처음부터 이 결제일 — 나중에 바꾸면 그 뒤 회차부터만 바뀐다(D5).
+        paymentScheduleService.initialize(asset);
         List<AssetServiceDto.HoldingInfo> holdings = saveHoldings(asset, holdingCommands);
         // 잔액 이력: 초기 예수금 절대 앵커 + (보유가 있으면) 평가금액 앵커
         LocalDateTime createdAt = userClock.now(command.userRowId());
@@ -149,8 +160,39 @@ public class AssetServiceImpl implements AssetService {
         syncCardCarryover(asset, balance, createdAt);
         log.info("자산 등록 완료: assetId={}, userRowId={}", asset.getRowId(), command.userRowId());
 
-        return AssetServiceDto.AssetInfo.from(asset, holdings,
-            balanceHistoryService.balanceAt(asset, userClock.now(command.userRowId())));
+        return withCardState(AssetServiceDto.AssetInfo.from(asset, holdings,
+            balanceHistoryService.balanceAt(asset, userClock.now(command.userRowId()))), asset);
+    }
+
+    /**
+     * 신용카드 상태를 응답에 붙인다 — 이월 금액(D7), 이월 칸 잠금(D15), 닫힌 회차의 끝(D5·D12).
+     *
+     * <p>클라이언트가 회차를 직접 세지 않게 서버가 내린다 — 결제일을 바꾼 카드는 회차마다 결제일이
+     * 달라 화면이 지금 결제일로 세면 틀린다.
+     */
+    private AssetServiceDto.AssetInfo withCardState(AssetServiceDto.AssetInfo info, Asset asset) {
+        if (asset.getAssetType() != AssetType.CREDIT_CARD) {
+            return info;
+        }
+        java.time.LocalDate today = serviceClock.today();
+        com.porest.desk.card.service.PaymentSchedule schedule = paymentScheduleService.scheduleOf(asset);
+        Expense carryover = expenseRepository
+            .findActiveByAssetAndAutoSource(asset.getRowId(), Expense.AUTO_SOURCE_CARD_CARRYOVER)
+            .orElse(null);
+        return info.withCardState(
+            carryover != null ? carryover.getAmount() : 0L,
+            carryoverLocked(carryover, schedule, today),
+            schedule != null ? schedule.closedThrough(today) : null);
+    }
+
+    /** 이월 거래가 든 회차의 결제일이 됐는가 — 됐으면 그 금액은 이미 결제에 들어갔다(D15). */
+    private static boolean carryoverLocked(Expense carryover,
+                                           com.porest.desk.card.service.PaymentSchedule schedule,
+                                           java.time.LocalDate today) {
+        return carryover != null && schedule != null && carryover.getExpenseDate() != null
+            && schedule.isClosed(
+                com.porest.desk.card.service.CardCycleMath.cycleStartOf(carryover.getExpenseDate().toLocalDate()),
+                today);
     }
 
     @Override
@@ -176,11 +218,11 @@ public class AssetServiceImpl implements AssetService {
         Map<Long, Long> checkCardUsed = checkCardMonthlyUsed(assets, userRowId, now);
 
         return assets.stream()
-            .map(a -> AssetServiceDto.AssetInfo.from(
+            .map(a -> withCardState(AssetServiceDto.AssetInfo.from(
                     a,
                     holdingsByAsset.getOrDefault(a.getRowId(), List.of()),
                     balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO))
-                .withMonthlyUsedAmount(checkCardUsed.get(a.getRowId())))
+                .withMonthlyUsedAmount(checkCardUsed.get(a.getRowId())), a))
             .toList();
     }
 
@@ -223,10 +265,10 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
         LocalDateTime now = userClock.now(userRowId);
-        return AssetServiceDto.AssetInfo.from(asset, activeHoldingInfos(assetId),
+        return withCardState(AssetServiceDto.AssetInfo.from(asset, activeHoldingInfos(assetId),
                 balanceHistoryService.balanceAt(asset, now))
             .withMonthlyUsedAmount(
-                checkCardMonthlyUsed(List.of(asset), userRowId, now).get(asset.getRowId()));
+                checkCardMonthlyUsed(List.of(asset), userRowId, now).get(asset.getRowId())), asset);
     }
 
     @Override
@@ -277,6 +319,20 @@ public class AssetServiceImpl implements AssetService {
         }
         Long oldPaymentAssetRowId = asset.getPaymentAsset() != null
             ? asset.getPaymentAsset().getRowId() : null;
+
+        // 신용카드는 결제일이 있어야 한다(D8). 결제일을 비우거나, 다른 종류를 결제일 없이 신용카드로 바꾸는
+        // 요청만 막는다 — 결제일 없는 옛 카드의 다른 칸 수정(이름·금액 가리기)까지 막으면 안 된다.
+        boolean wasCard = asset.getAssetType() == AssetType.CREDIT_CARD;
+        Integer effectiveDay = command.paymentDay().orKeep(asset.getPaymentDay());
+        if (effectiveType == AssetType.CREDIT_CARD && effectiveDay == null
+                && (command.paymentDay().present() || !wasCard)) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_CARD_PAYMENT_DAY_REQUIRED);
+        }
+        // 결제일 변경은 다음 회차부터(D5) — 자산을 고치기 전에(옛 결제일을 들고 있을 때) 이력을 적는다.
+        if (wasCard && effectiveType == AssetType.CREDIT_CARD && effectiveDay != null
+                && !effectiveDay.equals(asset.getPaymentDay())) {
+            paymentScheduleService.changePaymentDay(asset, effectiveDay, serviceClock.today());
+        }
         asset.updateAsset(
             command.assetName().orKeep(asset.getAssetName()),
             effectiveType,
@@ -292,6 +348,10 @@ public class AssetServiceImpl implements AssetService {
             paymentAsset
         );
         asset.updateAmountHidden(command.isAmountHidden().orKeep(asset.getIsAmountHidden()));
+        if (!wasCard && asset.getAssetType() == AssetType.CREDIT_CARD) {
+            // 다른 종류에서 신용카드가 됐다 — 처음부터 이 결제일.
+            paymentScheduleService.initialize(asset);
+        }
 
         // 평가금액(HOLDING)과 예수금(CASH)은 서로 다른 칸이라 각각 반영한다.
         // 한쪽 가지가 다른 쪽을 막으면 전량 매도처럼 두 칸이 동시에 바뀌는 상황에서 입력이 버려진다.
@@ -315,10 +375,11 @@ public class AssetServiceImpl implements AssetService {
         Long newBalance = requestedBalance == null ? null
             : AssetSignPolicy.normalizeBalance(asset.getAssetType(), command.isOverdraft().value(), requestedBalance);
         if (asset.getAssetType() == AssetType.CREDIT_CARD) {
-            // 카드는 잔액 앵커를 쓰지 않는다(D4) — 폼의 그 칸은 "이전 미결제 사용액" 이고,
-            // 고치면 그 거래의 금액이 바뀐다(0 이면 지운다).
-            if (newBalance != null) {
-                syncCardCarryover(asset, newBalance, userClock.now(userRowId));
+            // 카드는 잔액 앵커를 쓰지 않는다(D4). 이월 금액("이전 미결제 사용액")은 제 키로만 고친다(D7) —
+            // balance 는 무시한다. 옛 폼이 그 칸을 지금 잔액으로 채워 보내 이월 거래를 덮어썼다.
+            Long carryover = command.carryoverAmount().value();
+            if (command.carryoverAmount().present() && carryover != null) {
+                syncCardCarryover(asset, carryover, userClock.now(userRowId));
             }
         } else if (!hasHoldings && newBalance != null
             && !Objects.equals(current.cash(), newBalance)) {
@@ -344,8 +405,8 @@ public class AssetServiceImpl implements AssetService {
         }
 
         log.info("자산 수정 완료: assetId={}", assetId);
-        return AssetServiceDto.AssetInfo.from(asset, holdings,
-            balanceHistoryService.balanceAt(asset, userClock.now(userRowId)));
+        return withCardState(AssetServiceDto.AssetInfo.from(asset, holdings,
+            balanceHistoryService.balanceAt(asset, userClock.now(userRowId))), asset);
     }
 
     @Override
@@ -1350,6 +1411,12 @@ public class AssetServiceImpl implements AssetService {
         Expense existing = expenseRepository
             .findActiveByAssetAndAutoSource(asset.getRowId(), Expense.AUTO_SOURCE_CARD_CARRYOVER)
             .orElse(null);
+        // 이월 거래가 든 회차의 결제일이 됐으면 그 금액은 이미 결제에 들어갔다 — 고치면 결제와 기록이
+        // 갈린다(D15). 같은 값은 통과(폼이 그대로 되돌려 보낸다).
+        if (existing != null && !Objects.equals(existing.getAmount(), usage)
+                && carryoverLocked(existing, paymentScheduleService.scheduleOf(asset), serviceClock.today())) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_CARD_CARRYOVER_LOCKED);
+        }
 
         if (usage <= 0L) {
             if (existing != null) {

@@ -65,6 +65,13 @@ class ExpenseServiceSummaryTest {
     // 날짜 판정용 — mock 이면 null 이 흘러 NPE. 실물을 주입하되 사용자 조회는 비어
     // 서비스 기준(Asia/Seoul)으로 폴백한다.
     @Spy private UserClock userClock = new UserClock(rowId -> null, new ServiceClock("Asia/Seoul"));
+    // 회차별 결제일(D5) — 이력이 비어 있으면 카드의 지금 결제일 하나로 센다. 닫힌 회차의 "오늘"은 서울 시계(D11).
+    private final com.porest.desk.asset.repository.AssetPaymentDayHistoryRepository paymentDayHistory =
+        org.mockito.Mockito.mock(com.porest.desk.asset.repository.AssetPaymentDayHistoryRepository.class);
+    @org.mockito.Spy private com.porest.desk.card.service.PaymentScheduleService paymentScheduleService =
+        new com.porest.desk.card.service.PaymentScheduleService(paymentDayHistory);
+    @org.mockito.Spy private com.porest.core.time.ServiceClock serviceClock =
+        new com.porest.core.time.ServiceClock("Asia/Seoul");
 
     @InjectMocks private ExpenseServiceImpl sut;
 

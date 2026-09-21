@@ -118,8 +118,11 @@ public class DashboardServiceImpl implements DashboardService {
             .toList();
 
         // Expense trend (last 30 days, daily income/expense)
+        // 합계 카드와 같은 규칙 — 예정·환불·카드 이월을 뺀다(23차 12). 날것으로 더하면 환불한 거래와
+        // 아직 안 온 반복거래가 추이 막대에만 남아 위 숫자와 갈렸다.
         LocalDate trendStart = today.minusDays(29);
-        List<Expense> trendExpenses = expenseRepository.findByUser(userRowId, null, null, trendStart, today);
+        List<Expense> trendExpenses = notFuture(
+            expenseRepository.findByUser(userRowId, null, null, trendStart, today), nowTs);
         Map<LocalDate, long[]> dailyMap = new TreeMap<>();
         for (LocalDate d = trendStart; !d.isAfter(today); d = d.plusDays(1)) {
             dailyMap.put(d, new long[]{0, 0});
@@ -128,11 +131,8 @@ public class DashboardServiceImpl implements DashboardService {
             // expenseDate 는 LocalDateTime 이므로 LocalDate 키로 변환
             long[] amounts = dailyMap.get(e.getExpenseDate().toLocalDate());
             if (amounts != null) {
-                if (e.getExpenseType() == ExpenseType.INCOME) {
-                    amounts[0] += e.getAmount();
-                } else {
-                    amounts[1] += e.getAmount();
-                }
+                amounts[0] += e.incomeContribution();
+                amounts[1] += e.expenseContribution();
             }
         }
         List<DashboardServiceDto.DailyExpenseTrend> expenseTrendList = dailyMap.entrySet().stream()
