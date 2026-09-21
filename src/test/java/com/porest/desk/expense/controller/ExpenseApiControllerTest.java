@@ -76,7 +76,8 @@ class ExpenseApiControllerTest {
                 List.of(),
             null,       // refundedAmount — 조회에는 없다
             null, null, // cardSettledThrough · recordOnlyAmount — 기록용 아님
-            false);     // moneyLocked — 결제 전
+            false,      // moneyLocked — 결제 전
+            false);     // replaceable — 잠기지 않았다
     }
 
     @Test
@@ -239,7 +240,8 @@ class ExpenseApiControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rowId").value(10))
-                .andExpect(jsonPath("$.data.moneyLocked").value(false));
+                .andExpect(jsonPath("$.data.moneyLocked").value(false))
+                .andExpect(jsonPath("$.data.replaceable").value(false));
 
         var cmd = ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
         @SuppressWarnings("unchecked")

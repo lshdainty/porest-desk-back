@@ -214,7 +214,13 @@ public class AssetServiceDto {
         /** 신용카드: 이월 거래가 든 회차의 결제일이 됐으면 true — 이월 금액 칸 읽기 전용(D15). */
         boolean carryoverLocked,
         /** 결제일 있는 신용카드: 이 날짜 이하 거래는 닫힌 회차(D5·D12). 그 외 null. */
-        java.time.LocalDate cardClosedThrough
+        java.time.LocalDate cardClosedThrough,
+        /**
+         * 결제일 있는 신용카드: 결제일이 오늘보다 뒤인 첫 회차의 <b>실제 결제일</b>(결제일 이력 반영, D5).
+         * 그 회차는 이 날짜의 전달 1일~말일이고, 그 뒤 회차는 지금 결제일로 결제된다 — 결제일을 바꿔
+         * 옛 결제일로 나갈 회차가 남아 있을 때 화면이 지금 결제일로 세면 틀린다(QA 26 4). 그 외 null.
+         */
+        java.time.LocalDate nextPaymentDate
     ) {
         /** 카드 상태를 모르는 호출자(테스트 등) — 카드 칸은 비운다. */
         public AssetInfo(Long rowId, Long userRowId, String assetName, AssetType assetType, Long balance,
@@ -228,7 +234,7 @@ public class AssetServiceDto {
             this(rowId, userRowId, assetName, assetType, balance, cashBalance, holdingBalance, currency,
                 exchangeRate, color, institution, memo, sortOrder, isIncludedInTotal, isAmountHidden, cardCatalog,
                 creditLimit, paymentDay, paymentAssetRowId, marketCode, symbol, quantity, holdings, createAt,
-                modifyAt, monthlyUsedAmount, null, false, null);
+                modifyAt, monthlyUsedAmount, null, false, null, null);
         }
 
         /** 잔액 없이(0) 만든다 — 잔액이 화면에 안 쓰이는 응답 전용. */
@@ -287,16 +293,17 @@ public class AssetServiceDto {
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
                 marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsed,
-                carryoverAmount, carryoverLocked, cardClosedThrough);
+                carryoverAmount, carryoverLocked, cardClosedThrough, nextPaymentDate);
         }
 
-        /** 신용카드 상태(이월 금액·잠금·닫힌 회차 끝)를 붙인다. */
-        public AssetInfo withCardState(Long carryover, boolean locked, java.time.LocalDate closedThrough) {
+        /** 신용카드 상태(이월 금액·잠금·닫힌 회차 끝·다음 실제 결제일)를 붙인다. */
+        public AssetInfo withCardState(Long carryover, boolean locked, java.time.LocalDate closedThrough,
+                                       java.time.LocalDate nextPayment) {
             return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
                 marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsedAmount,
-                carryover, locked, closedThrough);
+                carryover, locked, closedThrough, nextPayment);
         }
     }
 

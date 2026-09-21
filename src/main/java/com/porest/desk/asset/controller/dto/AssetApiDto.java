@@ -266,7 +266,12 @@ public class AssetApiDto {
         /** 신용카드: 이월 거래가 든 회차의 결제일이 됐으면 true — 이월 금액 칸 읽기 전용(D15). */
         boolean carryoverLocked,
         /** 결제일 있는 신용카드: 이 날짜 이하 거래는 닫힌 회차. 그 외 null. */
-        java.time.LocalDate cardClosedThrough
+        java.time.LocalDate cardClosedThrough,
+        /**
+         * 결제일 있는 신용카드: 결제일이 오늘보다 뒤인 첫 회차의 실제 결제일(결제일 이력 반영). 그 회차는
+         * 이 날짜의 전달 한 달, 그 뒤 회차는 {@code paymentDay} 로 결제된다. 그 외 null.
+         */
+        java.time.LocalDate nextPaymentDate
     ) {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
@@ -281,7 +286,8 @@ public class AssetApiDto {
                 info.holdings().stream().map(HoldingResponse::from).toList(),
                 info.createAt(), info.modifyAt(),
                 info.monthlyUsedAmount(),
-                info.carryoverAmount(), info.carryoverLocked(), info.cardClosedThrough()
+                info.carryoverAmount(), info.carryoverLocked(), info.cardClosedThrough(),
+                info.nextPaymentDate()
             );
         }
     }

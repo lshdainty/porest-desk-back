@@ -243,7 +243,8 @@ class AssetApiControllerTest {
     @DisplayName("PUT /asset/{id} — 이월 금액은 carryoverAmount 키로 넘긴다(D7), 응답에 카드 상태가 실린다")
     void updateCarriesCarryoverAmount() throws Exception {
         given(assetService.updateAsset(any(Long.class), any(Long.class), any())).willReturn(
-                sampleAsset().withCardState(70_000L, true, LocalDate.of(2026, 8, 31)));
+                sampleAsset().withCardState(70_000L, true, LocalDate.of(2026, 8, 31),
+                        LocalDate.of(2026, 9, 25)));
 
         mockMvc.perform(put("/api/v1/asset/{id}", 100L)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -251,7 +252,8 @@ class AssetApiControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.carryoverAmount").value(70000))
                 .andExpect(jsonPath("$.data.carryoverLocked").value(true))
-                .andExpect(jsonPath("$.data.cardClosedThrough").value("2026-08-31"));
+                .andExpect(jsonPath("$.data.cardClosedThrough").value("2026-08-31"))
+                .andExpect(jsonPath("$.data.nextPaymentDate").value("2026-09-25"));
 
         ArgumentCaptor<AssetServiceDto.UpdateAssetCommand> c =
                 ArgumentCaptor.forClass(AssetServiceDto.UpdateAssetCommand.class);

@@ -81,7 +81,8 @@ class ExpenseTemplateApiControllerTest {
                 List.of(),
             null,       // refundedAmount — 조회에는 없다
             null, null, // cardSettledThrough · recordOnlyAmount — 기록용 아님
-            false);     // moneyLocked — 결제 전
+            false,      // moneyLocked — 결제 전
+            false);     // replaceable — 잠기지 않았다
     }
 
     @Test
