@@ -45,7 +45,10 @@ import com.porest.core.time.UserClock;
  * 대시보드 종합 집계 로직 회귀 방지 단위 테스트.
  * getDashboardSummary 는 여러 도메인 레포를 한 번에 호출해 자바 메모리에서 필터·정렬·버킷 집계하므로,
  * 실제 엔티티로 레포 반환값을 구성(mock)하고 서비스가 만든 결과를 입력에서 독립 계산한 기대값과 대조한다.
- * 날짜 필터가 today(LocalDate.now()) 기준이므로 테스트 데이터도 today 상대값으로 만든다.
+ * 날짜 필터가 today 기준이므로 테스트 데이터도 today 상대값으로 만든다. today·now 는 벽시계가
+ * 아니라 {@link #TODAY} 로 고정한다 — 추이·합계는 "아직 오지 않은 거래" 를 시각 기준으로 빼서
+ * 벽시계를 쓰면 "오늘 15:00 거래" 가 15시 전 실행에서만 빠졌고(2026-09-22 14시에 깨짐),
+ * 테스트 JVM 시간대(CI 는 UTC)와 서비스 시간대(Asia/Seoul)가 자정 앞뒤로 날짜가 갈렸다.
  */
 @ExtendWith(MockitoExtension.class)
 class DashboardServiceImplTest {
@@ -104,7 +107,12 @@ class DashboardServiceImplTest {
      * countStatsByUser 는 배열 인덱스 접근 때문에 반드시 길이 8 배열이 필요.
      * lenient 로 두어 각 테스트가 관심 있는 것만 given(...) 으로 덮어쓴다.
      */
+    /** 고정한 "오늘". now 는 그날 23:59 — 오늘 날짜 거래는 전부 이미 온 것이다. */
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 22);
+
     private void primeSummaryDefaults() {
+        lenient().doReturn(TODAY).when(userClock).today(USER_ID);
+        lenient().doReturn(TODAY.atTime(23, 59)).when(userClock).now(USER_ID);
         lenient().when(todoRepository.countStatsByUser(eq(USER_ID), any(LocalDate.class)))
                 .thenReturn(new long[]{0, 0, 0, 0, 0, 0, 0, 0});
         lenient().when(todoRepository.findAllByUser(eq(USER_ID), isNull(), isNull(), isNull(), isNull(),
@@ -164,7 +172,7 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — recentTodos: 완료 제외 + dueDate 오름차순(null 마지막)")
     void recentTodosExcludeCompletedSortNullsLast() {
         primeSummaryDefaults();
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
         Todo completed = todoTask(1L, TodoStatus.COMPLETED, TodoPriority.HIGH, "완료됨", today);
         Todo a = todoTask(2L, TodoStatus.PENDING, TodoPriority.HIGH, "A", today.plusDays(1));
         Todo b = todoTask(3L, TodoStatus.IN_PROGRESS, TodoPriority.MEDIUM, "B", today.plusDays(2));
@@ -194,7 +202,7 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — recentTodos는 최대 5개, 가장 늦은 항목이 잘린다")
     void recentTodosLimitedToFive() {
         primeSummaryDefaults();
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
         Todo t11 = todoTask(11L, TodoStatus.PENDING, TodoPriority.LOW, "d1", today.plusDays(1));
         Todo t12 = todoTask(12L, TodoStatus.PENDING, TodoPriority.LOW, "d2", today.plusDays(2));
         Todo t13 = todoTask(13L, TodoStatus.PENDING, TodoPriority.LOW, "d3", today.plusDays(3));
@@ -247,7 +255,7 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — todayEventCount(겹침)·upcomingEventCount(원본크기)·nextEventDate·upcoming목록을 각각 정확히 산출")
     void calendarTodayCountUpcomingAndNextDate() {
         primeSummaryDefaults();
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
         // 어제 시작~내일 끝 여러날 이벤트: 오늘과 겹침 O, 하지만 시작일(어제)이 today 이전 → upcoming/next에서 제외
         CalendarEvent multiDay = event(101L, "여러날", CalendarEventType.WORK, "#111111",
                 today.minusDays(1).atStartOfDay(), today.plusDays(1).atTime(23, 0));
@@ -286,7 +294,7 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — upcomingEvents는 시작 오름차순 최대 5개")
     void upcomingEventsLimitedToFive() {
         primeSummaryDefaults();
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
         CalendarEvent e1 = event(1L, "d1", CalendarEventType.PERSONAL, "#1", today.plusDays(1).atTime(9, 0), today.plusDays(1).atTime(10, 0));
         CalendarEvent e2 = event(2L, "d2", CalendarEventType.PERSONAL, "#2", today.plusDays(2).atTime(9, 0), today.plusDays(2).atTime(10, 0));
         CalendarEvent e3 = event(3L, "d3", CalendarEventType.PERSONAL, "#3", today.plusDays(3).atTime(9, 0), today.plusDays(3).atTime(10, 0));
@@ -312,7 +320,7 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — 30일 추이: 경계 포함, 창밖 제외, 같은날 타입별 누적, 오름차순 0채움")
     void expenseTrendBucketsZeroFillsAndWindow() {
         primeSummaryDefaults();
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
         given(expenseRepository.findByUser(eq(USER_ID), isNull(), isNull(),
                 any(LocalDate.class), any(LocalDate.class)))
                 .willReturn(List.of(
