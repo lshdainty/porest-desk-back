@@ -47,7 +47,8 @@ public class AssetApiController {
             request.isAmountHidden(),
             request.cardCatalogRowId(),
             request.creditLimit(), request.paymentDay(), request.paymentAssetRowId(),
-            AssetApiDto.HoldingRequest.toCommands(request.holdings())
+            AssetApiDto.HoldingRequest.toCommands(request.holdings()),
+            request.dueCarryoverAmount()
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }
@@ -83,7 +84,8 @@ public class AssetApiController {
             Patch.from(request.creditLimit()), Patch.from(request.paymentDay()),
             Patch.from(request.paymentAssetRowId()),
             AssetApiDto.HoldingRequest.toCommands(request.holdings()),
-            Patch.from(request.carryoverAmount())
+            Patch.from(request.carryoverAmount()),
+            Patch.from(request.dueCarryoverAmount())
         ));
         return ApiResponse.success(AssetApiDto.AssetResponse.from(info));
     }

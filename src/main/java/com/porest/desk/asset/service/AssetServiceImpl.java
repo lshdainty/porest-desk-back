@@ -158,6 +158,8 @@ public class AssetServiceImpl implements AssetService {
         // 신용카드의 사용액은 앵커가 아니라 **거래 한 건**이다(D4). 그래야 한도 사용과
         // 청구가 같은 재료에서 나오고, 이 거래가 든 회차에 자연히 청구된다.
         syncCardCarryover(asset, balance, createdAt);
+        // 결제를 기다리던 지난달 청구분은 그 회차(지난달 말)에 따로 둔다 — 다가오는 결제일에 청구된다.
+        syncDueCarryover(asset, command.dueCarryoverAmount(), userClock.today(command.userRowId()));
         log.info("자산 등록 완료: assetId={}, userRowId={}", asset.getRowId(), command.userRowId());
 
         return withCardState(AssetServiceDto.AssetInfo.from(asset, holdings,
@@ -183,7 +185,58 @@ public class AssetServiceImpl implements AssetService {
             carryover != null ? carryover.getAmount() : 0L,
             carryoverLocked(carryover, schedule, today),
             schedule != null ? schedule.closedThrough(today) : null,
-            schedule != null ? schedule.firstOpenPaymentDate(today) : null);
+            schedule != null ? schedule.firstOpenPaymentDate(today) : null,
+            dueCarryoverState(asset, schedule, today));
+    }
+
+    /**
+     * 결제 대기 청구분 칸 — 청구분이 있으면 그 회차로, 없으면 등록한 달의 그 회차가 아직 열려 있을 때만.
+     * 둘 다 아니면 null(폼이 칸을 안 그린다).
+     */
+    private AssetServiceDto.DueCarryover dueCarryoverState(
+            Asset asset, com.porest.desk.card.service.PaymentSchedule schedule, LocalDate today) {
+        if (schedule == null || !schedule.hasDay()) {
+            return null;
+        }
+        Expense due = expenseRepository
+            .findActiveByAssetAndAutoSource(asset.getRowId(), Expense.AUTO_SOURCE_CARD_CARRYOVER_DUE)
+            .orElse(null);
+        LocalDate dueCycle = due != null && due.getExpenseDate() != null
+            ? com.porest.desk.card.service.CardCycleMath.cycleStartOf(due.getExpenseDate().toLocalDate())
+            : dueCycleFor(registeredDate(asset), schedule);
+        if (dueCycle == null) {
+            return null;
+        }
+        boolean closed = schedule.isClosed(dueCycle, today);
+        if (due == null && closed) {
+            return null;
+        }
+        return new AssetServiceDto.DueCarryover(
+            due != null ? due.getAmount() : 0L, closed, schedule.paymentDateOf(dueCycle));
+    }
+
+    /** 카드를 등록한 날(사용자 달력) — 생성 시각은 UTC 로 저장된다. 모르면 null. */
+    private LocalDate registeredDate(Asset asset) {
+        if (asset.getCreateAt() == null || asset.getUser() == null) {
+            return null;
+        }
+        return asset.getCreateAt().atZone(java.time.ZoneOffset.UTC)
+            .withZoneSameInstant(userClock.zoneOf(asset.getUser().getRowId()))
+            .toLocalDate();
+    }
+
+    /**
+     * 등록한 날 결제를 기다리던 회차 — 등록한 달의 전달 회차이고, 그 결제일이 등록한 날보다 뒤일 때만.
+     * 결제일이 지났거나 당일이면 그 회차는 이미 결제됐다(D2 — 결제일 당일 닫힘) → null.
+     */
+    private static LocalDate dueCycleFor(LocalDate registered,
+                                         com.porest.desk.card.service.PaymentSchedule schedule) {
+        if (registered == null || schedule == null || !schedule.hasDay()) {
+            return null;
+        }
+        LocalDate cycle = registered.withDayOfMonth(1).minusMonths(1);
+        LocalDate pay = schedule.paymentDateOf(cycle);
+        return pay != null && pay.isAfter(registered) ? cycle : null;
     }
 
     /** 이월 거래가 든 회차의 결제일이 됐는가 — 됐으면 그 금액은 이미 결제에 들어갔다(D15). */
@@ -381,6 +434,10 @@ public class AssetServiceImpl implements AssetService {
             Long carryover = command.carryoverAmount().value();
             if (command.carryoverAmount().present() && carryover != null) {
                 syncCardCarryover(asset, carryover, userClock.now(userRowId));
+            }
+            Long dueCarryover = command.dueCarryoverAmount().value();
+            if (command.dueCarryoverAmount().present() && dueCarryover != null) {
+                syncDueCarryover(asset, dueCarryover, registeredDate(asset));
             }
         } else if (!hasHoldings && newBalance != null
             && !Objects.equals(current.cash(), newBalance)) {
@@ -1452,6 +1509,72 @@ public class AssetServiceImpl implements AssetService {
             ExpenseType.EXPENSE, usage, at);
         log.info("카드 이월 거래 생성: assetId={}, expenseId={}, amount={}",
             asset.getRowId(), carryover.getRowId(), usage);
+    }
+
+    /**
+     * 결제를 기다리던 지난달 청구분 거래를 만들거나 고치거나 지운다(2026-09-22 사용자 결정).
+     *
+     * <p>결제일 전에 카드를 등록하면 실제 카드사는 지난달 청구분을 다가오는 결제일에, 이번 달 쓴
+     * 금액을 그다음 결제일에 뺀다. 한 건({@link #syncCardCarryover})으로 두면 등록한 날의 회차에
+     * 한꺼번에 청구돼 한 달 동안 통장 잔액이 실제보다 많았다. 그래서 이 몫은 <b>그 회차의 말일</b>
+     * 거래로 둔다 — 결제 스케줄러가 다가오는 결제일에 그 회차로 청구한다(카드는 잔액 앵커가 먼 과거라
+     * 등록 전 날짜의 거래도 잔액·빚에 잡힌다, D4).
+     *
+     * <p>넣고 고칠 수 있는 건 <b>등록한 달의 그 회차 결제일 전까지</b>다. 지나면 이미 결제에
+     * 들어갔으므로 고치면 결제와 기록이 갈린다(D15 와 같다). 0 이면 지운다.
+     *
+     * @param requested  청구분(양수로 받는다 — 부호는 여기서 정하지 않는다). null 이면 무변경
+     * @param registered 카드를 등록한 날(사용자 달력) — 그 달의 전달 회차가 대상이다
+     */
+    private void syncDueCarryover(Asset asset, Long requested, LocalDate registered) {
+        if (asset.getAssetType() != AssetType.CREDIT_CARD || requested == null) {
+            return;
+        }
+        long due = Math.abs(requested);
+        com.porest.desk.card.service.PaymentSchedule schedule = paymentScheduleService.scheduleOf(asset);
+        LocalDate today = serviceClock.today();
+        Expense existing = expenseRepository
+            .findActiveByAssetAndAutoSource(asset.getRowId(), Expense.AUTO_SOURCE_CARD_CARRYOVER_DUE)
+            .orElse(null);
+
+        if (existing != null) {
+            if (Objects.equals(existing.getAmount(), due)) {
+                return; // 같은 값은 통과 — 폼이 그대로 되돌려 보낸다
+            }
+            if (carryoverLocked(existing, schedule, today)) {
+                throw new InvalidValueException(DeskErrorCode.ASSET_CARD_CARRYOVER_LOCKED);
+            }
+            if (due <= 0L) {
+                existing.deleteExpense();
+                balanceHistoryService.removeExpense(existing.getRowId());
+                log.info("카드 결제 대기 청구분 삭제: assetId={}, expenseId={}", asset.getRowId(), existing.getRowId());
+                return;
+            }
+            existing.updateAmountOnly(due);
+            balanceHistoryService.removeExpense(existing.getRowId());
+            balanceHistoryService.recordExpense(asset, existing.getRowId(),
+                ExpenseType.EXPENSE, due, existing.getExpenseDate());
+            log.info("카드 결제 대기 청구분 변경: assetId={}, expenseId={}, amount={}",
+                asset.getRowId(), existing.getRowId(), due);
+            return;
+        }
+        if (due <= 0L) {
+            return;
+        }
+
+        LocalDate dueCycle = dueCycleFor(registered, schedule);
+        if (dueCycle == null || schedule.isClosed(dueCycle, today)) {
+            throw new InvalidValueException(DeskErrorCode.ASSET_CARD_DUE_CARRYOVER_CLOSED);
+        }
+        LocalDateTime at = com.porest.desk.card.service.CardCycleMath.cycleEndOf(dueCycle).atStartOfDay();
+        Expense carryover = Expense.createExpense(
+            asset.getUser(), null, asset, ExpenseType.EXPENSE, due,
+            CARD_CARRYOVER_LABEL, at, CARD_CARRYOVER_LABEL, null, null, null, null, null);
+        carryover.markAutoGenerated(Expense.AUTO_SOURCE_CARD_CARRYOVER_DUE);
+        expenseRepository.save(carryover);
+        balanceHistoryService.recordExpense(asset, carryover.getRowId(), ExpenseType.EXPENSE, due, at);
+        log.info("카드 결제 대기 청구분 생성: assetId={}, expenseId={}, amount={}, 회차={}",
+            asset.getRowId(), carryover.getRowId(), due, dueCycle);
     }
 
     /** 그 거래가 내역에서 보일 이름 — 카테고리는 두지 않는다(사용자 분류가 아니다). */

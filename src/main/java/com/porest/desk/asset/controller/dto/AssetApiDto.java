@@ -72,7 +72,15 @@ public class AssetApiDto {
         Integer paymentDay,
         Long paymentAssetRowId,
         // 투자 보유 목록 (INVESTMENT 전용)
-        List<HoldingRequest> holdings
+        List<HoldingRequest> holdings,
+        /**
+         * 신용카드: 사용액 중 <b>결제를 기다리던 지난달 청구분</b>(양수) — 다가오는 결제일에 청구된다.
+         * {@code balance} 는 그 뒤 쓴 금액이다. 결제 대기 청구분이 없을 때 0 보다 크면 400(AST_035).
+         * 안 보내면(옛 클라이언트) 없음.
+         */
+        @Min(value = 0, message = "결제될 금액은 0원 이상이어야 해요")
+        @Max(value = AmountLimits.MAX_BALANCE, message = "결제될 금액은 1,000억원까지 입력할 수 있어요")
+        Long dueCarryoverAmount
     ) {}
 
     /**
@@ -135,7 +143,14 @@ public class AssetApiDto {
          */
         Optional<@Min(value = 0, message = "이월 금액은 0원 이상이어야 해요")
                  @Max(value = AmountLimits.MAX_BALANCE, message = "이월 금액은 1,000억원까지 입력할 수 있어요")
-                 Long> carryoverAmount
+                 Long> carryoverAmount,
+        /**
+         * 신용카드: 결제를 기다리던 지난달 청구분 — 키가 없으면 유지, 0 이면 지운다. 카드를 등록한 달의
+         * 그 회차 결제일 전까지만 넣고 고친다(지나면 AST_034 · 없던 칸을 새로 넣으면 AST_035).
+         */
+        Optional<@Min(value = 0, message = "결제될 금액은 0원 이상이어야 해요")
+                 @Max(value = AmountLimits.MAX_BALANCE, message = "결제될 금액은 1,000억원까지 입력할 수 있어요")
+                 Long> dueCarryoverAmount
     ) {}
 
     /**
@@ -271,7 +286,12 @@ public class AssetApiDto {
          * 결제일 있는 신용카드: 결제일이 오늘보다 뒤인 첫 회차의 실제 결제일(결제일 이력 반영). 그 회차는
          * 이 날짜의 전달 한 달, 그 뒤 회차는 {@code paymentDay} 로 결제된다. 그 외 null.
          */
-        java.time.LocalDate nextPaymentDate
+        java.time.LocalDate nextPaymentDate,
+        /**
+         * 신용카드: 결제 대기 청구분 칸 — 청구분이 있거나, 등록한 달의 그 회차 결제일이 아직 안 왔으면
+         * 값(폼이 칸을 그린다). 그 외 null.
+         */
+        DueCarryoverResponse dueCarryover
     ) {
         public static AssetResponse from(AssetServiceDto.AssetInfo info) {
             return new AssetResponse(
@@ -287,8 +307,22 @@ public class AssetApiDto {
                 info.createAt(), info.modifyAt(),
                 info.monthlyUsedAmount(),
                 info.carryoverAmount(), info.carryoverLocked(), info.cardClosedThrough(),
-                info.nextPaymentDate()
+                info.nextPaymentDate(),
+                DueCarryoverResponse.from(info.dueCarryover())
             );
+        }
+    }
+
+    /**
+     * 결제 대기 청구분 칸.
+     *
+     * @param amount      지금 청구분(없으면 0)
+     * @param locked      그 회차 결제일이 됐다 — 읽기 전용
+     * @param paymentDate 그 회차의 결제일 — 칸 이름에 쓴다("9월 25일에 결제될 금액")
+     */
+    public record DueCarryoverResponse(long amount, boolean locked, java.time.LocalDate paymentDate) {
+        static DueCarryoverResponse from(AssetServiceDto.DueCarryover due) {
+            return due == null ? null : new DueCarryoverResponse(due.amount(), due.locked(), due.paymentDate());
         }
     }
 

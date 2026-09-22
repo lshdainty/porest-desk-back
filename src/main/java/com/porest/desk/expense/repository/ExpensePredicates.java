@@ -42,6 +42,6 @@ public final class ExpensePredicates {
     public static BooleanExpression ledgerCountable() {
         return countable().and(
             expense.autoSource.isNull()
-                .or(expense.autoSource.ne(Expense.AUTO_SOURCE_CARD_CARRYOVER)));
+                .or(expense.autoSource.notIn(Expense.CARD_CARRYOVER_SOURCES)));
     }
 }

@@ -26,6 +26,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "expense")
@@ -239,9 +240,25 @@ public class Expense extends AuditingFieldsWithIp {
     /** 카드를 만들 때 적은 "이전 미결제 사용액"(D4) — 가계부 집계에서만 빠진다. */
     public static final String AUTO_SOURCE_CARD_CARRYOVER = "CARD_CARRYOVER";
 
-    /** 카드 이월 거래인가 — 등록 전에 이미 쓴 돈이라 그 달의 지출이 아니다. */
+    /**
+     * 카드를 만들 때 적은 사용액 중 <b>결제를 기다리던 지난달 청구분</b>(2026-09-22 사용자 결정).
+     *
+     * <p>결제일 전에 카드를 등록하면 실제 카드사는 지난달 청구분을 다가오는 결제일에, 이번 달
+     * 쓴 금액을 그다음 결제일에 뺀다. 한 건으로 두면 등록한 날의 회차에 한꺼번에 청구돼 한 달
+     * 동안 통장 잔액이 실제보다 많았다. 그래서 이 몫은 <b>지난달 회차(말일)</b>에 따로 둔다 —
+     * 다가오는 결제일에 그 회차로 청구된다. 나머지는 {@link #AUTO_SOURCE_CARD_CARRYOVER} 그대로다.
+     *
+     * <p>이월과 같은 대접을 받는다 — 가계부 집계에서 빠지고, 가계부에서 못 고친다({@link #isCardCarryover()}).
+     */
+    public static final String AUTO_SOURCE_CARD_CARRYOVER_DUE = "CARD_CARRYOVER_DUE";
+
+    /** 카드 이월 거래 출처 둘 — 집계 조건이 이 목록 하나를 본다. */
+    public static final List<String> CARD_CARRYOVER_SOURCES =
+        List.of(AUTO_SOURCE_CARD_CARRYOVER, AUTO_SOURCE_CARD_CARRYOVER_DUE);
+
+    /** 카드 이월 거래인가(결제 대기 청구분 포함) — 등록 전에 이미 쓴 돈이라 그 달의 지출이 아니다. */
     public boolean isCardCarryover() {
-        return AUTO_SOURCE_CARD_CARRYOVER.equals(autoSource);
+        return autoSource != null && CARD_CARRYOVER_SOURCES.contains(autoSource);
     }
 
     /**

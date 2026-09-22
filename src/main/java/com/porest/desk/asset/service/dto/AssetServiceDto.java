@@ -44,8 +44,26 @@ public class AssetServiceDto {
         Integer paymentDay,
         Long paymentAssetRowId,
         // 투자 보유 목록 (INVESTMENT 전용). null=없음.
-        List<HoldingCommand> holdings
-    ) {}
+        List<HoldingCommand> holdings,
+        /**
+         * 신용카드: 사용액 중 <b>결제를 기다리던 지난달 청구분</b>(양수, 2026-09-22). 다가오는 결제일에
+         * 청구된다 — {@code balance} 는 그 뒤 쓴 금액이다. 결제 대기 청구분이 없을 때(이번 달 결제일이
+         * 지났거나 오늘) 0 보다 크면 거절한다. null·0 이면 없음.
+         */
+        Long dueCarryoverAmount
+    ) {
+        /** 결제 대기 청구분을 모르는 호출자 — 없음으로 본다. */
+        public CreateAssetCommand(Long userRowId, String assetName, AssetType assetType, Long balance,
+                                  Boolean isOverdraft, String currency, java.math.BigDecimal exchangeRate,
+                                  String color, String institution, String memo, Integer sortOrder,
+                                  YNType isIncludedInTotal, YNType isAmountHidden, Long cardCatalogRowId,
+                                  Long creditLimit, Integer paymentDay, Long paymentAssetRowId,
+                                  List<HoldingCommand> holdings) {
+            this(userRowId, assetName, assetType, balance, isOverdraft, currency, exchangeRate, color,
+                institution, memo, sortOrder, isIncludedInTotal, isAmountHidden, cardCatalogRowId, creditLimit,
+                paymentDay, paymentAssetRowId, holdings, null);
+        }
+    }
 
     /**
      * 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}).
@@ -80,8 +98,27 @@ public class AssetServiceDto {
          * 신용카드의 "이전 미결제 사용액"(이월 금액, D7) — 신용카드는 {@code balance} 를 무시하고 이 칸으로만
          * 이월 거래를 고친다. 키가 없거나 null 이면 그대로.
          */
-        Patch<Long> carryoverAmount
+        Patch<Long> carryoverAmount,
+        /**
+         * 신용카드: 결제를 기다리던 지난달 청구분({@link CreateAssetCommand#dueCarryoverAmount()}) — 키가
+         * 없거나 null 이면 그대로. 등록한 달의 그 회차 결제일 전까지만 넣고 고칠 수 있다.
+         */
+        Patch<Long> dueCarryoverAmount
     ) {
+        /** 결제 대기 청구분 칸을 모르는 호출자 — 그대로 둔다. */
+        public UpdateAssetCommand(Patch<String> assetName, Patch<AssetType> assetType, Patch<Long> balance,
+                                  Patch<Boolean> isOverdraft, Patch<String> currency,
+                                  Patch<java.math.BigDecimal> exchangeRate, Patch<String> color,
+                                  Patch<String> institution, Patch<String> memo, Patch<YNType> isIncludedInTotal,
+                                  Patch<YNType> isAmountHidden, Patch<Long> cardCatalogRowId,
+                                  Patch<Long> creditLimit, Patch<Integer> paymentDay,
+                                  Patch<Long> paymentAssetRowId, List<HoldingCommand> holdings,
+                                  Patch<Long> carryoverAmount) {
+            this(assetName, assetType, balance, isOverdraft, currency, exchangeRate, color, institution, memo,
+                isIncludedInTotal, isAmountHidden, cardCatalogRowId, creditLimit, paymentDay, paymentAssetRowId,
+                holdings, carryoverAmount, Patch.absent());
+        }
+
         /** 이월 금액 칸을 모르는 호출자 — 이월은 그대로 둔다. */
         public UpdateAssetCommand(Patch<String> assetName, Patch<AssetType> assetType, Patch<Long> balance,
                                   Patch<Boolean> isOverdraft, Patch<String> currency,
@@ -92,9 +129,18 @@ public class AssetServiceDto {
                                   Patch<Long> paymentAssetRowId, List<HoldingCommand> holdings) {
             this(assetName, assetType, balance, isOverdraft, currency, exchangeRate, color, institution, memo,
                 isIncludedInTotal, isAmountHidden, cardCatalogRowId, creditLimit, paymentDay, paymentAssetRowId,
-                holdings, Patch.absent());
+                holdings, Patch.absent(), Patch.absent());
         }
     }
+
+    /**
+     * 신용카드의 결제 대기 청구분 칸(2026-09-22) — 폼이 이 칸을 그릴지·고칠 수 있는지·언제 결제되는지.
+     *
+     * @param amount      지금 청구분(없으면 0)
+     * @param locked      그 회차 결제일이 됐다 — 읽기 전용(D15 와 같은 규칙)
+     * @param paymentDate 그 회차의 결제일 — 칸 이름에 쓴다("9월 25일에 결제될 금액")
+     */
+    public record DueCarryover(long amount, boolean locked, java.time.LocalDate paymentDate) {}
 
     /**
      * 투자 보유 입력 — linked=true: symbol+quantity 필수 / false: holdingName+holdingValue 필수(quantity 선택).
@@ -220,7 +266,12 @@ public class AssetServiceDto {
          * 그 회차는 이 날짜의 전달 1일~말일이고, 그 뒤 회차는 지금 결제일로 결제된다 — 결제일을 바꿔
          * 옛 결제일로 나갈 회차가 남아 있을 때 화면이 지금 결제일로 세면 틀린다(QA 26 4). 그 외 null.
          */
-        java.time.LocalDate nextPaymentDate
+        java.time.LocalDate nextPaymentDate,
+        /**
+         * 신용카드: 결제 대기 청구분 칸. 청구분이 있거나, 카드를 등록한 달의 그 회차 결제일이 아직 안
+         * 왔으면 값 — 폼이 칸을 그린다. 그 외 null(칸 없음).
+         */
+        DueCarryover dueCarryover
     ) {
         /** 카드 상태를 모르는 호출자(테스트 등) — 카드 칸은 비운다. */
         public AssetInfo(Long rowId, Long userRowId, String assetName, AssetType assetType, Long balance,
@@ -234,7 +285,7 @@ public class AssetServiceDto {
             this(rowId, userRowId, assetName, assetType, balance, cashBalance, holdingBalance, currency,
                 exchangeRate, color, institution, memo, sortOrder, isIncludedInTotal, isAmountHidden, cardCatalog,
                 creditLimit, paymentDay, paymentAssetRowId, marketCode, symbol, quantity, holdings, createAt,
-                modifyAt, monthlyUsedAmount, null, false, null, null);
+                modifyAt, monthlyUsedAmount, null, false, null, null, null);
         }
 
         /** 잔액 없이(0) 만든다 — 잔액이 화면에 안 쓰이는 응답 전용. */
@@ -293,17 +344,23 @@ public class AssetServiceDto {
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
                 marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsed,
-                carryoverAmount, carryoverLocked, cardClosedThrough, nextPaymentDate);
+                carryoverAmount, carryoverLocked, cardClosedThrough, nextPaymentDate, dueCarryover);
         }
 
         /** 신용카드 상태(이월 금액·잠금·닫힌 회차 끝·다음 실제 결제일)를 붙인다. */
         public AssetInfo withCardState(Long carryover, boolean locked, java.time.LocalDate closedThrough,
                                        java.time.LocalDate nextPayment) {
+            return withCardState(carryover, locked, closedThrough, nextPayment, null);
+        }
+
+        /** 신용카드 상태 + 결제 대기 청구분 칸. */
+        public AssetInfo withCardState(Long carryover, boolean locked, java.time.LocalDate closedThrough,
+                                       java.time.LocalDate nextPayment, DueCarryover due) {
             return new AssetInfo(rowId, userRowId, assetName, assetType, balance, cashBalance,
                 holdingBalance, currency, exchangeRate, color, institution, memo, sortOrder,
                 isIncludedInTotal, isAmountHidden, cardCatalog, creditLimit, paymentDay, paymentAssetRowId,
                 marketCode, symbol, quantity, holdings, createAt, modifyAt, monthlyUsedAmount,
-                carryover, locked, closedThrough, nextPayment);
+                carryover, locked, closedThrough, nextPayment, due);
         }
     }
 
