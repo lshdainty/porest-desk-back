@@ -72,6 +72,20 @@ class CardCarryoverAggregateTest {
     }
 
     @Test
+    @DisplayName("결제 대기 청구분(지난달 말 이월)도 가계부에서 빠지고 카드 쪽에는 남는다")
+    void dueCarryoverFollowsCarryoverRule() {
+        List<Expense> all = List.of(
+            expense(1L, 12_000L, null),
+            expense(4L, 30_000L, Expense.AUTO_SOURCE_CARD_CARRYOVER_DUE));
+
+        assertThat(ExpenseAggregates.ledgerCountable(all, NOW))
+            .extracting(Expense::getRowId).containsExactly(1L);
+        assertThat(ExpenseAggregates.countable(all, NOW))
+            .extracting(Expense::getRowId).containsExactly(1L, 4L);
+        assertThat(all.get(1).isCardCarryover()).isTrue();
+    }
+
+    @Test
     @DisplayName("다른 시스템 거래(매도 실현손익·이체 이자)는 가계부에 그대로 남는다")
     void otherAutoSourcesStay() {
         List<Expense> all = List.of(expense(3L, 5_000L, "TRADE_REALIZED"));

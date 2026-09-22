@@ -153,6 +153,8 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     // 신용카드 결제일·이월(D7·D8·D15)
     ASSET_CARD_PAYMENT_DAY_REQUIRED("AST_033", "error.asset.card.payment.day.required", HttpStatus.BAD_REQUEST),
     ASSET_CARD_CARRYOVER_LOCKED("AST_034", "error.asset.card.carryover.locked", HttpStatus.BAD_REQUEST),
+    // 결제 대기 청구분을 넣을 회차가 없다 — 이번 달 결제일이 지났거나 오늘, 또는 등록한 달이 아니다
+    ASSET_CARD_DUE_CARRYOVER_CLOSED("AST_035", "error.asset.card.due.carryover.closed", HttpStatus.BAD_REQUEST),
 
     // Asset
     ASSET_NOT_FOUND("ASSET_001", "error.notfound.asset", HttpStatus.NOT_FOUND),

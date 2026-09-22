@@ -253,7 +253,7 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
                 "  AND e.expenseDate <= :endDate " +
                 // 히트맵도 가계부 숫자다 — 환불된 것과 카드 이월을 뺀다.
                 "  AND e.refundedAt IS NULL " +
-                "  AND (e.autoSource IS NULL OR e.autoSource <> :carryover) " +
+                "  AND (e.autoSource IS NULL OR e.autoSource NOT IN (:carryover)) " +
                 "  AND e.isDeleted = :isDeleted " +
                 "GROUP BY FUNCTION('DAYOFWEEK', e.expenseDate), FUNCTION('HOUR', e.expenseDate)",
                 Object[].class)
@@ -261,7 +261,7 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             .setParameter("expenseType", expenseType)
             .setParameter("startDate", toStartOfDay(startDate))
             .setParameter("endDate", toEndOfDay(endDate))
-            .setParameter("carryover", Expense.AUTO_SOURCE_CARD_CARRYOVER)
+            .setParameter("carryover", Expense.CARD_CARRYOVER_SOURCES)
             .setParameter("isDeleted", YNType.N)
             .getResultList();
     }
