@@ -275,44 +275,12 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         ExpenseCategory category = findCategoryOrThrow(categoryId);
         validateCategoryOwnership(category, userRowId);
 
-        // 계층(parentRowId) 변경 정책:
-        //  - 최상위(부모) → 하위(강등): 금지. 삭제 후 재생성으로만.
-        //  - 하위(자식) → 최상위(승격): 금지(현재). 연결 내역 이관 후 별도 기능에서.
-        //  - 하위 → 다른 하위(부모 변경/이동): 허용. 단 새 부모는 거래/반복이 없어야 함.
-        boolean wasChild = category.getParent() != null;
-        boolean willHaveParent = command.parentRowId() != null;
-
-        if (!wasChild && willHaveParent) {
-            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_CANNOT_DEMOTE);
-        }
-        if (wasChild && !willHaveParent) {
-            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_CANNOT_PROMOTE);
-        }
-
         ExpenseType targetType = command.expenseType() != null
             ? command.expenseType()
             : category.getExpenseType();
 
-        ExpenseCategory targetParent = null;
-        if (willHaveParent) {
-            // 이 시점은 하위 → 다른 하위 이동만 도달 (위에서 강등/승격 차단됨).
-            if (command.parentRowId().equals(category.getRowId())) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
-            }
-            targetParent = findCategoryOrThrow(command.parentRowId());
-            validateCategoryOwnership(targetParent, userRowId);
-            if (targetParent.getParent() != null) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
-            }
-            if (targetParent.getExpenseType() != targetType) {
-                throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
-            }
-            // 새 부모가 아직 자식이 없던 leaf 라면, 그 자체가 거래/반복을 보유한 경우
-            // 부모가 될 수 없다(부모는 직접 거래 불가).
-            if (!expenseCategoryRepository.hasChildren(targetParent.getRowId())) {
-                validateCanBecomeParent(targetParent.getRowId());
-            }
-        } else {
+        ExpenseCategory targetParent = resolveParent(category, command.parentRowId(), targetType, userRowId);
+        if (targetParent == null) {
             // 최상위 유지 — 자식이 있으면 타입을 바꿔도 자식과 불일치하면 안 됨.
             if (expenseCategoryRepository.hasChildren(categoryId)
                 && targetType != category.getExpenseType()) {
@@ -339,6 +307,57 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
         log.info("지출 카테고리 수정 완료: categoryId={}", categoryId);
 
         return ExpenseCategoryServiceDto.CategoryInfo.from(category);
+    }
+
+    /**
+     * 계층(부모) 변경 규칙 — 수정(PUT)과 정렬(PATCH reorder)이 **같은 규칙**을 쓴다.
+     *
+     * <ul>
+     *   <li>최상위(부모) → 하위(강등): 금지. 삭제 후 재생성으로만.</li>
+     *   <li>하위(자식) → 최상위(승격): 금지(현재). 연결 내역 이관 후 별도 기능에서.</li>
+     *   <li>하위 → 다른 하위(부모 변경/이동): 허용. 단 새 부모는 최상위·같은 구분이고, 아직 자식이
+     *       없던 leaf 라면 거래·반복·분할이 없어야 한다(부모는 직접 거래 불가).</li>
+     * </ul>
+     *
+     * <p>정렬에는 이 검사가 따로 적혀 있었고 승격·강등·거래 달린 새 부모를 막지 않았다 — 수정은
+     * 막는데 정렬로는 하위를 최상위로 올릴 수 있었다(QA 28 3). 웹·앱 정렬 화면은 같은 부모 안에서
+     * 순서만 바꾸고 부모를 그대로 싣는다(`CategoryManager.handleDragEnd` · `category_screen`
+     * `onReorderSiblings`) — 그 경로는 부모가 안 바뀌어 이 검사를 타지 않는다.
+     *
+     * @return 새 부모. 최상위면 null
+     */
+    private ExpenseCategory resolveParent(ExpenseCategory category, Long newParentRowId,
+                                          ExpenseType targetType, Long userRowId) {
+        boolean wasChild = category.getParent() != null;
+        boolean willHaveParent = newParentRowId != null;
+
+        if (!wasChild && willHaveParent) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_CANNOT_DEMOTE);
+        }
+        if (wasChild && !willHaveParent) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_CANNOT_PROMOTE);
+        }
+        if (!willHaveParent) {
+            return null;
+        }
+        // 이 시점은 하위 → 하위(같은 부모 포함)만 도달한다 (위에서 강등/승격 차단됨).
+        if (newParentRowId.equals(category.getRowId())) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+        }
+        ExpenseCategory targetParent = findCategoryOrThrow(newParentRowId);
+        validateCategoryOwnership(targetParent, userRowId);
+        if (targetParent.getParent() != null) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
+        }
+        if (targetParent.getExpenseType() != targetType) {
+            throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+        }
+        // 새 부모가 아직 자식이 없던 leaf 라면, 그 자체가 거래/반복을 보유한 경우
+        // 부모가 될 수 없다(부모는 직접 거래 불가).
+        if (!expenseCategoryRepository.hasChildren(targetParent.getRowId())) {
+            validateCanBecomeParent(targetParent.getRowId());
+        }
+        return targetParent;
     }
 
     /** 거래·반복 거래·분할(split) 항목이 있는 카테고리는 부모(상위)가 될 수 없다(부모는 직접 거래 불가). */
@@ -458,33 +477,17 @@ public class ExpenseCategoryServiceImpl implements ExpenseCategoryService {
             ExpenseCategory category = findCategoryOrThrow(item.categoryRowId());
             validateCategoryOwnership(category, userRowId);
 
-            // parent 변경 요청이 있으면 적용 (순환/깊이 2+ 방지)
+            // 부모가 바뀌는 항목만 계층 규칙을 탄다 — 수정과 같은 규칙(resolveParent).
+            // 화면의 정렬은 같은 부모 안에서 순서만 바꾸므로 여기 오지 않는다.
             Long newParentRowId = item.parentRowId();
             Long currentParentRowId = category.getParent() != null ? category.getParent().getRowId() : null;
             boolean parentChanged = !java.util.Objects.equals(newParentRowId, currentParentRowId);
             if (parentChanged) {
-                ExpenseCategory newParent = null;
-                if (newParentRowId != null) {
-                    if (newParentRowId.equals(category.getRowId())) {
-                        throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
-                    }
-                    newParent = findCategoryOrThrow(newParentRowId);
-                    validateCategoryOwnership(newParent, userRowId);
-                    if (newParent.getParent() != null) {
-                        throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
-                    }
-                    if (newParent.getExpenseType() != category.getExpenseType()) {
-                        throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
-                    }
-                    // 본인이 이미 부모(자식 있음)인 경우 parent 할당 금지 (2단계 깊이 초과 방지)
-                    if (expenseCategoryRepository.hasChildren(category.getRowId())) {
-                        throw new InvalidValueException(DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
-                    }
-                }
+                ExpenseCategory newParent = resolveParent(
+                    category, newParentRowId, category.getExpenseType(), userRowId);
                 // 옮겨 갈 자리의 형제 중 같은 이름이 있으면 막는다.
                 // 종전엔 이 자리에 검사가 아예 없어 정렬 API 로 중복을 만들 수 있었다 — 등록·수정은
-                // 막는데 이동만 뚫려 있던 구멍이다. 최상위 승격(newParentRowId == null)도 같은
-                // 자리에서 본다: 리포지토리가 null 을 `parent IS NULL` 로 갈라 형제를 정확히 센다.
+                // 막는데 이동만 뚫려 있던 구멍이다.
                 if (expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
                         userRowId, newParentRowId, category.getExpenseType(),
                         category.getCategoryName(), category.getRowId())) {
