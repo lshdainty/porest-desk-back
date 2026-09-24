@@ -228,7 +228,9 @@ class DashboardServiceImplTest {
     @DisplayName("getDashboardSummary — 오늘/이번달 수입·지출을 타입별로 각각 합산")
     void expenseTodayAndMonthlySums() {
         primeSummaryDefaults();
-        LocalDateTime anyTime = LocalDateTime.now();
+        // 거래 시각도 고정한 오늘로 — 벽시계를 쓰면 TODAY 다음 날부터 "아직 오지 않은 거래" 가 되어
+        // 합계에서 빠진다(2026-09-23 부터 0 으로 깨졌다).
+        LocalDateTime anyTime = TODAY.atTime(12, 0);
         given(expenseRepository.findDailySummary(eq(USER_ID), any(LocalDate.class)))
                 .willReturn(List.of(
                         expense(ExpenseType.INCOME, 100_000L, anyTime),

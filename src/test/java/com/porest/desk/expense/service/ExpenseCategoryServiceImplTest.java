@@ -270,6 +270,12 @@ class ExpenseCategoryServiceImplTest {
     @DisplayName("reorderCategories")
     class ReorderCategory {
 
+        private org.assertj.core.api.AbstractObjectAssert<?, ?> assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+            return assertThatThrownBy(call)
+                    .isInstanceOf(InvalidValueException.class)
+                    .extracting(e -> ((InvalidValueException) e).getErrorCode());
+        }
+
         @Test
         @DisplayName("같은 부모 내 순서 변경은 sortOrder 만 갱신")
         void sameParentReorderUpdatesSortOrder() {
@@ -284,15 +290,59 @@ class ExpenseCategoryServiceImplTest {
         }
 
         @Test
-        @DisplayName("자기 자신을 부모로 지정하면 불가")
-        void rejectSelfAsParent() {
+        @DisplayName("하위 형제끼리 순서만 바꾸면(부모 그대로) 계층 검사를 안 탄다 — 웹·앱 정렬 화면이 보내는 모양")
+        void childSiblingReorderSkipsHierarchyRules() {
+            User u = user(USER_ID);
+            ExpenseCategory parent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, parent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+
+            sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 4, 1L)));
+
+            assertThat(cat.getParent()).isSameAs(parent);
+            assertThat(cat.getSortOrder()).isEqualTo(4);
+            verify(expenseCategoryRepository, never()).findById(1L);
+        }
+
+        @Test
+        @DisplayName("하위를 최상위로 올리면 막는다(EXP_015) — 수정(PUT)과 같은 규칙 (QA 28 3)")
+        void rejectPromoteToTopLevel() {
+            User u = user(USER_ID);
+            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, null))))
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_CANNOT_PROMOTE);
+            assertThat(cat.getParent()).isSameAs(oldParent);
+        }
+
+        @Test
+        @DisplayName("최상위를 다른 최상위 아래로 내리면 막는다(EXP_014) — 수정(PUT)과 같은 규칙")
+        void rejectDemoteUnderAnotherParent() {
             User u = user(USER_ID);
             ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
 
-            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_CANNOT_DEMOTE);
+            assertThat(cat.getParent()).isNull();
+        }
+
+        @Test
+        @DisplayName("자기 자신을 부모로 지정하면 불가")
+        void rejectSelfAsParent() {
+            User u = user(USER_ID);
+            ExpenseCategory parent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, parent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
                     new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 10L))))
-                    .isInstanceOf(InvalidValueException.class);
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
         }
 
         @Test
@@ -301,27 +351,47 @@ class ExpenseCategoryServiceImplTest {
             User u = user(USER_ID);
             ExpenseCategory grandParent = category(1L, u, null, ExpenseType.EXPENSE);
             ExpenseCategory parentWithParent = category(2L, u, grandParent, ExpenseType.EXPENSE);
-            ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory oldParent = category(3L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
             given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(parentWithParent));
 
-            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
                     new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
-                    .isInstanceOf(InvalidValueException.class);
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_MAX_DEPTH);
         }
 
         @Test
         @DisplayName("구분(expenseType)이 다른 부모로는 이동 불가")
         void rejectTypeMismatch() {
             User u = user(USER_ID);
+            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
             ExpenseCategory incomeParent = category(2L, u, null, ExpenseType.INCOME);
-            ExpenseCategory cat = category(10L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
             given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(incomeParent));
 
-            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
                     new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
-                    .isInstanceOf(InvalidValueException.class);
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_TYPE_MISMATCH);
+        }
+
+        @Test
+        @DisplayName("거래가 달린 leaf 최상위 아래로는 옮기지 못한다(EXP_016) — 부모는 직접 거래를 못 든다")
+        void rejectMoveUnderLeafWithTransactions() {
+            User u = user(USER_ID);
+            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory leafWithTx = category(2L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
+            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(leafWithTx));
+            given(expenseCategoryRepository.hasChildren(2L)).willReturn(false);
+            given(expenseRepository.existsByCategory(2L)).willReturn(true);
+
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_PARENT_HAS_TX);
+            assertThat(cat.getParent()).isSameAs(oldParent);
         }
 
         @Test
@@ -333,45 +403,33 @@ class ExpenseCategoryServiceImplTest {
             ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
             given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(newParent));
+            given(expenseCategoryRepository.hasChildren(2L)).willReturn(true);
             given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
                     USER_ID, 2L, ExpenseType.EXPENSE, "식비", 10L)).willReturn(true);
 
-            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
+            assertCode(() -> sut.reorderCategories(USER_ID, List.of(
                     new ExpenseCategoryServiceDto.ReorderItem(10L, 0, 2L))))
-                    .isInstanceOf(InvalidValueException.class);
+                    .isEqualTo(com.porest.desk.common.exception.DeskErrorCode.EXPENSE_CATEGORY_DUPLICATE_NAME);
             assertThat(cat.getParent()).isSameAs(oldParent);
         }
 
         @Test
-        @DisplayName("최상위로 올릴 때도 같은 이름의 최상위가 있으면 거부 — parent NULL 을 `IS NULL` 로 갈라 본다")
-        void rejectDuplicateNameOnPromoteToTopLevel() {
+        @DisplayName("하위를 다른 부모 아래로 옮기는 건 된다 — 검사가 정상 이동까지 막지는 않는다")
+        void allowsMoveBetweenParents() {
             User u = user(USER_ID);
             ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
+            ExpenseCategory newParent = category(2L, u, null, ExpenseType.EXPENSE);
             ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
             given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
+            given(expenseCategoryRepository.findById(2L)).willReturn(Optional.of(newParent));
+            given(expenseCategoryRepository.hasChildren(2L)).willReturn(true);
             given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
-                    USER_ID, null, ExpenseType.EXPENSE, "식비", 10L)).willReturn(true);
-
-            assertThatThrownBy(() -> sut.reorderCategories(USER_ID, List.of(
-                    new ExpenseCategoryServiceDto.ReorderItem(10L, 0, null))))
-                    .isInstanceOf(InvalidValueException.class);
-            assertThat(cat.getParent()).isSameAs(oldParent);
-        }
-
-        @Test
-        @DisplayName("이름이 겹치지 않으면 최상위로 승격된다 — 검사가 정상 이동까지 막지는 않는다")
-        void allowsPromoteWhenNameIsFree() {
-            User u = user(USER_ID);
-            ExpenseCategory oldParent = category(1L, u, null, ExpenseType.EXPENSE);
-            ExpenseCategory cat = category(10L, u, oldParent, ExpenseType.EXPENSE);
-            given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(cat));
-            given(expenseCategoryRepository.existsActiveByUserAndParentAndTypeAndName(
-                    USER_ID, null, ExpenseType.EXPENSE, "식비", 10L)).willReturn(false);
+                    USER_ID, 2L, ExpenseType.EXPENSE, "식비", 10L)).willReturn(false);
 
             sut.reorderCategories(USER_ID, List.of(
-                    new ExpenseCategoryServiceDto.ReorderItem(10L, 2, null)));
+                    new ExpenseCategoryServiceDto.ReorderItem(10L, 2, 2L)));
 
-            assertThat(cat.getParent()).isNull();
+            assertThat(cat.getParent()).isSameAs(newParent);
             assertThat(cat.getSortOrder()).isEqualTo(2);
         }
     }
