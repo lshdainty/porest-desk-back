@@ -266,8 +266,25 @@ public class AssetTradeServiceImpl implements AssetTradeService {
         if (trades.isEmpty()) {
             return;
         }
+        // 매매 기록으로 설명되지 않는 몫 — 자산 편집 폼으로 담은 보유다. 매매가 없으니 다시
+        // 쌓을 것도 없고, 0 부터 쌓으면 과거 날짜 매매·매매 취소 한 번에 그 수량·원가가
+        // 사라졌다(QA 30 5). 지금 보유에서 저장된 변동분 합을 빼면 그 몫이 남는다 —
+        // applyTrade·replaceDeltas 가 늘 "보유 = 기초 + 변동분 합" 을 지킨다. 맨 앞에 두고 쌓는다.
+        AssetHolding before = findHolding(asset.getRowId(), holdingRowId, holdingKey);
         BigDecimal quantity = BigDecimal.ZERO;
         long totalCost = 0L;
+        if (before != null) {
+            BigDecimal tradedQty = BigDecimal.ZERO;
+            long tradedCost = 0L;
+            for (AssetTrade t : trades) {
+                if (t.getQuantityDelta() != null) tradedQty = tradedQty.add(t.getQuantityDelta());
+                if (t.getCostDelta() != null) tradedCost += t.getCostDelta();
+            }
+            BigDecimal held = before.getQuantity() != null ? before.getQuantity() : BigDecimal.ZERO;
+            long heldCost = before.getTotalCost() != null ? before.getTotalCost() : 0L;
+            quantity = held.subtract(tradedQty).max(BigDecimal.ZERO);
+            totalCost = quantity.signum() > 0 ? Math.max(0L, heldCost - tradedCost) : 0L;
+        }
 
         for (AssetTrade t : trades) {
             if (t.getTradeType() == TradeType.SELL) {
