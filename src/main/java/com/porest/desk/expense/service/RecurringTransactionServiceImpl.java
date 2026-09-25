@@ -32,7 +32,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @Slf4j
@@ -114,8 +116,18 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             }
         }
 
-        LocalDate nextExecutionDate = calculateNextExecutionDate(
-            command.startDate(), command.frequency(), command.intervalValue(),
+        // 원거래에서 만든 규칙은 원거래가 그 회차다 — 원거래 날짜까지의 회차는 이미 기록돼 있다.
+        // 안 그러면 오늘 거래로 만든 매월 규칙이 오늘 회차를 한 번 더 만든다(QA 30 1).
+        LocalDate today = serviceClock.today();
+        LocalDate from = today;
+        if (sourceExpense != null && sourceExpense.getExpenseDate() != null) {
+            LocalDate sourceDay = sourceExpense.getExpenseDate().toLocalDate();
+            if (!sourceDay.isBefore(from)) {
+                from = sourceDay.plusDays(1);
+            }
+        }
+        LocalDate nextExecutionDate = firstOccurrenceOnOrAfter(
+            command.startDate(), from, command.frequency(), command.intervalValue(),
             command.dayOfWeek(), command.dayOfMonth()
         );
 
@@ -131,6 +143,9 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         );
 
         recurringTransactionRepository.save(recurring);
+        // 첫 회차가 오늘이면 지금 기록한다 — 자정 배치는 이미 지나가서, 두면 다음 날에야
+        // 기록됐다(QA 30 1).
+        runDueOccurrences(recurring, today);
         log.info("반복 거래 생성 완료: recurringId={}", recurring.getRowId());
 
         return RecurringTransactionServiceDto.RecurringInfo.from(recurring);
@@ -181,10 +196,18 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         RecurringTransferValidator.validate(command.expenseType(), category, asset, toAsset,
             command.amount(), command.fee(), command.interestAmount());
 
-        LocalDate nextExecutionDate = calculateNextExecutionDate(
-            command.startDate(), command.frequency(), command.intervalValue(),
-            command.dayOfWeek(), command.dayOfMonth()
-        );
+        // 다음 회차는 <b>주기 칸이 바뀔 때만</b> 다시 센다. 종전엔 아무것도 안 바꾸고 저장해도
+        // max(시작일, 오늘) 로 다시 세서, 오늘 이미 기록한 매월 N일(=오늘) 규칙이 다음 날 한 번
+        // 더 기록되고 멈춰 둔 규칙은 밀린 회차가 통째로 사라졌다(QA 30 2).
+        LocalDate today = serviceClock.today();
+        LocalDate nextExecutionDate = recurring.getNextExecutionDate();
+        if (nextExecutionDate == null || scheduleChanged(recurring, command)) {
+            LocalDate from = executedOn(recurring, today) ? today.plusDays(1) : today;
+            nextExecutionDate = firstOccurrenceOnOrAfter(
+                command.startDate(), from, command.frequency(), command.intervalValue(),
+                command.dayOfWeek(), command.dayOfMonth()
+            );
+        }
 
         recurring.updateRecurring(
             category, asset, toAsset, command.fee(), command.interestAmount(),
@@ -197,6 +220,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.autoLog(), command.notifyDayBefore()
         );
 
+        // 주기를 오늘로 옮겼으면 오늘 회차를 지금 기록한다(생성과 같다).
+        runDueOccurrences(recurring, today);
         log.info("반복 거래 수정 완료: recurringId={}", recurringId);
 
         return RecurringTransactionServiceDto.RecurringInfo.from(recurring);
@@ -221,7 +246,19 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
         RecurringTransaction recurring = findRecurringOrThrow(recurringId);
         validateRecurringOwnership(recurring, userRowId);
+        boolean resuming = recurring.getIsActive() != com.porest.core.type.YNType.Y;
         recurring.toggleActive();
+        if (resuming) {
+            // 멈춘 동안의 회차는 건너뛴다(사용자 결정 2026-09-25) — 다시 켠 날 이후 첫 회차부터.
+            // 종전엔 next 가 멈춘 날 그대로라 밀린 회차를 하루 한 건씩, 그것도 기록되는 날짜로
+            // 찍었다(QA 30 4). 오늘이 회차고 아직 안 찍었으면 지금 찍는다.
+            LocalDate today = serviceClock.today();
+            LocalDate from = executedOn(recurring, today) ? today.plusDays(1) : today;
+            recurring.reschedule(firstOccurrenceOnOrAfter(
+                recurring.getStartDate(), from, recurring.getFrequency(), recurring.getIntervalValue(),
+                recurring.getDayOfWeek(), recurring.getDayOfMonth()));
+            runDueOccurrences(recurring, today);
+        }
 
         log.info("반복 거래 토글 완료: recurringId={}, isActive={}", recurringId, recurring.getIsActive());
 
@@ -266,32 +303,90 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
 
     /** 반복 거래 1건 — {@link #newTransaction} 이 연 트랜잭션 안에서만 부른다. */
     private void executeOne(Long recurringId, LocalDate today) {
-        RecurringTransaction recurring = findRecurringOrThrow(recurringId);
+        runDueOccurrences(findRecurringOrThrow(recurringId), today);
+    }
 
-        // 실행 시각은 반복 거래마다 사용자가 정한다. 예전에는 09:00 고정이었고,
-        // 그 값이 컬럼 기본값이라 안 고른 건은 그대로 09:00 이다.
-        LocalDateTime executionDateTime = today.atTime(
-            recurring.getExecutionTime() != null
-                ? recurring.getExecutionTime()
-                : RecurringTransaction.DEFAULT_EXECUTION_TIME);
+    /** 한 번에 따라잡는 회차의 상한 — 일 단위 규칙 1년치. 넘으면 다음 배치가 이어 간다. */
+    private static final int CATCH_UP_LIMIT = 400;
 
-        // 무엇을 만드느냐만 갈린다 — 다음 날짜 계산·실행 표시는 종류와 무관하다.
-        Long createdRowId = recurring.getExpenseType().isTransfer()
-            ? executeAsTransfer(recurring, executionDateTime)
-            : executeAsExpense(recurring, executionDateTime);
+    /**
+     * 오늘까지 도래한 회차를 <b>회차 날짜로</b> 기록하고 다음 회차로 넘긴다.
+     *
+     * <p>종전 배치는 규칙당 한 회차만 만들고 거래 날짜를 <b>배치가 돈 날</b>로 찍었다. 그래서
+     * 낮에 만든 "오늘 시작" 규칙은 다음 날 날짜로, 밀린 회차는 하루 한 건씩 그날 날짜로
+     * 기록됐다(QA 30 1·4). 회차 날짜는 규칙이 정한 날이다.
+     *
+     * <p>생성·수정·재개·자정 배치가 모두 여기를 지난다. 종료일·최대 횟수는 회차마다 다시 본다.
+     *
+     * @return 기록한 회차 수
+     */
+    private int runDueOccurrences(RecurringTransaction recurring, LocalDate today) {
+        int created = 0;
+        while (created < CATCH_UP_LIMIT
+            && recurring.getIsActive() == com.porest.core.type.YNType.Y
+            && recurring.getIsDeleted() != com.porest.core.type.YNType.Y
+            && recurring.getNextExecutionDate() != null
+            && !recurring.getNextExecutionDate().isAfter(today)
+            && (recurring.getEndDate() == null || !recurring.getNextExecutionDate().isAfter(recurring.getEndDate()))
+            && (recurring.getMaxOccurrences() == null
+                || (recurring.getExecutedCount() == null ? 0 : recurring.getExecutedCount()) < recurring.getMaxOccurrences())) {
+            LocalDate occurrence = recurring.getNextExecutionDate();
+            // 실행 시각은 반복 거래마다 사용자가 정한다. 예전에는 09:00 고정이었고,
+            // 그 값이 컬럼 기본값이라 안 고른 건은 그대로 09:00 이다.
+            LocalDateTime executionDateTime = occurrence.atTime(
+                recurring.getExecutionTime() != null
+                    ? recurring.getExecutionTime()
+                    : RecurringTransaction.DEFAULT_EXECUTION_TIME);
 
-        LocalDate nextDate = calculateNextDate(
-            recurring.getNextExecutionDate(),
-            recurring.getFrequency(),
-            recurring.getIntervalValue(),
-            recurring.getDayOfWeek(),
-            recurring.getDayOfMonth()
-        );
+            // 무엇을 만드느냐만 갈린다 — 다음 날짜 계산·실행 표시는 종류와 무관하다.
+            Long createdRowId = recurring.getExpenseType().isTransfer()
+                ? executeAsTransfer(recurring, executionDateTime)
+                : executeAsExpense(recurring, executionDateTime);
 
-        recurring.markExecuted(LocalDateTime.now(), nextDate);
+            LocalDate nextDate = calculateNextDate(
+                occurrence,
+                recurring.getFrequency(),
+                recurring.getIntervalValue(),
+                recurring.getDayOfWeek(),
+                recurring.getDayOfMonth()
+            );
+            recurring.markExecuted(LocalDateTime.now(), nextDate);
+            created++;
 
-        log.info("반복 거래 실행 완료: recurringId={}, type={}, createdRowId={}, nextDate={}",
-            recurring.getRowId(), recurring.getExpenseType(), createdRowId, nextDate);
+            log.info("반복 거래 실행 완료: recurringId={}, type={}, occurrence={}, createdRowId={}, nextDate={}",
+                recurring.getRowId(), recurring.getExpenseType(), occurrence, createdRowId, nextDate);
+        }
+        return created;
+    }
+
+    /**
+     * 오늘(서비스 달력) 이미 실행했는가. {@code lastExecutedAt} 은 JVM 기본 시간대(컨테이너 UTC)
+     * 벽시계로 찍히므로 서비스 날짜로 바꿔 본다 — 그대로 비교하면 자정 배치(서울 00시 = UTC 전날
+     * 15시)가 어제로 보인다.
+     */
+    private boolean executedOn(RecurringTransaction recurring, LocalDate day) {
+        LocalDateTime at = recurring.getLastExecutedAt();
+        if (at == null) {
+            return false;
+        }
+        return at.atZone(ZoneId.systemDefault())
+            .withZoneSameInstant(serviceClock.zone())
+            .toLocalDate()
+            .equals(day);
+    }
+
+    /** 다음 회차를 다시 세야 하는 수정인가 — 회차를 정하는 칸이 하나라도 바뀌었다. */
+    private static boolean scheduleChanged(RecurringTransaction recurring,
+                                           RecurringTransactionServiceDto.UpdateCommand command) {
+        return !Objects.equals(recurring.getStartDate(), command.startDate())
+            || recurring.getFrequency() != command.frequency()
+            || intervalOf(recurring.getIntervalValue()) != intervalOf(command.intervalValue())
+            || !Objects.equals(recurring.getDayOfWeek(), command.dayOfWeek())
+            || !Objects.equals(recurring.getDayOfMonth(), command.dayOfMonth());
+    }
+
+    private static int intervalOf(Integer intervalValue) {
+        return intervalValue != null && intervalValue > 0 ? intervalValue : 1;
     }
 
     /** 지출·수입 반복 1건 실행 → 만들어진 지출의 rowId. */
@@ -347,23 +442,27 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
         return transfer.rowId();
     }
 
-    private LocalDate calculateNextExecutionDate(LocalDate startDate, RecurringFrequency frequency,
-                                                  Integer intervalValue, Integer dayOfWeek, Integer dayOfMonth) {
-        // 시작일·주기가 없으면 여기서 끊는다 — 아래 isBefore 와 switch 가 둘 다 null 을 못 견뎌
-        // 종전엔 NullPointerException 이 그대로 500 으로 나갔다(QA 2026-09-07 #85).
-        // DTO 에도 @NotNull 이 있지만, 계산이 생성·수정 두 경로에서 같은 자리를 지나므로
-        // 여기 한 줄이 그 둘을 함께 지킨다.
+    /**
+     * {@code from} 이상인 첫 회차. 회차는 <b>시작일에서 출발해 주기대로</b> 가는 날짜들이다.
+     *
+     * <p>종전엔 {@code max(시작일, 오늘)} 을 주기에 맞춰 당기기만 해서, 매년 규칙은 시작일의
+     * 월·일을 버리고 저장한 날로 기준이 옮겨졌고(3/10 시작 → 9/25), 격주·격월은 시작일과 다른
+     * 박자로 이어졌다(QA 30 1). 여기서는 시작일의 첫 회차부터 한 주기씩 걸어 {@code from} 에
+     * 닿는다 — 일 단위 규칙이라도 10년에 3천여 걸음이다.
+     */
+    private LocalDate firstOccurrenceOnOrAfter(LocalDate startDate, LocalDate from, RecurringFrequency frequency,
+                                               Integer intervalValue, Integer dayOfWeek, Integer dayOfMonth) {
+        // 시작일·주기가 없으면 여기서 끊는다 — 아래 계산이 null 을 못 견뎌 종전엔
+        // NullPointerException 이 그대로 500 으로 나갔다(QA 2026-09-07 #85). DTO 에도 @NotNull 이
+        // 있지만, 계산이 생성·수정·재개 세 경로에서 같은 자리를 지나므로 여기 한 줄이 함께 지킨다.
         if (startDate == null || frequency == null) {
             throw new InvalidValueException(DeskErrorCode.REQUIRED_VALUE_MISSING);
         }
-        LocalDate today = serviceClock.today();
-        LocalDate nextDate = startDate;
-
-        if (nextDate.isBefore(today)) {
-            nextDate = today;
+        LocalDate occurrence = adjustToFrequency(startDate, frequency, dayOfWeek, dayOfMonth);
+        for (int steps = 0; occurrence.isBefore(from) && steps < 100_000; steps++) {
+            occurrence = calculateNextDate(occurrence, frequency, intervalValue, dayOfWeek, dayOfMonth);
         }
-
-        return adjustToFrequency(nextDate, frequency, dayOfWeek, dayOfMonth);
+        return occurrence;
     }
 
     private LocalDate calculateNextDate(LocalDate currentDate, RecurringFrequency frequency,

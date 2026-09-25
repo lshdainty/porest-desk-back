@@ -251,6 +251,11 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         this.isActive = YNType.N;
     }
 
+    /** 다음 회차를 옮긴다 — 재개할 때 멈춘 동안의 회차를 건너뛰는 데 쓴다. */
+    public void reschedule(LocalDate nextDate) {
+        this.nextExecutionDate = nextDate;
+    }
+
     public void toggleActive() {
         this.isActive = this.isActive == YNType.Y ? YNType.N : YNType.Y;
     }

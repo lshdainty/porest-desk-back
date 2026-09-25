@@ -684,6 +684,62 @@ class StockTradeScenarioTest {
             assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(200_000L);
         }
 
+        /**
+         * 자산 편집 폼으로 담은 보유 — 매매 기록 없이 수량·원가만 있다. 다시 쌓기는 매매 기록만
+         * 굴리므로 0 부터 쌓으면 이 몫이 사라졌다(QA 30 5). 이 몫은 맨 앞에 두고 쌓는다.
+         */
+        private AssetHolding formHolding(String qty, long cost) {
+            AssetHolding h = AssetHolding.create(account, HoldingType.STOCK, YNType.Y, null, SAMSUNG,
+                new BigDecimal(qty), null, null, cost, 0);
+            org.springframework.test.util.ReflectionTestUtils.setField(h, "rowId", 500L);
+            holdings.add(h);
+            return h;
+        }
+
+        @Test
+        @DisplayName("폼 보유 10주 + 매수 5주 뒤 과거 날짜 매수 2주 → 17주(폼 10주가 남는다)")
+        void backdatedTradeKeepsFormHolding() {
+            deposit(50_000_000L);
+            formHolding("10", 700_000L);
+            sut.createTrade(trade(TradeType.BUY, "5", 400_000L, 0L, 10));
+            assertThat(samsung().getQuantity()).isEqualByComparingTo("15");
+
+            sut.createTrade(trade(TradeType.BUY, "2", 150_000L, 0L, 2));
+
+            assertThat(samsung().getQuantity()).isEqualByComparingTo("17");
+            assertThat(samsung().getTotalCost()).isEqualTo(1_250_000L);
+        }
+
+        @Test
+        @DisplayName("폼 보유 10주 + 매수 두 번 중 하나를 취소 → 폼 10주 + 남은 매수만")
+        void cancelKeepsFormHolding() {
+            deposit(50_000_000L);
+            formHolding("10", 700_000L);
+            var first = sut.createTrade(trade(TradeType.BUY, "5", 400_000L, 0L, 5));
+            sut.createTrade(trade(TradeType.BUY, "3", 270_000L, 0L, 10));
+
+            sut.deleteTrade(first.rowId(), USER_ID);
+
+            assertThat(samsung().getQuantity()).isEqualByComparingTo("13");
+            assertThat(samsung().getTotalCost()).isEqualTo(970_000L);
+        }
+
+        @Test
+        @DisplayName("폼 보유 뒤 매도는 폼 원가까지 섞어 이동평균으로 판다")
+        void sellAfterFormHoldingUsesFormCost() {
+            deposit(50_000_000L);
+            formHolding("10", 700_000L);                                         // 평단 70,000
+            sut.createTrade(trade(TradeType.BUY, "10", 900_000L, 0L, 10));       // 20주 1,600,000
+            var sold = sut.createTrade(trade(TradeType.SELL, "10", 1_000_000L, 0L, 20));
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(200_000L);
+
+            // 과거 날짜 매수를 끼워 넣어도 폼 원가가 빠지지 않는다 — 다시 쌓아 30주 2,300,000 중 절반.
+            sut.createTrade(trade(TradeType.BUY, "10", 700_000L, 0L, 2));
+
+            assertThat(tradeOf(sold.rowId()).getRealizedPl()).isEqualTo(1_000_000L - 766_667L);
+            assertThat(samsung().getQuantity()).isEqualByComparingTo("20");
+        }
+
         @Test
         @DisplayName("맨 뒤에 붙는 거래는 다시 쌓지 않는다 — 이미 맞는 값이다")
         void appendingDoesNotChangeEarlier() {

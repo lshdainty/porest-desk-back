@@ -130,6 +130,23 @@ class ExpenseRepositoryTest {
     }
 
     @Test
+    @DisplayName("search — 키워드는 거래처에도 걸린다(메모 없이 거래처만 적은 거래, QA 30 11)")
+    void searchKeywordMatchesMerchant() {
+        User user = persistUser();
+        ExpenseCategory cat = persistCategory(user, "식비", null);
+        em.persist(Expense.createExpense(user, cat, null, ExpenseType.EXPENSE, 4_500L,
+            null, LocalDateTime.of(2026, 6, 12, 9, 0), "스타벅스 강남점", "CARD", null, null, null, null));
+        persistExpenseFull(user, cat, 1_200L, "버스 요금", LocalDateTime.of(2026, 6, 11, 9, 0));
+        em.flush();
+        em.clear();
+
+        List<Expense> result = repository.search(user.getRowId(), null, null, null,
+                "스타벅스", null, null, null, START, END);
+
+        assertThat(result).extracting(Expense::getMerchant).containsExactly("스타벅스 강남점");
+    }
+
+    @Test
     @DisplayName("search — 금액 범위(min~max)로 필터")
     void searchByAmountRange() {
         User user = persistUser();

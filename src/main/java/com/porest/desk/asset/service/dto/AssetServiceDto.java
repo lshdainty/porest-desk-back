@@ -328,7 +328,7 @@ public class AssetServiceDto {
                 CardCatalogBrief.from(asset.getCardCatalog()),
                 asset.getCreditLimit(),
                 asset.getPaymentDay(),
-                asset.getPaymentAsset() != null ? asset.getPaymentAsset().getRowId() : null,
+                asset.getUsablePaymentAsset() != null ? asset.getUsablePaymentAsset().getRowId() : null,
                 asset.getMarketCode(),
                 asset.getSymbol(),
                 asset.getQuantity(),

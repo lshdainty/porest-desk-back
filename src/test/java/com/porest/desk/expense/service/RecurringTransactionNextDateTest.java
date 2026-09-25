@@ -147,6 +147,9 @@ class RecurringTransactionNextDateTest {
     }
 
     private void execute(RecurringTransaction r) {
+        // 오늘 = 그 회차 날. 배치는 오늘까지 도래한 회차를 한 번에 따라잡으므로(QA 30 4) 벽시계를
+        // 쓰면 2024 년 규칙이 오늘까지 전부 돌아 "한 번 실행한 다음 날짜" 를 볼 수 없다.
+        lenient().doReturn(r.getNextExecutionDate()).when(serviceClock).today();
         given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
         // 배치는 건마다 새 트랜잭션에서 다시 읽는다 — 목록에서 들고 나오는 건 rowId 뿐이다.
         given(recurringTransactionRepository.findById(r.getRowId())).willReturn(Optional.of(r));

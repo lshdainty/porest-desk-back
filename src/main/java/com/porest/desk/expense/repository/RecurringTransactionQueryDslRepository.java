@@ -66,7 +66,8 @@ public class RecurringTransactionQueryDslRepository implements RecurringTransact
                 recurring.isActive.eq(YNType.Y),
                 recurring.isDeleted.eq(YNType.N),
                 recurring.nextExecutionDate.loe(date),
-                recurring.endDate.isNull().or(recurring.endDate.goe(date)),
+                // 종료일은 <b>회차 날짜</b>와 견준다 — 밀린 회차가 종료일 전이면 늦게 돌아도 기록한다.
+                recurring.endDate.isNull().or(recurring.endDate.goe(recurring.nextExecutionDate)),
                 recurring.maxOccurrences.isNull().or(recurring.executedCount.lt(recurring.maxOccurrences))
             )
             .fetch();

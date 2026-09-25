@@ -138,8 +138,10 @@ class RecurringTransactionRepositoryTest {
                 em.persist(newRecurring(user, null, "deleted", LocalDate.of(2026, 6, 20), null, null));
         deleted.deleteRecurring();
 
-        // 제외: 기한 지남(endDate < date)
-        em.persist(newRecurring(user, null, "ended", LocalDate.of(2026, 6, 20), LocalDate.of(2026, 6, 29), null));
+        // 제외: 다음 회차가 종료일 뒤(endDate < next)
+        em.persist(newRecurring(user, null, "ended", date, LocalDate.of(2026, 6, 29), null));
+        // 포함: 종료일 전에 밀린 회차(next <= endDate < date) — 늦게 돌아도 그 회차는 기록한다(QA 30 4)
+        em.persist(newRecurring(user, null, "missedBeforeEnd", LocalDate.of(2026, 6, 20), LocalDate.of(2026, 6, 29), null));
         // 포함: 기한 경계(endDate == date)
         em.persist(newRecurring(user, null, "endsToday", LocalDate.of(2026, 6, 20), date, null));
 
@@ -159,6 +161,6 @@ class RecurringTransactionRepositoryTest {
         List<RecurringTransaction> result = repository.findDueTransactions(date);
 
         assertThat(result).extracting(RecurringTransaction::getDescription)
-                .containsExactlyInAnyOrder("due", "dueEarlier", "endsToday", "maxNotReached");
+                .containsExactlyInAnyOrder("due", "dueEarlier", "endsToday", "maxNotReached", "missedBeforeEnd");
     }
 }

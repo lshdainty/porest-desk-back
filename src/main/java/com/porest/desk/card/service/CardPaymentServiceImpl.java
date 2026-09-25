@@ -123,7 +123,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             cycle.periodEnd(),
             nextPaymentDate,
             card.getPaymentDay(),
-            card.getPaymentAsset() != null ? card.getPaymentAsset().getRowId() : null,
+            usablePaymentAsset(card) != null ? usablePaymentAsset(card).getRowId() : null,
             history,
             nextCycle,
             closedCycles(card, schedule, today)
@@ -150,7 +150,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         // 결제계좌는 필수가 아니다 — 이건 기록용 앱이라 통장을 안 적고 가계부+카드만 쓰는
         // 사용자가 있다. 계좌가 없으면 이체 없이 카드 사용액만 정리한다(규칙6 과 같은 논리:
         // 등록 안 한 자산은 애초에 순자산에 안 잡혀 있으므로 카드 쪽만 맞추면 된다).
-        Asset paymentAsset = card.getPaymentAsset();
+        Asset paymentAsset = usablePaymentAsset(card);
 
         // 수동 결제 = 선택한 회차의 선결제 — 금액·기간 귀속 모두 그 회차 기준.
         // (종전엔 잔액 전액 + 실행일의 전월 라벨이라 회차·기간·금액이 어긋났음)
@@ -319,7 +319,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
         }
 
         Long userRowId = card.getUser().getRowId();
-        Asset paymentAsset = card.getPaymentAsset();
+        Asset paymentAsset = usablePaymentAsset(card);
         // 결제일 당일 회차 = 전월 1일~말일 사용분(선결제 차감) — 잔액 전액 아님.
         BillingCycle cycle = upcomingCycle(card, today);
         long amount = cycle.amount();
@@ -355,7 +355,7 @@ public class CardPaymentServiceImpl implements CardPaymentService {
             return;
         }
 
-        Asset paymentAsset = card.getPaymentAsset();
+        Asset paymentAsset = usablePaymentAsset(card);
         if (paymentAsset != null) {
             // 카드 → 결제계좌. 결제 이체(createPaymentTransfer)의 거울상이다.
             assetService.createTransfer(new AssetServiceDto.CreateTransferCommand(

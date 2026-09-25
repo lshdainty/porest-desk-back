@@ -176,7 +176,11 @@ public class ExpenseQueryDslRepository implements ExpenseRepository {
             builder.and(expense.expenseType.eq(expenseType));
         }
         if (keyword != null && !keyword.isBlank()) {
-            builder.and(expense.description.containsIgnoreCase(keyword));
+            // 키워드는 메모 또는 거래처에 걸린다 — 앱 검색 안내가 "키워드, 가맹점, 메모로" 인데
+            // 메모만 봐서 거래처만 적은 거래가 안 찾혔다(QA 30 11). 거래처만 따로 거르는
+            // merchant 파라미터는 그대로다.
+            builder.and(expense.description.containsIgnoreCase(keyword)
+                .or(expense.merchant.containsIgnoreCase(keyword)));
         }
         if (merchant != null && !merchant.isBlank()) {
             builder.and(expense.merchant.containsIgnoreCase(merchant));

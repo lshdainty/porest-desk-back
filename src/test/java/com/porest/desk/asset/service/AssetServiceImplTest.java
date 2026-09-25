@@ -130,6 +130,47 @@ class AssetServiceImplTest {
                 .isInstanceOf(ForbiddenException.class);
     }
 
+    // ── 결제계좌를 지우면(QA 30 6) ────────────────────────────────────────────
+    // 삭제가 카드의 참조를 안 끊어서, 그 카드의 [지금 결제]·자동 결제·카드 수정이 지운 계좌를
+    // 찾다 404 "자산을 찾을 수 없어요" 로 막혔다.
+
+    private Asset realAsset(long rowId, String name, com.porest.desk.asset.type.AssetType type, Asset payment) {
+        Asset a = Asset.createAsset(user(USER_ID), name, type, 0L, "KRW", null, null, null, null, 0,
+            com.porest.core.type.YNType.Y, null, null, 25, payment);
+        ReflectionTestUtils.setField(a, "rowId", rowId);
+        return a;
+    }
+
+    @Test
+    @DisplayName("deleteAsset — 그 계좌를 결제·연결 계좌로 쓰던 카드는 연결을 끊는다, 다른 카드는 그대로")
+    void deleteDetachesCardsUsingIt() {
+        Asset bank = realAsset(10L, "급여통장", com.porest.desk.asset.type.AssetType.BANK_ACCOUNT, null);
+        Asset other = realAsset(11L, "생활비통장", com.porest.desk.asset.type.AssetType.BANK_ACCOUNT, null);
+        Asset credit = realAsset(20L, "신한", com.porest.desk.asset.type.AssetType.CREDIT_CARD, bank);
+        Asset check = realAsset(21L, "체크", com.porest.desk.asset.type.AssetType.CHECK_CARD, bank);
+        Asset untouched = realAsset(22L, "현대", com.porest.desk.asset.type.AssetType.CREDIT_CARD, other);
+        given(assetRepository.findById(10L)).willReturn(Optional.of(bank));
+        given(assetRepository.findByUser(USER_ID)).willReturn(List.of(bank, other, credit, check, untouched));
+
+        sut.deleteAsset(10L, USER_ID);
+
+        assertThat(bank.getIsDeleted()).isEqualTo(com.porest.core.type.YNType.Y);
+        assertThat(credit.getPaymentAsset()).isNull();
+        assertThat(check.getPaymentAsset()).isNull();
+        assertThat(untouched.getPaymentAsset()).isSameAs(other);
+    }
+
+    @Test
+    @DisplayName("이미 지운 계좌를 가리키는 카드 — 응답엔 결제계좌가 없다(옛 폼이 그 id 를 되싣지 않게)")
+    void deletedPaymentAccountIsHiddenInResponse() {
+        Asset bank = realAsset(10L, "급여통장", com.porest.desk.asset.type.AssetType.BANK_ACCOUNT, null);
+        Asset card = realAsset(20L, "신한", com.porest.desk.asset.type.AssetType.CREDIT_CARD, bank);
+        bank.deleteAsset(); // 삭제가 참조를 안 끊던 때 남은 데이터
+
+        assertThat(card.getUsablePaymentAsset()).isNull();
+        assertThat(com.porest.desk.asset.service.dto.AssetServiceDto.AssetInfo.from(card).paymentAssetRowId()).isNull();
+    }
+
     @Test
     @DisplayName("createTransfer — 출금 자산이 남의 것이면 이체 불가")
     void transferRejectsOthersFromAsset() {
