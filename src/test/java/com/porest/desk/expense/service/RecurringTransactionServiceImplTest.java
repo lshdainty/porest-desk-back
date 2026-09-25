@@ -427,6 +427,13 @@ class RecurringTransactionServiceImplTest {
     @DisplayName("이체 반복 실행(자정 배치)")
     class TransferExecution {
 
+        // 오늘 = 회차 날(9/15). 배치는 오늘까지 도래한 회차를 한 번에 따라잡는다(QA 30 4) —
+        // 벽시계를 쓰면 10/15 가 지나는 날부터 두 회차가 돌아 "이체 한 번" 단언이 깨진다.
+        @BeforeEach
+        void pinToday() {
+            lenient().doReturn(LocalDate.of(2026, 9, 15)).when(serviceClock).today();
+        }
+
         private RecurringTransaction dueTransfer(Long fee, Long interest) {
             User u = user(USER_ID);
             Asset from = Asset.createAsset(u, "예금", AssetType.BANK_ACCOUNT, 0L, "KRW", null,
