@@ -171,6 +171,70 @@ class AssetServiceImplTest {
         assertThat(com.porest.desk.asset.service.dto.AssetServiceDto.AssetInfo.from(card).paymentAssetRowId()).isNull();
     }
 
+    /** 결제계좌 칸만 실은 수정 — 카드 수정 폼이 안 바꾼 결제계좌를 그대로 되싣는 모양. */
+    private AssetServiceDto.UpdateAssetCommand paymentAccountOnly(String name, Long paymentAssetRowId) {
+        return new AssetServiceDto.UpdateAssetCommand(
+            com.porest.desk.common.patch.Patch.set(name), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.absent(), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.absent(), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.absent(), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.absent(), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.absent(), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.absent(), com.porest.desk.common.patch.Patch.absent(),
+            com.porest.desk.common.patch.Patch.set(paymentAssetRowId), null);
+    }
+
+    @Test
+    @DisplayName("updateAsset — 지우기 전에 연 폼이 지운 계좌 id 를 되실어 와도 '연결 없음' 으로 저장한다")
+    void staleFormWithDeletedPaymentAccountSaves() {
+        // 삭제가 이미 연결을 끊었다 — 카드는 결제계좌가 없고, 폼만 옛 id(10) 를 들고 있다.
+        Asset card = realAsset(20L, "신한", com.porest.desk.asset.type.AssetType.CREDIT_CARD, null);
+        given(assetRepository.findById(20L)).willReturn(Optional.of(card));
+        given(assetRepository.existsDeletedOwnedBy(10L, USER_ID)).willReturn(true);
+        given(balanceHistoryService.balanceAt(any(), any())).willReturn(AssetBalanceHistoryService.Split.ZERO);
+
+        sut.updateAsset(20L, USER_ID, paymentAccountOnly("신한 새이름", 10L));
+
+        assertThat(card.getAssetName()).isEqualTo("신한 새이름");
+        assertThat(card.getPaymentAsset()).isNull();
+        verify(assetRepository, never()).findById(10L);
+    }
+
+    @Test
+    @DisplayName("updateAsset — 지운 게 아닌 없는 id·남의 계좌는 종전대로 막는다")
+    void unknownPaymentAccountStillRejected() {
+        Asset card = realAsset(20L, "신한", com.porest.desk.asset.type.AssetType.CREDIT_CARD, null);
+        given(assetRepository.findById(20L)).willReturn(Optional.of(card));
+        given(assetRepository.existsDeletedOwnedBy(anyLong(), eq(USER_ID))).willReturn(false);
+        given(assetRepository.findById(99L)).willReturn(Optional.empty());
+        Asset othersBank = assetOwnedBy(999L);
+        given(assetRepository.findById(98L)).willReturn(Optional.of(othersBank));
+
+        assertThatThrownBy(() -> sut.updateAsset(20L, USER_ID, paymentAccountOnly("신한", 99L)))
+            .isInstanceOf(com.porest.core.exception.EntityNotFoundException.class);
+        assertThatThrownBy(() -> sut.updateAsset(20L, USER_ID, paymentAccountOnly("신한", 98L)))
+            .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("createAsset — 지우기 전에 연 추가 폼이 지운 계좌를 골라 와도 카드는 연결 없이 만든다")
+    void createWithDeletedPaymentAccountCreatesUnlinked() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(assetRepository.existsDeletedOwnedBy(10L, USER_ID)).willReturn(true);
+        lenient().when(balanceHistoryService.balanceAt(any(), any())).thenReturn(AssetBalanceHistoryService.Split.ZERO);
+        var cmd = new AssetServiceDto.CreateAssetCommand(
+            USER_ID, "신한", com.porest.desk.asset.type.AssetType.CREDIT_CARD, 0L, null, "KRW",
+            null, null, null, null, 0,
+            YNType.Y, YNType.N, null, null, 25, 10L, null);
+
+        sut.createAsset(cmd);
+
+        org.mockito.ArgumentCaptor<Asset> saved = org.mockito.ArgumentCaptor.forClass(Asset.class);
+        verify(assetRepository).save(saved.capture());
+        assertThat(saved.getValue().getPaymentAsset()).isNull();
+        verify(assetRepository, never()).findById(10L);
+    }
+
     @Test
     @DisplayName("createTransfer — 출금 자산이 남의 것이면 이체 불가")
     void transferRejectsOthersFromAsset() {
