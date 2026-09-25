@@ -338,9 +338,11 @@ public class AssetServiceImpl implements AssetService {
         CardCatalog cardCatalog = command.cardCatalogRowId()
             .map(this::resolveCardCatalog)
             .orKeep(asset.getCardCatalog());
+        // 지운 결제계좌는 '연결 없음' 이다(QA 30 6). 지우기 전에 연 폼이 그 id 를 그대로 실어 와도
+        // 지금 연결된(지워진) 그 계좌면 끊고 넘어간다 — 404 로 카드 수정 자체를 막지 않는다.
         Asset paymentAsset = command.paymentAssetRowId()
-            .map(rowId -> resolvePaymentAsset(rowId, userRowId))
-            .orKeep(asset.getPaymentAsset());
+            .map(rowId -> isDeletedLinkOf(asset, rowId) ? null : resolvePaymentAsset(rowId, userRowId))
+            .orKeep(asset.getUsablePaymentAsset());
 
         // 필수 필드(NOT NULL)는 명시적 null 을 DTO 제약이 400 으로 끊는다 — 여기 오는 값은 안전하다.
         // 선택 필드(color/institution/memo/한도/결제일/결제 계좌)는 명시적 null 이 clear 다.
@@ -475,8 +477,17 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = findAssetOrThrow(assetId);
         validateAssetOwnership(asset, userRowId);
         asset.deleteAsset();
+        // 이 계좌를 결제·연결 계좌로 쓰던 카드는 연결을 끊는다 — 안 끊으면 그 카드의 결제·수정이
+        // 지운 계좌를 찾다 404 로 막혔다(QA 30 6).
+        int detached = 0;
+        for (Asset card : assetRepository.findByUser(userRowId)) {
+            if (card.getPaymentAsset() != null && Objects.equals(card.getPaymentAsset().getRowId(), assetId)) {
+                card.detachPaymentAsset();
+                detached++;
+            }
+        }
 
-        log.info("자산 삭제 완료: assetId={}", assetId);
+        log.info("자산 삭제 완료: assetId={}, 연결 끊은 카드={}", assetId, detached);
     }
 
     /**
@@ -1413,6 +1424,13 @@ public class AssetServiceImpl implements AssetService {
                 log.warn("카드 카탈로그 조회 실패 - 존재하지 않는 카드: rowId={}", cardCatalogRowId);
                 return new EntityNotFoundException(DeskErrorCode.CARD_CATALOG_NOT_FOUND);
             });
+    }
+
+    /** 이 카드가 지금 가리키는 결제계좌가 지워진 그 계좌인가. */
+    private static boolean isDeletedLinkOf(Asset card, Long rowId) {
+        Asset linked = card.getPaymentAsset();
+        return rowId != null && linked != null && Objects.equals(linked.getRowId(), rowId)
+            && linked.getIsDeleted() == YNType.Y;
     }
 
     private Asset resolvePaymentAsset(Long paymentAssetRowId, Long userRowId) {

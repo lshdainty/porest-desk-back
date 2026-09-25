@@ -928,6 +928,29 @@ class CardPaymentServiceImplTest {
     }
 
     @Test
+    @DisplayName("지운 결제계좌는 없는 것과 같다 — 404 대신 이체 없이 사용액만 정리(QA 30 6)")
+    void deletedPaymentAssetActsAsNone() {
+        Asset deleted = mock(Asset.class);
+        given(deleted.getIsDeleted()).willReturn(com.porest.core.type.YNType.Y);
+        Asset card = creditCard(25);
+        given(card.getPaymentAsset()).willReturn(deleted);
+        given(assetRepository.findById(CARD_ID)).willReturn(Optional.of(card));
+        givenCycleSpend(448_600L);
+        givenCardBalance(-448_600L);
+        given(cardBillingRepository.sumCompletedAmountByCardAndPeriod(eq(CARD_ID), any(), any()))
+            .willReturn(0L);
+        given(cardBillingRepository.save(any(CardBilling.class)))
+            .willAnswer(inv -> inv.getArgument(0));
+
+        CardPaymentServiceDto.BillingInfo result = sut.payCard(CARD_ID, USER_ID, null);
+
+        assertThat(result.status()).isEqualTo(BillingStatus.COMPLETED);
+        then(assetService).should(never()).createTransfer(any());
+        then(balanceHistoryService).should()
+            .recordExpense(eq(card), isNull(), eq(ExpenseType.INCOME), eq(448_600L), any());
+    }
+
+    @Test
     @DisplayName("출금계좌 잔액이 모자라도 결제된다 — 기록용 앱이라 막지 않는다")
     void paysDespiteInsufficientBalance() {
         Asset paymentAsset = mock(Asset.class); // 통장 잔액을 안 맞춰 둔 상태

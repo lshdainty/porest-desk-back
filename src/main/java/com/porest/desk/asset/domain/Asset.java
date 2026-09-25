@@ -124,6 +124,22 @@ public class Asset extends AuditingFieldsWithIp {
     @JoinColumn(name = "payment_asset_row_id")
     private Asset paymentAsset;
 
+    /**
+     * 쓸 수 있는 결제·연결 계좌 — 없거나 <b>지운 계좌</b>면 null.
+     *
+     * <p>계좌를 지워도 카드가 그 계좌를 계속 가리키던 때가 있다(QA 30 6 — 삭제가 참조를 안
+     * 끊었다). 그 카드는 [지금 결제]·자동 결제·카드 수정이 전부 "자산을 찾을 수 없어요" 404 로
+     * 막혔다. 지운 계좌는 연결이 없는 것과 같다 — 이체 없이 사용액만 정리한다.
+     */
+    public Asset getUsablePaymentAsset() {
+        return paymentAsset != null && paymentAsset.getIsDeleted() != YNType.Y ? paymentAsset : null;
+    }
+
+    /** 결제·연결 계좌를 끊는다 — 그 계좌를 지울 때 부른다. */
+    public void detachPaymentAsset() {
+        this.paymentAsset = null;
+    }
+
     // 증권사 시세 연동 (INVESTMENT 자산 전용) — 종목코드 + 보유수량을 등록하면
     // 현재가 × 수량으로 평가액을 실시간 계산한다. 어느 증권사 시세로 계산할지는 사용자가 고른
     // 기본 소스(user_securities_credential.is_primary)가 정한다.
