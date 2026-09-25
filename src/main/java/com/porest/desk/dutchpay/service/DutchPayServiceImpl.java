@@ -217,7 +217,8 @@ public class DutchPayServiceImpl implements DutchPayService {
         List<DutchPayParticipant> matched = new ArrayList<>(participants.size());
         List<User> users = new ArrayList<>(participants.size());
         for (DutchPayServiceDto.ParticipantCommand pc : participants) {
-            if (pc.amount() == null || pc.amount() <= 0) {
+            // 0원은 결제자만 된다 — 결제자가 정해진 뒤에 본다(validatePayerOnlyZero).
+            if (pc.amount() == null || pc.amount() < 0) {
                 throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
             }
             User participantUser = null;
@@ -235,6 +236,7 @@ public class DutchPayServiceImpl implements DutchPayService {
 
         // 결제자를 못 정하면 여기서 던진다 — 아래 삭제 루프보다 앞이라 아무것도 지워지지 않는다.
         int payerIndex = resolveUpdatePayerIndex(participants, matched, dutchPay.getPayer());
+        validatePayerOnlyZero(participants, payerIndex);
         DutchPayParticipant nextPayer = matched.get(payerIndex);
 
         // ── ① 목록에서 빠진 참가자를 <b>먼저</b> 지운다. id 로 매칭되지 않은 것도 여기 걸린다.
@@ -287,12 +289,9 @@ public class DutchPayServiceImpl implements DutchPayService {
         }
         List<String> names = validateNoDuplicateParticipants(participants);
         int payerIndex = resolveCreatePayerIndex(participants);
+        validatePayerOnlyZero(participants, payerIndex);
         for (int i = 0; i < participants.size(); i++) {
             DutchPayServiceDto.ParticipantCommand pc = participants.get(i);
-            // amount 는 not-null 컬럼 — null/0/음수는 정산 데이터를 오염시키므로 영속화 전에 차단.
-            if (pc.amount() == null || pc.amount() <= 0) {
-                throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
-            }
             User participantUser = null;
             if (pc.userRowId() != null) {
                 participantUser = userRepository.findById(pc.userRowId())
@@ -302,6 +301,27 @@ public class DutchPayServiceImpl implements DutchPayService {
                 dutchPay, participantUser, names.get(i), pc.amount(), i == payerIndex
             );
             dutchPay.addParticipant(participant);
+        }
+    }
+
+    /**
+     * 참가자 금액 — null·음수는 안 된다. <b>0원은 결제자만</b>, 그것도 다른 참가자가 있을 때만 된다.
+     *
+     * <p>거래에서 더치페이를 만들 때 "나도 포함" 을 끄면 "내가 전액 결제, 다른 사람 몫만 받아요"
+     * 다 — 내가 결제자이고 내 몫은 0원이다. 종전엔 0원을 막아서 웹은 나를 빼고 보내(첫 친구가
+     * 결제자로 저장됐다), 앱은 결제자 없이 보내 400 이었다(QA 30 3). 결제자가 아닌 사람의 0원은
+     * 여전히 막는다 — 갚을 돈이 없는 사람은 정산에 들 이유가 없다.
+     */
+    private static void validatePayerOnlyZero(List<DutchPayServiceDto.ParticipantCommand> participants,
+                                              int payerIndex) {
+        for (int i = 0; i < participants.size(); i++) {
+            Long amount = participants.get(i).amount();
+            if (amount == null || amount < 0) {
+                throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
+            }
+            if (amount == 0L && (i != payerIndex || participants.size() < 2)) {
+                throw new InvalidValueException(DeskErrorCode.DUTCH_PAY_INVALID_PARTICIPANT_AMOUNT);
+            }
         }
     }
 

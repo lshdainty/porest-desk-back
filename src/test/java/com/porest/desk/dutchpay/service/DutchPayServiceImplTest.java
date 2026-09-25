@@ -155,6 +155,51 @@ class DutchPayServiceImplTest {
                 .isInstanceOf(InvalidValueException.class);
     }
 
+    // "나도 포함" 을 끈 정산(QA 30 3) — "내가 전액 결제, 다른 사람 몫만 받아요". 나는 결제자이고
+    // 내 몫은 0원이다. 종전엔 0원을 막아 웹은 나를 빼고 보내(첫 친구가 결제자로 저장), 앱은
+    // 결제자 없이 보내 400 이었다.
+    private DutchPayServiceDto.CreateCommand payerOnly(List<DutchPayServiceDto.ParticipantCommand> ps) {
+        return new DutchPayServiceDto.CreateCommand(USER_ID, null, "점심", null, 3_000L, "KRW",
+            SplitMethod.CUSTOM, LocalDate.of(2026, 9, 25), ps);
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 결제자(나)만 0원이 된다: 내가 전액 냈고 친구 몫만 받는다")
+    void payerMayHaveZeroShare() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(dutchPayRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        var info = sut.createDutchPay(payerOnly(List.of(
+            new DutchPayServiceDto.ParticipantCommand(null, null, "나", 0L, true),
+            new DutchPayServiceDto.ParticipantCommand(null, null, "친구A", 3_000L, false))));
+
+        var payer = info.participants().stream().filter(p -> p.isPayer()).toList();
+        assertThat(payer).hasSize(1);
+        assertThat(payer.get(0).participantName()).isEqualTo("나");
+        assertThat(payer.get(0).amount()).isZero();
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 결제자가 아닌 사람의 0원은 여전히 거부")
+    void nonPayerZeroIsRejected() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        assertThatThrownBy(() -> sut.createDutchPay(payerOnly(List.of(
+            new DutchPayServiceDto.ParticipantCommand(null, null, "나", 3_000L, true),
+            new DutchPayServiceDto.ParticipantCommand(null, null, "친구A", 0L, false)))))
+            .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("createDutchPay — 결제자 혼자 0원이면 거부(나눌 사람이 없다)")
+    void lonePayerZeroIsRejected() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+
+        assertThatThrownBy(() -> sut.createDutchPay(payerOnly(List.of(
+            new DutchPayServiceDto.ParticipantCommand(null, null, "나", 0L, true)))))
+            .isInstanceOf(InvalidValueException.class);
+    }
+
     @Test
     @DisplayName("createDutchPay — 같은 등록 사용자를 중복 참가자로 추가하면 거부")
     void createRejectsDuplicateRegisteredParticipant() {
