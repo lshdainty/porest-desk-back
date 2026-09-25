@@ -94,4 +94,24 @@ class AssetRepositoryTest {
 
         assertThat(repository.findById(asset.getRowId())).isEmpty();
     }
+
+    @Test
+    @DisplayName("existsDeletedOwnedBy — 내가 지운 자산만 참이다(살아 있는 것·남이 지운 것·없는 id 는 거짓)")
+    void existsDeletedOwnedBy() {
+        User user = persistUser("u1");
+        User other = persistUser("u2");
+        Asset deleted = persistAsset(user, "지운통장", 0);
+        Asset alive = persistAsset(user, "쓰는통장", 1);
+        Asset othersDeleted = persistAsset(other, "남의지운통장", 0);
+        em.flush();
+        repository.delete(deleted);
+        repository.delete(othersDeleted);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.existsDeletedOwnedBy(deleted.getRowId(), user.getRowId())).isTrue();
+        assertThat(repository.existsDeletedOwnedBy(alive.getRowId(), user.getRowId())).isFalse();
+        assertThat(repository.existsDeletedOwnedBy(othersDeleted.getRowId(), user.getRowId())).isFalse();
+        assertThat(repository.existsDeletedOwnedBy(999_999L, user.getRowId())).isFalse();
+    }
 }

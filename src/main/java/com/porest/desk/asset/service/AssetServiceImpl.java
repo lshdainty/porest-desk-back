@@ -104,7 +104,7 @@ public class AssetServiceImpl implements AssetService {
         }
 
         CardCatalog cardCatalog = resolveCardCatalog(command.cardCatalogRowId());
-        Asset paymentAsset = resolvePaymentAsset(command.paymentAssetRowId(), command.userRowId());
+        Asset paymentAsset = resolvePaymentAssetOrNone(command.paymentAssetRowId(), command.userRowId());
 
         // 보유가 있는 투자 자산은 평가액을 서버가 산정한다 — 클라이언트가 보낸 balance 를 쓰지 않는다.
         // 연동 시세를 못 구하면 미연동 합만 잡고, 나머지는 일 1회 스냅샷 배치가 채운다.
@@ -339,9 +339,9 @@ public class AssetServiceImpl implements AssetService {
             .map(this::resolveCardCatalog)
             .orKeep(asset.getCardCatalog());
         // 지운 결제계좌는 '연결 없음' 이다(QA 30 6). 지우기 전에 연 폼이 그 id 를 그대로 실어 와도
-        // 지금 연결된(지워진) 그 계좌면 끊고 넘어간다 — 404 로 카드 수정 자체를 막지 않는다.
+        // 끊고 넘어간다 — 404 로 카드 수정 자체를 막지 않는다.
         Asset paymentAsset = command.paymentAssetRowId()
-            .map(rowId -> isDeletedLinkOf(asset, rowId) ? null : resolvePaymentAsset(rowId, userRowId))
+            .map(rowId -> resolvePaymentAssetOrNone(rowId, userRowId))
             .orKeep(asset.getUsablePaymentAsset());
 
         // 필수 필드(NOT NULL)는 명시적 null 을 DTO 제약이 400 으로 끊는다 — 여기 오는 값은 안전하다.
@@ -1426,11 +1426,17 @@ public class AssetServiceImpl implements AssetService {
             });
     }
 
-    /** 이 카드가 지금 가리키는 결제계좌가 지워진 그 계좌인가. */
-    private static boolean isDeletedLinkOf(Asset card, Long rowId) {
-        Asset linked = card.getPaymentAsset();
-        return rowId != null && linked != null && Objects.equals(linked.getRowId(), rowId)
-            && linked.getIsDeleted() == YNType.Y;
+    /**
+     * 결제계좌 id 를 자산으로 — 내가 지운 계좌면 '연결 없음'(null) 이다(QA 30 6).
+     *
+     * <p>지운 계좌는 화면 목록에 안 나오므로 그 id 는 지우기 전에 연 폼에서만 온다. 삭제가 카드의
+     * 연결을 이미 끊었으니 여기서도 없는 것으로 받는다. 남의 자산·없는 id 는 종전대로 막는다.
+     */
+    private Asset resolvePaymentAssetOrNone(Long paymentAssetRowId, Long userRowId) {
+        if (paymentAssetRowId != null && assetRepository.existsDeletedOwnedBy(paymentAssetRowId, userRowId)) {
+            return null;
+        }
+        return resolvePaymentAsset(paymentAssetRowId, userRowId);
     }
 
     private Asset resolvePaymentAsset(Long paymentAssetRowId, Long userRowId) {

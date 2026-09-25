@@ -57,6 +57,14 @@ public class AssetQueryDslRepository implements AssetRepository {
     }
 
     @Override
+    public boolean existsDeletedOwnedBy(Long rowId, Long userRowId) {
+        return queryFactory.selectOne()
+            .from(asset)
+            .where(asset.rowId.eq(rowId), asset.user.rowId.eq(userRowId), asset.isDeleted.eq(YNType.Y))
+            .fetchFirst() != null;
+    }
+
+    @Override
     public Asset save(Asset entity) {
         entityManager.persist(entity);
         return entity;
