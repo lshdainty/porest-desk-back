@@ -69,6 +69,17 @@ public class CalendarEvent extends AuditingFieldsWithIp {
     @JoinColumn(name = "label_row_id")
     private EventLabel label;
 
+    /**
+     * 살아 있는 라벨 — 없거나 <b>지운 라벨</b>이면 null.
+     *
+     * <p>라벨 삭제는 라벨 행만 지우고 일정의 참조는 그대로 둔다. 확인창은 "라벨 없음 상태가
+     * 됩니다" 라고 하는데 일정 조회는 지운 라벨의 이름·색을 계속 내보냈다(QA 30 7). 응답과
+     * 수정의 "안 온 칸은 유지" 가 모두 이 값을 본다 — 이미 지워진 라벨을 가리키는 일정도 풀린다.
+     */
+    public EventLabel getActiveLabel() {
+        return label != null && label.getIsDeleted() != com.porest.core.type.YNType.Y ? label : null;
+    }
+
     @Column(name = "location", length = 500)
     private String location;
 

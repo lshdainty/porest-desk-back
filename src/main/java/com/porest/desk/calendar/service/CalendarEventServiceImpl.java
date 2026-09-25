@@ -164,7 +164,7 @@ public class CalendarEventServiceImpl implements CalendarEventService {
                 validateLabelOwnership(found, userRowId);
                 return found;
             })
-            .orKeep(event.getLabel());
+            .orKeep(event.getActiveLabel());
 
         // 실린 칸만 바꾼다 — 안 온 칸은 지금 값을 그대로 넘긴다(QA #96).
         event.updateEvent(
