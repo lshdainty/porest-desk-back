@@ -178,6 +178,29 @@ class CalendarEventApiControllerTest {
                 .isEqualTo(com.porest.desk.common.patch.Patch.set(40L));
     }
 
+    @Test
+    @DisplayName("PUT /calendar/event/{id} — 연 회차의 원래 시작(occurrenceStartDate)이 서비스에 닿는다, 없으면 null")
+    void updatePassesOpenedOccurrenceStart() throws Exception {
+        given(calendarEventService.updateEvent(eq(10L), eq(1L), any())).willReturn(sampleInfo());
+        String base = """
+                {"title":"헬스","startDate":"2026-09-21T10:00:00","endDate":"2026-09-21T11:00:00"%s}
+                """;
+
+        mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L).contentType(MediaType.APPLICATION_JSON)
+                        .content(base.formatted(",\"occurrenceStartDate\":\"2026-09-21T10:00:00\"")))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/calendar/event/{id}", 10L).contentType(MediaType.APPLICATION_JSON)
+                        .content(base.formatted("")))
+                .andExpect(status().isOk());
+
+        var captor = ArgumentCaptor.forClass(CalendarEventServiceDto.UpdateCommand.class);
+        verify(calendarEventService, org.mockito.Mockito.times(2))
+                .updateEvent(eq(10L), eq(1L), captor.capture());
+        assertThat(captor.getAllValues().get(0).occurrenceStartDate())
+                .isEqualTo(java.time.LocalDateTime.of(2026, 9, 21, 10, 0));
+        assertThat(captor.getAllValues().get(1).occurrenceStartDate()).isNull();
+    }
+
     /**
      * QA #81 — 값이 빠진 요청의 답이 <b>400</b> 이어야 한다.
      *

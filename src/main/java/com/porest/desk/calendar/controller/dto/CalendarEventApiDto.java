@@ -109,7 +109,14 @@ public class CalendarEventApiDto {
          * 500 이 났다 — 여기서 400 으로 끊는다. 같은 값이 두 번 담겨 와도 서버가 하나로 접는다.
          */
         List<@NotNull(message = "알림 시각이 비어 있어요") Integer> reminderMinutes,
-        Optional<Long> calendarRowId
+        Optional<Long> calendarRowId,
+        /**
+         * 반복 일정에서 <b>연 회차의 원래 시작</b> — 조회가 그 회차에 내려 준 {@code startDate} 그대로.
+         * 수정은 반복 전체에 적용되는데 폼은 연 회차의 날짜로 채워진다. 이 값이 있으면 서버가
+         * 그 회차에서 <b>바뀐 만큼만</b> 반복 전체를 옮긴다(QA 30 2). 없으면(옛 클라이언트·반복 아님)
+         * 보낸 날짜가 그대로 새 시작이다.
+         */
+        LocalDateTime occurrenceStartDate
     ) {}
 
     public record ReminderResponse(

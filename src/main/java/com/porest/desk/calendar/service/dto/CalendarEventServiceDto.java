@@ -48,8 +48,19 @@ public class CalendarEventServiceDto {
         Patch<String> location,
         Patch<String> rrule,
         List<Integer> reminderMinutes,
-        Patch<Long> calendarRowId
-    ) {}
+        Patch<Long> calendarRowId,
+        /** 반복 일정에서 연 회차의 원래 시작 — null 이면 보낸 날짜 그대로(QA 30 2). */
+        LocalDateTime occurrenceStartDate
+    ) {
+        /** 연 회차를 모르는 호출자 — 보낸 날짜가 그대로 새 시작이다. */
+        public UpdateCommand(String title, Patch<String> description, CalendarEventType eventType,
+                             Patch<String> color, LocalDateTime startDate, LocalDateTime endDate,
+                             YNType isAllDay, Patch<Long> labelRowId, Patch<String> location,
+                             Patch<String> rrule, List<Integer> reminderMinutes, Patch<Long> calendarRowId) {
+            this(title, description, eventType, color, startDate, endDate, isAllDay, labelRowId, location,
+                rrule, reminderMinutes, calendarRowId, null);
+        }
+    }
 
     public record EventInfo(
         Long rowId,
