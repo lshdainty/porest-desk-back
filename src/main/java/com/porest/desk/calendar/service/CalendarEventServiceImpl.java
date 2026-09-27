@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -166,18 +167,21 @@ public class CalendarEventServiceImpl implements CalendarEventService {
             })
             .orKeep(event.getActiveLabel());
 
+        String rrule = command.rrule().orKeep(event.getRrule());
+        RecurrenceExpander.Occurrence dates = seriesDates(event, rrule, command);
+
         // 실린 칸만 바꾼다 — 안 온 칸은 지금 값을 그대로 넘긴다(QA #96).
         event.updateEvent(
             command.title(),
             command.description().orKeep(event.getDescription()),
             command.eventType(),
             command.color().orKeep(event.getColor()),
-            command.startDate(),
-            command.endDate(),
+            dates.startDate(),
+            dates.endDate(),
             command.isAllDay(),
             label,
             command.location().orKeep(event.getLocation()),
-            command.rrule().orKeep(event.getRrule())
+            rrule
         );
 
         applyCalendar(event, command.calendarRowId(), userRowId);
@@ -193,6 +197,37 @@ public class CalendarEventServiceImpl implements CalendarEventService {
 
         log.info("캘린더 이벤트 수정 완료: eventId={}", eventId);
         return CalendarEventServiceDto.EventInfo.from(event, reminderInfos);
+    }
+
+    /**
+     * 수정이 새로 쓸 시작·종료.
+     *
+     * <p>반복 일정은 회차마다 따로 있는 게 아니라 일정 하나가 반복해서 보이는 것이고, 수정은
+     * 반복 전체에 적용된다. 그런데 조회는 회차마다 그 회차의 날짜로 내려가고 폼은 그 날짜로
+     * 채워져서, 뒤 회차를 열어 아무것도 안 바꾸고 저장해도 반복의 시작이 그 회차로 옮겨져
+     * 앞 회차들이 사라졌다(QA 30 2). 그래서 연 회차의 원래 시작을 받아 <b>그 회차에서 바뀐
+     * 만큼만</b> 반복 전체를 옮긴다 — 안 바꿨으면 그대로, 시각을 한 시간 늦추면 모든 회차가
+     * 한 시간 늦게, 날짜를 하루 미루면 모든 회차가 하루 뒤로.
+     *
+     * <p>보낸 날짜를 그대로 쓰는 경우: 연 회차를 안 알려 준 요청(옛 클라이언트), 반복이 아닌
+     * 일정, 반복을 끄는 수정(폼에 보이는 그 회차가 남는 일정이다), 지금 반복의 회차가 아닌 값.
+     */
+    private static RecurrenceExpander.Occurrence seriesDates(CalendarEvent event, String rrule,
+                                                             CalendarEventServiceDto.UpdateCommand command) {
+        LocalDateTime opened = command.occurrenceStartDate();
+        if (opened == null || rrule == null || event.getRrule() == null || !isOccurrenceOf(event, opened)) {
+            return new RecurrenceExpander.Occurrence(command.startDate(), command.endDate());
+        }
+        LocalDateTime start = event.getStartDate().plus(Duration.between(opened, command.startDate()));
+        return new RecurrenceExpander.Occurrence(
+            start, start.plus(Duration.between(command.startDate(), command.endDate())));
+    }
+
+    /** 이 일정의 지금 반복에 {@code at} 에 시작하는 회차가 있는가. */
+    private static boolean isOccurrenceOf(CalendarEvent event, LocalDateTime at) {
+        return RecurrenceExpander.expand(event.getStartDate(), event.getEndDate(), event.getRrule(), at, at)
+            .stream()
+            .anyMatch(oc -> oc.startDate().equals(at));
     }
 
     @Override

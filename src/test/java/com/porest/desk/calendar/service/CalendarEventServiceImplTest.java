@@ -232,6 +232,103 @@ class CalendarEventServiceImplTest {
         org.assertj.core.api.Assertions.assertThat(event.getIsAllDay()).isNotNull();
     }
 
+    // ── 반복 일정 — 뒤 회차를 열어 저장(QA 30 2) ─────────────────────────────
+    // 조회는 회차마다 그 회차 날짜로 내려가고 폼은 그 날짜로 채워진다. 그 날짜를 그대로 새 시작으로
+    // 쓰면 아무것도 안 바꾸고 저장만 해도 반복의 시작이 그 회차로 옮겨져 앞 회차들이 사라졌다.
+
+    /** 매주 월요일 10~11시, 9/7 시작. 셋째 회차는 9/21. */
+    private static final LocalDateTime WEEKLY_START = LocalDateTime.of(2026, 9, 7, 10, 0);
+    private static final LocalDateTime THIRD = LocalDateTime.of(2026, 9, 21, 10, 0);
+
+    private CalendarEvent weeklyEvent() {
+        UserCalendar cal = mock(UserCalendar.class);
+        given(cal.getRowId()).willReturn(50L);
+        CalendarEvent event = CalendarEvent.createEvent(user(USER_ID), "헬스", null, null, null,
+                WEEKLY_START, WEEKLY_START.plusHours(1), null, null, null, "FREQ=WEEKLY", cal);
+        ReflectionTestUtils.setField(event, "rowId", 5L);
+        given(calendarEventRepository.findById(5L)).willReturn(Optional.of(event));
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        given(calendarMembershipValidator.validateMembership(50L, USER_ID)).willReturn(member);
+        given(calendarMembershipValidator.canEditOrDelete(member, USER_ID, USER_ID)).willReturn(true);
+        given(eventReminderRepository.findByEventId(5L)).willReturn(java.util.List.of());
+        return event;
+    }
+
+    /** 폼이 보내는 모양 — 반복 칸은 늘 싣는다(웹 EventForm · 앱 calendar_event_dialog). */
+    private CalendarEventServiceDto.UpdateCommand saveFrom(LocalDateTime opened, LocalDateTime start,
+                                                           LocalDateTime end, String rrule) {
+        return new CalendarEventServiceDto.UpdateCommand(
+                "헬스", Patch.absent(), null, Patch.absent(), start, end,
+                null, Patch.absent(), Patch.absent(), Patch.set(rrule), null, Patch.absent(), opened);
+    }
+
+    @Test
+    @DisplayName("반복 일정 — 셋째 회차를 열어 아무것도 안 바꾸고 저장하면 반복의 시작은 그대로다")
+    void savingLaterOccurrenceKeepsSeriesStart() {
+        CalendarEvent event = weeklyEvent();
+
+        sut.updateEvent(5L, USER_ID, saveFrom(THIRD, THIRD, THIRD.plusHours(1), "FREQ=WEEKLY"));
+
+        org.assertj.core.api.Assertions.assertThat(event.getStartDate()).isEqualTo(WEEKLY_START);
+        org.assertj.core.api.Assertions.assertThat(event.getEndDate()).isEqualTo(WEEKLY_START.plusHours(1));
+    }
+
+    @Test
+    @DisplayName("반복 일정 — 연 회차에서 시각을 바꾸면 모든 회차의 시각이 같은 만큼 옮겨진다")
+    void timeChangeOnOccurrenceShiftsWholeSeries() {
+        CalendarEvent event = weeklyEvent();
+
+        sut.updateEvent(5L, USER_ID, saveFrom(THIRD, THIRD.plusHours(1), THIRD.plusHours(2).plusMinutes(30),
+                "FREQ=WEEKLY"));
+
+        org.assertj.core.api.Assertions.assertThat(event.getStartDate()).isEqualTo(LocalDateTime.of(2026, 9, 7, 11, 0));
+        org.assertj.core.api.Assertions.assertThat(event.getEndDate()).isEqualTo(LocalDateTime.of(2026, 9, 7, 12, 30));
+    }
+
+    @Test
+    @DisplayName("반복 일정 — 연 회차를 하루 미루면 반복 전체가 하루 뒤로(월 → 화)")
+    void dateMoveOnOccurrenceShiftsWholeSeries() {
+        CalendarEvent event = weeklyEvent();
+
+        sut.updateEvent(5L, USER_ID, saveFrom(THIRD, THIRD.plusDays(1), THIRD.plusDays(1).plusHours(1),
+                "FREQ=WEEKLY"));
+
+        org.assertj.core.api.Assertions.assertThat(event.getStartDate()).isEqualTo(LocalDateTime.of(2026, 9, 8, 10, 0));
+        org.assertj.core.api.Assertions.assertThat(event.getRrule()).isEqualTo("FREQ=WEEKLY");
+    }
+
+    @Test
+    @DisplayName("반복 일정 — 연 회차에서 반복을 끄면 폼에 보이던 그 회차가 남는다")
+    void turningRepeatOffKeepsOpenedOccurrence() {
+        CalendarEvent event = weeklyEvent();
+
+        sut.updateEvent(5L, USER_ID, saveFrom(THIRD, THIRD, THIRD.plusHours(1), null));
+
+        org.assertj.core.api.Assertions.assertThat(event.getStartDate()).isEqualTo(THIRD);
+        org.assertj.core.api.Assertions.assertThat(event.getRrule()).isNull();
+    }
+
+    @Test
+    @DisplayName("반복 일정 — 연 회차를 안 알려 준 요청(옛 클라이언트)은 종전대로 보낸 날짜가 새 시작이다")
+    void withoutOpenedOccurrenceUsesSentDates() {
+        CalendarEvent event = weeklyEvent();
+
+        sut.updateEvent(5L, USER_ID, saveFrom(null, THIRD, THIRD.plusHours(1), "FREQ=WEEKLY"));
+
+        org.assertj.core.api.Assertions.assertThat(event.getStartDate()).isEqualTo(THIRD);
+    }
+
+    @Test
+    @DisplayName("반복 일정 — 지금 반복의 회차가 아닌 값(화요일)은 믿지 않고 보낸 날짜 그대로")
+    void openedValueThatIsNotAnOccurrenceIsIgnored() {
+        CalendarEvent event = weeklyEvent();
+        LocalDateTime tuesday = THIRD.plusDays(1);
+
+        sut.updateEvent(5L, USER_ID, saveFrom(tuesday, THIRD, THIRD.plusHours(1), "FREQ=WEEKLY"));
+
+        org.assertj.core.api.Assertions.assertThat(event.getStartDate()).isEqualTo(THIRD);
+    }
+
     // ── D4 일정은 반드시 캘린더에 속한다 (사용자 결정 2026-09-08) ──────────────
 
     /** 소속 캘린더 말고는 아무것도 안 건드리는 수정 명령. */
