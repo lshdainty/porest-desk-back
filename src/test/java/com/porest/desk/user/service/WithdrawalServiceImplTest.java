@@ -2,6 +2,7 @@ package com.porest.desk.user.service;
 
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
+import com.porest.desk.apitoken.service.ApiTokenService;
 import com.porest.desk.calendar.domain.UserCalendarMember;
 import com.porest.desk.calendar.repository.UserCalendarMemberRepository;
 import com.porest.desk.calendar.service.UserCalendarService;
@@ -64,6 +65,7 @@ class WithdrawalServiceImplTest {
     @Mock private RecurringTransactionRepository recurringTransactionRepository;
     @Mock private UserSecuritiesCredentialRepository securitiesCredentialRepository;
     @Mock private SecuritiesCredentialService securitiesCredentialService;
+    @Mock private ApiTokenService apiTokenService;
     @Mock private SsoSessionService ssoSessionService;
     @Mock private SsoOAuth2Client ssoOAuth2Client;
 
@@ -74,7 +76,7 @@ class WithdrawalServiceImplTest {
         service = new WithdrawalServiceImpl(userRepository, subscriptionRepository,
                 userCalendarService, calendarMemberRepository, dutchPayRepository, todoRepository,
                 recurringTransactionRepository, securitiesCredentialRepository,
-                securitiesCredentialService, ssoSessionService, ssoOAuth2Client);
+                securitiesCredentialService, apiTokenService, ssoSessionService, ssoOAuth2Client);
 
         given(userRepository.findById(USER)).willReturn(Optional.of(user()));
         given(subscriptionRepository.findEntitled(anyLong(), any(), any())).willReturn(List.of());
@@ -119,6 +121,15 @@ class WithdrawalServiceImplTest {
         service.withdraw(USER, null);
 
         verify(userCalendarService, never()).deleteCalendar(anyLong(), anyLong());
+        verify(apiTokenService, never()).revokeAll(anyLong());
+    }
+
+    @Test
+    @DisplayName("해지하면 프로그램용 API 토큰도 폐기한다 — 증권 키로 가는 길을 남겨 두지 않는다")
+    void revokesApiTokens() {
+        service.withdraw(USER, null);
+
+        verify(apiTokenService).revokeAll(USER);
     }
 
     @Test

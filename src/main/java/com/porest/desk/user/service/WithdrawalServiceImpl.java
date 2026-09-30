@@ -3,6 +3,7 @@ package com.porest.desk.user.service;
 import com.porest.core.exception.EntityNotFoundException;
 import com.porest.core.exception.InvalidValueException;
 import com.porest.core.type.YNType;
+import com.porest.desk.apitoken.service.ApiTokenService;
 import com.porest.desk.calendar.repository.UserCalendarMemberRepository;
 import com.porest.desk.calendar.service.UserCalendarService;
 import com.porest.desk.calendar.service.dto.UserCalendarServiceDto;
@@ -63,6 +64,7 @@ public class WithdrawalServiceImpl implements WithdrawalService {
     private final RecurringTransactionRepository recurringTransactionRepository;
     private final UserSecuritiesCredentialRepository securitiesCredentialRepository;
     private final SecuritiesCredentialService securitiesCredentialService;
+    private final ApiTokenService apiTokenService;
     private final SsoSessionService ssoSessionService;
     private final SsoOAuth2Client ssoOAuth2Client;
 
@@ -143,11 +145,15 @@ public class WithdrawalServiceImpl implements WithdrawalService {
 
     /**
      * ② 증권 키를 못 쓰게 한다. 증권사 API 를 부르지는 않는다 — 우리가 가진 키만 끊는다.
+     *
+     * <p>그 키로 가는 프로그램용 API 토큰도 같이 폐기한다. 토큰은 주인이 해지했으면 어차피
+     * 거절되지만({@code ApiTokenService#authenticate}), 살아 있는 표식으로 남겨 둘 이유가 없다.
      */
     private void disconnectSecurities(Long userRowId) {
         for (UserSecuritiesCredential c : securitiesCredentialRepository.findAllByUserRowId(userRowId)) {
             securitiesCredentialService.disconnect(userRowId, c.getBroker());
         }
+        apiTokenService.revokeAll(userRowId);
     }
 
     /**

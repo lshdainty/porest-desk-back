@@ -271,6 +271,16 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     /** 모르는 캔들 주기. 지금은 {@code 1m}·{@code 1d} 만 있다. */
     SECURITIES_INTERVAL_UNSUPPORTED("SEC_014", "error.securities.interval.unsupported", HttpStatus.BAD_REQUEST),
 
+    // API Token (프로그램용 증권 조회 토큰)
+    /** 없는 토큰 · 폐기된 토큰 · 주인이 해지한 토큰. 어느 쪽인지는 밝히지 않는다. */
+    API_TOKEN_INVALID("APITOKEN_001", "error.api.token.invalid", HttpStatus.UNAUTHORIZED),
+    /** 토큰은 맞지만 그 자리는 토큰으로 못 연다 — 열리는 건 증권 조회(GET) 셋뿐이다. */
+    API_TOKEN_SCOPE_DENIED("APITOKEN_002", "error.api.token.scope.denied", HttpStatus.FORBIDDEN),
+    API_TOKEN_RATE_LIMITED("APITOKEN_003", "error.api.token.rate.limited", HttpStatus.TOO_MANY_REQUESTS),
+    API_TOKEN_LIMIT_EXCEEDED("APITOKEN_004", "error.api.token.limit", HttpStatus.BAD_REQUEST),
+    API_TOKEN_NOT_FOUND("APITOKEN_005", "error.notfound.api.token", HttpStatus.NOT_FOUND),
+    API_TOKEN_NAME_INVALID("APITOKEN_006", "error.api.token.name.invalid", HttpStatus.BAD_REQUEST),
+
     // Subscription (구독·기능권한)
     SUBSCRIPTION_REQUIRED("SUBS_001", "error.subscription.required", HttpStatus.FORBIDDEN),
     SUBSCRIPTION_NOT_FOUND("SUBS_002", "error.notfound.subscription", HttpStatus.NOT_FOUND),
