@@ -1,5 +1,7 @@
 package com.porest.desk.namu.service;
 
+import com.porest.core.exception.ExternalServiceException;
+import com.porest.desk.common.exception.DeskErrorCode;
 import com.porest.desk.namu.client.NamuApiClient;
 import com.porest.desk.securities.client.BrokerTokenManager;
 import com.porest.desk.securities.client.BrokerTokenManagers;
@@ -30,6 +32,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -65,6 +68,10 @@ class NamuFxRateCacheTest {
     private static final long USER = 1L;
     private static final long OTHER_USER = 2L;
 
+    /** 사용자마다 자기 키로 받은 토큰이 따로 간다 — 요청이 누구 키로 나갔는지 헤더로 가린다. */
+    private static final String USER_TOKEN = "tok-user";
+    private static final String OTHER_USER_TOKEN = "tok-other";
+
     /** 실계좌(acct_type=01). 나무 계좌번호는 11자리다. */
     private static final String LIVE_ACCT = "33333333301";
 
@@ -79,10 +86,8 @@ class NamuFxRateCacheTest {
     @BeforeEach
     void setUp() {
         given(tokenManagers.of(SecuritiesBroker.NAMU)).willReturn(tokenManager);
-        HttpHeaders auth = new HttpHeaders();
-        auth.setBearerAuth("tok");
-        given(tokenManager.authHeaders(USER)).willReturn(auth);
-        given(tokenManager.authHeaders(OTHER_USER)).willReturn(auth);
+        given(tokenManager.authHeaders(USER)).willReturn(bearer(USER_TOKEN));
+        given(tokenManager.authHeaders(OTHER_USER)).willReturn(bearer(OTHER_USER_TOKEN));
 
         properties = new NamuProperties();
         properties.setBaseUrl(BASE);
@@ -96,6 +101,12 @@ class NamuFxRateCacheTest {
     }
 
     // ---- 픽스처 ------------------------------------------------------------
+
+    private static HttpHeaders bearer(String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        return headers;
+    }
 
     private static final String BALANCE_WITH_USD = """
         {"rsp_cd":"00000","rsp_msg":"ok",
@@ -154,6 +165,14 @@ class NamuFxRateCacheTest {
     private void expectQuote(ExpectedCount count, String body) {
         server.expect(count, requestTo(QUOTE_URL))
             .andExpect(method(HttpMethod.POST))
+            .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+    }
+
+    /** 시세 요청이 {@code token} 을 달고 나갈 때만 한 번 응답한다 — 누구 키로 나간 요청인지 가린다. */
+    private void expectQuoteAs(String token, String body) {
+        server.expect(ExpectedCount.once(), requestTo(QUOTE_URL))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
             .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
     }
 
@@ -218,14 +237,43 @@ class NamuFxRateCacheTest {
         }
 
         @Test
-        @DisplayName("시세 폴백 값은 사용자끼리 나눠 쓴다 — 계좌를 안 타는 시장 환율이라 누가 물어도 같다")
-        void quoteFallbackIsSharedAcrossUsers() {
-            // 계좌 조회는 사용자별이라 두 번 나가지만, 시세는 한 번이면 족하다.
+        @DisplayName("시세 폴백으로 받은 값도 그 사용자 캐시에 남는다 — 안 나눠 써도 상류엔 1번만 나간다")
+        void quoteFallbackIsCachedPerUser() {
+            expectEmptyAccountLookup(ExpectedCount.once());
+            expectQuoteAs(USER_TOKEN, quoteJson("USD", "1381.20"));
+
+            for (int i = 0; i < 5; i++) {
+                assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.20"));
+            }
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("시세 폴백 값도 사용자끼리 안 나눈다 — 각자 자기 키로 받는다")
+        void quoteFallbackIsNotSharedAcrossUsers() {
+            // 누가 물어도 같은 시장 환율이지만, 두 응답을 일부러 다르게 둬서 누구 호출이 받은 값인지 가린다.
             expectEmptyAccountLookup(ExpectedCount.times(2));
-            expectQuote(ExpectedCount.once(), quoteJson("USD", "1381.20"));
+            expectQuoteAs(USER_TOKEN, quoteJson("USD", "1381.20"));
+            // 다른 사용자의 시세 요청이 authHeaders(OTHER_USER) 로 만든 헤더를 달고 나가야만 맞는다.
+            expectQuoteAs(OTHER_USER_TOKEN, quoteJson("USD", "1381.90"));
 
             assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.20"));
-            assertThat(sut.getFxRate(OTHER_USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.20"));
+            // 남이 받아 둔 1381.20 이 아니라, 자기 키로 나간 시세 요청이 받은 값이다.
+            assertThat(sut.getFxRate(OTHER_USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.90"));
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("키가 깨진 사용자에게 남이 받아 둔 환율이 나가지 않는다 — 자기 키로 못 받으면 못 받은 것이다")
+        void brokenKeyDoesNotGetOthersRate() {
+            expectEmptyAccountLookup(ExpectedCount.once());
+            expectQuoteAs(USER_TOKEN, quoteJson("USD", "1381.20"));
+            // 다른 사용자의 키가 깨졌다 — 토큰 발급이 실패해 요청을 만들지도 못한다.
+            given(tokenManager.authHeaders(OTHER_USER))
+                .willThrow(new ExternalServiceException(DeskErrorCode.SECURITIES_AUTH_ERROR));
+
+            assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.20"));
+            assertThat(sut.getFxRate(OTHER_USER, "USD")).isNull();
             server.verify();
         }
 
