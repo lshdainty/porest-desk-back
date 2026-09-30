@@ -1,10 +1,15 @@
 package com.porest.desk.common.config.security;
 
+import com.porest.desk.apitoken.service.ApiTokenRateLimiter;
+import com.porest.desk.apitoken.service.ApiTokenService;
 import com.porest.desk.common.config.properties.AppProperties;
+import com.porest.desk.security.filter.ApiTokenAuthenticationFilter;
 import com.porest.desk.security.filter.JwtAuthenticationFilter;
+import com.porest.desk.security.handler.ApiErrorResponder;
 import com.porest.desk.security.handler.CustomAccessDeniedHandler;
 import com.porest.desk.security.handler.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import jakarta.servlet.DispatcherType;
@@ -26,6 +31,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    // ApiTokenAuthenticationFilter 의 재료 — 필터 자체는 빈이 아니라 아래에서 직접 만든다(이유는 그 클래스 주석).
+    private final ObjectProvider<ApiTokenService> apiTokenServiceProvider;
+    private final ApiTokenRateLimiter apiTokenRateLimiter;
+    private final ApiErrorResponder apiErrorResponder;
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
     private final CustomAccessDeniedHandler customAccessDeniedHandler;
     private final AppProperties appProperties;
@@ -54,7 +63,13 @@ public class SecurityConfig {
                 ).permitAll()
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            // 프로그램용 API 토큰은 JWT 보다 먼저 본다 — 같은 Authorization 자리에 오는데 JWT 가
+            // 아니라서, JWT 필터가 먼저 집으면 읽지 못하고 경고만 남긴다. 순서를 JWT 필터 기준으로
+            // 못 박아 둔다(둘 다 같은 기준점 앞에 두면 순서가 등록 순서에 맡겨진다).
+            .addFilterBefore(
+                new ApiTokenAuthenticationFilter(apiTokenServiceProvider, apiTokenRateLimiter, apiErrorResponder),
+                JwtAuthenticationFilter.class);
 
         return http.build();
     }

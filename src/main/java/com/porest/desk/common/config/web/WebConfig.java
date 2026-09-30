@@ -36,7 +36,10 @@ public class WebConfig implements WebMvcConfigurer {
                         // 구버전 앱이 쓰는 옛 경로 — 게이트에서 빠지면 비구독자가 통과한다
                         "/api/v1/users/me/toss-credential",
                         "/api/v1/users/me/securities-credentials",
-                        "/api/v1/users/me/securities-credentials/**");
+                        "/api/v1/users/me/securities-credentials/**",
+                        // 프로그램용 API 토큰 — 증권 조회만 여는 토큰이라 같은 권한을 요구한다
+                        "/api/v1/users/me/api-tokens",
+                        "/api/v1/users/me/api-tokens/**");
         }
     }
 }

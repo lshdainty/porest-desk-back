@@ -63,6 +63,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+        // 프로그램용 API 토큰 요청은 앞의 ApiTokenAuthenticationFilter 가 이미 처리했다. 여기서
+        // JWT 로 읽으면 요청마다 "JWT invalid" 경고가 두 줄씩 남고, 쿠키까지 실려 왔다면 그 쿠키의
+        // 사용자로 인증을 덮어쓴다 — API 토큰 요청은 API 토큰으로만 인증한다.
+        if (ApiTokenAuthenticationFilter.isApiTokenRequest(request)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String token = resolveToken(request);
 
         if (StringUtils.hasText(token)) {
