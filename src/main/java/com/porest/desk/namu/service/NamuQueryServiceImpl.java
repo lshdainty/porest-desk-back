@@ -263,12 +263,19 @@ public class NamuQueryServiceImpl implements NamuQueryService {
     /**
      * 환율 캐시 — <b>사용자별</b>. 키는 {@code userRowId:통화}.
      *
-     * <p><b>왜 사용자별인가</b> — 어느 경로가 이겼느냐가 사용자마다 다르고, 그 값의 뜻도 다르다.
+     * <p><b>왜 사용자별인가</b> — desk 는 사용자마다 <b>자기 키로 자기 데이터를</b> 대신
+     * 조회한다. 한 사용자의 키로 받은 값을 다른 사용자에게 내주지 않는다.
+     *
+     * <p>어느 경로가 이겼느냐도 사용자마다 다르고, 그 값의 뜻도 다르다.
      * 1순위(해외 잔고 {@code tdt_sby_bse_xcg_rt})는 <b>그 사용자 계좌의 외화 평가에 실제로
      * 적용된</b> 환율이라 계좌가 있는 사용자에게만 나오고, 2순위(해외 현재가
      * {@code currency_prc})는 계좌와 무관한 시장 기준환율이다. 둘은 소수점이 다를 수 있으므로
      * 한 통에 담으면 계좌가 있는 사용자에게 남의 시장환율이 나가 잔고 화면의 평가금액과
-     * 어긋난다. 그래서 <b>최종 결과는 사용자별로만 캐시한다.</b>
+     * 어긋난다.
+     *
+     * <p><b>2순위도 사용자끼리 나눠 쓰지 않는다</b> — 누가 물어도 같은 시장 환율이어도
+     * 마찬가지다. 나눠 쓰면 키가 깨진 사용자에게도 남이 받아 둔 환율이 나간다. 호출 수는
+     * 이 캐시가 이미 사용자별로 묶는다.
      *
      * <p><b>왜 상한이 없나</b> — 캔들 캐시와 달리 키가 저절로 유계다. 통화는 USD 하나뿐이고
      * (미국 외는 상류에 나가기도 전에 접힌다) 나머지 축은 사용자라, 항목 수가 나무를 연동한
@@ -279,20 +286,6 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * 3콜을 다시 내는데, 그게 정확히 429 를 부르는 모양이다.
      */
     private final Map<String, CachedFx> fxCache = new ConcurrentHashMap<>();
-
-    /**
-     * 환율 캐시 — <b>사용자 무관</b>. 키는 {@code 통화:폴백종목}.
-     *
-     * <p>2순위(해외 현재가)가 주는 {@code currency_prc} 는 계좌를 안 타는 <b>시장 시세</b>라
-     * 누가 물어도 같은 값이다. 나무의 429 는 사용자가 아니라 <b>앱 단위</b> 한도를 말하므로
-     * ({@code rsp_cd=IGW42902} "APP 호출 거래건수를 초과하였습니다", dev 실측 2026-08-28),
-     * 여기서 사용자끼리 값을 나눠 쓰면 초과되는 그 한도가 직접 줄어든다.
-     *
-     * <p><b>성공한 값만 담는다.</b> 실패까지 나누면 한 사용자의 429·설정 오류가 다른 사용자의
-     * 조회를 막는다 — 인증정보는 사용자별 키라 한도가 정말 앱 단위인지 확인되지 않았고,
-     * 확인 전에는 남을 대신 벌주지 않는 쪽이 안전하다. 실패는 위 {@link #fxCache} 에만 남는다.
-     */
-    private final Map<String, CachedFx> fxQuoteCache = new ConcurrentHashMap<>();
 
     /** {@code rate} 가 null 일 수 있다 — "못 구했다" 는 사실도 캐시하기 때문이다. */
     private record CachedFx(BigDecimal rate, long expiresAtMillis) {
@@ -807,8 +800,9 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * (티커 재사용·거래소 이전) 엉뚱한 통화의 환율을 USD 환율로 쓰게 되는데, 그건 화면에
      * 그럴듯한 숫자로 나가 아무도 못 알아챈다. 그래서 다르면 쓰지 않고 접는다.
      *
-     * <p>얻은 값은 계좌를 안 타는 시장 기준환율이라 <b>사용자끼리 나눠 쓴다</b>
-     * ({@link #fxQuoteCache}). 실패는 안 나눈다 — 이유는 그 필드 주석 참고.
+     * <p><b>여기서는 따로 캐시하지 않는다</b> — 늘 요청한 사용자 자신의 키로 부른다. 누가
+     * 물어도 같은 시장 환율이어도 남의 키로 받은 값은 내주지 않는다. 호출 수는 사용자별
+     * {@link #fxCache} 가 묶는다 — 이유는 그 필드 주석 참고.
      *
      * @return 값 · 또는 {@link FxLookup#MISSING} · 또는 {@link FxLookup#RATE_LIMITED}
      */
@@ -819,13 +813,6 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             return FxLookup.MISSING;
         }
         String symbol = probe.trim();
-
-        // 폴백 종목을 키에 넣는다 — 설정이 바뀌면 옛 종목으로 받아 둔 값이 살아 있으면 안 된다.
-        String key = want + ":" + symbol;
-        CachedFx hit = fxQuoteCache.get(key);
-        if (hit != null && hit.isFresh(System.currentTimeMillis())) {
-            return FxLookup.of(hit.rate());
-        }
 
         try {
             NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
@@ -847,10 +834,6 @@ public class NamuQueryServiceImpl implements NamuQueryService {
                 return FxLookup.MISSING;
             }
             log.debug("나무 환율 - 시세 폴백으로 확보 (userRowId={}, 종목={}, 환율={})", userRowId, symbol, rate);
-            long ttlMillis = namuProperties.getFxCacheTtlSeconds() * 1000L;
-            if (ttlMillis > 0) {
-                fxQuoteCache.put(key, new CachedFx(rate, System.currentTimeMillis() + ttlMillis));
-            }
             return FxLookup.of(rate);
         } catch (NamuRateLimitException e) {
             log.warn("나무 환율 조회 실패 - 시세 폴백이 유량 제한에 걸렸다 (userRowId={}, 종목={})", userRowId, symbol);
