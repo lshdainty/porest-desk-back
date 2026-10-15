@@ -80,6 +80,21 @@ class CardCatalogRepositoryTest {
     }
 
     @Test
+    @DisplayName("검색어의 공백 · 대소문자는 무시한다 — '모아 카드' 로 '모아카드' 를 찾는다")
+    void searchIgnoresWhitespaceAndCase() {
+        CardCompany company = persistCompany("우리 카드");
+        persistActive(company, "모아카드");
+        persistActive(company, "다른카드");
+        em.flush();
+        em.clear();
+
+        assertThat(repository.search(condition("모아 카드", null, null, null), PageRequest.of(0, 10)).getContent())
+            .singleElement().extracting(CardCatalog::getCardName).isEqualTo("모아카드");
+        assertThat(repository.search(condition("우리카드", null, null, null), PageRequest.of(0, 10)).getTotalElements())
+            .isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("findById 는 회사 조인과 함께 조회하고 soft delete 는 제외한다")
     void findByIdJoinsCompanyAndExcludesSoftDeleted() {
         CardCompany company = persistCompany("우리카드");

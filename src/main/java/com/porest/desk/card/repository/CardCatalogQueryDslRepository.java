@@ -1,6 +1,7 @@
 package com.porest.desk.card.repository;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.search.SearchKeyword;
 import com.porest.desk.card.domain.CardCatalog;
 import com.porest.desk.card.domain.QCardCatalog;
 import com.porest.desk.card.domain.QCardCompany;
@@ -62,10 +63,10 @@ public class CardCatalogQueryDslRepository implements CardCatalogRepository {
         where.and(cardCatalog.isDeleted.eq(YNType.N));
 
         if (condition.keyword() != null && !condition.keyword().isBlank()) {
-            String kw = condition.keyword().trim();
+            String kw = SearchKeyword.normalize(condition.keyword());
             where.and(
-                cardCatalog.cardName.containsIgnoreCase(kw)
-                    .or(company.name.containsIgnoreCase(kw))
+                SearchKeyword.contains(cardCatalog.cardName, kw)
+                    .or(SearchKeyword.contains(company.name, kw))
             );
         }
         if (condition.cardType() != null) {

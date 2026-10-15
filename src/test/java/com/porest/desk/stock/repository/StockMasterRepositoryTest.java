@@ -69,6 +69,23 @@ class StockMasterRepositoryTest {
     }
 
     @Test
+    @DisplayName("검색어의 공백 · 대소문자는 무시한다 — '삼성 전자' 로 '삼성전자' 를, 'A APL' 로 AAPL 을 찾는다")
+    void ignoresWhitespaceAndCase() {
+        persist(StockMarket.NAS, "AAPL", "애플", "APPLE INC", StockSecurityType.STOCK, "USD");
+        persist(StockMarket.KOSPI, "005930", "삼성전자", null, StockSecurityType.STOCK, "KRW");
+        persist(StockMarket.NAS, "BRKB", "버크셔 해서웨이", "BERKSHIRE HATHAWAY", StockSecurityType.STOCK, "USD");
+        em.flush();
+        em.clear();
+
+        assertThat(repository.search(keyword("삼성 전자"), PageRequest.of(0, 10)).getContent())
+            .singleElement().extracting(StockMaster::getNameKr).isEqualTo("삼성전자");
+        assertThat(repository.search(keyword("A APL"), PageRequest.of(0, 10)).getContent())
+            .singleElement().extracting(StockMaster::getSymbol).isEqualTo("AAPL");
+        assertThat(repository.search(keyword("버크셔해서웨이"), PageRequest.of(0, 10)).getContent())
+            .singleElement().extracting(StockMaster::getSymbol).isEqualTo("BRKB");
+    }
+
+    @Test
     @DisplayName("정확 일치가 부분 일치보다 먼저 온다 — '애플' 검색 시 애플(AAPL)이 최상단")
     void ranksExactMatchFirst() {
         persist(StockMarket.NYS, "APLE", "애플 하스피탤리티 리츠", "APPLE HOSPITALITY REIT", StockSecurityType.STOCK, "USD");
