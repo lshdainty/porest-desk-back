@@ -1,6 +1,7 @@
 package com.porest.desk.stock.repository;
 
 import com.porest.core.type.YNType;
+import com.porest.desk.common.search.SearchKeyword;
 import com.porest.desk.stock.domain.QStockMaster;
 import com.porest.desk.stock.domain.StockMaster;
 import com.porest.desk.stock.type.StockMarket;
@@ -119,11 +120,11 @@ public class StockMasterQueryDslRepository implements StockMasterRepository {
         where.and(stockMaster.isActive.eq(YNType.Y));
 
         if (hasKeyword(condition.keyword())) {
-            String kw = condition.keyword().trim();
+            String kw = SearchKeyword.normalize(condition.keyword());
             where.and(
-                stockMaster.nameKr.containsIgnoreCase(kw)
-                    .or(stockMaster.nameEn.containsIgnoreCase(kw))
-                    .or(stockMaster.symbol.containsIgnoreCase(kw))
+                SearchKeyword.contains(stockMaster.nameKr, kw)
+                    .or(SearchKeyword.contains(stockMaster.nameEn, kw))
+                    .or(SearchKeyword.contains(stockMaster.symbol, kw))
             );
         }
         if (condition.countryCode() != null && !condition.countryCode().isBlank()) {
@@ -140,13 +141,13 @@ public class StockMasterQueryDslRepository implements StockMasterRepository {
      * "AAPL"처럼 심볼을 그대로 치면 해당 종목이 최상단에 온다.
      */
     private NumberExpression<Integer> rankOf(String keyword) {
-        String kw = keyword.trim();
+        String kw = SearchKeyword.normalize(keyword);
         return new CaseBuilder()
-            .when(stockMaster.symbol.equalsIgnoreCase(kw)).then(0)
-            .when(stockMaster.nameKr.eq(kw)).then(0)
-            .when(stockMaster.nameKr.startsWith(kw)).then(1)
-            .when(stockMaster.nameEn.startsWithIgnoreCase(kw)).then(1)
-            .when(stockMaster.symbol.startsWithIgnoreCase(kw)).then(1)
+            .when(SearchKeyword.equalsTo(stockMaster.symbol, kw)).then(0)
+            .when(SearchKeyword.equalsTo(stockMaster.nameKr, kw)).then(0)
+            .when(SearchKeyword.startsWith(stockMaster.nameKr, kw)).then(1)
+            .when(SearchKeyword.startsWith(stockMaster.nameEn, kw)).then(1)
+            .when(SearchKeyword.startsWith(stockMaster.symbol, kw)).then(1)
             .otherwise(2);
     }
 
