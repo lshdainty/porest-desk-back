@@ -1,0 +1,137 @@
+package io.groo.damda.card.domain;
+
+import io.groo.core.type.YNType;
+import io.groo.damda.asset.domain.Asset;
+import io.groo.damda.asset.domain.AssetTransfer;
+import io.groo.damda.card.type.BillingStatus;
+import io.groo.damda.common.domain.AuditingFieldsWithIp;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDate;
+
+/**
+ * 신용카드 청구(자동결제) 이력. 청구 사이클별 1행.
+ * 회계 정합을 위해 실제 결제는 {@link AssetTransfer} 로만 이뤄지며, 본 엔티티는 결과 이력만 보관한다.
+ */
+@Entity
+@Table(name = "card_billing")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class CardBilling extends AuditingFieldsWithIp {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "row_id")
+    private Long rowId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "card_asset_row_id", nullable = false)
+    private Asset cardAsset;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_asset_row_id")
+    private Asset paymentAsset;
+
+    @Column(name = "billing_amount", nullable = false)
+    private Long billingAmount;
+
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
+    @Column(name = "period_start", nullable = false)
+    private LocalDate periodStart;
+
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
+    @Column(name = "period_end", nullable = false)
+    private LocalDate periodEnd;
+
+    /** [userClock] 사용자·업무가 정한 벽시계 — 타임존 변환 금지(자정 근처 날짜가 밀린다) */
+    @Column(name = "payment_date", nullable = false)
+    private LocalDate paymentDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private BillingStatus status;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "transfer_row_id")
+    private AssetTransfer transfer;
+
+    @Column(name = "failure_reason", length = 200)
+    private String failureReason;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_deleted", nullable = false, length = 1)
+    private YNType isDeleted;
+
+    private CardBilling(Asset cardAsset, Asset paymentAsset, Long billingAmount,
+                        LocalDate periodStart, LocalDate periodEnd, LocalDate paymentDate,
+                        BillingStatus status, AssetTransfer transfer, String failureReason) {
+        this.cardAsset = cardAsset;
+        this.paymentAsset = paymentAsset;
+        this.billingAmount = billingAmount;
+        this.periodStart = periodStart;
+        this.periodEnd = periodEnd;
+        this.paymentDate = paymentDate;
+        this.status = status;
+        this.transfer = transfer;
+        this.failureReason = failureReason;
+        this.isDeleted = YNType.N;
+    }
+
+    /** 결제 완료(COMPLETED) — 이체 연결. */
+    public static CardBilling completed(Asset cardAsset, Asset paymentAsset, Long billingAmount,
+                                        LocalDate periodStart, LocalDate periodEnd, LocalDate paymentDate,
+                                        AssetTransfer transfer) {
+        return new CardBilling(cardAsset, paymentAsset, billingAmount, periodStart, periodEnd, paymentDate,
+            BillingStatus.COMPLETED, transfer, null);
+    }
+
+    /**
+     * 그 회차에서 결제계좌로 돌려준 환급(REFUNDED) — 환급 이체와 묶는다.
+     *
+     * <p>이체를 지우면(환불 취소) {@code findAllActiveByTransfer} 가 이 행도 같이 무른다.
+     */
+    public static CardBilling refunded(Asset cardAsset, Asset paymentAsset, Long amount,
+                                       LocalDate periodStart, LocalDate periodEnd, LocalDate refundDate,
+                                       AssetTransfer transfer) {
+        return new CardBilling(cardAsset, paymentAsset, amount, periodStart, periodEnd, refundDate,
+            BillingStatus.REFUNDED, transfer, null);
+    }
+
+
+    /** 청구액 0 — 건너뜀(SKIPPED). */
+    public static CardBilling skipped(Asset cardAsset, Asset paymentAsset,
+                                      LocalDate periodStart, LocalDate periodEnd, LocalDate paymentDate) {
+        return new CardBilling(cardAsset, paymentAsset, 0L, periodStart, periodEnd, paymentDate,
+            BillingStatus.SKIPPED, null, null);
+    }
+
+    /** 결제 실패(FAILED) — 사유 기록. */
+    /**
+     * 청구 취소 — 정산 이체가 지워졌을 때 함께 무른다.
+     *
+     * <p>COMPLETED 로 남겨두면 "이미 낸 회차" 로 집계돼(선결제 차감) 다음 청구액이 0 이 되고,
+     * 이체는 지웠는데 카드 부채는 영원히 안 갚아지는 상태가 된다.
+     */
+    public void cancel() {
+        this.isDeleted = YNType.Y;
+    }
+
+    public static CardBilling failed(Asset cardAsset, Asset paymentAsset, Long billingAmount,
+                                     LocalDate periodStart, LocalDate periodEnd, LocalDate paymentDate,
+                                     String failureReason) {
+        return new CardBilling(cardAsset, paymentAsset, billingAmount, periodStart, periodEnd, paymentDate,
+            BillingStatus.FAILED, null, failureReason);
+    }
+}

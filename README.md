@@ -38,7 +38,7 @@
 | **Authentication** | ![JWT](https://img.shields.io/badge/JJWT_0.12.6-000000?style=flat-square&logo=jsonwebtokens&logoColor=white) ![Nimbus](https://img.shields.io/badge/Nimbus_JOSE_10.4-4B6BFB?style=flat-square) |
 | **Excel (Import/Export)** | ![Apache POI](https://img.shields.io/badge/Apache_POI_5.3.0-D22128?style=flat-square&logo=apache&logoColor=white) |
 | **Monitoring** | ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Loki](https://img.shields.io/badge/Loki-F46800?style=flat-square&logo=grafana&logoColor=white) |
-| **공통 라이브러리** | ![porest-core](https://img.shields.io/badge/porest--core_2.0.3-6DB33F?style=flat-square) |
+| **공통 라이브러리** | ![groo-core](https://img.shields.io/badge/porest--core_2.0.3-6DB33F?style=flat-square) |
 | **API Documentation** | ![Swagger](https://img.shields.io/badge/SpringDoc_OpenAPI_3.0.0-85EA2D?style=flat-square&logo=swagger&logoColor=black) |
 | **Testing** | ![JUnit5](https://img.shields.io/badge/JUnit5-25A162?style=flat-square&logo=junit5&logoColor=white) ![JaCoCo](https://img.shields.io/badge/JaCoCo_0.8.13-C5D9C8?style=flat-square) |
 | **Build** | ![Gradle](https://img.shields.io/badge/Gradle_9.2.1-02303A?style=flat-square&logo=gradle&logoColor=white) |
@@ -48,7 +48,7 @@
 ## 도메인 모듈
 
 ```
-src/main/java/com/porest/desk/
+src/main/java/io/groo/damda/
 ├── asset/                 # 자산/이체/잔액 히스토리 (토스 평가액 스냅샷 스케줄러)
 ├── calendar/              # 일정/라벨/공휴일/댓글/집계
 ├── card/                  # 카드 카탈로그/혜택/실적/청구
@@ -87,7 +87,7 @@ src/main/java/com/porest/desk/
 - **Java**: 25 (Gradle toolchain 자동 관리)
 - **Gradle**: Wrapper 포함 (9.2.1, `./gradlew` 사용)
 - **MariaDB**, **Redis**: 접속 정보는 환경 변수로 주입
-- **GitHub Packages 접근**: `GITHUB_ACTOR`, `GITHUB_TOKEN` 환경변수 필요 (porest-core 의존성)
+- **GitHub Packages 접근**: `GITHUB_ACTOR`, `GITHUB_TOKEN` 환경변수 필요 (groo-core 의존성)
 
 ### 환경 변수
 
@@ -162,7 +162,7 @@ SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
 | [POREST](https://github.com/lshdainty/POREST) | 통합 레포지토리 (서비스 소개) |
 | [porest-desk-front](https://github.com/lshdainty/porest-desk-front) | Desk 프론트엔드 |
 | [porest-desk-app](https://github.com/lshdainty/porest-desk-app) | Desk 모바일 앱 (Flutter) |
-| [porest-core](https://github.com/lshdainty/porest-core) | 공통 라이브러리 |
+| [groo-core](https://github.com/lshdainty/groo-core) | 공통 라이브러리 |
 | [porest-sso-back](https://github.com/lshdainty/porest-sso-back) | SSO 백엔드 |
 | [porest-sso-front](https://github.com/lshdainty/porest-sso-front) | SSO 프론트엔드 |
 

@@ -1,0 +1,86 @@
+package io.groo.damda.expense.service.dto;
+
+import io.groo.damda.expense.domain.ExpenseCategory;
+import io.groo.damda.expense.type.ExpenseType;
+
+import java.time.LocalDateTime;
+
+public class ExpenseCategoryServiceDto {
+
+    /** 일괄 카테고리 이동 결과 — 무엇이 몇 건 옮겨졌는지. */
+    public record MoveResult(int expenses, int recurring, int splits) {}
+
+    public record CreateCommand(
+        Long userRowId,
+        String categoryName,
+        String icon,
+        String color,
+        ExpenseType expenseType,
+        // null 이면 0(맨 앞). 목록 정렬이 sort_order ASC 라 0 이 맨 앞이다.
+        Integer sortOrder,
+        Long parentRowId
+    ) {}
+
+    public record UpdateCommand(
+        String categoryName,
+        String icon,
+        String color,
+        // null 이면 기존 유지
+        ExpenseType expenseType,
+        Integer sortOrder,
+        // null = 최상위로 이동 (웹/앱 편집 다이얼로그는 항상 포함 전송)
+        Long parentRowId
+    ) {}
+
+    public record ReorderItem(
+        Long categoryRowId,
+        Integer sortOrder,
+        Long parentRowId
+    ) {}
+
+    public record CategoryInfo(
+        Long rowId,
+        Long userRowId,
+        String categoryName,
+        String icon,
+        String color,
+        ExpenseType expenseType,
+        Integer sortOrder,
+        Long parentRowId,
+        boolean hasChildren,
+        LocalDateTime createAt,
+        LocalDateTime modifyAt
+    ) {
+        public static CategoryInfo from(ExpenseCategory category) {
+            return new CategoryInfo(
+                category.getRowId(),
+                category.getUser().getRowId(),
+                category.getCategoryName(),
+                category.getIcon(),
+                category.getColor(),
+                category.getExpenseType(),
+                category.getSortOrder(),
+                category.getParent() != null ? category.getParent().getRowId() : null,
+                false,
+                category.getCreateAt(),
+                category.getModifyAt()
+            );
+        }
+
+        public static CategoryInfo fromWithHasChildren(ExpenseCategory category, boolean hasChildren) {
+            return new CategoryInfo(
+                category.getRowId(),
+                category.getUser().getRowId(),
+                category.getCategoryName(),
+                category.getIcon(),
+                category.getColor(),
+                category.getExpenseType(),
+                category.getSortOrder(),
+                category.getParent() != null ? category.getParent().getRowId() : null,
+                hasChildren,
+                category.getCreateAt(),
+                category.getModifyAt()
+            );
+        }
+    }
+}

@@ -1,0 +1,53 @@
+package io.groo.damda.todo.repository;
+
+import io.groo.damda.todo.domain.Todo;
+import io.groo.damda.todo.type.TodoPriority;
+import io.groo.damda.todo.type.TodoStatus;
+import io.groo.damda.todo.type.TodoType;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+public interface TodoRepository {
+    Optional<Todo> findById(Long rowId);
+    List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type);
+
+    /**
+     * 이 사용자에게 <b>배정된</b> 할 일 — 남이 만들어 나에게 맡긴 것까지 포함한다.
+     *
+     * <p>해지 루틴이 배정만 떼어 낸다(할 일 자체는 만든 사람 것이라 남긴다).
+     */
+    List<Todo> findAllByAssignee(Long assigneeRowId);
+    /**
+     * 태그 개명에 맞춰 {@code todo.category} 를 따라 옮긴다 — 옛 이름을 쓰던 활성 할 일만.
+     *
+     * <p>{@code category} 는 태그 이름의 복사본이라 개명하면 옛 이름이 그대로 남는다.
+     * 목록 필터·내보내기가 이 문자열을 쓰므로, 안 옮기면 개명한 태그로는 아무것도 안 걸린다(QA #79).
+     *
+     * @return 옮긴 행 수
+     */
+    long renameCategory(Long userRowId, String fromCategory, String toCategory);
+    /**
+     * 태그 삭제에 맞춰 그 이름을 쓰던 활성 할 일의 {@code category} 를 비운다.
+     *
+     * <p>{@code category} 는 태그 이름의 복사본이다. 태그만 지우면 이 문자열이 남아, 그 할 일을
+     * 다음에 저장하는 순간 서버가 같은 이름의 태그를 <b>다시 만든다</b>(QA #88).
+     * 삭제 확인창은 "이 태그를 쓰는 할 일 N건은 태그 없음으로 남아요" 라고 말하고 있으므로,
+     * 화면의 약속대로 이름을 지워 둔다.
+     *
+     * @return 비운 행 수
+     */
+    long clearCategory(Long userRowId, String category);
+    List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate);
+
+    /**
+     * 사용자의 할일 통계를 단일 집계 쿼리로 조회 (전체 엔티티 로드 대신 COUNT만)
+     * 반환: [totalTask, pending, inProgress, completed, todayDue, overDue, noteCount, pinnedNoteCount]
+     */
+    long[] countStatsByUser(Long userRowId, LocalDate today);
+
+    List<Todo> findDueTodosForReminder(LocalDate startDate, LocalDate endDate);
+    Todo save(Todo todo);
+    void delete(Todo todo);
+}

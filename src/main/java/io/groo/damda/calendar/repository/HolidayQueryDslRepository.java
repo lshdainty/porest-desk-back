@@ -1,0 +1,54 @@
+package io.groo.damda.calendar.repository;
+
+import io.groo.core.type.YNType;
+import io.groo.damda.calendar.domain.Holiday;
+import io.groo.damda.calendar.domain.QHoliday;
+import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.EntityManager;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
+
+@Repository
+@Primary
+@RequiredArgsConstructor
+public class HolidayQueryDslRepository implements HolidayRepository {
+    private final JPAQueryFactory queryFactory;
+    private final EntityManager entityManager;
+    private static final QHoliday holiday = QHoliday.holiday;
+
+    @Override
+    public List<Holiday> findByDateRange(LocalDate startDate, LocalDate endDate) {
+        return queryFactory.selectFrom(holiday)
+            .where(
+                holiday.isDeleted.eq(YNType.N),
+                holiday.holidayDate.goe(startDate),
+                holiday.holidayDate.loe(endDate)
+            )
+            .orderBy(holiday.holidayDate.asc(), holiday.holidayName.asc())
+            .fetch();
+    }
+
+    @Override
+    public List<Holiday> findByYearIncludingDeleted(int year) {
+        LocalDate from = LocalDate.of(year, 1, 1);
+        LocalDate to = LocalDate.of(year, 12, 31);
+
+        return queryFactory.selectFrom(holiday)
+            .where(
+                holiday.holidayDate.goe(from),
+                holiday.holidayDate.loe(to)
+            )
+            .orderBy(holiday.holidayDate.asc(), holiday.holidayName.asc())
+            .fetch();
+    }
+
+    @Override
+    public Holiday save(Holiday entity) {
+        entityManager.persist(entity);
+        return entity;
+    }
+}

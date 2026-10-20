@@ -1,0 +1,158 @@
+package io.groo.damda.expense.domain;
+
+import io.groo.core.type.YNType;
+import io.groo.damda.asset.domain.Asset;
+import io.groo.damda.common.domain.AuditingFieldsWithIp;
+import io.groo.damda.expense.type.TxKind;
+import io.groo.damda.user.domain.User;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "expense_template")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class ExpenseTemplate extends AuditingFieldsWithIp {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "row_id")
+    private Long rowId;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_row_id", nullable = false)
+    private User user;
+
+    @Column(name = "template_name", nullable = false, length = 100)
+    private String templateName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_row_id")
+    private ExpenseCategory category;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "asset_row_id")
+    private Asset asset;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "to_asset_row_id")
+    private Asset toAsset;
+
+    @Column(name = "fee")
+    private Long fee;
+
+    /** 이자 — 받는 자산이 대출일 때만 쓴다. */
+    @Column(name = "interest_amount")
+    private Long interestAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "expense_type", nullable = false, length = 20)
+    /** 만들어 낼 거래의 종류 — 컬럼은 {@code expense_type} 그대로, 값에 TRANSFER 가 는다. */
+    private TxKind expenseType;
+
+    @Column(name = "amount")
+    private Long amount;
+
+    @Column(name = "description", length = 500)
+    private String description;
+
+    @Column(name = "merchant", length = 100)
+    private String merchant;
+
+    @Column(name = "payment_method", length = 30)
+    private String paymentMethod;
+
+    @Column(name = "use_count", nullable = false)
+    private Integer useCount;
+
+    @Column(name = "sort_order", nullable = false)
+    private Integer sortOrder;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lock_amount", nullable = false, length = 1)
+    private YNType lockAmount;
+
+    /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
+    @Column(name = "last_used_at")
+    private LocalDateTime lastUsedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_deleted", nullable = false, length = 1)
+    private YNType isDeleted;
+
+    public static ExpenseTemplate createTemplate(User user, String templateName, ExpenseCategory category,
+                                                  Asset asset, Asset toAsset, Long fee, Long interestAmount,
+                                                  TxKind expenseType, Long amount,
+                                                  String description, String merchant, String paymentMethod,
+                                                  Integer sortOrder, YNType lockAmount) {
+        ExpenseTemplate template = new ExpenseTemplate();
+        template.user = user;
+        template.templateName = templateName;
+        template.category = category;
+        template.asset = asset;
+        template.toAsset = toAsset;
+        template.fee = fee;
+        template.interestAmount = interestAmount;
+        template.expenseType = expenseType;
+        template.amount = amount;
+        template.description = description;
+        template.merchant = merchant;
+        template.paymentMethod = paymentMethod;
+        template.useCount = 0;
+        template.sortOrder = sortOrder != null ? sortOrder : 0;
+        template.lockAmount = lockAmount != null ? lockAmount : YNType.Y;
+        template.isDeleted = YNType.N;
+        return template;
+    }
+
+    /**
+     * 수정 — 받은 값을 그대로 쓴다.
+     *
+     * <p><b>"안 보낸 칸은 유지" 판단은 서비스가 한다</b>(QA #96) — 여기 오는 값은 이미 병합이
+     * 끝난 값이다. {@code lockAmount} 의 null 가드만 남긴다: NOT NULL 컬럼의 마지막 가드다.
+     */
+    public void updateTemplate(String templateName, ExpenseCategory category, Asset asset,
+                                Asset toAsset, Long fee, Long interestAmount,
+                                TxKind expenseType, Long amount, String description,
+                                String merchant, String paymentMethod, YNType lockAmount) {
+        this.templateName = templateName;
+        this.category = category;
+        this.asset = asset;
+        this.toAsset = toAsset;
+        this.fee = fee;
+        this.interestAmount = interestAmount;
+        this.expenseType = expenseType;
+        this.amount = amount;
+        this.description = description;
+        this.merchant = merchant;
+        this.paymentMethod = paymentMethod;
+        if (lockAmount != null) this.lockAmount = lockAmount;
+    }
+
+    public void incrementUseCount() {
+        this.useCount++;
+        this.lastUsedAt = LocalDateTime.now();
+    }
+
+    public void deleteTemplate() {
+        this.isDeleted = YNType.Y;
+    }
+}

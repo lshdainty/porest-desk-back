@@ -73,7 +73,7 @@ server:
 # 로깅 설정
 logging:
   level:
-    com.porest.desk: ${LOG_LEVEL:info}
+    io.groo.damda: ${LOG_LEVEL:info}
     org.hibernate.SQL: ${LOG_LEVEL_HIBERNATE:info}
     org.hibernate.type.descriptor.sql.BasicBinder: ${LOG_LEVEL_HIBERNATE_BINDER:info}
     p6spy: ${LOG_LEVEL_P6SPY:info}

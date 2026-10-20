@@ -9,7 +9,7 @@
 POREST Desk 의 Spring Boot 백엔드. 할 일·캘린더·가계부·자산·카드·구독·더치페이·토스증권 연동을
 `/api/v1` REST API 로 제공하고, SSO(porest-sso-back) 토큰을 desk 토큰으로 교환해 인증한다.
 Java 25 / **Spring Boot 4.0.4** / JPA(Hibernate 7) + QueryDSL 7.1 / MariaDB(운영)·H2(테스트) / Redis.
-공통 라이브러리 `com.porest:porest-core:2.4.0` 을 **GitHub Packages(private)** 에서 받는다.
+공통 라이브러리 `io.groo:groo-core:3.0.0` 을 **GitHub Packages(private)** 에서 받는다.
 
 ## 검증
 
@@ -17,13 +17,13 @@ Java 25 / **Spring Boot 4.0.4** / JPA(Hibernate 7) + QueryDSL 7.1 / MariaDB(운�
 
 ```bash
 export JAVA_HOME=$HOME/.local/lib/jvm/temurin-25          # 툴체인이 Java 25 를 요구한다
-export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # porest-core 를 GitHub Packages 에서 받는다
+export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # groo-core 를 GitHub Packages 에서 받는다
 ./gradlew test          # 테스트 + JaCoCo 리포트 + 커버리지 게이트가 한 번에 돈다
 ./gradlew compileJava   # 엔티티를 만들거나 필드를 고친 뒤 QueryDSL Q 클래스 재생성
 ```
 
-- **"못 돌린다" 고 넘기지 마라.** 이 문단은 한동안 "자격증명도 캐시된 porest-core 도 없다" 고
-  적혀 있었는데 사실이 아니었다. `~/gitkey` 에 PAT 이 있고, `porest-core` jar 은 gradle 캐시에
+- **"못 돌린다" 고 넘기지 마라.** 이 문단은 한동안 "자격증명도 캐시된 groo-core 도 없다" 고
+  적혀 있었는데 사실이 아니었다. `~/gitkey` 에 PAT 이 있고, `groo-core` jar 은 gradle 캐시에
   들어 있고, `~/.local/lib/jvm/temurin-25` 도 있다. 그 문장을 믿고 검증을 건너뛰면 컴파일도 안
   되는 코드를 PR 로 올리게 된다 — 실제로 증권 연동 작업에서 컴파일 에러 6건·테스트 실패 8건을
   빌드로 잡았다. 먼저 돌려 보고, 정말 401 이 나면 그때 보고하라.
@@ -38,9 +38,9 @@ export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # porest-core 를 Git
   (todo/memo/memoFolder/user/calendarEvent/userCalendar/holiday/expenseBudget/expenseCategory/accessLog)에
   레거시로 남아 있다. 쿼리 버그를 JPA 쪽만 고치면 테스트는 통과하고 동작은 그대로다.
 - **`@WithMockUser` 는 안 통한다.** `@LoginUser` ArgumentResolver 는 principal 이 `JwtUserPrincipal` 일 때만
-  주입하므로 String principal 이면 인자가 null 이 된다. `com.porest.desk.support.security.WithLoginUser` 를
+  주입하므로 String principal 이면 인자가 null 이 된다. `io.groo.damda.support.security.WithLoginUser` 를
   쓰고 `@Import({WebConfig.class, LoginUserArgumentResolver.class})` 를 붙여라
-  (예: `src/test/java/com/porest/desk/todo/controller/TodoApiControllerTest.java`).
+  (예: `src/test/java/io/groo/damda/todo/controller/TodoApiControllerTest.java`).
 - **Boot 3 테스트 임포트를 복붙하면 컴파일이 안 된다.** Boot 4 가 슬라이스 자동설정을 모듈별로 쪼갰다.
   `org.springframework.boot.webmvc.test.autoconfigure.{WebMvcTest,AutoConfigureMockMvc}`,
   `...boot.data.jpa.test.autoconfigure.DataJpaTest`, `...boot.jpa.test.autoconfigure.TestEntityManager`,
@@ -61,11 +61,11 @@ export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # porest-core 를 Git
   이유도 이것 — 대시보드·별빛·별자리처럼 날짜가 축인 로직에서 하루가 어긋난다.
 - **사용자 식별은 `loginUser.getRowId()`(Long, DB PK)** 다. `getUserId()` 는 SSO 문자열 식별자로 별개이고
   도메인 FK 는 전부 `userRowId` 다. 헷갈려 쓰면 타입은 맞는데 남의 데이터를 긁는다.
-- **응답은 항상 `com.porest.core.controller.ApiResponse<T>` + `ApiResponse.success(...)`** — `ResponseEntity`
+- **응답은 항상 `io.groo.core.controller.ApiResponse<T>` + `ApiResponse.success(...)`** — `ResponseEntity`
   직접 사용 금지. 새 에러는 `DeskErrorCode` 에 (코드, 메시지키, HttpStatus) 를 추가하고 예외는 core 의
   `EntityNotFoundException`/`ForbiddenException`/`InvalidValueException`/`ExternalServiceException` 을 쓴다.
   임의 예외 타입은 핸들러가 없어 500 으로 샌다.
-- **모듈 레이아웃은 18개 모듈이 예외 없이 같다**: `com.porest.desk.<모듈>/{controller, controller/dto, domain,
+- **모듈 레이아웃은 18개 모듈이 예외 없이 같다**: `io.groo.damda.<모듈>/{controller, controller/dto, domain,
   repository, service, service/dto, type}`, DTO 는 2단(`XxxApiDto` ↔ `XxxServiceDto`, 컨트롤러가 손으로 변환).
   JaCoCo 제외 목록이 이 이름들에 물려 있어 로직을 엉뚱한 패키지에 두면 커버리지 측정이 통째로 어긋난다.
 - **`APP_ENCRYPTION_KEY` 가 비면 에러 없이 조용히 꺼진다** — 로그인은 되는데 SSO 세션이 저장되지 않아 무음
@@ -88,6 +88,6 @@ export GITHUB_ACTOR=lshdainty GITHUB_TOKEN=$(cat ~/gitkey) # porest-core 를 Git
 
 ## 짝 레포 — 동기화 장치가 없다
 
-`porest-core`(ApiResponse·예외·UserClock·YNType 출처) · `porest-desk-front` · `porest-desk-app`(Flutter) ·
+`groo-core`(ApiResponse·예외·UserClock·YNType 출처) · `porest-desk-front` · `porest-desk-app`(Flutter) ·
 `porest-sso-back`. 코드젠도 공유 타입도 없어 컨트롤러 DTO 를 바꿔도 이 레포 안에서는 경고가 안 뜬다.
 API 스키마를 바꾸면 front/app 을, core 응답 포맷을 바꾸면 버전 범프를 손으로 챙겨라.
