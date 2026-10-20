@@ -5,7 +5,7 @@ plugins {
     id 'jacoco'
 }
 
-group = 'com.porest.desk'
+group = 'io.groo.damda'
 version = '0.0.1-SNAPSHOT'
 
 java {
@@ -30,7 +30,7 @@ repositories {
     maven { url 'https://jitpack.io' }
     maven {
         name = "GitHubPackagesCore"
-        url = uri("https://maven.pkg.github.com/lshdainty/porest-core")
+        url = uri("https://maven.pkg.github.com/lshdainty/groo-core")
         credentials {
             username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") ?: ""
             password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") ?: ""
@@ -40,7 +40,7 @@ repositories {
 
 dependencies {
     // ==================== Private Codes (GitHub Packages) ====================
-    implementation 'com.porest:porest-core:2.4.0'
+    implementation 'io.groo:groo-core:3.0.0'
 
     // ==================== Spring Boot Starters ====================
     implementation 'org.springframework.boot:spring-boot-starter-web'

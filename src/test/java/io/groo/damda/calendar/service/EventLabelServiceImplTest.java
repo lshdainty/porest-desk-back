@@ -1,0 +1,153 @@
+package io.groo.damda.calendar.service;
+
+import io.groo.core.exception.ForbiddenException;
+import io.groo.core.exception.InvalidValueException;
+import io.groo.damda.calendar.domain.EventLabel;
+import io.groo.damda.calendar.repository.EventLabelRepository;
+import io.groo.damda.calendar.service.dto.EventLabelServiceDto;
+import io.groo.damda.user.domain.User;
+import io.groo.damda.user.repository.UserRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import io.groo.damda.common.exception.DeskErrorCode;
+import io.groo.damda.support.exception.ConstraintViolations;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+
+/**
+ * 일정 라벨 서비스 회귀 방지 단위 테스트 — 생성 + 수정/삭제 소유권 가드.
+ */
+@ExtendWith(MockitoExtension.class)
+class EventLabelServiceImplTest {
+
+    @Mock private EventLabelRepository eventLabelRepository;
+    @Mock private UserRepository userRepository;
+
+    @InjectMocks private EventLabelServiceImpl sut;
+
+    private static final long USER_ID = 1L;
+
+    private User user(long rowId) {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", rowId);
+        return u;
+    }
+
+    @Test
+    @DisplayName("createLabel — 라벨을 생성하고 저장한다")
+    void create() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.findAllByUser(USER_ID)).willReturn(List.of());
+
+        var info = sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "업무", "#f00"));
+
+        assertThat(info.labelName()).isEqualTo("업무");
+        assertThat(info.sortOrder()).isEqualTo(0);
+        verify(eventLabelRepository).save(any(EventLabel.class));
+    }
+
+    @Test
+    @DisplayName("createLabel — 활성 라벨 중 같은 이름이 있으면 거부(중복 방지)")
+    void createRejectsDuplicateActiveName() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.existsActiveByUserAndName(USER_ID, "업무", null)).willReturn(true);
+
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "업무", "#f00")))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("updateLabel — 남의 라벨은 수정 불가")
+    void updateRejectsOthers() {
+        EventLabel label = mock(EventLabel.class);
+        given(label.getUser()).willReturn(user(999L));
+        given(eventLabelRepository.findById(5L)).willReturn(Optional.of(label));
+
+        assertThatThrownBy(() -> sut.updateLabel(5L, USER_ID,
+                new EventLabelServiceDto.UpdateCommand("수정", "#0f0")))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("deleteLabel — 남의 라벨은 삭제 불가")
+    void deleteRejectsOthers() {
+        EventLabel label = mock(EventLabel.class);
+        given(label.getUser()).willReturn(user(999L));
+        given(eventLabelRepository.findById(5L)).willReturn(Optional.of(label));
+
+        assertThatThrownBy(() -> sut.deleteLabel(5L, USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+    }
+    @Test
+    @DisplayName("createLabel — 이름 앞뒤 공백은 저장 전에 잘린다(선행공백이 DB 판정과 어긋나던 자리)")
+    void createTrimsName() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.findAllByUser(USER_ID)).willReturn(List.of());
+
+        var info = sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "  업무 ", "#f00"));
+
+        assertThat(info.labelName()).isEqualTo("업무");
+        // 중복 검사도 다듬은 값으로 본다 — 안 그러면 ' 업무' 와 '업무' 가 나란히 통과한다.
+        verify(eventLabelRepository).existsActiveByUserAndName(USER_ID, "업무", null);
+    }
+
+    @Test
+    @DisplayName("createLabel — 빈 이름·공백뿐인 이름은 400 으로 거절한다")
+    void createRejectsBlankName() {
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "   ", "#f00")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.INVALID_INPUT);
+    }
+
+    @Test
+    @DisplayName("createLabel — 유니크 위반(동시 저장 경쟁)은 500 이 아니라 409 로 나간다")
+    void translatesConstraintViolation() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.existsActiveByUserAndName(USER_ID, "업무", null)).willReturn(false);
+        given(eventLabelRepository.findAllByUser(USER_ID)).willReturn(List.of());
+        willThrow(ConstraintViolations.unique("UK_event_label_user_active_name"))
+                .given(eventLabelRepository).flush();
+
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "업무", "#f00")))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                .isEqualTo(DeskErrorCode.EVENT_LABEL_DUPLICATE_NAME);
+    }
+    /**
+     * QA #81 — <b>UNIQUE 가 아닌 위반은 이 도메인이 손대지 않는다.</b>
+     *
+     * <p>종전엔 여기서 {@code DataIntegrityViolationException} 을 종류와 무관하게 전부
+     * "이름이 중복돼요" 로 번역했다. 그러면 값을 하나 빼먹고 보낸 요청이 <b>있지도 않은
+     * 중복</b>을 이유로 거절당한다. 그런 위반은 그대로 올려 공통 핸들러가 400 으로 답하게 둔다.
+     *
+     * <p>이 테스트를 되돌리는 법(네거티브 컨트롤): 서비스의 {@code if (!IntegrityViolations.isUnique(e)) throw e;}
+     * 한 줄을 지우면 아래가 곧바로 깨진다.
+     */
+    @Test
+    @DisplayName("createLabel — NOT NULL 위반은 이름 중복으로 번역하지 않고 그대로 올린다")
+    void doesNotTranslateNonUniqueViolation() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        given(eventLabelRepository.existsActiveByUserAndName(USER_ID, "업무", null)).willReturn(false);
+        given(eventLabelRepository.findAllByUser(USER_ID)).willReturn(List.of());
+        willThrow(ConstraintViolations.notNull("COLOR")).given(eventLabelRepository).flush();
+
+        assertThatThrownBy(() -> sut.createLabel(new EventLabelServiceDto.CreateCommand(USER_ID, "업무", null)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+}

@@ -1,0 +1,179 @@
+package io.groo.damda.calendar.service;
+
+import io.groo.core.exception.EntityNotFoundException;
+import io.groo.core.exception.ForbiddenException;
+import io.groo.core.exception.InvalidValueException;
+import io.groo.core.type.YNType;
+import io.groo.damda.calendar.domain.UserCalendar;
+import io.groo.damda.calendar.domain.UserCalendarMember;
+import io.groo.damda.calendar.repository.CalendarEventRepository;
+import io.groo.damda.calendar.repository.UserCalendarMemberRepository;
+import io.groo.damda.calendar.repository.UserCalendarRepository;
+import io.groo.damda.calendar.type.CalendarRole;
+import io.groo.damda.common.exception.DeskErrorCode;
+import io.groo.damda.user.domain.User;
+import io.groo.damda.user.repository.UserRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+
+/**
+ * 사용자 캘린더(공유) 서비스 회귀 방지 단위 테스트 —
+ * 기본 캘린더 삭제·숨김 금지, 소유권, 소유자 제거/OWNER 권한변경 금지, 중복 가입 금지.
+ */
+@ExtendWith(MockitoExtension.class)
+class UserCalendarServiceImplTest {
+
+    @Mock private UserCalendarRepository userCalendarRepository;
+    @Mock private UserCalendarMemberRepository memberRepository;
+    @Mock private CalendarEventRepository calendarEventRepository;
+    @Mock private UserRepository userRepository;
+    @Mock private CalendarMembershipValidator membershipValidator;
+
+    @InjectMocks private UserCalendarServiceImpl sut;
+
+    private static final long CAL_ID = 100L;
+    private static final long MEMBER_ID = 7L;
+    private static final long USER_ID = 1L;
+
+    private User user(long rowId) {
+        User u = User.createUser(null, "tester", "테스터", "tester@porest.com");
+        ReflectionTestUtils.setField(u, "rowId", rowId);
+        return u;
+    }
+
+    /** 토글은 실제 값이 뒤집히는지가 요점이라 mock 이 아니라 진짜 엔티티를 쓴다(생성 직후 isVisible=Y). */
+    private UserCalendar calendar(boolean isDefault) {
+        return UserCalendar.createCalendar(user(USER_ID), "내 캘린더", "#2c70bf", 0, isDefault);
+    }
+
+    @Test
+    @DisplayName("toggleVisibility — 기본 캘린더는 숨길 수 없다(전용 코드 · 400 · 값 그대로)")
+    void toggleRejectsDefaultCalendar() {
+        UserCalendar calendar = calendar(true);
+        given(userCalendarRepository.findById(CAL_ID)).willReturn(Optional.of(calendar));
+
+        assertThatThrownBy(() -> sut.toggleVisibility(CAL_ID, USER_ID))
+                .isInstanceOf(InvalidValueException.class)
+                .extracting(e -> ((InvalidValueException) e).getErrorCode())
+                // 삭제 거절을 재사용하지 않는다 — "삭제할 수 없어요" 로는 무엇을 하다 막혔는지 알 수 없다.
+                .isEqualTo(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE);
+
+        assertThat(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE.getHttpStatus())
+                .as("숨김 거절은 400 이다")
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(DeskErrorCode.USER_CALENDAR_DEFAULT_HIDE.getCode())
+                .isNotEqualTo(DeskErrorCode.USER_CALENDAR_DEFAULT_DELETE.getCode());
+        // 막았는데 값이 뒤집혀 있으면 저장 시점에 그대로 숨겨진다 — 거절 뒤 상태까지 확인한다.
+        assertThat(calendar.getIsVisible()).isEqualTo(YNType.Y);
+    }
+
+    @Test
+    @DisplayName("toggleVisibility — 일반 캘린더는 종전대로 숨김·표시를 왕복한다")
+    void toggleFlipsNonDefaultCalendar() {
+        UserCalendar calendar = calendar(false);
+        given(userCalendarRepository.findById(CAL_ID)).willReturn(Optional.of(calendar));
+
+        assertThat(sut.toggleVisibility(CAL_ID, USER_ID).isVisible()).isFalse();
+        assertThat(calendar.getIsVisible()).isEqualTo(YNType.N);
+
+        assertThat(sut.toggleVisibility(CAL_ID, USER_ID).isVisible()).isTrue();
+        assertThat(calendar.getIsVisible()).isEqualTo(YNType.Y);
+    }
+
+    @Test
+    @DisplayName("deleteCalendar — 기본 캘린더는 삭제 불가")
+    void deleteRejectsDefaultCalendar() {
+        UserCalendar calendar = mock(UserCalendar.class);
+        given(calendar.getUser()).willReturn(user(USER_ID));
+        given(calendar.getIsDefault()).willReturn(YNType.Y);
+        given(userCalendarRepository.findById(CAL_ID)).willReturn(Optional.of(calendar));
+
+        assertThatThrownBy(() -> sut.deleteCalendar(CAL_ID, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("deleteCalendar — 남의 캘린더는 삭제 불가")
+    void deleteRejectsOthers() {
+        UserCalendar calendar = mock(UserCalendar.class);
+        given(calendar.getUser()).willReturn(user(999L));
+        given(userCalendarRepository.findById(CAL_ID)).willReturn(Optional.of(calendar));
+
+        assertThatThrownBy(() -> sut.deleteCalendar(CAL_ID, USER_ID))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("removeMember — 소유자(OWNER)는 제거 불가")
+    void removeMemberRejectsOwner() {
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        UserCalendar calendar = mock(UserCalendar.class);
+        given(calendar.getRowId()).willReturn(CAL_ID);
+        given(member.getCalendar()).willReturn(calendar);
+        given(member.getPermission()).willReturn(CalendarRole.OWNER);
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> sut.removeMember(CAL_ID, MEMBER_ID, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("removeMember — 다른 캘린더 소속 memberId 는 조작 불가(교차 IDOR)")
+    void removeMemberRejectsCrossCalendar() {
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        UserCalendar otherCalendar = mock(UserCalendar.class);
+        given(otherCalendar.getRowId()).willReturn(999L);
+        given(member.getCalendar()).willReturn(otherCalendar);
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> sut.removeMember(CAL_ID, MEMBER_ID, USER_ID))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("changeMemberRole — 다른 캘린더 소속 memberId 는 조작 불가(교차 IDOR)")
+    void changeMemberRoleRejectsCrossCalendar() {
+        UserCalendarMember member = mock(UserCalendarMember.class);
+        UserCalendar otherCalendar = mock(UserCalendar.class);
+        given(otherCalendar.getRowId()).willReturn(999L);
+        given(member.getCalendar()).willReturn(otherCalendar);
+        given(memberRepository.findById(MEMBER_ID)).willReturn(Optional.of(member));
+
+        assertThatThrownBy(() -> sut.changeMemberRole(CAL_ID, MEMBER_ID, CalendarRole.EDIT, USER_ID))
+                .isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("changeMemberRole — OWNER 권한으로는 변경 불가")
+    void changeRoleRejectsOwnerPermission() {
+        assertThatThrownBy(() -> sut.changeMemberRole(CAL_ID, MEMBER_ID, CalendarRole.OWNER, USER_ID))
+                .isInstanceOf(InvalidValueException.class);
+    }
+
+    @Test
+    @DisplayName("joinByInviteCode — 이미 멤버면 중복 가입 불가")
+    void joinRejectsAlreadyMember() {
+        given(userRepository.findById(USER_ID)).willReturn(Optional.of(user(USER_ID)));
+        UserCalendar calendar = mock(UserCalendar.class);
+        given(calendar.getRowId()).willReturn(50L);
+        given(userCalendarRepository.findByInviteCode("CODE")).willReturn(Optional.of(calendar));
+        UserCalendarMember existing = mock(UserCalendarMember.class);
+        given(memberRepository.findByCalendarAndUser(50L, USER_ID)).willReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> sut.joinByInviteCode(USER_ID, "CODE"))
+                .isInstanceOf(InvalidValueException.class);
+    }
+}

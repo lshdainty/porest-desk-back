@@ -1,0 +1,74 @@
+package io.groo.damda.calendar.repository;
+
+import io.groo.core.type.YNType;
+import io.groo.damda.calendar.domain.UserCalendar;
+import jakarta.persistence.EntityManager;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository("userCalendarJpaRepository")
+@RequiredArgsConstructor
+public class UserCalendarJpaRepository implements UserCalendarRepository {
+    private final EntityManager entityManager;
+
+    @Override
+    public Optional<UserCalendar> findById(Long rowId) {
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.rowId = :rowId AND c.isDeleted = :isDeleted", UserCalendar.class)
+            .setParameter("rowId", rowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultStream()
+            .findFirst();
+    }
+
+    @Override
+    public List<UserCalendar> findAllByUser(Long userRowId) {
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.user.rowId = :userRowId AND c.isDeleted = :isDeleted ORDER BY c.sortOrder ASC, c.rowId ASC", UserCalendar.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public List<UserCalendar> findAllByIds(List<Long> calendarRowIds) {
+        if (calendarRowIds == null || calendarRowIds.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.rowId IN :ids AND c.isDeleted = :isDeleted ORDER BY c.sortOrder ASC, c.rowId ASC", UserCalendar.class)
+            .setParameter("ids", calendarRowIds)
+            .setParameter("isDeleted", YNType.N)
+            .getResultList();
+    }
+
+    @Override
+    public Optional<UserCalendar> findByInviteCode(String inviteCode) {
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.inviteCode = :inviteCode AND c.isDeleted = :isDeleted", UserCalendar.class)
+            .setParameter("inviteCode", inviteCode)
+            .setParameter("isDeleted", YNType.N)
+            .getResultStream()
+            .findFirst();
+    }
+
+    @Override
+    public Optional<UserCalendar> findDefaultByUser(Long userRowId) {
+        return entityManager.createQuery(
+            "SELECT c FROM UserCalendar c WHERE c.user.rowId = :userRowId AND c.isDefault = :isDefault AND c.isDeleted = :isDeleted", UserCalendar.class)
+            .setParameter("userRowId", userRowId)
+            .setParameter("isDefault", YNType.Y)
+            .setParameter("isDeleted", YNType.N)
+            .getResultStream()
+            .findFirst();
+    }
+
+    @Override
+    public UserCalendar save(UserCalendar entity) {
+        entityManager.persist(entity);
+        return entity;
+    }
+}

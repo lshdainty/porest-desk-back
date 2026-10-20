@@ -70,7 +70,7 @@ springdoc:
 
 logging:
   level:
-    com.porest.desk: warn
+    io.groo.damda: warn
     org.hibernate.SQL: warn
     p6spy: off
     root: warn

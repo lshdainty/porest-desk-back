@@ -1,0 +1,199 @@
+package io.groo.damda.todo.repository;
+
+import io.groo.core.type.YNType;
+import io.groo.damda.todo.domain.QTodo;
+import io.groo.damda.todo.domain.Todo;
+import io.groo.damda.todo.type.TodoPriority;
+import io.groo.damda.todo.type.TodoStatus;
+import io.groo.damda.todo.type.TodoType;
+import com.querydsl.core.BooleanBuilder;
+import com.querydsl.core.Tuple;
+import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.jpa.impl.JPAQueryFactory;
+import jakarta.persistence.EntityManager;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+@Primary
+@RequiredArgsConstructor
+public class TodoQueryDslRepository implements TodoRepository {
+    private final JPAQueryFactory queryFactory;
+    private final EntityManager entityManager;
+    private static final QTodo todo = QTodo.todo;
+
+    @Override
+    public List<Todo> findAllByAssignee(Long assigneeRowId) {
+        return queryFactory.selectFrom(todo)
+            .where(todo.assignee.rowId.eq(assigneeRowId), todo.isDeleted.eq(YNType.N))
+            .fetch();
+    }
+
+    @Override
+    public Optional<Todo> findById(Long rowId) {
+        return Optional.ofNullable(
+            queryFactory.selectFrom(todo)
+                .leftJoin(todo.user).fetchJoin()
+                    .where(todo.rowId.eq(rowId), todo.isDeleted.eq(YNType.N))
+                .fetchOne()
+        );
+    }
+
+    @Override
+    public List<Todo> findAllByUser(Long userRowId, TodoStatus status, TodoPriority priority, String category, LocalDate startDate, LocalDate endDate, TodoType type) {
+        BooleanBuilder builder = new BooleanBuilder();
+        builder.and(todo.user.rowId.eq(userRowId));
+        builder.and(todo.isDeleted.eq(YNType.N));
+
+        if (type != null) {
+            builder.and(todo.type.eq(type));
+        }
+        if (status != null) {
+            builder.and(todo.status.eq(status));
+        }
+        if (priority != null) {
+            builder.and(todo.priority.eq(priority));
+        }
+        if (category != null) {
+            builder.and(todo.category.eq(category));
+        }
+        if (startDate != null) {
+            builder.and(todo.dueDate.goe(startDate));
+        }
+        if (endDate != null) {
+            builder.and(todo.dueDate.loe(endDate));
+        }
+        return queryFactory.selectFrom(todo)
+            .leftJoin(todo.user).fetchJoin()
+            .where(builder)
+            .orderBy(todo.sortOrder.asc(), todo.rowId.desc())
+            .fetch();
+    }
+
+    @Override
+    public List<Todo> findByUserAndDueDateBetween(Long userRowId, LocalDate startDate, LocalDate endDate) {
+        return queryFactory.selectFrom(todo)
+            .leftJoin(todo.user).fetchJoin()
+            .where(
+                todo.user.rowId.eq(userRowId),
+                todo.isDeleted.eq(YNType.N),
+                todo.dueDate.goe(startDate),
+                todo.dueDate.loe(endDate)
+            )
+            .orderBy(todo.dueDate.asc(), todo.sortOrder.asc())
+            .fetch();
+    }
+
+    @Override
+    public long[] countStatsByUser(Long userRowId, LocalDate today) {
+        Tuple result = queryFactory
+            .select(
+                // 0: totalTask
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} THEN 1 ELSE 0 END)", todo.type, TodoType.TASK),
+                // 1: pending
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} AND {2} = {3} THEN 1 ELSE 0 END)",
+                    todo.type, TodoType.TASK, todo.status, TodoStatus.PENDING),
+                // 2: inProgress
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} AND {2} = {3} THEN 1 ELSE 0 END)",
+                    todo.type, TodoType.TASK, todo.status, TodoStatus.IN_PROGRESS),
+                // 3: completed
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} AND {2} = {3} THEN 1 ELSE 0 END)",
+                    todo.type, TodoType.TASK, todo.status, TodoStatus.COMPLETED),
+                // 4: todayDue
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} AND {2} = {3} THEN 1 ELSE 0 END)",
+                    todo.type, TodoType.TASK, todo.dueDate, today),
+                // 5: overDue
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} AND {2} < {3} AND {4} != {5} THEN 1 ELSE 0 END)",
+                    todo.type, TodoType.TASK, todo.dueDate, today, todo.status, TodoStatus.COMPLETED),
+                // 6: noteCount
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} THEN 1 ELSE 0 END)", todo.type, TodoType.NOTE),
+                // 7: pinnedNoteCount
+                Expressions.numberTemplate(Long.class,
+                    "SUM(CASE WHEN {0} = {1} AND {2} = {3} THEN 1 ELSE 0 END)",
+                    todo.type, TodoType.NOTE, todo.isPinned, YNType.Y)
+            )
+            .from(todo)
+            .where(
+                todo.user.rowId.eq(userRowId),
+                todo.isDeleted.eq(YNType.N)
+            )
+            .fetchOne();
+
+        if (result == null) {
+            return new long[]{0, 0, 0, 0, 0, 0, 0, 0};
+        }
+
+        long[] stats = new long[8];
+        for (int i = 0; i < 8; i++) {
+            Long val = result.get(i, Long.class);
+            stats[i] = val != null ? val : 0;
+        }
+        return stats;
+    }
+
+    /**
+     * 벌크 UPDATE 라 더티 체킹·감사 필드({@code modify_at})를 타지 않는다 — 의도한 것이다.
+     * 바뀐 것은 태그 이름이지 할 일이 아니고, 한 사용자의 같은 카테고리가 수백 행일 수 있어
+     * 엔티티를 다 올려 고칠 자리가 아니다.
+     */
+    @Override
+    public long renameCategory(Long userRowId, String fromCategory, String toCategory) {
+        return queryFactory.update(todo)
+            .set(todo.category, toCategory)
+            .where(
+                todo.user.rowId.eq(userRowId),
+                todo.category.eq(fromCategory),
+                todo.isDeleted.eq(YNType.N)
+            )
+            .execute();
+    }
+
+    @Override
+    public long clearCategory(Long userRowId, String category) {
+        return queryFactory.update(todo)
+            .setNull(todo.category)
+            .where(
+                todo.user.rowId.eq(userRowId),
+                todo.category.eq(category),
+                todo.isDeleted.eq(YNType.N)
+            )
+            .execute();
+    }
+
+    @Override
+    public List<Todo> findDueTodosForReminder(LocalDate startDate, LocalDate endDate) {
+        return queryFactory.selectFrom(todo)
+            .leftJoin(todo.user).fetchJoin()
+            .where(
+                todo.isDeleted.eq(YNType.N),
+                todo.status.ne(TodoStatus.COMPLETED),
+                todo.dueDate.goe(startDate),
+                todo.dueDate.loe(endDate),
+                todo.type.eq(TodoType.TASK)
+            )
+            .fetch();
+    }
+
+    @Override
+    public Todo save(Todo entity) {
+        entityManager.persist(entity);
+        return entity;
+    }
+
+    @Override
+    public void delete(Todo entity) {
+        entity.deleteTodo();
+    }
+}

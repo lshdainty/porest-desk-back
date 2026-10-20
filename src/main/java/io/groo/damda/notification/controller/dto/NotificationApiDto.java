@@ -1,0 +1,56 @@
+package io.groo.damda.notification.controller.dto;
+
+import io.groo.damda.notification.service.dto.NotificationServiceDto;
+import io.groo.damda.notification.type.NotificationType;
+import io.groo.damda.notification.type.ReferenceType;
+import io.swagger.v3.oas.annotations.media.Schema;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public class NotificationApiDto {
+
+    @Schema(name = "NotificationResponse")
+    public record Response(
+        Long rowId,
+        Long userRowId,
+        NotificationType notificationType,
+        String title,
+        String message,
+        ReferenceType referenceType,
+        Long referenceId,
+        boolean isRead,
+        LocalDateTime readAt,
+        LocalDateTime createAt
+    ) {
+        public static Response from(NotificationServiceDto.NotificationInfo info) {
+            return new Response(
+                info.rowId(),
+                info.userRowId(),
+                info.notificationType(),
+                info.title(),
+                info.message(),
+                info.referenceType(),
+                info.referenceId(),
+                info.isRead(),
+                info.readAt(),
+                info.createAt()
+            );
+        }
+    }
+
+    @Schema(name = "NotificationListResponse")
+    public record ListResponse(
+        List<Response> notifications
+    ) {
+        public static ListResponse from(List<NotificationServiceDto.NotificationInfo> infos) {
+            return new ListResponse(
+                infos.stream().map(Response::from).toList()
+            );
+        }
+    }
+
+    public record UnreadCountResponse(
+        Long count
+    ) {}
+}

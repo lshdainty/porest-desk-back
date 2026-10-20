@@ -3,7 +3,7 @@ FROM eclipse-temurin:25.0.4_7-jdk-alpine AS builder
 
 WORKDIR /app
 
-# GitHub Packages(porest-core) 자격증명.
+# GitHub Packages(groo-core) 자격증명.
 #
 # 토큰은 ENV 로도 ARG 로도 두지 않는다. ENV 는 빌더 스테이지 이미지 설정(Config.Env)에
 # 평문으로 박히고, ARG 는 빌드 캐시 스텝 메타데이터에 남는다. 멀티스테이지라 최종 런타임
