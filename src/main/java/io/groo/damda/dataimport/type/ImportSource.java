@@ -5,8 +5,8 @@ package io.groo.damda.dataimport.type;
  * {@code ImportColumnMapper} 가 소스별로 제공한다. 사용자는 매핑 UI 에서 최종 보정한다.
  */
 public enum ImportSource {
-    /** Porest 자체 내보내기 파일(round-trip). 헤더: 날짜/유형/카테고리/자산/금액/설명/거래처/결제수단. */
-    POREST("porest", "Porest"),
+    /** 담다 자체 내보내기 파일(round-trip). 헤더: 날짜/유형/카테고리/자산/금액/설명/거래처/결제수단. */
+    POREST("porest", "담다 백업"),
     /** 편한가계부 = 머니매니저(Realbyte, com.realbyteapps.moneymanagerfree). 위치 고정 A~G. */
     EASYBUDGET("easybudget", "편한가계부·머니매니저"),
     /** 뱅크샐러드 '가계부 내역'. 헤더: 날짜/시간/타입/대분류/소분류/내용/금액/화폐/결제수단/메모. */

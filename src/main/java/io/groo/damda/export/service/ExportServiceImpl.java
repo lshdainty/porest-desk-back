@@ -37,11 +37,11 @@ public class ExportServiceImpl implements ExportService {
         String filename;
         String contentType;
         if (zip) {
-            filename = "porest-export-" + rangePart + ".zip";
+            filename = "groo-export-" + rangePart + ".zip";
             contentType = "application/zip";
         } else {
             String namePart = types.size() == 1 ? types.get(0).slug() : "export";
-            filename = "porest-" + namePart + "-" + rangePart + "." + format.extension();
+            filename = "groo-" + namePart + "-" + rangePart + "." + format.extension();
             contentType = format.contentType();
         }
         return new ExportDescriptor(filename, contentType);
@@ -74,7 +74,7 @@ public class ExportServiceImpl implements ExportService {
         String rangePart = range.start() + "_" + range.end();
         ZipOutputStream zos = new ZipOutputStream(out);
         for (ExportTable table : tables) {
-            String entryName = "porest-" + table.type().slug() + "-" + rangePart + "." + format.extension();
+            String entryName = "groo-" + table.type().slug() + "-" + rangePart + "." + format.extension();
             zos.putNextEntry(new ZipEntry(entryName));
             writeSingle(zos, format, table);
             zos.closeEntry();

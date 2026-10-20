@@ -99,11 +99,11 @@ class ExportServiceImplTest {
     class Describe {
 
         @Test
-        @DisplayName("단일 CSV — porest-<slug>-<기간>.csv + text/csv")
+        @DisplayName("단일 CSV — groo-<slug>-<기간>.csv + text/csv")
         void singleCsv() {
             givenResolvedRange();
             var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE), USER_ID);
-            assertThat(d.filename()).isEqualTo("porest-expense-" + RANGE_PART + ".csv");
+            assertThat(d.filename()).isEqualTo("groo-expense-" + RANGE_PART + ".csv");
             assertThat(d.contentType()).isEqualTo("text/csv; charset=UTF-8");
         }
 
@@ -112,17 +112,17 @@ class ExportServiceImplTest {
         void singleExcel() {
             givenResolvedRange();
             var d = sut.describe(exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE), USER_ID);
-            assertThat(d.filename()).isEqualTo("porest-expense-" + RANGE_PART + ".xlsx");
+            assertThat(d.filename()).isEqualTo("groo-expense-" + RANGE_PART + ".xlsx");
             assertThat(d.contentType())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         }
 
         @Test
-        @DisplayName("다종 CSV — 종류별 파일을 ZIP 으로: porest-export-<기간>.zip + application/zip")
+        @DisplayName("다종 CSV — 종류별 파일을 ZIP 으로: groo-export-<기간>.zip + application/zip")
         void multiCsvZips() {
             givenResolvedRange();
             var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE, ExportType.TODO), USER_ID);
-            assertThat(d.filename()).isEqualTo("porest-export-" + RANGE_PART + ".zip");
+            assertThat(d.filename()).isEqualTo("groo-export-" + RANGE_PART + ".zip");
             assertThat(d.contentType()).isEqualTo("application/zip");
         }
 
@@ -131,16 +131,16 @@ class ExportServiceImplTest {
         void multiJsonZips() {
             givenResolvedRange();
             var d = sut.describe(exportReq(ExportFormat.JSON, false, ExportType.EXPENSE, ExportType.MEMO), USER_ID);
-            assertThat(d.filename()).isEqualTo("porest-export-" + RANGE_PART + ".zip");
+            assertThat(d.filename()).isEqualTo("groo-export-" + RANGE_PART + ".zip");
             assertThat(d.contentType()).isEqualTo("application/zip");
         }
 
         @Test
-        @DisplayName("다종 EXCEL — ZIP 안 씀(한 워크북 시트 분리): porest-export-<기간>.xlsx")
+        @DisplayName("다종 EXCEL — ZIP 안 씀(한 워크북 시트 분리): groo-export-<기간>.xlsx")
         void multiExcelNeverZips() {
             givenResolvedRange();
             var d = sut.describe(exportReq(ExportFormat.EXCEL, false, ExportType.EXPENSE, ExportType.TODO), USER_ID);
-            assertThat(d.filename()).isEqualTo("porest-export-" + RANGE_PART + ".xlsx");
+            assertThat(d.filename()).isEqualTo("groo-export-" + RANGE_PART + ".xlsx");
             assertThat(d.contentType())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         }
@@ -150,7 +150,7 @@ class ExportServiceImplTest {
         void dedupCollapsesToSingle() {
             givenResolvedRange();
             var d = sut.describe(exportReq(ExportFormat.CSV, false, ExportType.EXPENSE, ExportType.EXPENSE), USER_ID);
-            assertThat(d.filename()).isEqualTo("porest-expense-" + RANGE_PART + ".csv");
+            assertThat(d.filename()).isEqualTo("groo-expense-" + RANGE_PART + ".csv");
             assertThat(d.contentType()).isEqualTo("text/csv; charset=UTF-8");
         }
 
@@ -350,7 +350,7 @@ class ExportServiceImplTest {
 
             // 내보낸 바이트를 그대로 다시 업로드한다(가져오기가 하는 일과 같은 경로).
             ParsedFile parsed = FileParser.parse(
-                new MockMultipartFile("file", "porest-expense.csv", "text/csv", out.toByteArray()));
+                new MockMultipartFile("file", "groo-expense.csv", "text/csv", out.toByteArray()));
             var mapping = ImportColumnMapper.suggest(ImportSource.POREST, parsed.headers());
             StandardRow row = ImportColumnMapper.mapRow(mapping, parsed.rows().get(0), 2);
 
@@ -424,11 +424,11 @@ class ExportServiceImplTest {
             }
 
             assertThat(entries.keySet()).containsExactly(
-                "porest-expense-" + RANGE_PART + ".csv",
-                "porest-todo-" + RANGE_PART + ".csv");
-            assertThat(entries.get("porest-expense-" + RANGE_PART + ".csv"))
+                "groo-expense-" + RANGE_PART + ".csv",
+                "groo-todo-" + RANGE_PART + ".csv");
+            assertThat(entries.get("groo-expense-" + RANGE_PART + ".csv"))
                 .isEqualTo("\uFEFF\"금액\"\r\n\"1000\"\r\n");
-            assertThat(entries.get("porest-todo-" + RANGE_PART + ".csv"))
+            assertThat(entries.get("groo-todo-" + RANGE_PART + ".csv"))
                 .isEqualTo("\uFEFF\"제목\"\r\n\"장보기\"\r\n");
         }
 

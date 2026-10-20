@@ -36,10 +36,10 @@ class UserAgentParserTest {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36 | Android · Chrome",
 
         // ── 앱이 보내는 형태
-        "Porest/1.2.3 (Android 14) | Android · Porest 앱",
-        "Porest/1.2.3 (iOS 17.5) | iOS · Porest 앱",
+        "Porest/1.2.3 (Android 14) | Android · 그루 담다 앱",
+        "Porest/1.2.3 (iOS 17.5) | iOS · 그루 담다 앱",
         // 앱이 UA 를 안 보내던 시절의 dart:io 기본값 — 옛 세션이 남아 있다
-        "Dart/3.9 (dart:io) | Porest 앱",
+        "Dart/3.9 (dart:io) | 그루 담다 앱",
     })
     @DisplayName("실제 UA 를 사람이 읽을 이름으로 줄인다")
     void parses(String ua, String expected) {
@@ -94,8 +94,8 @@ class UserAgentParserTest {
     @CsvSource(delimiter = '|', value = {
         "iPhone · Safari      | MOBILE",
         "Android · Chrome     | MOBILE",
-        "iOS · Porest 앱      | MOBILE",
-        "Android · Porest 앱  | MOBILE",
+        "iOS · 그루 담다 앱      | MOBILE",
+        "Android · 그루 담다 앱  | MOBILE",
         "iPad · Safari        | TABLET",
         "Windows · Chrome     | DESKTOP",
         "Mac · Safari         | DESKTOP",
@@ -103,7 +103,7 @@ class UserAgentParserTest {
         "Linux · Firefox      | DESKTOP",
         // 기기 없이 클라이언트만 알아낸 이름 — 형태를 알 수 없다
         "Chrome               | UNKNOWN",
-        "Porest 앱            | UNKNOWN",
+        "그루 담다 앱            | UNKNOWN",
     })
     @DisplayName("기기 이름에서 형태를 되짚는다 — 화면이 이름을 다시 뜯지 않게")
     void kindOf_derivesFromLabel(String label, DeviceKind expected) {
