@@ -64,7 +64,8 @@ class ExpenseTemplateApiControllerTest {
                 TxKind.EXPENSE, 9000L, "회사 근처", "김밥천국", "CARD",
                 3, 0, YNType.N,
                 LocalDateTime.of(2026, 7, 2, 12, 0),
-                LocalDateTime.of(2026, 7, 1, 0, 0), LocalDateTime.of(2026, 7, 1, 0, 0));
+                LocalDateTime.of(2026, 7, 1, 0, 0), LocalDateTime.of(2026, 7, 1, 0, 0),
+                false);
     }
 
     private ExpenseServiceDto.ExpenseInfo sampleExpense() {
@@ -82,7 +83,8 @@ class ExpenseTemplateApiControllerTest {
             null,       // refundedAmount — 조회에는 없다
             null, null, // cardSettledThrough · recordOnlyAmount — 기록용 아님
             false,      // moneyLocked — 결제 전
-            false);     // replaceable — 잠기지 않았다
+            false,      // replaceable — 잠기지 않았다
+            false);     // isFixed — 변동
     }
 
     @Test

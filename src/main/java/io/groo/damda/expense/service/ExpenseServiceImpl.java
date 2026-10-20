@@ -183,6 +183,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.installmentMonths(),
             command.originalAmount(), command.originalCurrency(), command.exchangeRate()
         );
+        expense.markFixed(command.isFixed());
 
         if (command.calendarEventRowId() != null) {
             CalendarEvent event = calendarEventRepository.findById(command.calendarEventRowId())
@@ -284,6 +285,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             expense.updateEditableFields(editedCategory,
                 command.description().orKeep(expense.getDescription()),
                 command.merchant().orKeep(expense.getMerchant()));
+            // 고정 표식은 집계의 분류일 뿐 돈이 아니라 자동 생성 거래도 고칠 수 있다.
+            expense.markFixed(command.isFixed().orKeep(expense.isFixedTx()));
             log.info("자동 생성 거래 부분 수정: expenseId={} (카테고리·메모·거래처만)", expenseId);
             return ExpenseServiceDto.ExpenseInfo.from(expense);
         }
@@ -360,6 +363,7 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.originalCurrency().orKeep(expense.getOriginalCurrency()),
             command.exchangeRate().orKeep(expense.getExchangeRate())
         );
+        expense.markFixed(command.isFixed().orKeep(expense.isFixedTx()));
 
         // 자산 잔액 이력: 기존 flow soft-delete 후 새 flow 적재(자산 변경 포함).
         // 병합한 값을 쓴다 — 안 보낸 칸을 그대로 실으면 이력이 null 금액·null 일자로 남는다.
@@ -452,6 +456,7 @@ public class ExpenseServiceImpl implements ExpenseService {
         expense.updateEditableFields(category,
             command.description().orKeep(expense.getDescription()),
             command.merchant().orKeep(expense.getMerchant()));
+        expense.markFixed(command.isFixed().orKeep(expense.isFixedTx()));
         expense.setCalendarEvent(command.calendarEventRowId()
             .map(rowId -> calendarEventRepository.findById(rowId)
                 .orElseThrow(() -> new EntityNotFoundException(DeskErrorCode.CALENDAR_EVENT_NOT_FOUND)))
@@ -642,7 +647,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.calendarEventRowId() != null ? command.calendarEventRowId()
                 : (old.getCalendarEvent() != null ? old.getCalendarEvent().getRowId() : null),
             command.todoRowId() != null ? command.todoRowId()
-                : (old.getTodo() != null ? old.getTodo().getRowId() : null));
+                : (old.getTodo() != null ? old.getTodo().getRowId() : null),
+            command.isFixed() != null ? command.isFixed() : old.isFixedTx());
         Created created = persistExpense(effective, false);
         Expense fresh = created.expense();
 
@@ -980,6 +986,29 @@ public class ExpenseServiceImpl implements ExpenseService {
     }
 
     @Override
+    @Transactional
+    public int bulkMarkFixed(ExpenseServiceDto.BulkFixedCommand command) {
+        List<Long> ids = command.expenseRowIds().stream().distinct().toList();
+        log.debug("고정 표식 일괄 변경: userRowId={}, count={}, fixed={}", command.userRowId(), ids.size(), command.fixed());
+
+        // 먼저 전부 읽고 검사한 뒤 바꾼다 — 중간에 남의 거래를 만나 일부만 바뀌는 상태를 막는다.
+        List<Expense> targets = new java.util.ArrayList<>(ids.size());
+        for (Long id : ids) {
+            Expense expense = findExpenseOrThrow(id);
+            validateExpenseOwnership(expense, command.userRowId());
+            targets.add(expense);
+        }
+        int changed = 0;
+        for (Expense expense : targets) {
+            if (expense.isFixedTx() != command.fixed()) {
+                expense.markFixed(command.fixed());
+                changed++;
+            }
+        }
+        return changed;
+    }
+
+    @Override
     public ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date) {
         log.debug("지출 일별 요약 조회: userRowId={}, date={}", userRowId, date);
 
@@ -1010,6 +1039,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         // 환불(INCOME + 원거래 지정)은 수입이 아니라 지출 상계로 잡는다 — Expense 가 부호를 결정한다.
         Long totalIncome = expenses.stream().mapToLong(Expense::incomeContribution).sum();
         Long totalExpense = expenses.stream().mapToLong(Expense::expenseContribution).sum();
+        Long fixedIncome = ExpenseAggregates.fixedIncomeSum(expenses);
+        Long fixedExpense = ExpenseAggregates.fixedExpenseSum(expenses);
 
         // 분할(split)을 1회만 조회해 전체·월별 카테고리 집계에 공유(중복 쿼리 회피).
         Map<Long, List<ExpenseSplit>> splitsByExpense = loadSplits(expenses);
@@ -1029,12 +1060,15 @@ public class ExpenseServiceImpl implements ExpenseService {
             long income = bucket.stream().mapToLong(Expense::incomeContribution).sum();
             long expense = bucket.stream().mapToLong(Expense::expenseContribution).sum();
             monthlyBuckets.add(new ExpenseServiceDto.RangeMonthlyBucket(
-                y, m, income, expense, expenseCategoryAmounts(bucket, splitsByExpense)));
+                y, m, income, expense,
+                ExpenseAggregates.fixedIncomeSum(bucket), ExpenseAggregates.fixedExpenseSum(bucket),
+                expenseCategoryAmounts(bucket, splitsByExpense)));
             cursor = cursor.plusMonths(1);
         }
 
         return new ExpenseServiceDto.RangeSummary(
-            startDate, endDate, totalIncome, totalExpense, categoryBreakdown, monthlyBuckets);
+            startDate, endDate, totalIncome, totalExpense, fixedIncome, fixedExpense,
+            categoryBreakdown, monthlyBuckets);
     }
 
     /**
@@ -1053,10 +1087,10 @@ public class ExpenseServiceImpl implements ExpenseService {
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
-                    accumulateBreakdown(agg, s.getCategory(), breakdownType, s.getAmount());
+                    accumulateBreakdown(agg, s.getCategory(), breakdownType, s.getAmount(), e.isFixedTx());
                 }
             } else {
-                accumulateBreakdown(agg, e.getCategory(), breakdownType, e.getAmount());
+                accumulateBreakdown(agg, e.getCategory(), breakdownType, e.getAmount(), e.isFixedTx());
             }
         }
         return List.copyOf(agg.values());
@@ -1068,13 +1102,16 @@ public class ExpenseServiceImpl implements ExpenseService {
      * 못 미쳐, 사용자가 사라진 돈을 찾게 된다.
      */
     private void accumulateBreakdown(Map<Long, ExpenseServiceDto.CategoryBreakdown> agg,
-                                      ExpenseCategory category, ExpenseType type, Long amount) {
+                                      ExpenseCategory category, ExpenseType type, Long amount, boolean fixed) {
+        // 고정 표식은 거래에 있고 분할은 그 거래를 쪼갠 것이라 분할도 거래의 표식을 따른다.
+        long fixedPart = fixed ? amount : 0L;
         if (category == null) {
             // 유형(수입/지출)까지 섞으면 부호가 뒤엉킨다 — 유형별로 따로 모은다.
             agg.merge(uncategorizedKey(type),
-                new ExpenseServiceDto.CategoryBreakdown(null, null, null, null, type, amount),
+                new ExpenseServiceDto.CategoryBreakdown(null, null, null, null, type, amount, fixedPart),
                 (a, b) -> new ExpenseServiceDto.CategoryBreakdown(
-                    null, null, null, null, type, a.totalAmount() + b.totalAmount()));
+                    null, null, null, null, type, a.totalAmount() + b.totalAmount(),
+                    a.fixedAmount() + b.fixedAmount()));
             return;
         }
         Long key = category.getRowId();
@@ -1087,7 +1124,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                 parent != null ? parent.getRowId() : null,
                 parent != null ? parent.getCategoryName() : null,
                 type,
-                amount
+                amount,
+                fixedPart
             ));
         } else {
             agg.put(key, new ExpenseServiceDto.CategoryBreakdown(
@@ -1096,7 +1134,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                 existing.parentCategoryRowId(),
                 existing.parentCategoryName(),
                 existing.expenseType(),
-                existing.totalAmount() + amount
+                existing.totalAmount() + amount,
+                existing.fixedAmount() + fixedPart
             ));
         }
     }
@@ -1115,24 +1154,31 @@ public class ExpenseServiceImpl implements ExpenseService {
      */
     private List<ExpenseServiceDto.CategoryAmount> expenseCategoryAmounts(
             List<Expense> monthExpenses, Map<Long, List<ExpenseSplit>> splitsByExpense) {
-        Map<Long, Long> agg = new HashMap<>();
+        // 값 = {전체, 그 중 고정}
+        Map<Long, long[]> agg = new HashMap<>();
         for (Expense e : monthExpenses) {
             if (e.getExpenseType() != ExpenseType.EXPENSE) continue;
             List<ExpenseSplit> es = splitsByExpense.get(e.getRowId());
             if (es != null && !es.isEmpty()) {
                 for (ExpenseSplit s : es) {
                     // 카테고리 없는 분할도 미분류(null 키)로 남긴다 — 합이 그 달 지출과 맞아야 한다.
-                    agg.merge(categoryKey(s.getCategory()), s.getAmount(), Long::sum);
+                    addCategoryAmount(agg, categoryKey(s.getCategory()), s.getAmount(), e.isFixedTx());
                 }
             } else {
-                agg.merge(categoryKey(e.getCategory()), e.getAmount(), Long::sum);
+                addCategoryAmount(agg, categoryKey(e.getCategory()), e.getAmount(), e.isFixedTx());
             }
         }
         return agg.entrySet().stream()
             // 미분류는 categoryRowId 가 null 로 나간다 — 클라이언트가 '미분류' 로 표시한다.
             .map(en -> new ExpenseServiceDto.CategoryAmount(
-                en.getKey() == UNCATEGORIZED ? null : en.getKey(), en.getValue()))
+                en.getKey() == UNCATEGORIZED ? null : en.getKey(), en.getValue()[0], en.getValue()[1]))
             .toList();
+    }
+
+    private static void addCategoryAmount(Map<Long, long[]> agg, Long key, Long amount, boolean fixed) {
+        long[] v = agg.computeIfAbsent(key, k -> new long[2]);
+        v[0] += amount;
+        if (fixed) v[1] += amount;
     }
 
     @Override
@@ -1163,7 +1209,8 @@ public class ExpenseServiceImpl implements ExpenseService {
             // 예전엔 getAmount() 를 그냥 더해 같은 달인데 3,000원씩 어긋났다.
             long income = bucket.stream().mapToLong(Expense::incomeContribution).sum();
             long expense = bucket.stream().mapToLong(Expense::expenseContribution).sum();
-            trends.add(new ExpenseServiceDto.MonthlyTrend(y, mm, income, expense));
+            trends.add(new ExpenseServiceDto.MonthlyTrend(y, mm, income, expense,
+                ExpenseAggregates.fixedIncomeSum(bucket), ExpenseAggregates.fixedExpenseSum(bucket)));
         }
         return trends;
     }
@@ -1229,6 +1276,11 @@ public class ExpenseServiceImpl implements ExpenseService {
             command.expenseType(), command.keyword(), command.merchant(),
             command.minAmount(), command.maxAmount(), command.startDate(), command.endDate()
         );
+
+        // 고정/변동 조건 — 표식은 한 칸이라 쿼리를 늘리지 않고 결과에서 거른다(검색 결과는 어차피 메모리에 있다).
+        if (command.fixed() != null) {
+            expenses = expenses.stream().filter(e -> e.isFixedTx() == command.fixed()).toList();
+        }
 
         // 분할 카테고리 id 를 bulk 로 적재(N+1 회피) — 검색 결과의 카테고리 필터도 split-aware 하게 (getExpenses 와 대칭).
         Map<Long, List<Long>> splitCatsByExpense = loadSplitCategoryIdsByExpense(expenses);

@@ -71,7 +71,9 @@ public class RecurringTransactionApiDto {
         LocalDate endDate,
         Integer maxOccurrences,
         Boolean autoLog,
-        Boolean notifyDayBefore
+        Boolean notifyDayBefore,
+        /** 고정 수입·지출 — 안 보내면 생성은 변동, 수정은 유지. 이체는 무시된다. */
+        Boolean isFixed
     ) {}
 
     @Schema(name = "RecurringTransactionUpdateRequest")
@@ -103,7 +105,9 @@ public class RecurringTransactionApiDto {
         LocalDate endDate,
         Integer maxOccurrences,
         Boolean autoLog,
-        Boolean notifyDayBefore
+        Boolean notifyDayBefore,
+        /** 고정 수입·지출 — 안 보내면 생성은 변동, 수정은 유지. 이체는 무시된다. */
+        Boolean isFixed
     ) {}
 
     @Schema(name = "RecurringTransactionResponse")
@@ -139,7 +143,8 @@ public class RecurringTransactionApiDto {
         boolean autoLog,
         boolean notifyDayBefore,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        boolean isFixed
     ) {
         public static Response from(RecurringTransactionServiceDto.RecurringInfo info) {
             return new Response(
@@ -159,7 +164,8 @@ public class RecurringTransactionApiDto {
                 info.nextExecutionDate(), info.lastExecutedAt(),
                 info.isActive(),
                 info.autoLog(), info.notifyDayBefore(),
-                info.createAt(), info.modifyAt()
+                info.createAt(), info.modifyAt(),
+                info.isFixed()
             );
         }
     }

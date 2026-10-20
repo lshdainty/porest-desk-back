@@ -88,6 +88,11 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
     @Column(name = "notify_day_before", nullable = false, length = 1)
     private YNType notifyDayBefore;
 
+    /** 고정 수입·지출 — 이 반복이 만들어 내는 거래가 이 값을 물려받는다. 이체는 항상 N. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_fixed", nullable = false, length = 1)
+    private YNType isFixed = YNType.N;
+
     @Column(name = "description", length = 500)
     private String description;
 
@@ -231,6 +236,19 @@ public class RecurringTransaction extends AuditingFieldsWithIp {
         this.nextExecutionDate = nextExecutionDate;
         if (autoLog != null) this.autoLog = autoLog ? YNType.Y : YNType.N;
         if (notifyDayBefore != null) this.notifyDayBefore = notifyDayBefore ? YNType.Y : YNType.N;
+    }
+
+    /**
+     * 고정 표식을 바꾼다. 이체는 지출도 수입도 아니라(순자산 증감 0) 늘 변동으로 둔다 —
+     * 이체로 종류를 바꾸면 켜 둔 표식도 함께 꺼진다. <b>종류를 정한 뒤에 부른다.</b>
+     */
+    public void markFixed(Boolean fixed) {
+        boolean on = Boolean.TRUE.equals(fixed) && expenseType != TxKind.TRANSFER;
+        this.isFixed = on ? YNType.Y : YNType.N;
+    }
+
+    public boolean isFixedTx() {
+        return isFixed == YNType.Y;
     }
 
     public void markExecuted(LocalDateTime executedAt, LocalDate nextDate) {

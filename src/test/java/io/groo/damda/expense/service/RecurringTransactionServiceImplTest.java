@@ -323,6 +323,24 @@ class RecurringTransactionServiceImplTest {
         }
 
         @Test
+        @DisplayName("고정 표식을 달아 보내도 이체는 늘 변동이다 — 이체는 수입·지출 통계에 안 잡힌다")
+        void transferIgnoresFixedFlag() {
+            givenAssets(AssetType.BANK_ACCOUNT, AssetType.SAVINGS);
+            var base = transferCmd(3L, 100_000L, null, null, null);
+            var cmd = new RecurringTransactionServiceDto.CreateCommand(
+                base.userRowId(), base.categoryRowId(), base.assetRowId(), base.toAssetRowId(), base.fee(),
+                base.interestAmount(), base.sourceExpenseRowId(), base.expenseType(), base.amount(),
+                base.description(), base.merchant(), base.paymentMethod(), base.frequency(),
+                base.intervalValue(), base.dayOfWeek(), base.dayOfMonth(), base.executionTime(),
+                base.startDate(), base.endDate(), base.maxOccurrences(), base.autoLog(),
+                base.notifyDayBefore(), true);
+
+            var info = sut.createRecurring(cmd);
+
+            assertThat(info.isFixed()).isFalse();
+        }
+
+        @Test
         @DisplayName("신용카드는 이체 상대가 될 수 없다 — 카드 결제일 자동이체와 이중으로 빠진다")
         void rejectsCreditCard() {
             givenAssets(AssetType.BANK_ACCOUNT, AssetType.CREDIT_CARD);
@@ -535,6 +553,72 @@ class RecurringTransactionServiceImplTest {
                 rowId, USER_ID, 2L, "예금", 3L, "적금",
                 100_000L, null, null, 100_000L, "적금 이체", null,
                 LocalDateTime.of(2026, 9, 15, 9, 0), LocalDateTime.of(2026, 9, 15, 9, 0));
+        }
+    }
+
+    @Nested
+    @DisplayName("지출·수입 반복 실행 — 고정 표식을 만들어진 거래가 물려받는다")
+    class FixedExecution {
+
+        @BeforeEach
+        void pinToday() {
+            lenient().doReturn(LocalDate.of(2026, 9, 15)).when(serviceClock).today();
+        }
+
+        private RecurringTransaction due(TxKind kind, boolean fixed) {
+            User u = user(USER_ID);
+            RecurringTransaction r = RecurringTransaction.createRecurring(
+                u, category(10L, u), null, null, null, null, null,
+                kind, 700_000L, "월세", null, null,
+                RecurringFrequency.MONTHLY, 1, null, 15, null,
+                LocalDate.of(2026, 1, 15), null, null,
+                LocalDate.of(2026, 9, 15), true, false);
+            r.markFixed(fixed);
+            ReflectionTestUtils.setField(r, "rowId", 88L);
+            return r;
+        }
+
+        private Expense runAndCapture(RecurringTransaction r) {
+            given(recurringTransactionRepository.findDueTransactions(any())).willReturn(List.of(r));
+            given(recurringTransactionRepository.findById(88L)).willReturn(Optional.of(r));
+            sut.executeDueTransactions();
+            ArgumentCaptor<Expense> captor = ArgumentCaptor.forClass(Expense.class);
+            then(expenseRepository).should().save(captor.capture());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("고정 지출 반복이 만든 거래는 고정이다")
+        void fixedExpenseRecurringMakesFixedExpense() {
+            Expense made = runAndCapture(due(TxKind.EXPENSE, true));
+
+            assertThat(made.isFixedTx()).isTrue();
+        }
+
+        @Test
+        @DisplayName("고정 수입 반복이 만든 거래는 고정이다")
+        void fixedIncomeRecurringMakesFixedIncome() {
+            Expense made = runAndCapture(due(TxKind.INCOME, true));
+
+            assertThat(made.isFixedTx()).isTrue();
+        }
+
+        @Test
+        @DisplayName("표식 없는 반복이 만든 거래는 변동이다 — 기존 반복의 동작이 안 바뀐다")
+        void plainRecurringMakesVariable() {
+            Expense made = runAndCapture(due(TxKind.EXPENSE, false));
+
+            assertThat(made.isFixedTx()).isFalse();
+        }
+
+        @Test
+        @DisplayName("이체로 바꾸면 켜 둔 표식이 꺼진다")
+        void switchingToTransferTurnsItOff() {
+            RecurringTransaction r = due(TxKind.EXPENSE, true);
+            ReflectionTestUtils.setField(r, "expenseType", TxKind.TRANSFER);
+            r.markFixed(true);
+
+            assertThat(r.isFixedTx()).isFalse();
         }
     }
 }

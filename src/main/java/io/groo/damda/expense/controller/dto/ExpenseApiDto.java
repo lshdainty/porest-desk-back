@@ -5,6 +5,7 @@ import io.groo.damda.common.validation.AmountLimits;
 import io.groo.damda.expense.service.dto.ExpenseServiceDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -75,7 +76,9 @@ public class ExpenseApiDto {
         /** 적용 환율 (원 통화 1단위당 원화). */
         java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
-        Long todoRowId
+        Long todoRowId,
+        /** 고정 수입·지출 (null = 변동). 옛 앱은 이 키를 안 보내므로 변동으로 만든다. */
+        Boolean isFixed
     ) {}
 
     /**
@@ -125,7 +128,9 @@ public class ExpenseApiDto {
         Optional<Long> calendarEventRowId,
         Optional<Long> todoRowId,
         // 분할 내역 동시 수정(선택). null = 분할 미변경, 리스트 = 새 분할로 교체(금액과 합 일치 필요).
-        List<ExpenseSplitApiDto.SplitRequest> splits
+        List<ExpenseSplitApiDto.SplitRequest> splits,
+        /** 고정 수입·지출 — 안 보내면 유지, null 을 보내면 변동으로 되돌린다. */
+        Optional<Boolean> isFixed
     ) {}
 
     @Schema(name = "ExpenseResponse")
@@ -188,7 +193,9 @@ public class ExpenseApiDto {
          * [고쳐 쓰기]를 띄울 수 있는가 — 잠겼고 환불·시스템 거래·중도 정리 할부가 아닌 거래.
          * false 인 잠긴 거래(중도 정리한 할부)는 돈 칸을 바꿀 길이 없다.
          */
-        boolean replaceable
+        boolean replaceable,
+        /** 고정 수입·지출 여부 — 통계가 전체·고정·변동으로 가른다. */
+        boolean isFixed
     ) {
         public static Response from(ExpenseServiceDto.ExpenseInfo info) {
             return new Response(
@@ -222,7 +229,8 @@ public class ExpenseApiDto {
                 info.cardSettledThrough(),
                 info.recordOnlyAmount(),
                 info.moneyLocked(),
-                info.replaceable()
+                info.replaceable(),
+                info.isFixed()
             );
         }
     }
@@ -258,6 +266,9 @@ public class ExpenseApiDto {
         LocalDate endDate,
         Long totalIncome,
         Long totalExpense,
+        /** 합계 중 고정인 몫 — 변동 = 합계 − 고정. */
+        Long fixedIncome,
+        Long fixedExpense,
         List<CategoryBreakdownResponse> categoryBreakdown,
         List<RangeMonthlyBucketResponse> monthlyBuckets
     ) {
@@ -273,6 +284,8 @@ public class ExpenseApiDto {
                 summary.endDate(),
                 summary.totalIncome(),
                 summary.totalExpense(),
+                summary.fixedIncome(),
+                summary.fixedExpense(),
                 breakdowns,
                 buckets
             );
@@ -284,22 +297,26 @@ public class ExpenseApiDto {
         Integer month,
         Long totalIncome,
         Long totalExpense,
+        Long fixedIncome,
+        Long fixedExpense,
         // 그 달의 카테고리별 지출(EXPENSE만, split-aware) — 카테고리 월별 추이 차트용
         List<CategoryAmountResponse> categoryExpenses
     ) {
         public static RangeMonthlyBucketResponse from(ExpenseServiceDto.RangeMonthlyBucket b) {
             return new RangeMonthlyBucketResponse(
-                b.year(), b.month(), b.totalIncome(), b.totalExpense(),
+                b.year(), b.month(), b.totalIncome(), b.totalExpense(), b.fixedIncome(), b.fixedExpense(),
                 b.categoryExpenses().stream().map(CategoryAmountResponse::from).toList());
         }
     }
 
     public record CategoryAmountResponse(
         Long categoryRowId,
-        Long amount
+        Long amount,
+        /** 그 금액 중 고정인 몫. */
+        Long fixedAmount
     ) {
         public static CategoryAmountResponse from(ExpenseServiceDto.CategoryAmount c) {
-            return new CategoryAmountResponse(c.categoryRowId(), c.amount());
+            return new CategoryAmountResponse(c.categoryRowId(), c.amount(), c.fixedAmount());
         }
     }
 
@@ -307,10 +324,13 @@ public class ExpenseApiDto {
         Integer year,
         Integer month,
         Long totalIncome,
-        Long totalExpense
+        Long totalExpense,
+        Long fixedIncome,
+        Long fixedExpense
     ) {
         public static MonthlyTrendResponse from(ExpenseServiceDto.MonthlyTrend t) {
-            return new MonthlyTrendResponse(t.year(), t.month(), t.totalIncome(), t.totalExpense());
+            return new MonthlyTrendResponse(t.year(), t.month(), t.totalIncome(), t.totalExpense(),
+                t.fixedIncome(), t.fixedExpense());
         }
     }
 
@@ -326,7 +346,9 @@ public class ExpenseApiDto {
         Long parentCategoryRowId,
         String parentCategoryName,
         ExpenseType expenseType,
-        Long totalAmount
+        Long totalAmount,
+        /** 그 금액 중 고정인 몫. */
+        Long fixedAmount
     ) {
         public static CategoryBreakdownResponse from(ExpenseServiceDto.CategoryBreakdown breakdown) {
             return new CategoryBreakdownResponse(
@@ -335,7 +357,8 @@ public class ExpenseApiDto {
                 breakdown.parentCategoryRowId(),
                 breakdown.parentCategoryName(),
                 breakdown.expenseType(),
-                breakdown.totalAmount()
+                breakdown.totalAmount(),
+                breakdown.fixedAmount()
             );
         }
     }
@@ -445,8 +468,22 @@ public class ExpenseApiDto {
         java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
         Long todoRowId,
-        List<ExpenseSplitApiDto.SplitRequest> splits
+        List<ExpenseSplitApiDto.SplitRequest> splits,
+        /** 고정 수입·지출 — 안 보내면 옛 거래의 표식을 잇는다. */
+        Boolean isFixed
     ) {}
+
+    /** 고정 표식 일괄 변경 — 고른 거래를 한꺼번에 고정(true) 또는 변동(false) 으로. */
+    public record BulkFixedRequest(
+        @NotEmpty(message = "거래를 하나 이상 골라 주세요")
+        @Size(max = 500, message = "한 번에 500건까지 바꿀 수 있어요")
+        List<Long> expenseIds,
+        @NotNull(message = "고정 여부를 골라 주세요")
+        Boolean isFixed
+    ) {}
+
+    /** 일괄 변경 결과 — 실제로 바뀐 건수. */
+    public record BulkFixedResponse(int updatedCount) {}
 
     /** 환불 마크 요청 — 환불일만 받는다. 비우면 지금. */
     public record RefundRequest(

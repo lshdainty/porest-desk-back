@@ -56,4 +56,17 @@ public final class ExpenseAggregates {
     public static long expenseSum(List<Expense> countable) {
         return countable.stream().mapToLong(Expense::expenseContribution).sum();
     }
+
+    /**
+     * 고정 수입 합계 — {@link #incomeSum} 의 부분집합. 변동 수입은 {@code incomeSum - fixedIncomeSum}
+     * 으로 구한다(두 값을 따로 세면 환불·미래분 규칙이 갈릴 수 있어 한 목록에서 둘 다 낸다).
+     */
+    public static long fixedIncomeSum(List<Expense> countable) {
+        return countable.stream().mapToLong(Expense::fixedIncomeContribution).sum();
+    }
+
+    /** 고정 지출 합계 — {@link #expenseSum} 의 부분집합. */
+    public static long fixedExpenseSum(List<Expense> countable) {
+        return countable.stream().mapToLong(Expense::fixedExpenseContribution).sum();
+    }
 }

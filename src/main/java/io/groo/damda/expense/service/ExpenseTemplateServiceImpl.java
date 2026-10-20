@@ -75,6 +75,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             command.merchant(), command.paymentMethod(), command.sortOrder(),
             command.lockAmount()
         );
+        template.markFixed(command.isFixed());
 
         expenseTemplateRepository.save(template);
         flushOrRejectDuplicate();
@@ -147,6 +148,8 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             command.paymentMethod().orKeep(template.getPaymentMethod()),
             lockAmount
         );
+        // 종류를 정한 뒤에 부른다 — 이체로 바뀌면 꺼진다. 안 보냈으면 유지.
+        template.markFixed(command.isFixed().orKeep(template.isFixedTx()));
         flushOrRejectDuplicate();
 
         log.info("경비 템플릿 수정 완료: templateId={}", templateId);
@@ -211,6 +214,7 @@ public class ExpenseTemplateServiceImpl implements ExpenseTemplateService {
             null, // 프리셋은 할부 개념이 없다
             null, null, null // 원화 결제
         );
+        expense.markFixed(template.isFixedTx());
 
         expenseRepository.save(expense);
         template.incrementUseCount();

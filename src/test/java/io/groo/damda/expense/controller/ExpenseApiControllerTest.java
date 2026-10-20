@@ -77,7 +77,149 @@ class ExpenseApiControllerTest {
             null,       // refundedAmount — 조회에는 없다
             null, null, // cardSettledThrough · recordOnlyAmount — 기록용 아님
             false,      // moneyLocked — 결제 전
-            false);     // replaceable — 잠기지 않았다
+            false,      // replaceable — 잠기지 않았다
+            false);     // isFixed — 변동
+    }
+
+    @Test
+    @DisplayName("POST /expense — isFixed 를 서비스 명령으로 넘기고, 응답에도 isFixed 키가 실린다")
+    void createExpenseCarriesFixed() throws Exception {
+        given(expenseService.createExpense(any())).willReturn(sampleInfo());
+
+        String body = """
+                {"categoryRowId":5,"expenseType":"EXPENSE","amount":700000,
+                 "expenseDate":"2026-07-03","isFixed":true}
+                """;
+
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                // 키 이름은 isFixed 다 — Jackson 이 boolean 레코드 칸을 fixed 로 바꿔 내보내지 않는지 잠근다.
+                .andExpect(jsonPath("$.data.isFixed").value(false))
+                .andExpect(jsonPath("$.data.fixed").doesNotExist());
+
+        ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+        verify(expenseService).createExpense(captor.capture());
+        assertThat(captor.getValue().isFixed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("POST /expense — isFixed 를 안 보내는 옛 앱은 변동(null)으로 들어간다")
+    void createExpenseWithoutFixedIsVariable() throws Exception {
+        given(expenseService.createExpense(any())).willReturn(sampleInfo());
+
+        mockMvc.perform(post("/api/v1/expense")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"categoryRowId":5,"expenseType":"EXPENSE","amount":15000,"expenseDate":"2026-07-03"}
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ExpenseServiceDto.CreateCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.CreateCommand.class);
+        verify(expenseService).createExpense(captor.capture());
+        assertThat(captor.getValue().isFixed()).isNull();
+    }
+
+    @Test
+    @DisplayName("PUT /expense/{id} — isFixed 키가 없으면 안 온 것(유지), 있으면 그 값이다")
+    void updateExpenseFixedPatch() throws Exception {
+        given(expenseService.updateExpense(eq(10L), eq(1L), any())).willReturn(sampleInfo());
+
+        mockMvc.perform(put("/api/v1/expense/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"메모\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/api/v1/expense/10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"isFixed\":true}"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ExpenseServiceDto.UpdateCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.UpdateCommand.class);
+        verify(expenseService, org.mockito.Mockito.times(2)).updateExpense(eq(10L), eq(1L), captor.capture());
+        assertThat(captor.getAllValues().get(0).isFixed().present()).isFalse();
+        assertThat(captor.getAllValues().get(1).isFixed().present()).isTrue();
+        assertThat(captor.getAllValues().get(1).isFixed().value()).isTrue();
+    }
+
+    @Test
+    @DisplayName("GET /expenses/search?fixed=true — 고정 조건이 서비스 명령에 실린다")
+    void searchPassesFixedFilter() throws Exception {
+        given(expenseService.searchExpenses(any())).willReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/expenses/search").param("fixed", "true"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ExpenseServiceDto.SearchCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.SearchCommand.class);
+        verify(expenseService).searchExpenses(captor.capture());
+        assertThat(captor.getValue().fixed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("PUT /expenses/fixed — 로그인 사용자·고른 거래·값으로 일괄 변경을 위임하고 바뀐 건수를 돌려준다")
+    void bulkMarkFixed() throws Exception {
+        given(expenseService.bulkMarkFixed(any())).willReturn(2);
+
+        mockMvc.perform(put("/api/v1/expenses/fixed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseIds\":[1,2,3],\"isFixed\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.updatedCount").value(2));
+
+        ArgumentCaptor<ExpenseServiceDto.BulkFixedCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.BulkFixedCommand.class);
+        verify(expenseService).bulkMarkFixed(captor.capture());
+        assertThat(captor.getValue().userRowId()).isEqualTo(1L);
+        assertThat(captor.getValue().expenseRowIds()).containsExactly(1L, 2L, 3L);
+        assertThat(captor.getValue().fixed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("PUT /expenses/fixed — 거래를 안 골랐거나 값이 없으면 400, 501건 이상도 400")
+    void bulkMarkFixedRejectsBadBody() throws Exception {
+        for (String body : List.of(
+                "{\"expenseIds\":[],\"isFixed\":true}",
+                "{\"isFixed\":true}",
+                "{\"expenseIds\":[1]}")) {
+            mockMvc.perform(put("/api/v1/expenses/fixed")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        String tooMany = java.util.stream.IntStream.rangeClosed(1, 501)
+                .mapToObj(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        mockMvc.perform(put("/api/v1/expenses/fixed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseIds\":[" + tooMany + "],\"isFixed\":true}"))
+                .andExpect(status().isBadRequest());
+
+        verify(expenseService, never()).bulkMarkFixed(any());
+    }
+
+    @Test
+    @DisplayName("GET /expenses/summary/range — 합계·월별·카테고리에 고정 몫 키가 실린다")
+    void rangeSummaryExposesFixed() throws Exception {
+        given(expenseService.getRangeSummary(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), null))
+                .willReturn(new ExpenseServiceDto.RangeSummary(
+                        LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), 3_000_000L, 800_000L,
+                        3_000_000L, 700_000L,
+                        List.of(new ExpenseServiceDto.CategoryBreakdown(
+                                10L, "주거", null, null, ExpenseType.EXPENSE, 700_000L, 700_000L)),
+                        List.of(new ExpenseServiceDto.RangeMonthlyBucket(2026, 7, 3_000_000L, 800_000L,
+                                3_000_000L, 700_000L,
+                                List.of(new ExpenseServiceDto.CategoryAmount(10L, 700_000L, 700_000L))))));
+
+        mockMvc.perform(get("/api/v1/expenses/summary/range")
+                        .param("startDate", "2026-07-01").param("endDate", "2026-07-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fixedIncome").value(3_000_000))
+                .andExpect(jsonPath("$.data.fixedExpense").value(700_000))
+                .andExpect(jsonPath("$.data.categoryBreakdown[0].fixedAmount").value(700_000))
+                .andExpect(jsonPath("$.data.monthlyBuckets[0].fixedExpense").value(700_000))
+                .andExpect(jsonPath("$.data.monthlyBuckets[0].categoryExpenses[0].fixedAmount").value(700_000));
     }
 
     @Test
@@ -377,7 +519,7 @@ class ExpenseApiControllerTest {
         given(expenseService.getRangeSummary(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), null))
                 .willReturn(new ExpenseServiceDto.RangeSummary(
                         LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
-                        1000L, 5000L, List.of(), List.of()));
+                        1000L, 5000L, 400L, 2000L, List.of(), List.of()));
 
         mockMvc.perform(get("/api/v1/expenses/summary/range")
                         .param("startDate", "2026-07-01")

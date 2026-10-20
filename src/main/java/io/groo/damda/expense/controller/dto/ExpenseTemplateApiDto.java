@@ -26,7 +26,9 @@ public class ExpenseTemplateApiDto {
         String merchant,
         String paymentMethod,
         Integer sortOrder,
-        YNType lockAmount
+        YNType lockAmount,
+        /** 고정 수입·지출 기본값 — 안 보내면 변동. 이체는 무시된다. */
+        Boolean isFixed
     ) {}
 
     /**
@@ -62,7 +64,9 @@ public class ExpenseTemplateApiDto {
         Optional<String> description,
         Optional<String> merchant,
         Optional<String> paymentMethod,
-        Optional<YNType> lockAmount
+        Optional<YNType> lockAmount,
+        /** 고정 수입·지출 기본값 — 안 보내면 유지. */
+        Optional<Boolean> isFixed
     ) {}
 
     public record UseRequest(
@@ -92,7 +96,8 @@ public class ExpenseTemplateApiDto {
         YNType lockAmount,
         LocalDateTime lastUsedAt,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        boolean isFixed
     ) {
         public static Response from(ExpenseTemplateServiceDto.TemplateInfo info) {
             return new Response(
@@ -105,7 +110,8 @@ public class ExpenseTemplateApiDto {
                 info.merchant(), info.paymentMethod(),
                 info.useCount(), info.sortOrder(),
                 info.lockAmount(), info.lastUsedAt(),
-                info.createAt(), info.modifyAt()
+                info.createAt(), info.modifyAt(),
+                info.isFixed()
             );
         }
     }

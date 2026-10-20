@@ -90,6 +90,11 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
     @Column(name = "lock_amount", nullable = false, length = 1)
     private YNType lockAmount;
 
+    /** 고정 수입·지출 기본값 — 이 프리셋으로 거래를 만들면 그 거래가 이 값을 물려받는다. 이체는 항상 N. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_fixed", nullable = false, length = 1)
+    private YNType isFixed = YNType.N;
+
     /** [UTC] 시스템 기록 시각 — 저장·비교 UTC, 표시할 때만 사용자 타임존 변환 */
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
@@ -145,6 +150,16 @@ public class ExpenseTemplate extends AuditingFieldsWithIp {
         this.merchant = merchant;
         this.paymentMethod = paymentMethod;
         if (lockAmount != null) this.lockAmount = lockAmount;
+    }
+
+    /** 고정 표식 기본값을 바꾼다 — 이체 프리셋은 늘 변동. <b>종류를 정한 뒤에 부른다.</b> */
+    public void markFixed(Boolean fixed) {
+        boolean on = Boolean.TRUE.equals(fixed) && expenseType != TxKind.TRANSFER;
+        this.isFixed = on ? YNType.Y : YNType.N;
+    }
+
+    public boolean isFixedTx() {
+        return isFixed == YNType.Y;
     }
 
     public void incrementUseCount() {
