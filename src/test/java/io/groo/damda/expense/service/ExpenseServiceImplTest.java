@@ -353,6 +353,51 @@ class ExpenseServiceImplTest {
         verify(notificationService).createNotification(any());
     }
 
+    @Test
+    @DisplayName("updateExpense — 고정 칸을 안 보내면 지금 표식을 유지한다(옛 앱의 수정이 표식을 지우지 않는다)")
+    void updateWithoutFixedKeepsIt() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 700_000L,
+                "월세", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
+        expense.markFixed(true);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+        sut.updateExpense(5L, USER_ID, updateCmd(10L));
+
+        assertThat(expense.isFixedTx()).isTrue();
+    }
+
+    @Test
+    @DisplayName("updateExpense — 고정 칸을 보내면 그 값으로 바뀌고, null 을 보내면 변동으로 돌아간다")
+    void updateWithFixedChangesIt() {
+        User u = user(USER_ID);
+        ExpenseCategory leaf = category(10L, u);
+        Expense expense = Expense.createExpense(u, leaf, null, ExpenseType.EXPENSE, 700_000L,
+                "월세", LocalDateTime.of(2026, 6, 1, 12, 0), null, null, null, null, null, null);
+        ReflectionTestUtils.setField(expense, "rowId", 5L);
+        given(expenseRepository.findById(5L)).willReturn(Optional.of(expense));
+        given(expenseCategoryRepository.findById(10L)).willReturn(Optional.of(leaf));
+        given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+
+        sut.updateExpense(5L, USER_ID, updateCmdFixed(10L, Patch.set(true)));
+        assertThat(expense.isFixedTx()).isTrue();
+
+        sut.updateExpense(5L, USER_ID, updateCmdFixed(10L, Patch.set(null)));
+        assertThat(expense.isFixedTx()).isFalse();
+    }
+
+    private ExpenseServiceDto.UpdateCommand updateCmdFixed(long categoryId, Patch<Boolean> fixed) {
+        return new ExpenseServiceDto.UpdateCommand(
+                Patch.set(categoryId), Patch.absent(), Patch.set(ExpenseType.EXPENSE), Patch.set(700_000L),
+                Patch.set("월세"), Patch.set(LocalDateTime.of(2026, 6, 1, 12, 0)), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                null, false, fixed);
+    }
+
     // ── 자산 잔액 이력 연동(잔액 정확성 와이어링) ─────────────────────────────
     @Test
     @DisplayName("updateExpense — 잔액 이력은 removeExpense 먼저, 그 다음 recordExpense 순서로 재적재")

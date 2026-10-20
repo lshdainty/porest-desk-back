@@ -42,6 +42,11 @@ public interface ExpenseService {
      * 지운다. 결제 완료 회차의 카드 거래였다면 결제계좌로 돌려준 금액을 돌려준다(없으면 null).
      */
     Long deleteExpense(Long expenseId, Long userRowId);
+    /**
+     * 고정 표식 일괄 변경 — 바뀐 건수를 돌려준다. 돈·잔액은 건드리지 않는다.
+     * 하나라도 내 거래가 아니면 전체를 거절한다(일부만 바뀌는 상태를 만들지 않는다).
+     */
+    int bulkMarkFixed(ExpenseServiceDto.BulkFixedCommand command);
     ExpenseServiceDto.DailySummary getDailySummary(Long userRowId, LocalDate date);
     ExpenseServiceDto.RangeSummary getRangeSummary(Long userRowId, LocalDate startDate, LocalDate endDate);
 

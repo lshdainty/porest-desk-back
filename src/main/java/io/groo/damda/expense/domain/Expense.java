@@ -170,6 +170,17 @@ public class Expense extends AuditingFieldsWithIp {
     @JoinColumn(name = "todo_row_id")
     private Todo todo;
 
+    /**
+     * 고정 수입·지출 표식 (Y=고정) — 월급·월세처럼 매달 정해진 거래.
+     *
+     * <p>통계가 "전체 / 고정 제외 / 고정만" 으로 나눠 보는 재료다. 돈·잔액·카드 청구에는 아무 영향이
+     * 없고 <b>집계의 분류</b>일 뿐이라, 금액을 잠그는 거래(카드 회차 결제·자동 생성)도 이 칸은 고칠 수
+     * 있다. 이체는 {@code Expense} 가 아니라 대상이 아니다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "is_fixed", nullable = false, length = 1)
+    private YNType isFixed = YNType.N;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "is_deleted", nullable = false, length = 1)
     private YNType isDeleted;
@@ -310,6 +321,26 @@ public class Expense extends AuditingFieldsWithIp {
     /** 지출 집계에 더할 금액. */
     public long expenseContribution() {
         return expenseType == ExpenseType.EXPENSE ? amount : 0L;
+    }
+
+    /** 고정 거래인가. */
+    public boolean isFixedTx() {
+        return isFixed == YNType.Y;
+    }
+
+    /** 고정 표식을 바꾼다 — null 은 "변동" 으로 본다. */
+    public void markFixed(Boolean fixed) {
+        this.isFixed = Boolean.TRUE.equals(fixed) ? YNType.Y : YNType.N;
+    }
+
+    /** 수입 집계 중 <b>고정</b>인 몫 — {@link #incomeContribution()} 의 부분집합. */
+    public long fixedIncomeContribution() {
+        return isFixedTx() ? incomeContribution() : 0L;
+    }
+
+    /** 지출 집계 중 <b>고정</b>인 몫 — {@link #expenseContribution()} 의 부분집합. */
+    public long fixedExpenseContribution() {
+        return isFixedTx() ? expenseContribution() : 0L;
     }
 
     /**

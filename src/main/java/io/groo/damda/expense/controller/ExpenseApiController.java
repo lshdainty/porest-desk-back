@@ -51,7 +51,8 @@ public class ExpenseApiController {
             request.installmentMonths(),
             request.originalAmount(), request.originalCurrency(), request.exchangeRate(),
             request.calendarEventRowId(),
-            request.todoRowId()
+            request.todoRowId(),
+            request.isFixed()
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
@@ -100,7 +101,8 @@ public class ExpenseApiController {
             Patch.from(request.calendarEventRowId()),
             Patch.from(request.todoRowId()),
             splits,
-            isDateOnly(request.expenseDate())
+            isDateOnly(request.expenseDate()),
+            Patch.from(request.isFixed())
         ));
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
@@ -134,7 +136,8 @@ public class ExpenseApiController {
                 request.installmentMonths(),
                 request.originalAmount(), request.originalCurrency(), request.exchangeRate(),
                 request.calendarEventRowId(),
-                request.todoRowId()),
+                request.todoRowId(),
+                request.isFixed()),
             splits);
         return ApiResponse.success(ExpenseApiDto.Response.from(info));
     }
@@ -142,6 +145,16 @@ public class ExpenseApiController {
     /** 날짜만(yyyy-MM-dd) 온 일시인가 — 잠긴 거래의 날짜 비교를 날짜로만 한다(D12). */
     private static boolean isDateOnly(java.util.Optional<String> raw) {
         return raw != null && raw.isPresent() && raw.get() != null && raw.get().trim().length() == 10;
+    }
+
+    /** 고정 표식 일괄 변경 — 고른 거래 전부를 고정 또는 변동으로. 남의 거래가 섞여 있으면 전체가 거절된다. */
+    @PutMapping("/expenses/fixed")
+    public ApiResponse<ExpenseApiDto.BulkFixedResponse> bulkMarkFixed(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody ExpenseApiDto.BulkFixedRequest request) {
+        int updated = expenseService.bulkMarkFixed(new ExpenseServiceDto.BulkFixedCommand(
+            loginUser.getRowId(), request.expenseIds(), request.isFixed()));
+        return ApiResponse.success(new ExpenseApiDto.BulkFixedResponse(updated));
     }
 
     @DeleteMapping("/expense/{id}")
@@ -233,10 +246,11 @@ public class ExpenseApiController {
             @RequestParam(required = false) Long minAmount,
             @RequestParam(required = false) Long maxAmount,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Boolean fixed) {
         List<ExpenseServiceDto.ExpenseInfo> infos = expenseService.searchExpenses(new ExpenseServiceDto.SearchCommand(
             loginUser.getRowId(), categoryId, assetId, expenseType, keyword, merchant,
-            minAmount, maxAmount, startDate, endDate
+            minAmount, maxAmount, startDate, endDate, fixed
         ));
         return ApiResponse.success(ExpenseApiDto.ListResponse.from(infos));
     }

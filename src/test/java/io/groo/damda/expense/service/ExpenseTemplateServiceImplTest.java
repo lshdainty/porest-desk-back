@@ -284,6 +284,32 @@ class ExpenseTemplateServiceImplTest {
         verify(template).incrementUseCount();
     }
 
+    @Test
+    @DisplayName("useTemplate — 고정 프리셋으로 만든 거래는 고정이고, 아니면 변동이다")
+    void useTemplateInheritsFixed() {
+        for (boolean fixed : new boolean[]{true, false}) {
+            org.mockito.Mockito.clearInvocations(expenseRepository);
+            User u = user(USER_ID);
+            ExpenseCategory leaf = category(10L, u);
+            ExpenseTemplate template = mock(ExpenseTemplate.class);
+            given(template.getUser()).willReturn(u);
+            given(template.getCategory()).willReturn(leaf);
+            given(expenseCategoryRepository.hasChildren(10L)).willReturn(false);
+            given(template.getAsset()).willReturn(null);
+            given(template.getExpenseType()).willReturn(TxKind.EXPENSE);
+            given(template.getAmount()).willReturn(700_000L);
+            given(template.isFixedTx()).willReturn(fixed);
+            given(expenseTemplateRepository.findById(5L)).willReturn(Optional.of(template));
+
+            sut.useTemplate(5L, USER_ID, LocalDate.of(2026, 7, 1));
+
+            org.mockito.ArgumentCaptor<io.groo.damda.expense.domain.Expense> captor =
+                org.mockito.ArgumentCaptor.forClass(io.groo.damda.expense.domain.Expense.class);
+            verify(expenseRepository).save(captor.capture());
+            assertThat(captor.getValue().isFixedTx()).isEqualTo(fixed);
+        }
+    }
+
     @Nested
     @DisplayName("금액 부호 — 음수 프리셋이 저장되면 그걸 불러 쓰는 거래도 오염된다")
     class AmountSign {

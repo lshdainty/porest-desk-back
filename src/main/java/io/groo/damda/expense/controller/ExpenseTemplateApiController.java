@@ -38,7 +38,7 @@ public class ExpenseTemplateApiController {
                 request.toAssetRowId(), request.fee(), request.interestAmount(),
                 request.expenseType(), request.amount(), request.description(),
                 request.merchant(), request.paymentMethod(), request.sortOrder(),
-                request.lockAmount()
+                request.lockAmount(), request.isFixed()
             )
         );
         return ApiResponse.success(ExpenseTemplateApiDto.Response.from(info));
@@ -63,7 +63,8 @@ public class ExpenseTemplateApiController {
                 Patch.from(request.expenseType()),
                 Patch.from(request.amount()), Patch.from(request.description()),
                 Patch.from(request.merchant()), Patch.from(request.paymentMethod()),
-                Patch.from(request.lockAmount())
+                Patch.from(request.lockAmount()),
+                Patch.from(request.isFixed())
             )
         );
         return ApiResponse.success(ExpenseTemplateApiDto.Response.from(info));

@@ -31,8 +31,21 @@ public class ExpenseServiceDto {
         /** 적용 환율 (원 통화 1단위당 원화). */
         java.math.BigDecimal exchangeRate,
         Long calendarEventRowId,
-        Long todoRowId
-    ) {}
+        Long todoRowId,
+        /** 고정 수입·지출 (null = 변동). */
+        Boolean isFixed
+    ) {
+        /** 고정 칸을 모르는 호출자(가져오기·반복 거래·테스트) — 변동으로 만든다. */
+        public CreateCommand(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType,
+                             Long amount, String description, LocalDateTime expenseDate, String merchant,
+                             String paymentMethod, Integer installmentMonths,
+                             java.math.BigDecimal originalAmount, String originalCurrency,
+                             java.math.BigDecimal exchangeRate, Long calendarEventRowId, Long todoRowId) {
+            this(userRowId, categoryRowId, assetRowId, expenseType, amount, description, expenseDate, merchant,
+                paymentMethod, installmentMonths, originalAmount, originalCurrency, exchangeRate,
+                calendarEventRowId, todoRowId, null);
+        }
+    }
 
     /**
      * 수정 명령 — 각 칸은 "안 왔다 / 지워라 / 이 값으로" 셋 중 하나다({@link Patch}).
@@ -65,8 +78,23 @@ public class ExpenseServiceDto {
          * 거래 일시가 날짜만(yyyy-MM-dd) 왔는가 — 잠긴 거래(D12)의 "돈 칸이 달라졌나" 를 날짜로만 본다.
          * 시각이 없는 형식을 00:00 으로 읽으므로, 이게 없으면 저장된 시각과 달라 보여 오탐한다.
          */
-        boolean expenseDateDateOnly
+        boolean expenseDateDateOnly,
+        /** 고정 수입·지출 — 안 보내면 유지한다. */
+        Patch<Boolean> isFixed
     ) {
+        /** 고정 칸을 모르는 호출자 — 고정 표식은 건드리지 않는다. */
+        public UpdateCommand(Patch<Long> categoryRowId, Patch<Long> assetRowId, Patch<ExpenseType> expenseType,
+                             Patch<Long> amount, Patch<String> description, Patch<LocalDateTime> expenseDate,
+                             Patch<String> merchant, Patch<String> paymentMethod, Patch<Integer> installmentMonths,
+                             Patch<java.math.BigDecimal> originalAmount, Patch<String> originalCurrency,
+                             Patch<java.math.BigDecimal> exchangeRate, Patch<Long> calendarEventRowId,
+                             Patch<Long> todoRowId, List<ExpenseSplitServiceDto.SplitCommand> splits,
+                             boolean expenseDateDateOnly) {
+            this(categoryRowId, assetRowId, expenseType, amount, description, expenseDate, merchant, paymentMethod,
+                installmentMonths, originalAmount, originalCurrency, exchangeRate, calendarEventRowId, todoRowId,
+                splits, expenseDateDateOnly, Patch.absent());
+        }
+
         /** 날짜 형식을 모르는 호출자(가져오기·테스트) — 시각까지 온 것으로 본다. */
         public UpdateCommand(Patch<Long> categoryRowId, Patch<Long> assetRowId, Patch<ExpenseType> expenseType,
                              Patch<Long> amount, Patch<String> description, Patch<LocalDateTime> expenseDate,
@@ -146,7 +174,9 @@ public class ExpenseServiceDto {
          * 중도 정리한 할부가 아닌 거래. 화면이 [고쳐 쓰기]를 띄울지 이것으로 가른다(QA 26 3 — 중도
          * 정리한 할부에도 버튼이 떠 저장에서야 EXP_047 로 막혔다).
          */
-        boolean replaceable
+        boolean replaceable,
+        /** 고정 수입·지출 여부. */
+        boolean isFixed
     ) {
         /**
          * 잠금을 붙인 사본 — 잠금은 카드의 회차 결제일을 봐야 해서 서비스가 따로 정한다.
@@ -159,7 +189,8 @@ public class ExpenseServiceDto {
                 assetRowId, assetName, expenseType, amount, description, expenseDate, merchant, paymentMethod,
                 installmentMonths, refundedAt, refundTransferRowId, originalAmount, originalCurrency,
                 exchangeRate, calendarEventRowId, todoRowId, autoSource, createAt, modifyAt,
-                splitCategoryRowIds, refundedAmount, cardSettledThrough, recordOnlyAmount, locked, canReplace);
+                splitCategoryRowIds, refundedAmount, cardSettledThrough, recordOnlyAmount, locked, canReplace,
+                isFixed);
         }
 
         public static ExpenseInfo from(Expense expense) {
@@ -204,7 +235,8 @@ public class ExpenseServiceDto {
                 expense.getCardSettledThrough(),
                 recordOnlyAmountOf(expense),
                 false,
-                false
+                false,
+                expense.isFixedTx()
             );
         }
 
@@ -250,6 +282,9 @@ public class ExpenseServiceDto {
         LocalDate endDate,
         Long totalIncome,
         Long totalExpense,
+        /** 합계 중 고정인 몫 — 변동 = 합계 − 고정. */
+        Long fixedIncome,
+        Long fixedExpense,
         List<CategoryBreakdown> categoryBreakdown,
         List<RangeMonthlyBucket> monthlyBuckets
     ) {}
@@ -259,6 +294,8 @@ public class ExpenseServiceDto {
         Integer month,
         Long totalIncome,
         Long totalExpense,
+        Long fixedIncome,
+        Long fixedExpense,
         // 그 달의 카테고리별 지출(EXPENSE만, split-aware). 카테고리 월별 추이(TOP N stacked) 차트용.
         List<CategoryAmount> categoryExpenses
     ) {}
@@ -266,14 +303,18 @@ public class ExpenseServiceDto {
     /// 카테고리 단위 금액(월별 지출 분해 등). categoryRowId = leaf(분할 시 분할) 카테고리.
     public record CategoryAmount(
         Long categoryRowId,
-        Long amount
+        Long amount,
+        /** 그 금액 중 고정인 몫. */
+        Long fixedAmount
     ) {}
 
     public record MonthlyTrend(
         Integer year,
         Integer month,
         Long totalIncome,
-        Long totalExpense
+        Long totalExpense,
+        Long fixedIncome,
+        Long fixedExpense
     ) {}
 
     public record CategoryBreakdown(
@@ -282,7 +323,9 @@ public class ExpenseServiceDto {
         Long parentCategoryRowId,
         String parentCategoryName,
         ExpenseType expenseType,
-        Long totalAmount
+        Long totalAmount,
+        /** 그 금액 중 고정인 몫. */
+        Long fixedAmount
     ) {}
 
     public record MerchantSummary(
@@ -314,6 +357,19 @@ public class ExpenseServiceDto {
         Long minAmount,
         Long maxAmount,
         LocalDate startDate,
-        LocalDate endDate
-    ) {}
+        LocalDate endDate,
+        /** true=고정만, false=변동만, null=전부. */
+        Boolean fixed
+    ) {
+        /** 고정 조건을 모르는 호출자 — 전부 찾는다. */
+        public SearchCommand(Long userRowId, Long categoryRowId, Long assetRowId, ExpenseType expenseType,
+                             String keyword, String merchant, Long minAmount, Long maxAmount,
+                             LocalDate startDate, LocalDate endDate) {
+            this(userRowId, categoryRowId, assetRowId, expenseType, keyword, merchant, minAmount, maxAmount,
+                startDate, endDate, null);
+        }
+    }
+
+    /** 고정 표식 일괄 변경 — 고른 거래 전부를 고정(true) 또는 변동(false) 으로. */
+    public record BulkFixedCommand(Long userRowId, List<Long> expenseRowIds, boolean fixed) {}
 }

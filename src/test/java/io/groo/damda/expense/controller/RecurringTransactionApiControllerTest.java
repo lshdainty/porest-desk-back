@@ -70,7 +70,8 @@ class RecurringTransactionApiControllerTest {
                 LocalDate.of(2026, 7, 15), null, null, 3,
                 LocalDate.of(2026, 8, 15), LocalDateTime.of(2026, 7, 15, 0, 0),
                 YNType.Y, true, false,
-                LocalDateTime.of(2026, 7, 1, 0, 0), LocalDateTime.of(2026, 7, 1, 0, 0));
+                LocalDateTime.of(2026, 7, 1, 0, 0), LocalDateTime.of(2026, 7, 1, 0, 0),
+                false);
     }
 
     @Test

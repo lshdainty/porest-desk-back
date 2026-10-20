@@ -141,6 +141,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.startDate(), command.endDate(), command.maxOccurrences(), nextExecutionDate,
             command.autoLog(), command.notifyDayBefore()
         );
+        recurring.markFixed(command.isFixed());
 
         recurringTransactionRepository.save(recurring);
         // 첫 회차가 오늘이면 지금 기록한다 — 자정 배치는 이미 지나가서, 두면 다음 날에야
@@ -219,6 +220,8 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             command.startDate(), command.endDate(), command.maxOccurrences(), nextExecutionDate,
             command.autoLog(), command.notifyDayBefore()
         );
+        // 종류를 정한 뒤에 부른다 — 이체로 바뀌면 표식이 꺼진다. 안 보냈으면 유지(이체가 아닐 때만).
+        recurring.markFixed(command.isFixed() != null ? command.isFixed() : recurring.isFixedTx());
 
         // 주기를 오늘로 옮겼으면 오늘 회차를 지금 기록한다(생성과 같다).
         runDueOccurrences(recurring, today);
@@ -404,6 +407,7 @@ public class RecurringTransactionServiceImpl implements RecurringTransactionServ
             null, // 반복 거래는 할부 개념이 없다
             null, null, null // 원화 결제
         );
+        expense.markFixed(recurring.isFixedTx());
 
         expenseRepository.save(expense);
 

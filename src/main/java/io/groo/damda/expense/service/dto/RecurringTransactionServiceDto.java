@@ -33,8 +33,22 @@ public class RecurringTransactionServiceDto {
         LocalDate endDate,
         Integer maxOccurrences,
         Boolean autoLog,
-        Boolean notifyDayBefore
-    ) {}
+        Boolean notifyDayBefore,
+        /** 고정 수입·지출 (null = 변동). 이체는 무시된다. */
+        Boolean isFixed
+    ) {
+        /** 고정 칸을 모르는 호출자 — 변동으로 만든다. */
+        public CreateCommand(Long userRowId, Long categoryRowId, Long assetRowId, Long toAssetRowId, Long fee,
+                             Long interestAmount, Long sourceExpenseRowId, TxKind expenseType, Long amount,
+                             String description, String merchant, String paymentMethod,
+                             RecurringFrequency frequency, Integer intervalValue, Integer dayOfWeek,
+                             Integer dayOfMonth, LocalTime executionTime, LocalDate startDate, LocalDate endDate,
+                             Integer maxOccurrences, Boolean autoLog, Boolean notifyDayBefore) {
+            this(userRowId, categoryRowId, assetRowId, toAssetRowId, fee, interestAmount, sourceExpenseRowId,
+                expenseType, amount, description, merchant, paymentMethod, frequency, intervalValue, dayOfWeek,
+                dayOfMonth, executionTime, startDate, endDate, maxOccurrences, autoLog, notifyDayBefore, null);
+        }
+    }
 
     public record UpdateCommand(
         Long categoryRowId,
@@ -56,8 +70,22 @@ public class RecurringTransactionServiceDto {
         LocalDate endDate,
         Integer maxOccurrences,
         Boolean autoLog,
-        Boolean notifyDayBefore
-    ) {}
+        Boolean notifyDayBefore,
+        /** 고정 수입·지출 — null 이면 유지한다. 이체로 바뀌면 꺼진다. */
+        Boolean isFixed
+    ) {
+        /** 고정 칸을 모르는 호출자 — 표식을 건드리지 않는다. */
+        public UpdateCommand(Long categoryRowId, Long assetRowId, Long toAssetRowId, Long fee,
+                             Long interestAmount, TxKind expenseType, Long amount, String description,
+                             String merchant, String paymentMethod, RecurringFrequency frequency,
+                             Integer intervalValue, Integer dayOfWeek, Integer dayOfMonth,
+                             LocalTime executionTime, LocalDate startDate, LocalDate endDate,
+                             Integer maxOccurrences, Boolean autoLog, Boolean notifyDayBefore) {
+            this(categoryRowId, assetRowId, toAssetRowId, fee, interestAmount, expenseType, amount, description,
+                merchant, paymentMethod, frequency, intervalValue, dayOfWeek, dayOfMonth, executionTime,
+                startDate, endDate, maxOccurrences, autoLog, notifyDayBefore, null);
+        }
+    }
 
     public record RecurringInfo(
         Long rowId,
@@ -91,7 +119,9 @@ public class RecurringTransactionServiceDto {
         boolean autoLog,
         boolean notifyDayBefore,
         LocalDateTime createAt,
-        LocalDateTime modifyAt
+        LocalDateTime modifyAt,
+        /** 고정 수입·지출 여부. */
+        boolean isFixed
     ) {
         public static RecurringInfo from(RecurringTransaction recurring) {
             return new RecurringInfo(
@@ -126,7 +156,8 @@ public class RecurringTransactionServiceDto {
                 recurring.getAutoLog() == YNType.Y,
                 recurring.getNotifyDayBefore() == YNType.Y,
                 recurring.getCreateAt(),
-                recurring.getModifyAt()
+                recurring.getModifyAt(),
+                recurring.isFixedTx()
             );
         }
     }

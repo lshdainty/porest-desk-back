@@ -44,7 +44,8 @@ public class RecurringTransactionApiController {
                 request.executionTime(),
                 request.startDate(), request.endDate(),
                 request.maxOccurrences(),
-                request.autoLog(), request.notifyDayBefore()
+                request.autoLog(), request.notifyDayBefore(),
+                request.isFixed()
             )
         );
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));
@@ -79,7 +80,8 @@ public class RecurringTransactionApiController {
                 request.executionTime(),
                 request.startDate(), request.endDate(),
                 request.maxOccurrences(),
-                request.autoLog(), request.notifyDayBefore()
+                request.autoLog(), request.notifyDayBefore(),
+                request.isFixed()
             )
         );
         return ApiResponse.success(RecurringTransactionApiDto.Response.from(info));
