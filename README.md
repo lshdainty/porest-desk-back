@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/POREST_DESK-6DB33F?style=for-the-badge&logo=spring&logoColor=white" alt="POREST Desk" />
+  <img src="https://img.shields.io/badge/%EA%B7%B8%EB%A3%A8_%EB%8B%B4%EB%8B%A4-6DB33F?style=for-the-badge&logo=spring&logoColor=white" alt="그루 담다" />
 </p>
 
-<h1 align="center">POREST Desk Backend</h1>
+<h1 align="center">그루 담다 Backend</h1>
 
 <p align="center">
   <strong>개인 생산성/라이프 로그 관리를 위한 Desk 백엔드 서비스</strong>
@@ -18,7 +18,7 @@
 
 ## 소개
 
-**POREST Desk Backend**는 [POREST](https://github.com/lshdainty/POREST) 서비스의 Desk 백엔드입니다.
+**그루 담다 Backend**는 [그루](https://github.com/lshdainty/groo) 서비스의 Desk 백엔드입니다.
 
 할 일, 캘린더, 메모, 가계부(지출·예산·반복거래), 자산, 카드 혜택, 구독, 더치페이, 저축 목표, 데이터 가져오기/내보내기, 토스증권 연동, 할 일 별자리 게이미피케이션 등 개인 생산성/가계 관리 기능을 REST API(`/api/v1`)로 제공합니다.
 
@@ -38,7 +38,7 @@
 | **Authentication** | ![JWT](https://img.shields.io/badge/JJWT_0.12.6-000000?style=flat-square&logo=jsonwebtokens&logoColor=white) ![Nimbus](https://img.shields.io/badge/Nimbus_JOSE_10.4-4B6BFB?style=flat-square) |
 | **Excel (Import/Export)** | ![Apache POI](https://img.shields.io/badge/Apache_POI_5.3.0-D22128?style=flat-square&logo=apache&logoColor=white) |
 | **Monitoring** | ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Loki](https://img.shields.io/badge/Loki-F46800?style=flat-square&logo=grafana&logoColor=white) |
-| **공통 라이브러리** | ![groo-core](https://img.shields.io/badge/porest--core_2.0.3-6DB33F?style=flat-square) |
+| **공통 라이브러리** | ![groo-core](https://img.shields.io/badge/groo--core_3.0.0-6DB33F?style=flat-square) |
 | **API Documentation** | ![Swagger](https://img.shields.io/badge/SpringDoc_OpenAPI_3.0.0-85EA2D?style=flat-square&logo=swagger&logoColor=black) |
 | **Testing** | ![JUnit5](https://img.shields.io/badge/JUnit5-25A162?style=flat-square&logo=junit5&logoColor=white) ![JaCoCo](https://img.shields.io/badge/JaCoCo_0.8.13-C5D9C8?style=flat-square) |
 | **Build** | ![Gradle](https://img.shields.io/badge/Gradle_9.2.1-02303A?style=flat-square&logo=gradle&logoColor=white) |
@@ -159,7 +159,7 @@ SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun
 
 | Repository | Description |
 |------------|-------------|
-| [POREST](https://github.com/lshdainty/POREST) | 통합 레포지토리 (서비스 소개) |
+| [그루](https://github.com/lshdainty/groo) | 통합 레포지토리 (서비스 소개) |
 | [porest-desk-front](https://github.com/lshdainty/porest-desk-front) | Desk 프론트엔드 |
 | [porest-desk-app](https://github.com/lshdainty/porest-desk-app) | Desk 모바일 앱 (Flutter) |
 | [groo-core](https://github.com/lshdainty/groo-core) | 공통 라이브러리 |

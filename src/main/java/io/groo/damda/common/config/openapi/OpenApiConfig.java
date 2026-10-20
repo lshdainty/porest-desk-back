@@ -24,8 +24,8 @@ public class OpenApiConfig {
 
         return new OpenAPI()
             .info(new Info()
-                .title("POREST Desk API")
-                .description("POREST Desk - Personal Productivity Tools API")
+                .title("그루 담다 API")
+                .description("그루 담다 백엔드 API 문서")
                 .version("v1"))
             .addSecurityItem(securityRequirement)
             .components(components);
