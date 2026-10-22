@@ -135,6 +135,25 @@ class ExpenseBudgetDuplicateAlertTest {
     }
 
     @Test
+    @DisplayName("사용자가 지운 예산 알림은 배치를 다시 돌려도 새 알림을 만들지 않는다")
+    void deletedBudgetAlertIsNotRecreatedByNextBatch() {
+        budgetService.createBudget(overallBudget(10_000L));
+
+        // 첫 배치 — 아직 알린 적 없으니 알림 1건
+        scheduler().checkBudgetAlerts();
+        verify(notificationService, times(1)).createNotification(any(NotificationServiceDto.CreateCommand.class));
+
+        // 사용자가 그 알림을 지웠다. 중복 검사(existsByUserAndReferenceAndCreatedAfter)는 지운 알림도
+        // 이미 보낸 것으로 센다(저장소 쿼리는 NotificationRepositoryTest 가 잠근다) → true 를 돌려준다.
+        given(notificationRepository.existsByUserAndReferenceAndCreatedAfter(
+                eq(USER_ID), any(), anyLong(), any())).willReturn(true);
+
+        // 다음 날 09:00 배치 — 새 알림 0, 합계는 그대로 1
+        scheduler().checkBudgetAlerts();
+        verify(notificationService, times(1)).createNotification(any(NotificationServiceDto.CreateCommand.class));
+    }
+
+    @Test
     @DisplayName("대조군 — 예산 행이 2개면 같은 상황을 2번 알린다(고치기 전 상태)")
     void twoRowsProduceTwoAlerts() {
         LocalDate today = serviceClock.today();
