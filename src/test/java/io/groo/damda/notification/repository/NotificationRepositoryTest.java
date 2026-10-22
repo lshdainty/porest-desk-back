@@ -141,7 +141,7 @@ class NotificationRepositoryTest {
     }
 
     @Test
-    @DisplayName("existsByUserAndReferenceAndCreatedAfter — 소유자·참조·시각(이후) 조건과 soft-delete 를 모두 반영")
+    @DisplayName("existsByUserAndReferenceAndCreatedAfter — 소유자·참조·시각(이후) 조건을 반영하고, 지운 알림도 이미 보낸 것으로 센다")
     void existsByUserAndReferenceAndCreatedAfterMatchesConditions() {
         User user = persistUser("u1");
         User other = persistUser("u2");
@@ -164,12 +164,12 @@ class NotificationRepositoryTest {
         // 다른 사용자 → 없음
         assertThat(repository.existsByUserAndReferenceAndCreatedAfter(other.getRowId(), ReferenceType.CALENDAR_EVENT, 100L, before)).isFalse();
 
-        // soft-delete 후에는 존재하지 않음
+        // soft-delete 후에도 존재 — 중복 알림 검사라서 지운 알림을 다시 만들지 않는다
         Notification managed = em.find(Notification.class, n.getRowId());
         managed.deleteNotification();
         em.flush();
         em.clear();
-        assertThat(repository.existsByUserAndReferenceAndCreatedAfter(user.getRowId(), ReferenceType.CALENDAR_EVENT, 100L, before)).isFalse();
+        assertThat(repository.existsByUserAndReferenceAndCreatedAfter(user.getRowId(), ReferenceType.CALENDAR_EVENT, 100L, before)).isTrue();
     }
 
     @Test
