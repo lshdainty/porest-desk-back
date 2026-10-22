@@ -54,12 +54,13 @@ public class NotificationQueryDslRepository implements NotificationRepository {
 
     @Override
     public boolean existsByUserAndReferenceAndCreatedAfter(Long userRowId, ReferenceType referenceType, Long referenceId, LocalDateTime after) {
+        // 중복 알림 검사다 — 사용자가 지운 알림도 "이미 보냈다" 로 센다. 지운 줄을 빼면
+        // 다음 날 배치가 같은 예산 · 할 일 알림을 다시 만들어, 지운 사람에게 되돌아온다.
         return queryFactory.selectFrom(notification)
             .where(
                 notification.user.rowId.eq(userRowId),
                 notification.referenceType.eq(referenceType),
                 notification.referenceId.eq(referenceId),
-                notification.isDeleted.eq(YNType.N),
                 notification.createAt.goe(after)
             )
             .fetchFirst() != null;
