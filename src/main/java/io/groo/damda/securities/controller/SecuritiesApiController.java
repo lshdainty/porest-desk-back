@@ -138,7 +138,12 @@ public class SecuritiesApiController {
             throw new InvalidValueException(DeskErrorCode.SECURITIES_SYMBOL_INVALID);
         }
         int pageSize = (size == null || size <= 0) ? MAX_CANDLE_SIZE : Math.min(size, MAX_CANDLE_SIZE);
-        CandleQuery query = new CandleQuery(requested, CandleInterval.from(interval), pageSize,
+        CandleInterval parsed = CandleInterval.from(interval);
+        // 주봉은 나무 전용(N1-가 "5년") — 공개 API 의 모양은 그대로 1m · 1d 만 받는다. 나무 탭은 /namu/candles.
+        if (parsed == CandleInterval.WEEK_1) {
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_INTERVAL_UNSUPPORTED);
+        }
+        CandleQuery query = new CandleQuery(requested, parsed, pageSize,
             cursor == null || cursor.isBlank() ? null : cursor.trim(), adjusted);
 
         CandlePage page = candleProviders.forUser(loginUser.getRowId())

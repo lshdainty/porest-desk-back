@@ -11,6 +11,7 @@ import io.groo.damda.namu.client.dto.NamuPagedEnvelope;
 import io.groo.damda.namu.dto.NamuAccountDto;
 import io.groo.damda.namu.dto.NamuCandleDto;
 import io.groo.damda.namu.dto.NamuMarketDto;
+import io.groo.damda.namu.dto.NamuQuoteDto;
 import io.groo.damda.securities.config.NamuProperties;
 import io.groo.damda.securities.type.CandleInterval;
 import io.groo.damda.securities.type.NamuEnvironment;
@@ -60,8 +61,8 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * 주기구분({@code gubun}) — <b>국내와 해외가 같은 주기에 다른 숫자를 쓴다.</b>
      *
      * <pre>
-     *   국내 /krstock/quote/v1/period : 1.일 2.주 3.월 4.년 5.분 6.초 7.틱
-     *   해외 /gbstock/quote/v1/period : 1.틱 2.분 3.일 4.주 5.월
+     *   국내 /krstock/quote/v1/period : 1.일 2.주 3.월 4.년 5.분 6.초 7.틱  (주봉 = 2, N1-가 "5년")
+     *   해외 /gbstock/quote/v1/period : 1.틱 2.분 3.일 4.주 5.월          (주봉 = 4)
      * </pre>
      *
      * <p>겹치는 숫자가 뜻이 다르다는 게 함정이다 — 해외에 {@code 1} 을 보내면 <b>에러가 아니라
@@ -69,8 +70,10 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * 보이고 예외가 안 난다. 그래서 숫자를 코드에 직접 쓰지 않고 이름을 붙여 둔다.
      */
     private static final String KR_GUBUN_DAY = "1";
+    private static final String KR_GUBUN_WEEK = "2";
     private static final String KR_GUBUN_MINUTE = "5";
     private static final String GB_GUBUN_DAY = "3";
+    private static final String GB_GUBUN_WEEK = "4";
     private static final String GB_GUBUN_MINUTE = "2";
 
     /**
@@ -119,7 +122,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * <p>{@code StockMarket} 이 드는 국가코드 전부를 덮는다. 모르는 국가는 미국으로 본다 —
      * 나무 해외 연동이 미국 고정({@link #NATION_US})이라 실제로 들어올 수 있는 건 그쪽뿐이다.
      */
-    private static final Map<String, ZoneId> MARKET_ZONES = Map.of(
+    static final Map<String, ZoneId> MARKET_ZONES = Map.of(
         "KR", ZoneId.of("Asia/Seoul"),
         "US", ZoneId.of("America/New_York"),
         "JP", ZoneId.of("Asia/Tokyo"),
@@ -227,7 +230,8 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      */
     private final Map<String, CachedQuote> quoteCache = new ConcurrentHashMap<>();
 
-    private record CachedQuote(PriceQuote quote, long expiresAtMillis) {
+    /** 캐시 값은 장 상태까지 담는다(목록 시세의 시장 띠). 공용 {@code PriceQuote} 에는 칸을 더하지 않는다. */
+    private record CachedQuote(NamuQuoteDto.ListQuote quote, long expiresAtMillis) {
         boolean isFresh(long now) {
             return now < expiresAtMillis;
         }
@@ -311,11 +315,26 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     @Override
     public PriceQuote getKrPrice(Long userRowId, String symbol, String marketCode) {
+        return toPriceQuote(krListQuote(userRowId, symbol, marketCode));
+    }
+
+    private NamuQuoteDto.ListQuote krListQuote(Long userRowId, String symbol, String marketCode) {
         NamuMarketDto.KrPrice p = namuApiClient.postObject(userRowId, KR_PRICE_PATH,
             Map.of("market_cd", krMarket(marketCode),
                    "iem_cd", symbol),
             KR_TYPE);
-        return p == null ? null : quote(symbol, p.price(), KRW, p.previousClose(), p.change(), p.changeSign());
+        PriceQuote q = p == null ? null
+            : quote(symbol, p.price(), KRW, p.previousClose(), p.change(), p.changeSign());
+        return listQuote(q, NamuMarketCodes.krMarketState(p == null ? null : p.marketState()));
+    }
+
+    private static PriceQuote toPriceQuote(NamuQuoteDto.ListQuote q) {
+        return q == null ? null : new PriceQuote(q.symbol(), q.price(), q.currency(), q.previousClose());
+    }
+
+    private static NamuQuoteDto.ListQuote listQuote(PriceQuote q, String marketState) {
+        return q == null ? null : new NamuQuoteDto.ListQuote(q.symbol(), q.price(), q.currency(),
+            q.previousClose(), marketState);
     }
 
     /** 미지정이면 KRX. 그 밖의 값은 나무 어휘가 아니면 거절한다 — 위 {@link #KR_MARKETS} 참고. */
@@ -332,9 +351,15 @@ public class NamuQueryServiceImpl implements NamuQueryService {
 
     @Override
     public PriceQuote getGbPrice(Long userRowId, String symbol) {
+        return toPriceQuote(gbListQuote(userRowId, symbol));
+    }
+
+    private NamuQuoteDto.ListQuote gbListQuote(Long userRowId, String symbol) {
         NamuMarketDto.GbPrice p = namuApiClient.postObject(userRowId, GB_PRICE_PATH,
             Map.of("iem_cd", symbol), GB_TYPE);
-        return p == null ? null : quote(symbol, p.price(), p.currency(), p.previousClose(), p.change(), p.changeSign());
+        PriceQuote q = p == null ? null
+            : quote(symbol, p.price(), p.currency(), p.previousClose(), p.change(), p.changeSign());
+        return listQuote(q, NamuMarketCodes.gbMarketState(p == null ? null : p.marketState()));
     }
 
     /**
@@ -351,9 +376,18 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      */
     @Override
     public List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments) {
+        return getListQuotes(userRowId, instruments).stream().map(NamuQueryServiceImpl::toPriceQuote).toList();
+    }
+
+    /**
+     * 목록 시세 + 장 상태({@code GET /namu/prices}). {@link #getPrices} 와 같은 규칙(캐시 20초 ·
+     * 예산 · 한 종목 실패는 건너뜀)이고, 결과에 종목마다 {@code marketState} 가 붙는다.
+     */
+    @Override
+    public List<NamuQuoteDto.ListQuote> getListQuotes(Long userRowId, List<InstrumentRef> instruments) {
         long now = System.currentTimeMillis();
         long deadline = now + namuProperties.getPriceBatchBudgetMs();
-        List<PriceQuote> quotes = new ArrayList<>();
+        List<NamuQuoteDto.ListQuote> quotes = new ArrayList<>();
         int fetched = 0;
         int cached = 0;
         int skipped = 0;
@@ -382,9 +416,9 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             }
 
             try {
-                PriceQuote quote = "KR".equals(stock.getCountryCode())
-                    ? getKrPrice(userRowId, stock.getSymbol(), MARKET_KRX)
-                    : getGbPrice(userRowId, stock.getSymbol());
+                NamuQuoteDto.ListQuote quote = "KR".equals(stock.getCountryCode())
+                    ? krListQuote(userRowId, stock.getSymbol(), MARKET_KRX)
+                    : gbListQuote(userRowId, stock.getSymbol());
                 fetched++;
                 if (quote != null) {
                     quotes.add(quote);
@@ -438,7 +472,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         Map<String, String> input = new LinkedHashMap<>();
         input.put("market_cd", MARKET_KRX);
         input.put("iem_cd", stock.getSymbol());
-        input.put("gubun", minute ? KR_GUBUN_MINUTE : KR_GUBUN_DAY);
+        input.put("gubun", krGubun(query.interval()));
         input.put("edate", endDate(query.cursor(), zone));
         input.put("array_cnt", String.valueOf(query.size()));
         input.put("today_cls_code", TODAY_CLS_ALL);
@@ -460,6 +494,22 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         return page(bars, rows.size(), query);
     }
 
+    private static String krGubun(CandleInterval interval) {
+        return switch (interval) {
+            case MINUTE_1 -> KR_GUBUN_MINUTE;
+            case WEEK_1 -> KR_GUBUN_WEEK;
+            case DAY_1 -> KR_GUBUN_DAY;
+        };
+    }
+
+    private static String gbGubun(CandleInterval interval) {
+        return switch (interval) {
+            case MINUTE_1 -> GB_GUBUN_MINUTE;
+            case WEEK_1 -> GB_GUBUN_WEEK;
+            case DAY_1 -> GB_GUBUN_DAY;
+        };
+    }
+
     private CandlePage gbCandles(Long userRowId, StockMaster stock, CandleQuery query) {
         boolean minute = query.interval() == CandleInterval.MINUTE_1;
         ZoneId zone = zoneOf(stock);
@@ -470,7 +520,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         input.put("end_dt", endDate(query.cursor(), zone));
         input.put("count", String.valueOf(query.size()));
         input.put("maxavg", GB_MAXAVG);
-        input.put("gubun", minute ? GB_GUBUN_MINUTE : GB_GUBUN_DAY);
+        input.put("gubun", gbGubun(query.interval()));
         input.put("xtick", GB_XTICK_1UNIT);
         input.put("today_cls", TODAY_CLS_ALL);
         input.put("market_cls", GB_MARKET_REGULAR);
@@ -860,7 +910,8 @@ public class NamuQueryServiceImpl implements NamuQueryService {
      * @throws InvalidValueException 넘겨받은 계좌가 목록에 없거나 다른 환경 계좌일 때,
      *         또는 계좌는 있는데 현재 환경에 맞는 게 하나도 없을 때
      */
-    private String resolveAccountNo(Long userRowId, String requested) {
+    @Override
+    public String resolveAccountNo(Long userRowId, String requested) {
         NamuEnvironment env = namuProperties.getEnvironment();
         List<NamuAccountDto.Account> accounts = getAccounts(userRowId);
 
@@ -927,16 +978,20 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             ), KR_BALANCE_TYPE);
 
         NamuAccountDto.KrBalanceSummary s = res.summary();
+        // 국내 잔고 Output_1 에는 매도가능 칸이 없다(nh-krstock-digest) → sellableQuantity null.
         List<NamuAccountDto.HoldingItem> items = res.items().stream()
             .map(h -> new NamuAccountDto.HoldingItem(h.symbol(), h.name(), h.quantity(),
-                h.avgPrice(), h.currentPrice(), h.evalAmount(), h.profitLoss()))
+                h.avgPrice(), h.currentPrice(), h.evalAmount(), h.profitLoss(), null))
             .toList();
 
+        // 예수금(dca) · 주문가능금액(orr_pbl_amt4 — 100%)은 요약에 이미 와 있다 — 호출이 늘지 않는다.
         return new NamuAccountDto.Holdings(account, KRW,
             s == null ? "0" : s.totalEvalAmount(),
             s == null ? "0" : s.totalProfitLoss(),
             s == null ? "0" : s.profitRate(),
-            items);
+            items,
+            s == null ? null : s.deposit(),
+            s == null ? null : s.orderableAmount());
     }
 
     private NamuAccountDto.Holdings gbHoldings(Long userRowId, String account, String currency) {
@@ -948,7 +1003,8 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             // 한글명이 비면 영문명으로 채운다 — 목록에 빈 칸이 남지 않게.
             .map(h -> new NamuAccountDto.HoldingItem(h.symbol(),
                 h.name() == null || h.name().isBlank() ? h.nameEn() : h.name(),
-                h.quantity(), h.avgPrice(), h.currentPrice(), h.evalAmount(), h.profitLoss()))
+                h.quantity(), h.avgPrice(), h.currentPrice(), h.evalAmount(), h.profitLoss(),
+                NamuMarketCodes.blankToNull(h.sellableQuantity())))
             .toList();
 
         // 요약도 종목과 같은 외화 기준이다 — 섞으면 원화 금액에 USD 를 붙여 보여주게 된다.
@@ -956,7 +1012,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
             s == null ? "0" : s.evalAmountSum(),
             s == null ? "0" : s.profitLossSum(),
             s == null ? "0" : s.profitRate(),
-            items);
+            items, null, null);
     }
 
     /**
@@ -1009,7 +1065,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         }
     }
 
-    private static BigDecimal decimal(String raw) {
+    static BigDecimal decimal(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
@@ -1040,7 +1096,7 @@ public class NamuQueryServiceImpl implements NamuQueryService {
         return new PriceQuote(symbol, price, cur, previousClose(price, rawPreviousClose, rawChange, changeSign));
     }
 
-    private static BigDecimal previousClose(BigDecimal price, String rawPreviousClose,
+    static BigDecimal previousClose(BigDecimal price, String rawPreviousClose,
                                             String rawChange, String changeSign) {
         BigDecimal direct = decimal(rawPreviousClose);
         if (direct != null && direct.signum() > 0) {

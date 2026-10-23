@@ -73,4 +73,26 @@ public final class TossMarketDto {
             String currency
     ) {
     }
+
+    /** 투자자별 매매동향 응답 ({@code GET /api/v1/stocks/{symbol}/investor-trading}) — 국내 종목만. */
+    public record InvestorTradingResponse(
+            String nextUntil,
+            List<InvestorTradingRecord> records
+    ) {
+    }
+
+    /** 하루치. {@code individual} 은 당일 잠정 기록에서 null. */
+    public record InvestorTradingRecord(
+            String date,
+            InvestorSide individual,
+            InvestorSide foreigner,
+            InvestorSide institution
+    ) {
+    }
+
+    /** 투자자 분류 하나의 순매수 거래량(주, 정수 문자열). 음수면 순매도. */
+    public record InvestorSide(
+            String netBuyVolume
+    ) {
+    }
 }

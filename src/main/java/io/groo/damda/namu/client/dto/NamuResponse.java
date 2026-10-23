@@ -6,7 +6,7 @@ import java.util.Set;
  * 나무증권 응답 봉투의 공통 얼굴.
  *
  * <p><b>토스와 결정적으로 다른 점</b> — 나무는 <b>HTTP 200 으로도 실패를 돌려준다.</b>
- * 성공 여부는 {@code rsp_cd} 로만 알 수 있다. 상태코드만 보고 성공으로 넘기면 실패 응답이
+ * 성공 여부는 응답 본문으로만 알 수 있다. 상태코드만 보고 성공으로 넘기면 실패 응답이
  * "조회 결과 없음" 으로 둔갑해 화면이 조용히 빈다.
  *
  * <p>봉투가 셋인 이유는 페이로드 개수다 — 조회에 따라 {@code Output_0} 하나만 오기도 하고
@@ -34,7 +34,17 @@ import java.util.Set;
  * "코드가 목록에 있거나 <b>또는</b> 메시지에 완료가 있으면 성공" 이다.
  *
  * <p><b>{@code 00165}·{@code 00218} 과 헷갈리면 안 된다.</b> 그 둘은 연속조회({@code cts})
- * 계속 신호이지 성공 코드가 아니다 — 숫자만 가깝다. 우리는 연속조회를 쓰지 않는다.
+ * 계속 신호이지 성공 코드가 아니다 — 숫자만 가깝다. 블록이 함께 오면 {@link #hasPayload()} 로 성공이지만
+ * "다음 쪽이 있다" 는 뜻이므로, 실현손익 · 권리 조회({@code NamuAccountDetailQueryServiceImpl})는 이 코드를
+ * 보면 <b>잘렸다고 표시</b>한다({@link #CONTINUATION_CODES}). 헤더({@code cts})로 알리는 쪽은 따라간다.
+ *
+ * <h2>문서 개정(2026-10-15) — 블록 유무가 먼저다</h2>
+ *
+ * <p>문서(llms.txt)는 "{@code rsp_cd == "00000"} 같은 단일 코드 비교 금지 — ① <b>기대한 블록에
+ * 값이 있는지</b> → ② {@code rsp_msg} 가 완료를 뜻하는지 → ③ {@code rsp_cd} 는 로그 · 문의용" 이라
+ * 한다. 그래서 {@link #hasPayload()} 가 참이면 코드가 무엇이든 성공이고, 아니면 아래 두 규칙
+ * (코드 목록 · "완료")으로 간다. 코드 · 메시지는 top-level {@code rsp_cd} · {@code rsp_msg} 가
+ * 없으면 {@code message.msg_code} · {@code message.usr_msg} 를 읽는다.
  *
  * <p>넓혀도 안전한 이유: 페이로드가 비어 오는 경우를 호출부가 이미 감당한다.
  * {@code Output_0} 이 null 이면 시세는 null 을, 잔고 요약은 {@code "0"} 을, 목록은 빈
@@ -52,6 +62,9 @@ public interface NamuResponse {
      */
     Set<String> SUCCESS_CODES = Set.of(SUCCESS, "00166", "00221", "13578");
 
+    /** 헤더 없이 응답코드로만 "연속조회가 있다" 고 알리는 코드(문서: 00165 · 00218). */
+    Set<String> CONTINUATION_CODES = Set.of("00165", "00218");
+
     /** 코드 목록에 없는 미지의 정상코드를 건지는 2차 방어. */
     String SUCCESS_MESSAGE = "완료";
 
@@ -60,19 +73,46 @@ public interface NamuResponse {
     /** 응답메시지. 로그에만 쓴다 — 업스트림 문구를 사용자에게 릴레이하지 않는다. */
     String rspMsg();
 
+    /** 문서 개정 이후 quote · inquiry 가 쓰는 {@code message} 봉투. 없으면 null. */
+    NamuMessage message();
+
     /**
-     * {@code rsp_cd} 가 성공 목록에 있거나 <b>또는</b> {@code rsp_msg} 가 완료를 말하면 성공.
+     * 봉투마다 <b>기대한 블록이 비지 않았는지</b>. 블록이 있으면 성공 코드를 몰라도 성공이다.
+     */
+    boolean hasPayload();
+
+    /** top-level {@code rsp_cd}, 없으면 {@code message.msg_code}. */
+    default String effectiveCode() {
+        if (rspCd() != null) {
+            return rspCd();
+        }
+        return message() == null ? null : message().code();
+    }
+
+    /** top-level {@code rsp_msg}, 없으면 {@code message.usr_msg}. */
+    default String effectiveMessage() {
+        if (rspMsg() != null) {
+            return rspMsg();
+        }
+        return message() == null ? null : message().message();
+    }
+
+    /**
+     * 성공 판정 — ① {@link #hasPayload()} <b>또는</b> ② {@code rsp_cd} 가 성공 목록에 있음
+     * <b>또는</b> ③ {@code rsp_msg} 가 완료를 말함.
      *
-     * <p>{@code rsp_cd} 가 아예 없는(null) 응답은 실패로 본다. 공식 SDK 는 "판정 대상 아님"
-     * 으로 성공 처리하지만, 우리 봉투에서 null 은 나무 응답이 아닌 무언가를 읽었다는 뜻에
-     * 가깝다 — 성공으로 넘기면 그게 빈 화면이 된다.
+     * <p>코드가 아예 없는(null) 응답에 블록도 없으면 실패로 본다. 공식 SDK 는 "판정 대상 아님"
+     * 으로 성공 처리하지만, 우리 봉투에서 그건 나무 응답이 아닌 무언가를 읽었다는 뜻에 가깝다.
      */
     default boolean isSuccess() {
-        String code = rspCd();
+        if (hasPayload()) {
+            return true;
+        }
+        String code = effectiveCode();
         if (code != null && SUCCESS_CODES.contains(code.trim())) {
             return true;
         }
-        String message = rspMsg();
+        String message = effectiveMessage();
         return code != null && message != null && message.contains(SUCCESS_MESSAGE);
     }
 }

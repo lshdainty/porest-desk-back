@@ -1,6 +1,7 @@
 package io.groo.damda.toss.service;
 
 import io.groo.core.controller.dto.CursorResponse;
+import io.groo.damda.securities.service.dto.InvestorTradingDay;
 import io.groo.damda.toss.dto.TossAccountDto;
 import io.groo.damda.toss.dto.TossIndicatorDto;
 import io.groo.damda.toss.dto.TossMarketDto;
@@ -95,4 +96,20 @@ public interface TossQueryService {
 
     /** 보유 주식 조회 (accountSeq = 토스증권 계좌 식별 키) */
     TossAccountDto.HoldingsOverview getHoldings(Long userRowId, Long accountSeq, String symbol);
+
+    // === 13b-0 · 투자자별 · 주문 가능 · 수수료 ===
+
+    /**
+     * 국내 종목 투자자별 매매동향(최신순, 순매수 주). 나무와 같은 {@link InvestorTradingDay} 모양.
+     * 토스는 국내 종목만 지원한다(다른 시장은 상류가 400).
+     *
+     * @param count 조회 수(최대 100). null 이면 상류 기본값
+     */
+    List<InvestorTradingDay> getInvestorTrading(Long userRowId, String symbol, Integer count);
+
+    /** 매수 가능 금액(현금 기반). {@code currency} KRW | USD. 계좌 고르기는 보유 조회와 같다. */
+    TossAccountDto.BuyingPower getBuyingPower(Long userRowId, Long accountSeq, String currency);
+
+    /** 이 계좌의 시장별 매매 수수료율. */
+    List<TossAccountDto.Commission> getCommissions(Long userRowId, Long accountSeq);
 }

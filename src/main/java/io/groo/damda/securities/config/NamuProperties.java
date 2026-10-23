@@ -78,6 +78,27 @@ public class NamuProperties {
     private int candleCacheTtlSeconds = 20;
 
     /**
+     * 국내 EPS 캐시 유지 시간 (초) — 사용자 × 종목, 기본 6시간.
+     *
+     * <p>EPS 는 {@code currentPrice} 에 없고 기간별 시세 머리에만 있다. 하루에 한 번 바뀌는 값이라
+     * 상세를 열 때마다 부르지 않고 6시간에 한 번만 부른다(종목마다 6시간에 1콜).
+     */
+    private int epsCacheTtlSeconds = 21600;
+
+    /**
+     * 연속조회(실현손익 · 권리) 최대 쪽 수. 나무는 긴 기간을 한 번에 다 주지 않고 응답 헤더 {@code cts} 로
+     * 다음 쪽을 알린다 — 첫 쪽만 읽으면 합계가 조용히 덜 센다. 무한히 따라가지 않도록 상한을 둔다
+     * (넘으면 로그를 남기고 응답에 잘림 표시).
+     */
+    private int maxContinuationPages = 10;
+
+    /**
+     * 연속조회 쪽 사이 간격(ms). 문서는 초당 5회 수준 · 0.2초 이상 간격이다 — 쪽을 한꺼번에 보내면
+     * 429 가 나 긴 기간이 바로 실패한다. 0 이면 간격 없음(시험용).
+     */
+    private int continuationPageDelayMs = 200;
+
+    /**
      * 환율 폴백에 쓸 <b>미국 상장 종목코드</b>.
      *
      * <p>나무 환율의 1순위는 해외 잔고의 당일매매기준환율인데, 그건 <b>계좌와 USD 보유 종목이
