@@ -97,7 +97,7 @@ class DataIntegrityExceptionHandlerTest {
     @DisplayName("응답에 컬럼·제약 이름이 새지 않는다 (QA #75)")
     void neverLeaksColumnNames() {
         given(messageResolver.getMessage(DeskErrorCode.REQUIRED_VALUE_MISSING))
-                .willReturn("요청에 빠진 값이 있어요. 입력을 확인해 주세요");
+                .willReturn("요청에 빠진 값이 있어요. 입력을 확인해주세요");
 
         ResponseEntity<ApiResponse<Void>> res = sut.handleDataIntegrityViolation(
                 violation(ConstraintViolationException.ConstraintKind.NOT_NULL, "23502", "EVENT_TYPE"));

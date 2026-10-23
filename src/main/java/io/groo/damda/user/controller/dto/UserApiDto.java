@@ -17,14 +17,14 @@ public class UserApiDto {
     @NoArgsConstructor
     public static class ChangePasswordReq {
 
-        @NotBlank(message = "현재 비밀번호를 입력해 주세요")
+        @NotBlank(message = "현재 비밀번호를 입력해주세요")
         private String currentPassword;
 
         // 길이·문자 규칙은 SSO 가 소유한다. 여기에 복제하면 SSO 정책 변경 때 조용히 어긋난다.
-        @NotBlank(message = "새 비밀번호를 입력해 주세요")
+        @NotBlank(message = "새 비밀번호를 입력해주세요")
         private String newPassword;
 
-        @NotBlank(message = "새 비밀번호 확인을 입력해 주세요")
+        @NotBlank(message = "새 비밀번호 확인을 입력해주세요")
         private String confirmPassword;
     }
 
@@ -32,7 +32,7 @@ public class UserApiDto {
     @NoArgsConstructor
     public static class VerifyPasswordReq {
 
-        @NotBlank(message = "비밀번호를 입력해 주세요")
+        @NotBlank(message = "비밀번호를 입력해주세요")
         private String password;
     }
 
@@ -144,7 +144,7 @@ public class UserApiDto {
          * 한 겹으로 두지 않는다.
          */
         @Pattern(regexp = SupportedCurrency.PATTERN,
-                message = "통화는 KRW·USD·EUR·JPY 중에서 골라 주세요")
+                message = "통화는 KRW·USD·EUR·JPY 중에서 골라주세요")
         private String defaultCurrency;
     }
 
@@ -180,7 +180,7 @@ public class UserApiDto {
     @NoArgsConstructor
     public static class ReauthEmailCodeReq {
         @NotBlank
-        @Pattern(regexp = "\\d{6}", message = "숫자 6자리를 입력해 주세요")
+        @Pattern(regexp = "\\d{6}", message = "숫자 6자리를 입력해주세요")
         private String code;
     }
 

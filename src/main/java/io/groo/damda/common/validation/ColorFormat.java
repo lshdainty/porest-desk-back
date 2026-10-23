@@ -32,5 +32,5 @@ public interface ColorFormat {
      * 안내 문구. 내부 필드명 대신 사용자가 아는 말로 쓴다(QA #75) — 색은 화면에서
      * 견본을 눌러 고르는 값이라 "형식" 을 설명해도 할 수 있는 일이 없다.
      */
-    String MESSAGE = "색상을 다시 골라 주세요";
+    String MESSAGE = "색상을 다시 골라주세요";
 }

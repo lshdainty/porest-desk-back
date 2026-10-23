@@ -29,7 +29,7 @@ public class ExpenseCategoryApiDto {
         String icon,
         @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color,
-        @NotNull(message = "지출인지 수입인지 골라 주세요")
+        @NotNull(message = "지출인지 수입인지 골라주세요")
         ExpenseType expenseType,
         /**
          * 목록에서의 자리 — 안 보내면 0(맨 앞)이다. 종전엔 이 필드가 아예 없어 웹이 실어 보내도

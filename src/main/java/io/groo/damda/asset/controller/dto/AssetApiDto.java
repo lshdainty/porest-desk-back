@@ -102,10 +102,10 @@ public class AssetApiDto {
      * 리스트=전체 교체" 였고 그 계약을 그대로 둔다.
      */
     public record UpdateAssetRequest(
-        Optional<@NotBlank(message = "자산 이름을 입력해 주세요")
+        Optional<@NotBlank(message = "자산 이름을 입력해주세요")
                  @Size(max = FieldLimits.ALIAS_MAX, message = "별칭은 30자까지 입력할 수 있어요")
                  String> assetName,
-        Optional<@NotNull(message = "자산 종류를 골라 주세요") AssetType> assetType,
+        Optional<@NotNull(message = "자산 종류를 골라주세요") AssetType> assetType,
         Optional<@Min(value = -AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
                  @Max(value = AmountLimits.MAX_BALANCE, message = "잔액은 1,000억원까지 입력할 수 있어요")
                  Long> balance,
@@ -118,16 +118,16 @@ public class AssetApiDto {
          * 옛 앱이 마이너스 통장을 열어 저장만 해도 부호가 뒤집힌다.
          */
         Optional<Boolean> isOverdraft,
-        Optional<@NotBlank(message = "통화를 골라 주세요") String> currency,
+        Optional<@NotBlank(message = "통화를 골라주세요") String> currency,
         /** 원화 환산율 (통화 1단위당 원화). KRW 는 1. */
         Optional<java.math.BigDecimal> exchangeRate,
         Optional<@Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
                  String> color,
         Optional<String> institution,
         Optional<String> memo,
-        Optional<@NotNull(message = "합계에 포함할지 골라 주세요") YNType> isIncludedInTotal,
+        Optional<@NotNull(message = "합계에 포함할지 골라주세요") YNType> isIncludedInTotal,
         /** 키가 없으면 유지, 명시적 {@code null} 은 400 — 위와 같은 규칙. */
-        Optional<@NotNull(message = "금액을 가릴지 골라 주세요") YNType> isAmountHidden,
+        Optional<@NotNull(message = "금액을 가릴지 골라주세요") YNType> isAmountHidden,
         Optional<Long> cardCatalogRowId,
         /** 신용카드 한도 겸 마이너스 통장 약정 한도 — 같은 컬럼을 쓴다(한도 게이지는 카드에서만 그린다). */
         Optional<@Min(value = 0, message = "한도는 0원 이상이어야 해요")
@@ -408,9 +408,9 @@ public class AssetApiDto {
      * (2026-09-07 양쪽 코드로 확인).
      */
     public record CreateTransferRequest(
-        @NotNull(message = "보내는 자산을 골라 주세요")
+        @NotNull(message = "보내는 자산을 골라주세요")
         Long fromAssetRowId,
-        @NotNull(message = "받는 자산을 골라 주세요")
+        @NotNull(message = "받는 자산을 골라주세요")
         Long toAssetRowId,
         Long amount,
         Long fee,

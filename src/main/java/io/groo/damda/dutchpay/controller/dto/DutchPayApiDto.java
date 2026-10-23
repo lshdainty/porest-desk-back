@@ -39,7 +39,7 @@ public class DutchPayApiDto {
         String currency,
         SplitMethod splitMethod,
         LocalDate dutchPayDate,
-        @NotEmpty(message = "함께 나눌 사람을 한 명 이상 골라 주세요")
+        @NotEmpty(message = "함께 나눌 사람을 한 명 이상 골라주세요")
         List<ParticipantRequest> participants
     ) {}
 
@@ -63,7 +63,7 @@ public class DutchPayApiDto {
         String currency,
         SplitMethod splitMethod,
         LocalDate dutchPayDate,
-        @Size(min = 1, message = "함께 나눌 사람을 한 명 이상 골라 주세요")
+        @Size(min = 1, message = "함께 나눌 사람을 한 명 이상 골라주세요")
         List<ParticipantRequest> participants
     ) {}
 

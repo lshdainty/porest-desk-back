@@ -39,9 +39,9 @@ public class ExpenseBudgetApiDto {
         @Min(value = 1, message = "예산 금액은 0보다 커야 해요")
         @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "예산 금액은 100억원까지 입력할 수 있어요")
         Long budgetAmount,
-        @NotNull(message = "예산을 세울 연도를 골라 주세요")
+        @NotNull(message = "예산을 세울 연도를 골라주세요")
         Integer budgetYear,
-        @NotNull(message = "예산을 세울 달을 골라 주세요")
+        @NotNull(message = "예산을 세울 달을 골라주세요")
         @Min(value = 1, message = "달은 1월부터 12월까지 고를 수 있어요")
         @Max(value = 12, message = "달은 1월부터 12월까지 고를 수 있어요")
         Integer budgetMonth

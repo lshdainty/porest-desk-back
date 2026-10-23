@@ -21,7 +21,7 @@ public class MemoApiDto {
      */
     @Schema(name = "MemoCreateRequest")
     public record CreateRequest(
-        @NotBlank(message = "메모 제목을 입력해 주세요")
+        @NotBlank(message = "메모 제목을 입력해주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
         @Size(max = FieldLimits.CONTENT_MAX, message = "본문은 10,000자까지 입력할 수 있어요")
@@ -48,7 +48,7 @@ public class MemoApiDto {
      */
     @Schema(name = "MemoUpdateRequest")
     public record UpdateRequest(
-        Optional<@NotBlank(message = "메모 제목을 입력해 주세요")
+        Optional<@NotBlank(message = "메모 제목을 입력해주세요")
                  @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
                  String> title,
         Optional<@Size(max = FieldLimits.CONTENT_MAX, message = "본문은 10,000자까지 입력할 수 있어요")
