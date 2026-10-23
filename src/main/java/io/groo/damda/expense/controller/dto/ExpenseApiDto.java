@@ -482,6 +482,16 @@ public class ExpenseApiDto {
         Boolean isFixed
     ) {}
 
+    /** 일괄 삭제 요청 — 고른 거래 아이디. */
+    public record BulkDeleteRequest(
+        @NotEmpty(message = "거래를 하나 이상 골라주세요")
+        @Size(max = 500, message = "한 번에 500건까지 지울 수 있어요")
+        List<Long> expenseIds
+    ) {}
+
+    /** 일괄 삭제 결과 — 지운 건수와 결제계좌로 돌려준 금액 합(없으면 null). */
+    public record BulkDeleteResponse(int deletedCount, Long refundedAmount) {}
+
     /** 일괄 변경 결과 — 실제로 바뀐 건수. */
     public record BulkFixedResponse(int updatedCount) {}
 

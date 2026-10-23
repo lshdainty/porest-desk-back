@@ -372,4 +372,10 @@ public class ExpenseServiceDto {
 
     /** 고정 표식 일괄 변경 — 고른 거래 전부를 고정(true) 또는 변동(false) 으로. */
     public record BulkFixedCommand(Long userRowId, List<Long> expenseRowIds, boolean fixed) {}
+
+    /** 일괄 삭제 — 고른 거래 전부를 한 번에 지운다. */
+    public record BulkDeleteCommand(Long userRowId, List<Long> expenseRowIds) {}
+
+    /** 일괄 삭제 결과 — 지운 건수와 환급 합(없으면 null). */
+    public record BulkDeleteResult(int deletedCount, Long refundedAmount) {}
 }

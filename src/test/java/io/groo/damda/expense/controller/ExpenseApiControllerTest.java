@@ -36,6 +36,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.mockito.Mockito.times;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -497,6 +498,67 @@ class ExpenseApiControllerTest {
                 .andExpect(status().isOk());
 
         verify(expenseService).deleteExpense(eq(10L), eq(1L));
+    }
+
+    @Test
+    @DisplayName("POST /expenses/delete — 로그인 사용자·고른 거래로 일괄 삭제를 위임하고 지운 수·환급 합을 돌려준다")
+    void bulkDeleteExpenses() throws Exception {
+        given(expenseService.bulkDeleteExpenses(any()))
+                .willReturn(new ExpenseServiceDto.BulkDeleteResult(3, 80_000L));
+
+        mockMvc.perform(post("/api/v1/expenses/delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseIds\":[1,2,3]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deletedCount").value(3))
+                .andExpect(jsonPath("$.data.refundedAmount").value(80000));
+
+        ArgumentCaptor<ExpenseServiceDto.BulkDeleteCommand> captor =
+                ArgumentCaptor.forClass(ExpenseServiceDto.BulkDeleteCommand.class);
+        verify(expenseService).bulkDeleteExpenses(captor.capture());
+        assertThat(captor.getValue().userRowId()).isEqualTo(1L);
+        assertThat(captor.getValue().expenseRowIds()).containsExactly(1L, 2L, 3L);
+    }
+
+    @Test
+    @DisplayName("POST /expenses/delete — 환급이 없으면 refundedAmount 는 null")
+    void bulkDeleteExpensesWithoutRefund() throws Exception {
+        given(expenseService.bulkDeleteExpenses(any()))
+                .willReturn(new ExpenseServiceDto.BulkDeleteResult(1, null));
+
+        mockMvc.perform(post("/api/v1/expenses/delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseIds\":[7]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deletedCount").value(1))
+                .andExpect(jsonPath("$.data.refundedAmount").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /expenses/delete — 빈 목록 · 아이디 없음 · 501건은 400")
+    void bulkDeleteExpensesRejectsBadBody() throws Exception {
+        for (String body : List.of("{\"expenseIds\":[]}", "{}")) {
+            mockMvc.perform(post("/api/v1/expenses/delete")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        String tooMany = java.util.stream.IntStream.rangeClosed(1, 501)
+                .mapToObj(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        mockMvc.perform(post("/api/v1/expenses/delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseIds\":[" + tooMany + "]}"))
+                .andExpect(status().isBadRequest());
+        // 경계: 500건은 통과
+        String max = java.util.stream.IntStream.rangeClosed(1, 500)
+                .mapToObj(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        given(expenseService.bulkDeleteExpenses(any()))
+                .willReturn(new ExpenseServiceDto.BulkDeleteResult(500, null));
+        mockMvc.perform(post("/api/v1/expenses/delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expenseIds\":[" + max + "]}"))
+                .andExpect(status().isOk());
+
+        verify(expenseService, times(1)).bulkDeleteExpenses(any());
     }
 
     @Test
