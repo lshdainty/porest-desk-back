@@ -4,6 +4,9 @@ import io.groo.core.controller.dto.CursorResponse;
 import io.groo.core.exception.InvalidValueException;
 import io.groo.damda.common.exception.DeskErrorCode;
 import io.groo.damda.securities.service.dto.InvestorTradingDay;
+import io.groo.damda.stock.domain.StockMaster;
+import io.groo.damda.stock.service.StockMasterResolver;
+import io.groo.damda.stock.type.StockMarket;
 import io.groo.damda.toss.client.TossApiClient;
 import io.groo.damda.toss.client.dto.TossEnvelope;
 import io.groo.damda.toss.dto.TossAccountDto;
@@ -30,6 +33,7 @@ import java.util.Map;
 public class TossQueryServiceImpl implements TossQueryService {
 
     private final TossApiClient client;
+    private final StockMasterResolver stockMasterResolver;
 
     /** 토스 candles count 상한(min:1 max:200). 한 페이지 최대 크기. */
     private static final int TOSS_CANDLE_MAX = 200;
@@ -229,6 +233,12 @@ public class TossQueryServiceImpl implements TossQueryService {
 
     @Override
     public List<InvestorTradingDay> getInvestorTrading(Long userRowId, String symbol, Integer count) {
+        // 국내 종목만 지원한다 — 토스는 다른 시장을 400 unsupported-market 으로 답하고 그게 502 가 된다.
+        // 나무와 같은 판정으로 마스터 국가가 KR 이 아니면 상류를 부르지 않고 빈 목록을 돌려준다.
+        StockMaster master = stockMasterResolver.resolve((StockMarket) null, symbol).orElse(null);
+        if (master != null && !"KR".equals(master.getCountryCode())) {
+            return List.of();
+        }
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         if (count != null && count > 0) {
             q.add("count", String.valueOf(Math.min(count, TOSS_INVESTOR_MAX)));
@@ -251,6 +261,9 @@ public class TossQueryServiceImpl implements TossQueryService {
 
     @Override
     public TossAccountDto.BuyingPower getBuyingPower(Long userRowId, Long accountSeq, String currency) {
+        if (!"KRW".equals(currency) && !"USD".equals(currency)) {
+            throw new InvalidValueException(DeskErrorCode.INVALID_PARAMETER_VALUE);
+        }
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
         q.add("currency", currency);
         return client.getForUser(userRowId, "/api/v1/buying-power", q, accountSeq,

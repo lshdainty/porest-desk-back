@@ -245,7 +245,8 @@ class SecuritiesApiControllerTest {
     void getCandlesRejectsWeekly() throws Exception {
         mockMvc.perform(get("/api/v1/securities/candles")
                         .param("symbol", "005930").param("interval", "1w"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SEC_014"));
 
         verify(candleProvider, org.mockito.Mockito.never()).getCandles(anyLong(), any());
     }

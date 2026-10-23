@@ -573,4 +573,74 @@ class NamuMarketQueryServiceImplTest {
             up.server.verify();
         }
     }
+
+    @Nested
+    @DisplayName("13b-0 검수 — 숫자 JSON · 0건 · 빈 종목")
+    class Review {
+
+        @Test
+        @DisplayName("문서가 integer · number 로 적은 칸이 숫자 JSON 으로 와도 문자열 칸에 받는다")
+        void numericJsonFixture() {
+            up.givenMaster("005930", StockMarket.KOSPI, StockSecurityType.STOCK, "KRW");
+            respond(up.expect(KR_PRICE), """
+                {"rsp_cd":"00000","rsp_msg":"ok",
+                 "Output_0":{"iem_cd":"005930","stck_prpr":70000,"stck_prdy_clpr":69500,"prdy_vrss":500,
+                   "prdy_ctrt":0.72,"stck_oprc":69800,"acml_vol":12345678,"askp1":70100,"askp_rsqn1":1200,
+                   "bidp1":70000,"bidp_rsqn1":3000,"hts_avls":4521000,"per":12.34,"for_rate":51.23,
+                   "w52_hgpr":88800},
+                 "Output_2":{"vi_type_code":"0"}}
+                """);
+            respond(up.expect(KR_PERIOD), "{\"rsp_cd\":\"00000\",\"Output_0\":{\"eps\":5600}}");
+
+            NamuQuoteDto.Detail d = sut.getKrQuote(USER, "005930");
+
+            assertThat(d.price()).isEqualTo("70000");
+            assertThat(d.previousClose()).isEqualTo("69500");
+            assertThat(d.volume()).isEqualTo("12345678");
+            assertThat(d.per()).isEqualTo("12.34");
+            assertThat(d.foreignRate()).isEqualTo("51.23");
+            assertThat(d.eps()).isEqualTo("5600");
+            assertThat(d.marketCap()).isEqualTo("452100000000000");
+            assertThat(d.orderbook().asks().get(0).volume()).isEqualTo("1200");
+        }
+
+        @Test
+        @DisplayName("체결 · 투자자별 · 증거금 행도 숫자 JSON 을 받는다")
+        void numericRows() {
+            respond(up.expect("/krstock/quote/v1/currentExecution"),
+                "{\"Output_0\":[{\"bsop_hour\":\"09:30:01\",\"stck_prpr\":70000,\"cntg_vol\":12}]}");
+            respond(up.expect("/gbstock/inquiry/v1/margin"),
+                "{\"Output_0\":[{\"cur_cd\":\"USD\",\"fc_dca\":1234.5,\"fc_drn_pbl_amt\":1200,\"sby_bse_xcg_rt\":1383.5}]}");
+            assertThat(sut.getKrExecutions(USER, "005930", 20).get(0).volume()).isEqualTo("12");
+            assertThat(sut.getMargin(USER).foreignDeposit()).isEqualTo("1234.5");
+        }
+
+        @Test
+        @DisplayName("0건 — 성공 코드에 블록이 없으면 오류가 아니라 빈 값이다 (시간외 · 증거금 · 체결 · 투자자별 · ETF 구성)")
+        void emptyResultsAreNotErrors() {
+            up.givenMaster("005930", StockMarket.KOSPI, StockSecurityType.STOCK, "KRW");
+            String none = "{\"rsp_cd\":\"00000\",\"rsp_msg\":\"\"}";
+            for (String path : List.of("/krstock/quote/v1/afterHoursCurrent", "/gbstock/inquiry/v1/margin",
+                    "/krstock/quote/v1/currentExecution", "/krstock/quote/v1/currentInvestor",
+                    "/krstock/quote/v1/etfComponents")) {
+                respond(up.expect(path), none);
+            }
+            assertThat(sut.getKrAfterHours(USER, "005930")).isEqualTo(NamuQuoteDto.AfterHours.empty());
+            assertThat(sut.getMargin(USER)).isEqualTo(NamuQuoteDto.Margin.empty());
+            assertThat(sut.getKrExecutions(USER, "005930", 20)).isEmpty();
+            assertThat(sut.getKrInvestors(USER, "005930", 5)).isEmpty();
+            assertThat(sut.getEtfComponents(USER, "069500")).isEmpty();
+            up.server.verify();
+        }
+
+        @Test
+        @DisplayName("빈 종목은 상류에 보내지 않고 400")
+        void blankSymbolRejected() {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> sut.getKrQuote(USER, " "))
+                .isInstanceOf(io.groo.core.exception.InvalidValueException.class);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> sut.getKrAfterHours(USER, null))
+                .isInstanceOf(io.groo.core.exception.InvalidValueException.class);
+            up.server.verify();
+        }
+    }
 }

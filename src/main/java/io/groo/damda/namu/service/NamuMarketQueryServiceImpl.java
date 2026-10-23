@@ -1,5 +1,7 @@
 package io.groo.damda.namu.service;
 
+import io.groo.core.exception.InvalidValueException;
+import io.groo.damda.common.exception.DeskErrorCode;
 import io.groo.damda.namu.client.NamuApiClient;
 import io.groo.damda.namu.client.NamuRateLimitException;
 import io.groo.damda.namu.client.dto.NamuListEnvelope;
@@ -31,7 +33,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -125,7 +126,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     // === 상세 ===
 
     @Override
-    public NamuQuoteDto.Detail getKrQuote(Long userRowId, String symbol) {
+    public NamuQuoteDto.Detail getKrQuote(Long userRowId, String rawSymbol) {
+        String symbol = requireSymbol(rawSymbol);
         String key = userRowId + ":KR:" + symbol;
         NamuQuoteDto.Detail hit = freshDetail(key);
         if (hit != null) {
@@ -140,7 +142,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     }
 
     @Override
-    public NamuQuoteDto.Detail getGbQuote(Long userRowId, String symbol) {
+    public NamuQuoteDto.Detail getGbQuote(Long userRowId, String rawSymbol) {
+        String symbol = requireSymbol(rawSymbol);
         String key = userRowId + ":GB:" + symbol;
         NamuQuoteDto.Detail hit = freshDetail(key);
         if (hit != null) {
@@ -305,6 +308,7 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
             log.warn("나무 EPS 조회 실패 - 상세는 EPS 없이 내린다: userRowId={}, symbol={}: {}",
                 userRowId, symbol, e.getMessage());
         }
+        evictExpired(epsCache);
         epsCache.put(key, new Cached<>(eps, System.currentTimeMillis() + ttl));
         return eps;
     }
@@ -342,7 +346,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     // === 체결 ===
 
     @Override
-    public List<TossMarketDto.Trade> getKrExecutions(Long userRowId, String symbol, Integer count) {
+    public List<TossMarketDto.Trade> getKrExecutions(Long userRowId, String rawSymbol, Integer count) {
+        String symbol = requireSymbol(rawSymbol);
         int n = clamp(count, DEFAULT_EXECUTION_COUNT, MAX_EXECUTION_COUNT);
         Map<String, String> input = new LinkedHashMap<>();
         input.put("market_cd", MARKET_UNT);
@@ -361,7 +366,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     }
 
     @Override
-    public List<TossMarketDto.Trade> getGbExecutions(Long userRowId, String symbol, Integer count) {
+    public List<TossMarketDto.Trade> getGbExecutions(Long userRowId, String rawSymbol, Integer count) {
+        String symbol = requireSymbol(rawSymbol);
         int n = clamp(count, DEFAULT_EXECUTION_COUNT, MAX_EXECUTION_COUNT);
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("period_type", "1");
@@ -388,7 +394,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     // === 투자자별 ===
 
     @Override
-    public List<InvestorTradingDay> getKrInvestors(Long userRowId, String symbol, Integer count) {
+    public List<InvestorTradingDay> getKrInvestors(Long userRowId, String rawSymbol, Integer count) {
+        String symbol = requireSymbol(rawSymbol);
         StockMaster master = master(symbol);
         if (master != null && !"KR".equals(master.getCountryCode())) {
             return List.of();
@@ -410,7 +417,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     // === ETF · 시간외 ===
 
     @Override
-    public List<NamuQuoteDto.EtfComponent> getEtfComponents(Long userRowId, String symbol) {
+    public List<NamuQuoteDto.EtfComponent> getEtfComponents(Long userRowId, String rawSymbol) {
+        String symbol = requireSymbol(rawSymbol);
         return namuApiClient.exchange(userRowId, KR_ETF_COMPONENTS_PATH, Map.of("iem_cd", symbol), COMPONENT_TYPE)
             .resultOrEmpty().stream()
             .sorted(Comparator.comparing((NamuQuoteDto.EtfComponentRow r) -> NamuQueryServiceImpl.decimal(r.weight()),
@@ -423,7 +431,8 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     }
 
     @Override
-    public NamuQuoteDto.AfterHours getKrAfterHours(Long userRowId, String symbol) {
+    public NamuQuoteDto.AfterHours getKrAfterHours(Long userRowId, String rawSymbol) {
+        String symbol = requireSymbol(rawSymbol);
         String key = userRowId + ":" + symbol;
         Cached<NamuQuoteDto.AfterHours> hit = afterHoursCache.get(key);
         if (hit != null && hit.isFresh(System.currentTimeMillis())) {
@@ -463,6 +472,14 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
     }
 
     // === 보조 ===
+
+    /** 빈 종목은 상류에 보내지 않고 400 으로 거절한다(상류의 "입력하세요" 가 502 로 둔갑하지 않게). */
+    private static String requireSymbol(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_SYMBOL_INVALID);
+        }
+        return raw.trim();
+    }
 
     private StockMaster master(String symbol) {
         return stockMasterResolver.resolve((StockMarket) null, symbol).orElse(null);
@@ -571,8 +588,4 @@ public class NamuMarketQueryServiceImpl implements NamuMarketQueryService {
         return d == null ? null : d.toString();
     }
 
-    @SuppressWarnings("unused")
-    private static boolean notNull(Object o) {
-        return Objects.nonNull(o);
-    }
 }

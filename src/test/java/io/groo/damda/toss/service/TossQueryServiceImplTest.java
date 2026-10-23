@@ -35,6 +35,7 @@ import static org.mockito.Mockito.verify;
 class TossQueryServiceImplTest {
 
     @Mock private TossApiClient client;
+    @Mock private io.groo.damda.stock.service.StockMasterResolver stockMasterResolver;
     @InjectMocks private TossQueryServiceImpl sut;
 
     private static final long USER = 1L;
@@ -217,6 +218,29 @@ class TossQueryServiceImplTest {
         ArgumentCaptor<MultiValueMap<String, String>> q = queryCaptor();
         verify(client).getPath(eq(USER), any(), any(), q.capture(), any());
         assertThat(q.getValue().getFirst("count")).isNull();
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 5] 투자자별 — 미국 종목은 400 이 아니라 빈 목록, 상류를 부르지 않는다")
+    void getInvestorTrading_usSymbolReturnsEmptyWithoutUpstream() {
+        io.groo.damda.stock.domain.StockMaster us = io.groo.damda.stock.domain.StockMaster.create(
+                io.groo.damda.stock.type.MasterSource.KIS,
+                io.groo.damda.stock.client.dto.InstrumentRecord.kis(io.groo.damda.stock.type.StockMarket.NAS,
+                        "MOA", null, null, "MOA", "MOA", io.groo.damda.stock.type.StockSecurityType.STOCK, "USD"));
+        given(stockMasterResolver.resolve((io.groo.damda.stock.type.StockMarket) null, "MOA"))
+                .willReturn(java.util.Optional.of(us));
+
+        assertThat(sut.getInvestorTrading(USER, "MOA", 5)).isEmpty();
+
+        verify(client, never()).getPath(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("[13b-0 검수] 주문 가능 — KRW · USD 가 아닌 통화는 400 (상류 502 로 새지 않는다)")
+    void getBuyingPower_rejectsUnknownCurrency() {
+        assertThatThrownBy(() -> sut.getBuyingPower(USER, 77L, "JPY")).isInstanceOf(InvalidValueException.class);
+
+        verify(client, never()).getForUser(any(), any(), any(), any(), any());
     }
 
     @Test
