@@ -1,6 +1,7 @@
 package io.groo.damda.namu.service;
 
 import io.groo.damda.namu.dto.NamuAccountDto;
+import io.groo.damda.namu.dto.NamuQuoteDto;
 import io.groo.damda.securities.service.dto.CandlePage;
 import io.groo.damda.securities.service.dto.CandleQuery;
 import io.groo.damda.securities.service.dto.InstrumentRef;
@@ -15,9 +16,10 @@ import java.util.List;
  * <p>주문·정정·취소는 범위에서 제외한다 — 나무는 실제 체결이 나가는 운영 도메인 하나뿐이라
  * 잘못 부르면 되돌릴 수 없다.
  *
- * <p><b>토스와 엔드포인트 집합이 겹치지 않는다.</b> 나무엔 랭킹·시장지표가 없고 토스엔
- * 체결추이·투자자별·채권·금현물이 없다. 그래서 조회는 통합하지 않고 증권사별로 둔다
- * (증권 화면도 {@code /stocks/toss} · {@code /stocks/namu} 로 나뉜다).
+ * <p><b>토스와 엔드포인트 집합이 일부만 겹친다.</b> 나무엔 랭킹·시장지표가 없고, 채권·금현물은 나무에만
+ * 있다. 호가 · 체결 · 투자자별(국내) · 경고 · 기본 정보 · 장 상태는 두 증권사 모두 주고, 증권 화면은
+ * 공통 구역 + 증권사별 구역으로 그린다. 조회는 합치지 않고 증권사별 경로로 둔다
+ * ({@code /api/v1/toss/**} · {@code /api/v1/namu/**} — 그 탭의 증권사 키로 부른다).
  * 가계부 자산이 쓰는 현재가만 {@code SecuritiesPriceProvider} 뒤로 공통화했다.
  */
 public interface NamuQueryService {
@@ -35,6 +37,12 @@ public interface NamuQueryService {
 
     /** 국내·해외를 섞어 다건 조회. 못 구한 종목은 결과에서 빠진다. */
     List<PriceQuote> getPrices(Long userRowId, List<InstrumentRef> instruments);
+
+    /**
+     * {@link #getPrices} 와 같은 규칙의 다건 조회 + 종목마다 장 상태({@code marketState}) —
+     * {@code GET /api/v1/namu/prices}(나무 탭의 관심 시세 · 시장 띠).
+     */
+    List<NamuQuoteDto.ListQuote> getListQuotes(Long userRowId, List<InstrumentRef> instruments);
 
     // === 캔들(기간별시세) ===
 
@@ -60,6 +68,13 @@ public interface NamuQueryService {
     List<NamuAccountDto.Account> getAccounts(Long userRowId);
 
     /**
+     * 조회에 쓸 계좌번호를 정한다 — 지정하지 않으면 현재 환경에서 쓸 수 있는 첫 계좌.
+     *
+     * @return 계좌번호. 계좌가 한 건도 없으면 null(연동은 됐는데 계좌가 없는 상태는 오류가 아니다)
+     */
+    String resolveAccountNo(Long userRowId, String requested);
+
+    /**
      * 보유 종목. 국내와 해외는 엔드포인트도 필드명도 달라 서비스가 한 모양으로 옮긴다.
      *
      * @param accountNo 계좌번호. null 이면 첫 계좌를 쓴다
@@ -71,7 +86,7 @@ public interface NamuQueryService {
      * 원화 환산 환율. <b>USD 만 지원한다</b>(나무 해외 연동이 미국 고정).
      *
      * <p><b>나무는 환율 전용 조회가 없다.</b> 지수·환율 통합 API 는 있지만 {@code iem_cd} 에
-     * 넣을 환율 코드가 공개 문서 어디에도 없다. 대신 <b>두 군데에 환율이 딸려 온다</b>.
+     * 넣을 환율 코드가 공개 문서 어디에도 없다. 대신 <b>네 군데에 환율이 딸려 온다</b> — 아래 둘이 우리가 쓰는 경로고, 나머지 둘(해외 증거금 · 국내 기간별 시세 머리)은 쓰지 않는다.
      *
      * <ol>
      *   <li>해외 잔고의 당일매매기준환율({@code tdt_sby_bse_xcg_rt}) — 계좌 평가에 실제
@@ -85,6 +100,10 @@ public interface NamuQueryService {
      *
      * <p><b>예전 주석은 잔고가 "문서화된 유일한 경로" 라고 했는데 틀렸다</b> — 그래서 해외
      * 계좌가 없는 사용자가 환율을 영영 못 구했다. 근거는 구현부 주석 참고.
+     *
+     * <p>나머지 둘 — 해외 증거금({@code sby_bse_xcg_rt})과 국내 기간별 시세 머리({@code exchange_prpr}) —
+     * 은 <b>경로를 바꾸지 않는다.</b> 증거금은 계좌가 필요한데 현재가 경로가 이미 계좌 없이 덮고,
+     * 기간별 시세 머리는 호출이 무겁다. 그래서 대체 경로로 쓰지 않는다.
      *
      * <p><b>싸지 않다.</b> 한 번 부르면 계좌목록 + 잔고(+ 폴백 시 현재가)로 <b>최대 3콜</b>이
      * 100ms 안에 몰려 나가고, 나무엔 유량 제한(429)이 있다. 그래서 구현이 결과를 캐시하고

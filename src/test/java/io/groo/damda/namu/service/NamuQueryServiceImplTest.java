@@ -10,6 +10,7 @@ import io.groo.damda.namu.client.NamuApiClient;
 import io.groo.damda.namu.client.dto.NamuPagedEnvelope;
 import io.groo.damda.namu.dto.NamuAccountDto;
 import io.groo.damda.namu.dto.NamuMarketDto;
+import io.groo.damda.namu.dto.NamuQuoteDto;
 import io.groo.damda.securities.service.dto.PriceQuote;
 import io.groo.damda.securities.service.dto.InstrumentRef;
 import io.groo.damda.stock.client.dto.InstrumentRecord;
@@ -118,7 +119,7 @@ class NamuQueryServiceImplTest {
             givenMaster("005930", "KR");
             given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
                     eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
-                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72"));
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72", null));
 
             List<InstrumentRef> refs = List.of(InstrumentRef.of("005930"));
             assertThat(sut.getPrices(USER, refs)).hasSize(1);
@@ -135,7 +136,7 @@ class NamuQueryServiceImplTest {
             givenMaster("005930", "KR");
             given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
                     any(Long.class), eq("/krstock/quote/v1/currentPrice"), any(), any()))
-                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72"));
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72", null));
 
             List<InstrumentRef> refs = List.of(InstrumentRef.of("005930"));
             sut.getPrices(USER, refs);
@@ -153,7 +154,7 @@ class NamuQueryServiceImplTest {
             given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
                     eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
                 .willThrow(new IllegalStateException("boom"))
-                .willReturn(new NamuMarketDto.KrPrice("120000", "119000", "2", "1000", "0.84"));
+                .willReturn(new NamuMarketDto.KrPrice("120000", "119000", "2", "1000", "0.84", null));
 
             assertThat(sut.getPrices(USER,
                 List.of(InstrumentRef.of("005930"), InstrumentRef.of("000660")))).hasSize(1);
@@ -170,6 +171,75 @@ class NamuQueryServiceImplTest {
     }
 
     @Nested
+    @DisplayName("목록 시세 + 장 상태 — /namu/prices (13b-0 줄 8)")
+    class ListQuotes {
+
+        private void givenMaster(String symbol, StockMarket market, String currency) {
+            StockMaster stock = StockMaster.create(MasterSource.KIS, InstrumentRecord.kis(
+                market, symbol, null, null, symbol, symbol, StockSecurityType.STOCK, currency));
+            given(stockMasterRepository.findAllActiveBySymbol(symbol)).willReturn(List.of(stock));
+        }
+
+        @Test
+        @DisplayName("국내는 market_status, 미국은 marketperiod_cls 가 장 상태 어휘로 붙고 공용 PriceQuote 는 그대로다")
+        void carriesMarketState() {
+            givenMaster("005930", StockMarket.KOSPI, "KRW");
+            givenMaster("AAPL", StockMarket.NAS, "USD");
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72", "A"));
+            given(namuApiClient.<NamuMarketDto.GbPrice>postObject(
+                    eq(USER), eq("/gbstock/quote/v1/current"), any(), any()))
+                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92", "USD", "1383.50", "3"));
+
+            List<NamuQuoteDto.ListQuote> quotes = sut.getListQuotes(USER,
+                List.of(InstrumentRef.of("005930"), InstrumentRef.of("AAPL")));
+
+            assertThat(quotes).extracting(NamuQuoteDto.ListQuote::symbol).containsExactly("005930", "AAPL");
+            assertThat(quotes).extracting(NamuQuoteDto.ListQuote::marketState)
+                .containsExactly("SINGLE_PRICE", "DAYTIME");
+            assertThat(quotes.get(0).price()).isEqualByComparingTo("70000");
+            assertThat(quotes.get(0).previousClose()).isEqualByComparingTo("69500");
+            assertThat(quotes.get(1).currency()).isEqualTo("USD");
+            // 같은 호출을 getPrices 로 하면 캐시에서 PriceQuote 로 답한다(상류는 다시 안 나간다).
+            List<PriceQuote> prices = sut.getPrices(USER, List.of(InstrumentRef.of("005930")));
+            assertThat(prices).singleElement().satisfies(p -> {
+                assertThat(p.symbol()).isEqualTo("005930");
+                assertThat(p.previousClose()).isEqualByComparingTo("69500");
+            });
+            verify(namuApiClient, times(1)).postObject(
+                eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any());
+        }
+
+        @Test
+        @DisplayName("모르는 장 상태 코드는 null — 시장 띠가 그 시장을 그리지 않는다")
+        void unknownStateIsNull() {
+            givenMaster("005930", StockMarket.KOSPI, "KRW");
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72", "?"));
+
+            assertThat(sut.getListQuotes(USER, List.of(InstrumentRef.of("005930"))))
+                .singleElement().extracting(NamuQuoteDto.ListQuote::marketState).isNull();
+        }
+
+        @Test
+        @DisplayName("캐시 키에 사용자가 들어간다 — 사용자 둘이 같은 종목을 물으면 상류를 두 번 부른다")
+        void cacheKeyContainsUser() {
+            givenMaster("005930", StockMarket.KOSPI, "KRW");
+            given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
+                    any(Long.class), eq("/krstock/quote/v1/currentPrice"), any(), any()))
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "2", "500", "0.72", "1"));
+
+            sut.getListQuotes(USER, List.of(InstrumentRef.of("005930")));
+            sut.getListQuotes(USER + 1, List.of(InstrumentRef.of("005930")));
+
+            verify(namuApiClient, times(2)).postObject(
+                any(Long.class), eq("/krstock/quote/v1/currentPrice"), any(), any());
+        }
+    }
+
+    @Nested
     @DisplayName("국내 시세 — 거래소 코드")
     class KrMarketCode {
 
@@ -177,7 +247,7 @@ class NamuQueryServiceImplTest {
         void givenPrice() {
             given(namuApiClient.<NamuMarketDto.KrPrice>postObject(
                     eq(USER), eq("/krstock/quote/v1/currentPrice"), any(), any()))
-                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "5", "500", "0.72"));
+                .willReturn(new NamuMarketDto.KrPrice("70000", "69500", "5", "500", "0.72", null));
         }
 
         @Test
@@ -230,7 +300,7 @@ class NamuQueryServiceImplTest {
         @DisplayName("응답의 전일 종가를 그대로 쓴다 — 전일대비로 역산하지 않는다")
         void usesDirectField() {
             // 부호코드를 '하락'(5)으로 줘도 전일 종가 필드가 이기는지 본다.
-            givenKrPrice(new NamuMarketDto.KrPrice("70000", "69500", "5", "500", "0.72"));
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", "69500", "5", "500", "0.72", null));
 
             assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose())
                 .isEqualByComparingTo(new BigDecimal("69500"));
@@ -239,7 +309,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("전일 종가가 비면 전일대비로 역산한다 — 상승(2)이면 현재가에서 뺀다")
         void fallsBackToSignedChange() {
-            givenKrPrice(new NamuMarketDto.KrPrice("70000", "", "2", "500", "0.72"));
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", "", "2", "500", "0.72", null));
 
             assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose())
                 .isEqualByComparingTo(new BigDecimal("69500"));
@@ -248,7 +318,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("하락(5)이면 현재가에 더한다")
         void fallbackHandlesDown() {
-            givenKrPrice(new NamuMarketDto.KrPrice("70000", null, "5", "500", "-0.71"));
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", null, "5", "500", "-0.71", null));
 
             assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose())
                 .isEqualByComparingTo(new BigDecimal("70500"));
@@ -257,7 +327,7 @@ class NamuQueryServiceImplTest {
         @Test
         @DisplayName("모르는 부호코드면 방향을 찍지 않고 비운다 — 찍었다 틀리면 등락이 뒤집힌다")
         void unknownSignYieldsNull() {
-            givenKrPrice(new NamuMarketDto.KrPrice("70000", null, "9", "500", "0.72"));
+            givenKrPrice(new NamuMarketDto.KrPrice("70000", null, "9", "500", "0.72", null));
 
             assertThat(sut.getKrPrice(USER, "005930", "KRX").previousClose()).isNull();
         }
@@ -267,7 +337,7 @@ class NamuQueryServiceImplTest {
         void overseasUsesBasePrice() {
             given(namuApiClient.<NamuMarketDto.GbPrice>postObject(
                     eq(USER), eq("/gbstock/quote/v1/current"), any(), any()))
-                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92", "USD", "1383.50"));
+                .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92", "USD", "1383.50", null));
 
             PriceQuote q = sut.getGbPrice(USER, "AAPL");
 
@@ -285,7 +355,7 @@ class NamuQueryServiceImplTest {
         void domestic() {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenKrBalance(
-                new NamuAccountDto.KrBalanceSummary("1000000", "900000", "1000000", "100000", "11.1", "50000"),
+                new NamuAccountDto.KrBalanceSummary("1000000", "900000", "1000000", "100000", "11.1", "50000", "48000"),
                 new NamuAccountDto.KrHolding("005930", "삼성전자", "10", "65000", "70000", "700000", "50000"));
 
             NamuAccountDto.Holdings h = sut.getHoldings(USER, null, "KRW");
@@ -297,7 +367,12 @@ class NamuQueryServiceImplTest {
                 assertThat(i.symbol()).isEqualTo("005930");
                 assertThat(i.name()).isEqualTo("삼성전자");
                 assertThat(i.quantity()).isEqualTo("10");
+                // 국내 잔고 Output_1 에는 매도가능 칸이 없다.
+                assertThat(i.sellableQuantity()).isNull();
             });
+            // 13b-0 — 버리던 예수금(dca)과 100% 주문가능금액(orr_pbl_amt4)을 받는다.
+            assertThat(h.deposit()).isEqualTo("50000");
+            assertThat(h.orderableAmount()).isEqualTo("48000");
         }
 
         @Test
@@ -306,7 +381,7 @@ class NamuQueryServiceImplTest {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(
                 new NamuAccountDto.GbBalanceSummary("2000000", "1500", "300", "20.0"),
-                new NamuAccountDto.GbHolding("AAPL", "", "APPLE INC", "5", "180", "185.7", "928.5", "50", "1284000", "USD", "1383.50"));
+                new NamuAccountDto.GbHolding("AAPL", "", "APPLE INC", "5", "180", "185.7", "928.5", "50", "1284000", "USD", "1383.50", "5"));
 
             NamuAccountDto.Holdings h = sut.getHoldings(USER, ACCT, "USD");
 
@@ -315,6 +390,10 @@ class NamuQueryServiceImplTest {
                 .extracting(NamuAccountDto.HoldingItem::name).isEqualTo("APPLE INC");
             // 요약도 종목과 같은 외화 기준이어야 한다 — 원화 합을 섞으면 USD 를 붙여 보여주게 된다.
             assertThat(h.totalEvalAmount()).isEqualTo("1500");
+            // 13b-0 — 미국은 매도가능수량(sll_pbl_qty1)을 싣고, 예수금·주문가능 칸은 없다.
+            assertThat(h.items().get(0).sellableQuantity()).isEqualTo("5");
+            assertThat(h.deposit()).isNull();
+            assertThat(h.orderableAmount()).isNull();
         }
 
         @Test
@@ -501,7 +580,7 @@ class NamuQueryServiceImplTest {
             given(namuApiClient.<NamuMarketDto.GbPrice>postObject(
                     eq(USER), eq("/gbstock/quote/v1/current"), any(), any()))
                 .willReturn(new NamuMarketDto.GbPrice("185.70", "184.00", "2", "1.70", "0.92",
-                    currencyUnit, currencyPrc));
+                    currencyUnit, currencyPrc, null));
         }
 
         @Test
@@ -510,7 +589,7 @@ class NamuQueryServiceImplTest {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
                 new NamuAccountDto.GbHolding("AAPL", "애플", "APPLE INC", "5", "180", "185.7",
-                    "928.5", "28.5", "1284000", "USD", "1383.50"));
+                    "928.5", "28.5", "1284000", "USD", "1383.50", "5"));
 
             assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1383.50"));
 
@@ -525,7 +604,7 @@ class NamuQueryServiceImplTest {
             givenAccounts(NamuAccountDto.Account.of(ACCT, "01"));
             givenGbBalance(new NamuAccountDto.GbBalanceSummary("0", "0", "0", "0"),
                 new NamuAccountDto.GbHolding("7203", "도요타", "TOYOTA", "10", "2000", "2100",
-                    "21000", "1000", "200000", "JPY", "9.12"));
+                    "21000", "1000", "200000", "JPY", "9.12", null));
             givenGbQuote("USD", "1381.20");
 
             assertThat(sut.getFxRate(USER, "USD")).isEqualByComparingTo(new BigDecimal("1381.20"));

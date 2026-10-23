@@ -76,6 +76,8 @@ public final class NamuAccountDto {
      * @param totalProfitLoss  총평가손익 {@code tot_eal_pls}
      * @param profitRate       수익률 {@code pft_rt}
      * @param deposit          예수금 {@code dca}
+     * @param orderableAmount  주문가능금액 {@code orr_pbl_amt4}(100%). 문서에 {@code orr_pbl_amt} 는 없다 —
+     *                         같은 이름이 실현손익 응답에선 번호 뜻이 다르다
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record KrBalanceSummary(
@@ -84,7 +86,8 @@ public final class NamuAccountDto {
         @JsonProperty("tot_eal_amt") String totalEvalAmount,
         @JsonProperty("tot_eal_pls") String totalProfitLoss,
         @JsonProperty("pft_rt") String profitRate,
-        @JsonProperty("dca") String deposit
+        @JsonProperty("dca") String deposit,
+        @JsonProperty("orr_pbl_amt4") String orderableAmount
     ) {
     }
 
@@ -145,7 +148,8 @@ public final class NamuAccountDto {
         @JsonProperty("fc_eal_pls_amt") String profitLoss,
         @JsonProperty("krw_eal_amt") String evalAmountKrw,
         @JsonProperty("cur_cd") String currency,
-        @JsonProperty("tdt_sby_bse_xcg_rt") String baseExchangeRate
+        @JsonProperty("tdt_sby_bse_xcg_rt") String baseExchangeRate,
+        @JsonProperty("sll_pbl_qty1") String sellableQuantity
     ) {
     }
 
@@ -161,10 +165,14 @@ public final class NamuAccountDto {
         String totalEvalAmount,
         String totalProfitLoss,
         String profitRate,
-        List<HoldingItem> items
+        List<HoldingItem> items,
+        @Schema(description = "예수금 — 국내(KRW) 잔고 요약의 dca. 해외 잔고에는 이 칸이 없어 null")
+        String deposit,
+        @Schema(description = "주문 가능 금액 — 국내(KRW) 잔고 요약의 orr_pbl_amt4(100%). 해외는 null")
+        String orderableAmount
     ) {
         public static Holdings empty(String accountNo, String currency) {
-            return new Holdings(accountNo, currency, "0", "0", "0", List.of());
+            return new Holdings(accountNo, currency, "0", "0", "0", List.of(), null, null);
         }
     }
 
@@ -176,7 +184,9 @@ public final class NamuAccountDto {
         String avgPrice,
         String currentPrice,
         String evalAmount,
-        String profitLoss
+        String profitLoss,
+        @Schema(description = "매도 가능 수량 — 해외(미국)만. 국내 잔고에는 이 칸이 없어 null")
+        String sellableQuantity
     ) {
     }
 }

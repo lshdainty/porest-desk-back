@@ -24,6 +24,7 @@ public final class NamuMarketDto {
      * @param changeSign    전일대비 부호 {@code prdy_vrss_sign}. 전일 종가가 비었을 때만 쓰는 폴백
      * @param change        전일대비 {@code prdy_vrss}
      * @param changeRate    등락률(%) {@code prdy_ctrt}
+     * @param marketState   장 상태 구분 {@code market_status} (13b-0 · 목록 시세의 시장 띠가 쓴다)
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record KrPrice(
@@ -31,7 +32,8 @@ public final class NamuMarketDto {
         @JsonProperty("stck_prdy_clpr") String previousClose,
         @JsonProperty("prdy_vrss_sign") String changeSign,
         @JsonProperty("prdy_vrss") String change,
-        @JsonProperty("prdy_ctrt") String changeRate
+        @JsonProperty("prdy_ctrt") String changeRate,
+        @JsonProperty("market_status") String marketState
     ) {
     }
 
@@ -48,6 +50,7 @@ public final class NamuMarketDto {
      * @param exchangeRate  <b>원화 환산 환율</b> {@code currency_prc} — {@code currency} 1단위의
      *                      원화 가격. 시세 응답에 딸려 오므로 <b>계좌도 보유 종목도 없이</b>
      *                      환율을 얻는 유일한 경로다({@code NamuQueryService#getFxRate} 폴백)
+     * @param marketState   현재 시장 구분 {@code marketperiod_cls} 0 프리 · 1 정규 · 2 애프터 · 3 주간거래
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record GbPrice(
@@ -57,7 +60,8 @@ public final class NamuMarketDto {
         @JsonProperty("netchng") String change,
         @JsonProperty("pctchng") String changeRate,
         @JsonProperty("currency_unit") String currency,
-        @JsonProperty("currency_prc") String exchangeRate
+        @JsonProperty("currency_prc") String exchangeRate,
+        @JsonProperty("marketperiod_cls") String marketState
     ) {
     }
 }

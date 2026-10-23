@@ -78,6 +78,14 @@ public class NamuProperties {
     private int candleCacheTtlSeconds = 20;
 
     /**
+     * 국내 EPS 캐시 유지 시간 (초) — 사용자 × 종목, 기본 6시간.
+     *
+     * <p>EPS 는 {@code currentPrice} 에 없고 기간별 시세 머리에만 있다. 하루에 한 번 바뀌는 값이라
+     * 상세를 열 때마다 부르지 않고 6시간에 한 번만 부른다(종목마다 6시간에 1콜).
+     */
+    private int epsCacheTtlSeconds = 21600;
+
+    /**
      * 환율 폴백에 쓸 <b>미국 상장 종목코드</b>.
      *
      * <p>나무 환율의 1순위는 해외 잔고의 당일매매기준환율인데, 그건 <b>계좌와 USD 보유 종목이

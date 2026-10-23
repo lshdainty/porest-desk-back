@@ -274,6 +274,47 @@ class NamuCandleQueryTest {
     }
 
     @Nested
+    @DisplayName("주봉 1w — N1-가 5년 차트 (13b-0 줄 9)")
+    class Weekly {
+
+        @Test
+        @DisplayName("국내 주기구분 2(주) — 일봉의 1 이 아니다 · 일봉처럼 xtick 은 안 넣는다")
+        void krWeekUsesGubun2() {
+            givenMaster("005930", StockMarket.KOSPI, "KRW");
+            respond(expect(KR_PERIOD)
+                    .andExpect(jsonPath("$.Input_0.gubun").value("2"))
+                    .andExpect(jsonPath("$.Input_0.xtick").doesNotExist()),
+                krDailyJson("{}"));
+
+            CandlePage page = sut.getCandles(USER, new CandleQuery("005930", CandleInterval.WEEK_1, 2, null, null));
+
+            assertThat(page.candles()).hasSize(2);
+            // 주봉도 커서는 가장 오래된 봉의 하루 전 — 일봉과 같다.
+            assertThat(page.nextCursor()).isEqualTo("20260824");
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("해외 주기구분 4(주) — 일봉의 3 이 아니다")
+        void gbWeekUsesGubun4() {
+            givenMaster("AAPL", StockMarket.NAS, "USD");
+            respond(expect(GB_PERIOD)
+                    .andExpect(jsonPath("$.Input_0.gubun").value("4"))
+                    .andExpect(jsonPath("$.Input_0.xtick").value("0001")), """
+                {"rsp_cd":"00000","rsp_msg":"ok","Output_0":[{"iem_cd":"AAPL"}],
+                 "Output_1":[{"trade_date":"20260824","open_prc":"226.00","high":"231.00",
+                              "low":"225.10","close_prc":"230.10","movolume":"380000000"}]}
+                """);
+
+            CandlePage page = sut.getCandles(USER, new CandleQuery("AAPL", CandleInterval.WEEK_1, 5, null, null));
+
+            assertThat(page.candles()).hasSize(1);
+            assertThat(page.candles().get(0).currency()).isEqualTo("USD");
+            server.verify();
+        }
+    }
+
+    @Nested
     @DisplayName("해외 일봉")
     class GbDaily {
 

@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Clock;
+
 /**
  * core 시각 유틸 빈 등록.
  *
@@ -15,6 +17,15 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 public class ClockConfig {
+
+    /**
+     * 거래소 시각처럼 <b>사용자 타임존과 무관한</b> "지금" 이 필요한 곳이 쓰는 시계(나무 체결 시각 · 호가 시각).
+     * 테스트가 고정 시계를 끼울 수 있게 빈으로 둔다.
+     */
+    @Bean
+    public Clock systemClock() {
+        return Clock.systemUTC();
+    }
 
     /** 배치·스케줄러가 쓰는 서비스 운영 기준 타임존. */
     @Bean
