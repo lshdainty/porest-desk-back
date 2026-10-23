@@ -241,6 +241,16 @@ class SecuritiesApiControllerTest {
     }
 
     @Test
+    @DisplayName("[13b-0 줄 9] GET /candles — 주봉 1w 는 400. 공개 API 는 1m · 1d 만 받는다 (주봉은 /namu/candles)")
+    void getCandlesRejectsWeekly() throws Exception {
+        mockMvc.perform(get("/api/v1/securities/candles")
+                        .param("symbol", "005930").param("interval", "1w"))
+                .andExpect(status().isBadRequest());
+
+        verify(candleProvider, org.mockito.Mockito.never()).getCandles(anyLong(), any());
+    }
+
+    @Test
     @DisplayName("GET /candles — 종목이 비면 400")
     void getCandlesRejectsBlankSymbol() throws Exception {
         mockMvc.perform(get("/api/v1/securities/candles")

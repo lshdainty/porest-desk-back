@@ -27,7 +27,14 @@ public enum CandleInterval {
     MINUTE_1("1m"),
 
     /** 일봉. 1주·1개월·3개월·1년 탭이 모두 이걸 쓴다. */
-    DAY_1("1d");
+    DAY_1("1d"),
+
+    /**
+     * 주봉 — <b>나무 전용</b>(N1-가 "5년" 차트). 나무 제공자는 국내 {@code gubun} 2 · 해외 4 로 받고,
+     * 토스 제공자와 {@code /securities/candles}(공개 API) · {@code /toss/candles} 는 거절한다.
+     * 받는 곳은 {@code /namu/candles} 뿐이다.
+     */
+    WEEK_1("1w");
 
     /** 클라이언트가 보내는 값이자 토스 API 가 받는 값. */
     private final String code;
