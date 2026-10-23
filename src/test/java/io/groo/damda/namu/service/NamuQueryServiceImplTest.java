@@ -91,13 +91,13 @@ class NamuQueryServiceImplTest {
     private void givenKrBalance(NamuAccountDto.KrBalanceSummary summary, NamuAccountDto.KrHolding... items) {
         given(namuApiClient.<NamuPagedEnvelope<NamuAccountDto.KrBalanceSummary, NamuAccountDto.KrHolding>>exchange(
                 eq(USER), eq("/krstock/inquiry/v1/balance"), any(), any(ParameterizedTypeReference.class)))
-            .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items)));
+            .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items), null));
     }
 
     private void givenGbBalance(NamuAccountDto.GbBalanceSummary summary, NamuAccountDto.GbHolding... items) {
         given(namuApiClient.<NamuPagedEnvelope<NamuAccountDto.GbBalanceSummary, NamuAccountDto.GbHolding>>exchange(
                 eq(USER), eq("/gbstock/inquiry/v1/balance"), any(), any(ParameterizedTypeReference.class)))
-            .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items)));
+            .willReturn(new NamuPagedEnvelope<>("00000", "ok", summary, List.of(items), null));
     }
 
     @Nested

@@ -34,8 +34,14 @@ import java.util.List;
 public record NamuCandleEnvelope<T>(
         @JsonProperty("rsp_cd") String rspCd,
         @JsonProperty("rsp_msg") String rspMsg,
-        @JsonProperty("Output_1") List<T> output1
+        @JsonProperty("Output_1") List<T> output1,
+        @JsonProperty("message") NamuMessage message
 ) implements NamuResponse {
+
+    @Override
+    public boolean hasPayload() {
+        return output1 != null && !output1.isEmpty();
+    }
 
     public List<T> items() {
         return output1 == null ? List.of() : output1;

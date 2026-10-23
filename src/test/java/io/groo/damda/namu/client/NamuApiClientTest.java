@@ -355,6 +355,53 @@ class NamuApiClientTest {
     }
 
     @Test
+    @DisplayName("[13b-0 줄 1-①] 블록이 있으면 모르는 코드에 완료 문구가 없어도 성공이다 — 새 엔드포인트의 코드는 문서에 없다")
+    void payloadWithUnknownCodeAndNoCompletionMessageSucceeds() {
+        expect("/krstock/quote/v1/currentPrice",
+            "{\"rsp_cd\":\"00999\",\"rsp_msg\":\"처리됨\","
+                + "\"Output_0\":{\"stck_prpr\":\"70000\"}}");
+
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "005930"), KR_PRICE).price()).isEqualTo("70000");
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 1-②] message 봉투만 있는 응답 — 블록이 있으면 성공이다")
+    void messageEnvelopeWithPayloadSucceeds() {
+        expect("/krstock/quote/v1/currentPrice", """
+            {"Output_0":{"stck_prpr":"70000"},
+             "message":{"msg_code":"MSG0001","usr_msg":"정상 처리되었습니다."}}
+            """);
+
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "005930"), KR_PRICE).price()).isEqualTo("70000");
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 1-②] message 봉투만 있고 블록이 없으면 실패다 — 입력 오류 문장은 성공으로 새지 않는다")
+    void messageEnvelopeWithoutPayloadFails() {
+        expect("/krstock/quote/v1/currentPrice", """
+            {"message":{"msg_code":"MSG9999","usr_msg":"종목코드를 입력하세요."}}
+            """);
+
+        assertThatThrownBy(() -> sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+                Map.of("iem_cd", ""), KR_PRICE))
+            .isInstanceOf(ExternalServiceException.class);
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 1-②] 블록이 없어도 message.usr_msg 가 완료를 말하면 성공이다 — 코드는 message.msg_code 에서 읽는다")
+    void messageEnvelopeCompletionWithoutPayloadSucceeds() {
+        expect("/krstock/quote/v1/currentPrice", """
+            {"Output_0":null,
+             "message":{"msg_code":"MSG0002","usr_msg":"조회가 완료되었습니다."}}
+            """);
+
+        assertThat(sut.postObject(1L, "/krstock/quote/v1/currentPrice",
+            Map.of("iem_cd", "005930"), KR_PRICE)).isNull();
+    }
+
+    @Test
     @DisplayName("서버 오류는 증권사 API 오류로 바뀐다 — 업스트림 본문이 그대로 새지 않는다")
     void serverErrorIsTranslated() {
         server.expect(requestTo(BASE + "/krstock/quote/v1/currentPrice"))

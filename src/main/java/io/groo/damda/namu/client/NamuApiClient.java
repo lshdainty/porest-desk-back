@@ -34,8 +34,10 @@ import java.util.Map;
  *
  * <ol>
  *   <li><b>전부 POST + JSON</b> — 조회도 GET 이 아니다. 요청 본문은 {@code {"Input_0": {...}}} 봉투.</li>
- *   <li><b>HTTP 200 으로도 실패한다</b> — 성공 여부는 {@code rsp_cd} 로만 안다
- *       ({@link NamuResponse#isSuccess()}). 상태코드만 보면 조용히 빈 화면이 된다.</li>
+ *   <li><b>HTTP 200 으로도 실패한다</b> — 성공 여부는 응답 본문으로만 안다
+ *       ({@link NamuResponse#isSuccess()} — 2026-10-15 문서 개정에 맞춰 ① 기대한 블록에 값이 있는지
+ *       ② {@code rsp_msg} 가 완료를 뜻하는지 ③ {@code rsp_cd} 는 로그 · 문의용 순서로 본다).
+ *       상태코드만 보면 조용히 빈 화면이 된다.</li>
  *   <li><b>인증 헤더가 Bearer 하나가 아니다</b> — 매 호출에 평문 키/시크릿이 함께 간다.
  *       그 구성은 {@code BrokerTokenManager} 가 맡는다.</li>
  * </ol>
@@ -113,11 +115,11 @@ public class NamuApiClient {
                 log.error("나무증권 응답 본문 없음: path={}", path);
                 throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR);
             }
-            // 200 이어도 rsp_cd 를 봐야 한다. 이 검사가 빠지면 실패가 '결과 없음' 으로 둔갑한다.
+            // 200 이어도 본문을 봐야 한다(블록 유무 → 메시지 → 코드). 이 검사가 빠지면 실패가 '결과 없음' 으로 둔갑한다.
             if (!body.isSuccess()) {
                 // rsp_msg 는 나무가 만든 자유 문장이라 계좌번호가 섞여 온다. rsp_cd 는 코드라 그대로 둔다.
                 log.error("나무증권 API 오류: path={}, rsp_cd={}, rsp_msg={}",
-                    path, body.rspCd(), UpstreamErrorLog.safe(body.rspMsg()));
+                    path, body.effectiveCode(), UpstreamErrorLog.safe(body.effectiveMessage()));
                 throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR);
             }
             return body;
