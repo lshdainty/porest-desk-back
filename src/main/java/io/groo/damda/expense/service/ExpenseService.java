@@ -43,6 +43,11 @@ public interface ExpenseService {
      */
     Long deleteExpense(Long expenseId, Long userRowId);
     /**
+     * 여러 거래를 한 트랜잭션으로 지운다 — 건마다 단건 삭제와 같은 규칙. 하나라도 없음(404) · 남의 것(403) ·
+     * 시스템이 만든 거래(400)면 아무것도 지우지 않는다. 환급액은 건마다 난 값의 합(0 이면 null).
+     */
+    ExpenseServiceDto.BulkDeleteResult bulkDeleteExpenses(ExpenseServiceDto.BulkDeleteCommand command);
+    /**
      * 고정 표식 일괄 변경 — 바뀐 건수를 돌려준다. 돈·잔액은 건드리지 않는다.
      * 하나라도 내 거래가 아니면 전체를 거절한다(일부만 바뀌는 상태를 만들지 않는다).
      */

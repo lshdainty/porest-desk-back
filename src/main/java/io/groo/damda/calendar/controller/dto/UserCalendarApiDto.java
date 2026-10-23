@@ -22,7 +22,7 @@ public class UserCalendarApiDto {
      */
     @Schema(name = "UserCalendarCreateRequest")
     public record CreateRequest(
-        @NotBlank(message = "캘린더 이름을 입력해 주세요")
+        @NotBlank(message = "캘린더 이름을 입력해주세요")
         @Size(max = FieldLimits.NAME_MAX, message = "캘린더 이름은 50자까지 입력할 수 있어요")
         String calendarName,
         @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
@@ -43,13 +43,13 @@ public class UserCalendarApiDto {
     ) {}
 
     public record JoinRequest(
-        @NotBlank(message = "초대 코드를 입력해 주세요")
+        @NotBlank(message = "초대 코드를 입력해주세요")
         String inviteCode
     ) {}
 
     /** {@code user_calendar_member.permission} 은 NOT NULL — 빠지면 저장이 아니라 요청이 잘못이다. */
     public record ChangeRoleRequest(
-        @NotNull(message = "권한을 골라 주세요")
+        @NotNull(message = "권한을 골라주세요")
         CalendarRole permission
     ) {}
 

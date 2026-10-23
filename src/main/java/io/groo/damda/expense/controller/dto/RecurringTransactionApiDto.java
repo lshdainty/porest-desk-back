@@ -58,7 +58,7 @@ public class RecurringTransactionApiDto {
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
-        @NotNull(message = "얼마나 자주 반복할지 골라 주세요")
+        @NotNull(message = "얼마나 자주 반복할지 골라주세요")
         RecurringFrequency frequency,
         Integer intervalValue,
         Integer dayOfWeek,
@@ -66,7 +66,7 @@ public class RecurringTransactionApiDto {
         @Max(value = 31, message = "반복할 날짜는 1일부터 31일까지 고를 수 있어요")
         Integer dayOfMonth,
         LocalTime executionTime,
-        @NotNull(message = "시작일을 골라 주세요")
+        @NotNull(message = "시작일을 골라주세요")
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,
@@ -92,7 +92,7 @@ public class RecurringTransactionApiDto {
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
         String paymentMethod,
-        @NotNull(message = "얼마나 자주 반복할지 골라 주세요")
+        @NotNull(message = "얼마나 자주 반복할지 골라주세요")
         RecurringFrequency frequency,
         Integer intervalValue,
         Integer dayOfWeek,
@@ -100,7 +100,7 @@ public class RecurringTransactionApiDto {
         @Max(value = 31, message = "반복할 날짜는 1일부터 31일까지 고를 수 있어요")
         Integer dayOfMonth,
         LocalTime executionTime,
-        @NotNull(message = "시작일을 골라 주세요")
+        @NotNull(message = "시작일을 골라주세요")
         LocalDate startDate,
         LocalDate endDate,
         Integer maxOccurrences,

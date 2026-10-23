@@ -18,14 +18,14 @@ public class EventCommentApiDto {
     @Schema(name = "EventCommentCreateRequest")
     public record CreateRequest(
         Long parentRowId,
-        @NotBlank(message = "댓글 내용을 입력해 주세요")
+        @NotBlank(message = "댓글 내용을 입력해주세요")
         @Size(max = 1000, message = "댓글은 1,000자까지 입력할 수 있어요")
         String content
     ) {}
 
     @Schema(name = "EventCommentUpdateRequest")
     public record UpdateRequest(
-        @NotBlank(message = "댓글 내용을 입력해 주세요")
+        @NotBlank(message = "댓글 내용을 입력해주세요")
         @Size(max = 1000, message = "댓글은 1,000자까지 입력할 수 있어요")
         String content
     ) {}

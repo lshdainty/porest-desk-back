@@ -54,7 +54,7 @@ public class SavingGoalApiDto {
     public record UpdateSavingGoalRequest(
         Optional<String> title,
         Optional<String> description,
-        Optional<@NotNull(message = "목표 금액을 입력해 주세요")
+        Optional<@NotNull(message = "목표 금액을 입력해주세요")
                  @Min(value = 1, message = "목표 금액은 0보다 커야 해요")
                  @Max(value = AmountLimits.MAX_TX_AMOUNT, message = "목표 금액은 100억원까지 입력할 수 있어요")
                  Long> targetAmount,

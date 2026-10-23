@@ -43,18 +43,18 @@ public class ExpenseApiDto {
      */
     @Schema(name = "ExpenseCreateRequest")
     public record CreateRequest(
-        @NotNull(message = "카테고리를 골라 주세요")
+        @NotNull(message = "카테고리를 골라주세요")
         Long categoryRowId,
         Long assetRowId,
-        @NotNull(message = "거래 종류를 골라 주세요")
+        @NotNull(message = "거래 종류를 골라주세요")
         ExpenseType expenseType,
-        @NotNull(message = "금액을 입력해 주세요")
+        @NotNull(message = "금액을 입력해주세요")
         @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
         @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
         String description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
-        @NotBlank(message = "거래 일시를 입력해 주세요")
+        @NotBlank(message = "거래 일시를 입력해주세요")
         String expenseDate,
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
@@ -98,15 +98,15 @@ public class ExpenseApiDto {
      */
     @Schema(name = "ExpenseUpdateRequest")
     public record UpdateRequest(
-        Optional<@NotNull(message = "카테고리를 골라 주세요") Long> categoryRowId,
+        Optional<@NotNull(message = "카테고리를 골라주세요") Long> categoryRowId,
         Optional<Long> assetRowId,
-        Optional<@NotNull(message = "거래 종류를 골라 주세요") ExpenseType> expenseType,
-        Optional<@NotNull(message = "금액을 입력해 주세요")
+        Optional<@NotNull(message = "거래 종류를 골라주세요") ExpenseType> expenseType,
+        Optional<@NotNull(message = "금액을 입력해주세요")
                  @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
                  Long> amount,
         Optional<@Size(max = 500, message = "설명은 500자까지 입력할 수 있어요") String> description,
         // "yyyy-MM-dd" 또는 "yyyy-MM-ddTHH:mm[:ss]" 양쪽 모두 허용 — 서비스 layer 에서 유연 파싱
-        Optional<@NotBlank(message = "거래 일시를 입력해 주세요") String> expenseDate,
+        Optional<@NotBlank(message = "거래 일시를 입력해주세요") String> expenseDate,
         Optional<@Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요") String> merchant,
         Optional<String> paymentMethod,
         /** 할부 개월 (null·1 = 일시불). 신용카드 결제에만 의미. */
@@ -447,17 +447,17 @@ public class ExpenseApiDto {
      * <p>{@code splits} 가 없으면 옛 거래의 분할을 옮긴다(합이 새 금액과 안 맞으면 400).
      */
     public record ReplaceRequest(
-        @NotNull(message = "카테고리를 골라 주세요")
+        @NotNull(message = "카테고리를 골라주세요")
         Long categoryRowId,
         Long assetRowId,
-        @NotNull(message = "거래 종류를 골라 주세요")
+        @NotNull(message = "거래 종류를 골라주세요")
         ExpenseType expenseType,
-        @NotNull(message = "금액을 입력해 주세요")
+        @NotNull(message = "금액을 입력해주세요")
         @Max(value = MAX_AMOUNT, message = "금액은 100억원까지 입력할 수 있어요")
         Long amount,
         @Size(max = 500, message = "설명은 500자까지 입력할 수 있어요")
         String description,
-        @NotBlank(message = "거래 일시를 입력해 주세요")
+        @NotBlank(message = "거래 일시를 입력해주세요")
         String expenseDate,
         @Size(max = 100, message = "거래처는 100자까지 입력할 수 있어요")
         String merchant,
@@ -475,12 +475,22 @@ public class ExpenseApiDto {
 
     /** 고정 표식 일괄 변경 — 고른 거래를 한꺼번에 고정(true) 또는 변동(false) 으로. */
     public record BulkFixedRequest(
-        @NotEmpty(message = "거래를 하나 이상 골라 주세요")
+        @NotEmpty(message = "거래를 하나 이상 골라주세요")
         @Size(max = 500, message = "한 번에 500건까지 바꿀 수 있어요")
         List<Long> expenseIds,
-        @NotNull(message = "고정 여부를 골라 주세요")
+        @NotNull(message = "고정 여부를 골라주세요")
         Boolean isFixed
     ) {}
+
+    /** 일괄 삭제 요청 — 고른 거래 아이디. */
+    public record BulkDeleteRequest(
+        @NotEmpty(message = "거래를 하나 이상 골라주세요")
+        @Size(max = 500, message = "한 번에 500건까지 지울 수 있어요")
+        List<Long> expenseIds
+    ) {}
+
+    /** 일괄 삭제 결과 — 지운 건수와 결제계좌로 돌려준 금액 합(없으면 null). */
+    public record BulkDeleteResponse(int deletedCount, Long refundedAmount) {}
 
     /** 일괄 변경 결과 — 실제로 바뀐 건수. */
     public record BulkFixedResponse(int updatedCount) {}

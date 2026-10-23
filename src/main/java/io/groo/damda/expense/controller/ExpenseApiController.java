@@ -165,6 +165,16 @@ public class ExpenseApiController {
         return ApiResponse.success(ExpenseApiDto.DeleteResponse.of(refundedAmount));
     }
 
+    /** 일괄 삭제 — 한 트랜잭션. 하나라도 없거나 남의 것이거나 시스템 거래면 전체가 거절된다. */
+    @PostMapping("/expenses/delete")
+    public ApiResponse<ExpenseApiDto.BulkDeleteResponse> bulkDeleteExpenses(
+            @LoginUser UserPrincipal loginUser,
+            @Valid @RequestBody ExpenseApiDto.BulkDeleteRequest request) {
+        ExpenseServiceDto.BulkDeleteResult result = expenseService.bulkDeleteExpenses(
+            new ExpenseServiceDto.BulkDeleteCommand(loginUser.getRowId(), request.expenseIds()));
+        return ApiResponse.success(new ExpenseApiDto.BulkDeleteResponse(result.deletedCount(), result.refundedAmount()));
+    }
+
     @GetMapping("/expenses/summary/daily")
     public ApiResponse<ExpenseApiDto.DailySummaryResponse> getDailySummary(
             @LoginUser UserPrincipal loginUser,

@@ -21,20 +21,20 @@ public class EventLabelApiDto {
      */
     @Schema(name = "EventLabelCreateRequest")
     public record CreateRequest(
-        @NotBlank(message = "라벨 이름을 입력해 주세요")
+        @NotBlank(message = "라벨 이름을 입력해주세요")
         @Size(max = FieldLimits.NAME_MAX, message = "라벨 이름은 50자까지 입력할 수 있어요")
         String labelName,
-        @NotBlank(message = "라벨 색상을 골라 주세요")
+        @NotBlank(message = "라벨 색상을 골라주세요")
         @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}
 
     @Schema(name = "EventLabelUpdateRequest")
     public record UpdateRequest(
-        @NotBlank(message = "라벨 이름을 입력해 주세요")
+        @NotBlank(message = "라벨 이름을 입력해주세요")
         @Size(max = FieldLimits.NAME_MAX, message = "라벨 이름은 50자까지 입력할 수 있어요")
         String labelName,
-        @NotBlank(message = "라벨 색상을 골라 주세요")
+        @NotBlank(message = "라벨 색상을 골라주세요")
         @Pattern(regexp = ColorFormat.HEX_RGB, message = ColorFormat.MESSAGE)
         String color
     ) {}

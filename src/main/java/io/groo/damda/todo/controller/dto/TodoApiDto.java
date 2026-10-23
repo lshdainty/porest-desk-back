@@ -37,7 +37,7 @@ public class TodoApiDto {
      */
     @Schema(name = "TodoCreateRequest")
     public record CreateRequest(
-        @NotBlank(message = "할 일 제목을 입력해 주세요")
+        @NotBlank(message = "할 일 제목을 입력해주세요")
         @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
         String title,
         @Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있어요")
@@ -64,7 +64,7 @@ public class TodoApiDto {
      */
     @Schema(name = "TodoUpdateRequest")
     public record UpdateRequest(
-        Optional<@NotBlank(message = "할 일 제목을 입력해 주세요")
+        Optional<@NotBlank(message = "할 일 제목을 입력해주세요")
                  @Size(max = FieldLimits.TITLE_MAX, message = "제목은 200자까지 입력할 수 있어요")
                  String> title,
         Optional<@Size(max = FieldLimits.CONTENT_MAX, message = "메모는 10,000자까지 입력할 수 있어요")
@@ -122,7 +122,7 @@ public class TodoApiDto {
          * <p>일정 알림({@code CalendarEventApiDto} 의 {@code reminderMinutes})이 같은 자리를
          * 이렇게 막는다.
          */
-        @NotNull(message = "붙일 태그를 알려 주세요. 모두 떼려면 빈 목록을 보내 주세요")
+        @NotNull(message = "붙일 태그를 알려주세요. 모두 떼려면 빈 목록을 보내주세요")
         List<@NotNull(message = "태그가 비어 있어요") Long> tagIds
     ) {}
 
