@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
  * 13b-0 — 나무 "계좌 자세히"(계좌 자산 · 실현손익 · 권리). 가짜 상류로 문서의 응답 모양을 태운다.
@@ -39,7 +40,7 @@ class NamuAccountDetailQueryServiceImplTest {
         up = new NamuUpstreamFixture(USER);
         namuQueryService = org.mockito.Mockito.mock(NamuQueryService.class);
         given(namuQueryService.resolveAccountNo(USER, null)).willReturn(ACCT);
-        sut = new NamuAccountDetailQueryServiceImpl(up.client, namuQueryService, CLOCK);
+        sut = new NamuAccountDetailQueryServiceImpl(up.client, namuQueryService, up.properties, CLOCK);
     }
 
     @Test
@@ -148,7 +149,7 @@ class NamuAccountDetailQueryServiceImplTest {
 
         given(namuQueryService.resolveAccountNo(8L, null)).willReturn(null);
         assertThat(sut.getRealizedPnl(8L, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 23)))
-            .isEqualTo(new NamuAccountDetailDto.RealizedPnl(null, null, null, null));
+            .isEqualTo(new NamuAccountDetailDto.RealizedPnl(null, null, null, null, false));
     }
 
     @Test
@@ -196,6 +197,107 @@ class NamuAccountDetailQueryServiceImplTest {
 
         given(namuQueryService.resolveAccountNo(8L, null)).willReturn(null);
         assertThat(sut.getRights(8L, "scheduled", null)).isEmpty();
+        up.server.verify();
+    }
+
+    // === 연속조회 (cts · cts_flag 는 응답 헤더) ===
+
+    private static org.springframework.test.web.client.ResponseCreator page(String json, String cts, String flag) {
+        org.springframework.test.web.client.response.DefaultResponseCreator c =
+            withSuccess(json, org.springframework.http.MediaType.APPLICATION_JSON);
+        if (cts != null) {
+            c.header("cts", cts);
+        }
+        if (flag != null) {
+            c.header("cts_flag", flag);
+        }
+        return c;
+    }
+
+    private static String krPnl(String symbol, String profit) {
+        return "{\"rsp_cd\":\"00166\",\"rsp_msg\":\"ok\",\"Output_0\":{\"pls_amt\":\"999\"},"
+            + "\"Output_1\":[{\"iem_cd\":\"" + symbol + "\",\"iem_nm\":\"" + symbol
+            + "\",\"sll_qty\":\"1\",\"pls_amt\":\"" + profit + "\",\"pft_rt\":\"1\"}]}";
+    }
+
+    @Test
+    @DisplayName("연속조회 — cts_flag Y 면 직전 cts · cts_flag 를 요청 헤더에 실어 다음 쪽을 모은다")
+    void followsContinuation() {
+        up.expect("/krstock/inquiry/v1/tradingPnl")
+            .andExpect(request -> assertThat(request.getHeaders().containsHeader("cts")).isFalse()) // 첫 쪽엔 cts 없음
+            .andRespond(page(krPnl("A", "10"), "KEY-1", "Y"));
+        up.expect("/krstock/inquiry/v1/tradingPnl")
+            .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.header("cts", "KEY-1"))
+            .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.header("cts_flag", "Y"))
+            .andRespond(page(krPnl("B", "20"), "KEY-1-END", "N"));
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"조회할 내역이 없습니다.\"}");
+
+        NamuAccountDetailDto.RealizedPnl r = sut.getRealizedPnl(USER, LocalDate.of(2025, 1, 1), LocalDate.of(2026, 10, 23));
+
+        assertThat(r.krItems()).extracting(NamuAccountDetailDto.KrPnlItem::symbol).containsExactly("A", "B");
+        assertThat(r.krTotal()).as("요약은 처음 온 것").isEqualTo("999");
+        assertThat(r.truncated()).isFalse();
+        up.server.verify();
+    }
+
+    @Test
+    @DisplayName("연속조회 — 최대 쪽 수에서 멈추고 truncated 로 알린다 (조용히 덜 세지 않는다)")
+    void stopsAtMaxPages() {
+        up.properties.setMaxContinuationPages(2);
+        up.expect("/krstock/inquiry/v1/tradingPnl").andRespond(page(krPnl("A", "10"), "K1", "Y"));
+        up.expect("/krstock/inquiry/v1/tradingPnl").andRespond(page(krPnl("B", "20"), "K2", "Y"));
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"x\"}");
+
+        NamuAccountDetailDto.RealizedPnl r = sut.getRealizedPnl(USER, LocalDate.of(2025, 1, 1), LocalDate.of(2026, 10, 23));
+
+        assertThat(r.krItems()).hasSize(2);
+        assertThat(r.truncated()).isTrue();
+        up.server.verify();
+    }
+
+    @Test
+    @DisplayName("연속조회 — cts 가 직전과 같으면 중단한다 (무한 루프 방지)")
+    void stopsWhenCtsRepeats() {
+        up.expect("/krstock/inquiry/v1/tradingPnl").andRespond(page(krPnl("A", "10"), "SAME", "Y"));
+        up.expect("/krstock/inquiry/v1/tradingPnl").andRespond(page(krPnl("B", "20"), "SAME", "Y"));
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"x\"}");
+
+        NamuAccountDetailDto.RealizedPnl r = sut.getRealizedPnl(USER, LocalDate.of(2025, 1, 1), LocalDate.of(2026, 10, 23));
+
+        assertThat(r.krItems()).hasSize(2);
+        assertThat(r.truncated()).isFalse();
+        up.server.verify();
+    }
+
+    @Test
+    @DisplayName("권리 지난 것 · 예정도 연속조회를 따른다")
+    void rightsFollowContinuation() {
+        up.expect("/krstock/inquiry/v1/rightsScheduled").andRespond(page(
+            "{\"Output_0\":[{\"iem_cd\":\"A\",\"rit_tp_cd\":\"01\"}]}", "R1", "Y"));
+        up.expect("/krstock/inquiry/v1/rightsScheduled")
+            .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.header("cts", "R1"))
+            .andRespond(page("{\"Output_0\":[{\"iem_cd\":\"B\",\"rit_tp_cd\":\"01\"}]}", "R2", "N"));
+
+        assertThat(sut.getRights(USER, "scheduled", null)).extracting(NamuAccountDetailDto.Right::symbol)
+            .containsExactly("A", "B");
+        up.server.verify();
+    }
+
+    @Test
+    @DisplayName("0건 — 성공 코드에 블록이 없으면 빈 값 (권리 예정 없음 · 매매 없는 기간 · 자산 응답 비어 있음)")
+    void emptyIsNotError() {
+        String none = "{\"rsp_cd\":\"00000\",\"rsp_msg\":\"\"}";
+        respond(up.expect("/krstock/inquiry/v1/rightsScheduled"), none);
+        respond(up.expect("/krstock/inquiry/v1/tradingPnl"), none);
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), none);
+        respond(up.expect("/krstock/inquiry/v1/assetStatus"), none);
+
+        assertThat(sut.getRights(USER, "scheduled", null)).isEmpty();
+        NamuAccountDetailDto.RealizedPnl r = sut.getRealizedPnl(USER, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 23));
+        assertThat(r.krItems()).isEmpty();
+        assertThat(r.usRows()).isEmpty();
+        assertThat(r.krTotal()).isNull();
+        assertThat(sut.getAssetStatus(USER).totalAssets()).isNull();
         up.server.verify();
     }
 }

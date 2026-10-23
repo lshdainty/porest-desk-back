@@ -7,6 +7,8 @@ import io.groo.damda.namu.client.dto.NamuEnvelope;
 import io.groo.damda.namu.client.dto.NamuListEnvelope;
 import io.groo.damda.namu.client.dto.NamuPagedEnvelope;
 import io.groo.damda.namu.dto.NamuAccountDetailDto;
+import io.groo.damda.namu.client.dto.NamuResponse;
+import io.groo.damda.securities.config.NamuProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -17,9 +19,11 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * {@link NamuAccountDetailQueryService} 구현. 응답 칸은 모두 null 허용이고 숫자는 문자열 그대로다.
@@ -63,7 +67,47 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
 
     private final NamuApiClient namuApiClient;
     private final NamuQueryService namuQueryService;
+    private final NamuProperties namuProperties;
     private final Clock clock;
+
+    /** 연속조회로 모은 결과. {@code truncated} 는 최대 쪽 수에서 끊겼다는 뜻. */
+    private record Collected<S, I>(S summary, List<I> items, boolean truncated) {
+    }
+
+    /**
+     * 연속조회를 따라가며 줄을 모은다. 문서: {@code cts}·{@code cts_flag} 는 <b>응답 헤더</b>, {@code Y}=다음 쪽 ·
+     * {@code N}=끝, 다음 요청 헤더에 그대로 싣는다, {@code cts} 가 직전과 같으면 중단(전체 문자열 비교).
+     * 최대 쪽 수({@code app.namu.max-continuation-pages})를 넘으면 멈추고 잘림을 알린다. 요약은 처음 온 것.
+     */
+    private <R extends NamuResponse, S, I> Collected<S, I> collect(
+            Long userRowId, String path, Map<String, String> input, ParameterizedTypeReference<R> typeRef,
+            Function<R, S> summaryOf, Function<R, List<I>> itemsOf) {
+        S summary = null;
+        List<I> all = new ArrayList<>();
+        String cts = null;
+        String flag = null;
+        int max = Math.max(1, namuProperties.getMaxContinuationPages());
+        for (int page = 1; ; page++) {
+            NamuApiClient.NamuPage<R> res = namuApiClient.exchangePage(userRowId, path, input, typeRef, cts, flag);
+            R body = res.body();
+            if (summary == null) {
+                summary = summaryOf.apply(body);
+            }
+            all.addAll(itemsOf.apply(body));
+            boolean more = "Y".equalsIgnoreCase(res.ctsFlag()) && res.cts() != null
+                && !res.cts().isBlank() && !res.cts().equals(cts);
+            if (!more) {
+                return new Collected<>(summary, all, false);
+            }
+            if (page >= max) {
+                log.warn("나무 연속조회가 최대 {}쪽에서 끊긴다 - 합계가 덜 셀 수 있다: path={}, userRowId={}",
+                    max, path, userRowId);
+                return new Collected<>(summary, all, true);
+            }
+            cts = res.cts();
+            flag = res.ctsFlag();
+        }
+    }
 
     @Override
     public NamuAccountDetailDto.AssetStatus getAssetStatus(Long userRowId) {
@@ -92,9 +136,10 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         }
         String account = namuQueryService.resolveAccountNo(userRowId, null);
         if (account == null) {
-            return new NamuAccountDetailDto.RealizedPnl(null, null, null, null);
+            return new NamuAccountDetailDto.RealizedPnl(null, null, null, null, false);
         }
 
+        boolean truncated = false;
         String krTotal = null;
         List<NamuAccountDetailDto.KrPnlItem> krItems = null;
         try {
@@ -102,7 +147,9 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
             input.put("act_no", account);
             input.put("iqr_sta_dt", YMD.format(from));
             input.put("iqr_end_dt", YMD.format(to));
-            var res = namuApiClient.exchange(userRowId, KR_PNL_PATH, input, KR_PNL_TYPE);
+            var res = collect(userRowId, KR_PNL_PATH, input, KR_PNL_TYPE,
+                NamuPagedEnvelope::summary, NamuPagedEnvelope::items);
+            truncated |= res.truncated();
             krTotal = res.summary() == null ? null : blank(res.summary().profit());
             // 판 것만 — 매도 수량 0 인 줄(산 것만 있는 종목)은 버린다. 국내 줄에는 매도 날짜가 없다(기간 합산).
             krItems = res.items().stream()
@@ -125,7 +172,9 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
             input.put("iem_cd", "");
             input.put("trd_cur_cd", "USD");
             input.put("fc_sec_trd_nat_cd", "200");  // 미국
-            var res = namuApiClient.exchange(userRowId, GB_PNL_PATH, input, GB_PNL_TYPE);
+            var res = collect(userRowId, GB_PNL_PATH, input, GB_PNL_TYPE,
+                NamuPagedEnvelope::summary, NamuPagedEnvelope::items);
+            truncated |= res.truncated();
             usTotal = res.summary() == null ? null : blank(res.summary().profit());
             // 종목 이름 칸이 응답에 없다 — 날짜별 줄(Q3 결정).
             usRows = res.items().stream()
@@ -136,7 +185,7 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         } catch (RuntimeException e) {
             log.warn("나무 실현손익(미국) 조회 실패 - 그쪽만 비운다: userRowId={}: {}", userRowId, e.getMessage());
         }
-        return new NamuAccountDetailDto.RealizedPnl(krTotal, krItems, usTotal, usRows);
+        return new NamuAccountDetailDto.RealizedPnl(krTotal, krItems, usTotal, usRows, truncated);
     }
 
     @Override
@@ -154,8 +203,8 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
             return List.of();
         }
         if (!held) {
-            return namuApiClient.exchange(userRowId, RIGHTS_SCHEDULED_PATH, Map.of("act_no", account), SCHEDULED_TYPE)
-                .resultOrEmpty().stream()
+            return collect(userRowId, RIGHTS_SCHEDULED_PATH, Map.of("act_no", account), SCHEDULED_TYPE,
+                    r -> (Void) null, NamuListEnvelope::resultOrEmpty).items().stream()
                 .map(r -> new NamuAccountDetailDto.Right(blank(r.symbol()), blank(r.name()), blank(r.typeCode()),
                     blank(r.typeName()), isoDate(r.baseDate()), blank(r.quantity()), null, null))
                 .toList();
@@ -166,7 +215,8 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         input.put("sta_dt", YMD.format(start));
         input.put("act_no", account);
         input.put("rit_tp_cd", "");
-        return namuApiClient.exchange(userRowId, RIGHTS_HELD_PATH, input, HELD_TYPE).items().stream()
+        return collect(userRowId, RIGHTS_HELD_PATH, input, HELD_TYPE,
+                NamuPagedEnvelope::summary, NamuPagedEnvelope::items).items().stream()
             // 지난 것은 유형 이름이 없다 — 화면이 typeCode 로 이름을 붙인다.
             .map(r -> new NamuAccountDetailDto.Right(blank(r.symbol()), blank(r.name()), blank(r.typeCode()),
                 null, isoDate(r.baseDate()), blank(r.quantity()), blank(r.amount()), isoDate(r.payDate())))

@@ -50,6 +50,10 @@ import java.util.Map;
 @Component
 public class NamuApiClient {
 
+    /** 연속조회 헤더 — 응답 · 요청 모두 이 이름이다. */
+    static final String HEADER_CTS = "cts";
+    static final String HEADER_CTS_FLAG = "cts_flag";
+
     private final RestTemplate namuRestTemplate;
     private final BrokerTokenManager tokenManager;
     private final NamuProperties namuProperties;
@@ -92,6 +96,24 @@ public class NamuApiClient {
         return execute(userRowId, path, input, typeRef, true);
     }
 
+    /**
+     * 연속조회 한 쪽 — 봉투와 함께 <b>응답 헤더</b>의 {@code cts} · {@code cts_flag} 를 돌려준다
+     * (문서: 본문이 아니라 헤더로 온다). 다음 쪽은 직전 {@code cts} · {@code cts_flag} 를 요청 헤더에
+     * 그대로 실어 부른다. 첫 쪽은 둘 다 null.
+     */
+    public <R extends NamuResponse> NamuPage<R> exchangePage(Long userRowId, String path, Map<String, ?> input,
+                                                             ParameterizedTypeReference<R> typeRef,
+                                                             String cts, String ctsFlag) {
+        ensureConfigured();
+        ResponseEntity<R> res = executeEntity(userRowId, path, input, typeRef, true, cts, ctsFlag);
+        HttpHeaders h = res.getHeaders();
+        return new NamuPage<>(res.getBody(), h.getFirst(HEADER_CTS), h.getFirst(HEADER_CTS_FLAG));
+    }
+
+    /** 연속조회 한 쪽. {@code cts} · {@code ctsFlag} 는 응답 헤더 값(없으면 null). */
+    public record NamuPage<R>(R body, String cts, String ctsFlag) {
+    }
+
     private void ensureConfigured() {
         if (!namuProperties.isConfigured()) {
             log.warn("나무증권 연동 설정(app.namu.base-url)이 비어 있습니다");
@@ -102,9 +124,21 @@ public class NamuApiClient {
     private <R extends NamuResponse> R execute(Long userRowId, String path, Map<String, ?> input,
                                                ParameterizedTypeReference<R> typeRef,
                                                boolean retryOnUnauthorized) {
+        return executeEntity(userRowId, path, input, typeRef, retryOnUnauthorized, null, null).getBody();
+    }
+
+    private <R extends NamuResponse> ResponseEntity<R> executeEntity(Long userRowId, String path,
+                                               Map<String, ?> input, ParameterizedTypeReference<R> typeRef,
+                                               boolean retryOnUnauthorized, String cts, String ctsFlag) {
         HttpHeaders headers = new HttpHeaders();
         headers.addAll(tokenManager.authHeaders(userRowId));
         headers.setContentType(MediaType.APPLICATION_JSON);
+        if (cts != null) {
+            headers.set(HEADER_CTS, cts);
+            if (ctsFlag != null) {
+                headers.set(HEADER_CTS_FLAG, ctsFlag);
+            }
+        }
 
         try {
             ResponseEntity<R> response = namuRestTemplate.exchange(
@@ -122,14 +156,14 @@ public class NamuApiClient {
                     path, body.effectiveCode(), UpstreamErrorLog.safe(body.effectiveMessage()));
                 throw new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR);
             }
-            return body;
+            return response;
         } catch (HttpClientErrorException.Unauthorized e) {
             // 토큰이 무효라고 증권사가 말한 유일한 신호가 401 이다. 버릴지 말지는
             // 토큰 담당자가 정한다 — 방금 발급한 토큰이면 버려도 같은 401 이 오고
             // 알림톡만 쌓인다(시세는 종목마다 한 콜이라 폴링 한 바퀴에 종목 수만큼).
             if (retryOnUnauthorized && tokenManager.invalidateOnUnauthorized(userRowId)) {
                 log.info("나무증권 401 - 토큰 재발급 후 1회 재시도: path={}, userRowId={}", path, userRowId);
-                return execute(userRowId, path, input, typeRef, false);
+                return executeEntity(userRowId, path, input, typeRef, false, cts, ctsFlag);
             }
             throw toExternalException(e, path);
         } catch (HttpStatusCodeException e) {

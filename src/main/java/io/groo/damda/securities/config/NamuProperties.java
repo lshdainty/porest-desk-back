@@ -86,6 +86,13 @@ public class NamuProperties {
     private int epsCacheTtlSeconds = 21600;
 
     /**
+     * 연속조회(실현손익 · 권리) 최대 쪽 수. 나무는 긴 기간을 한 번에 다 주지 않고 응답 헤더 {@code cts} 로
+     * 다음 쪽을 알린다 — 첫 쪽만 읽으면 합계가 조용히 덜 센다. 무한히 따라가지 않도록 상한을 둔다
+     * (넘으면 로그를 남기고 응답에 잘림 표시).
+     */
+    private int maxContinuationPages = 10;
+
+    /**
      * 환율 폴백에 쓸 <b>미국 상장 종목코드</b>.
      *
      * <p>나무 환율의 1순위는 해외 잔고의 당일매매기준환율인데, 그건 <b>계좌와 USD 보유 종목이

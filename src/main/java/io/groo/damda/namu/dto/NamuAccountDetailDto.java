@@ -27,10 +27,12 @@ public final class NamuAccountDetailDto {
     /**
      * 실현손익. 한쪽 조회가 실패하면 그쪽({@code kr*} 또는 {@code us*})만 null 이다 — 다른 쪽은 남긴다.
      * 미국 줄에는 종목 이름이 없다(문서) → 날짜별 줄.
+     *
+     * @param truncated 연속조회가 최대 쪽 수에서 끊겼다 — 줄 · 합계가 덜 셌을 수 있다(화면이 알려야 한다)
      */
     @Schema(name = "NamuRealizedPnl")
     public record RealizedPnl(String krTotal, List<KrPnlItem> krItems,
-                              String usTotal, List<UsPnlRow> usRows) {
+                              String usTotal, List<UsPnlRow> usRows, boolean truncated) {
     }
 
     @Schema(name = "NamuKrPnlItem")
