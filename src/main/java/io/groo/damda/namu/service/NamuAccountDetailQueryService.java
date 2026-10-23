@@ -26,5 +26,5 @@ public interface NamuAccountDetailQueryService {
      * 권리(배당). {@code kind} {@code scheduled} 는 예정, {@code held} 는 지난 것({@code from} 부터).
      * 지난 것은 화면이 "지난 것" 을 고를 때만 부른다.
      */
-    List<NamuAccountDetailDto.Right> getRights(Long userRowId, String kind, LocalDate from);
+    NamuAccountDetailDto.Rights getRights(Long userRowId, String kind, LocalDate from);
 }

@@ -93,6 +93,12 @@ public class NamuProperties {
     private int maxContinuationPages = 10;
 
     /**
+     * 연속조회 쪽 사이 간격(ms). 문서는 초당 5회 수준 · 0.2초 이상 간격이다 — 쪽을 한꺼번에 보내면
+     * 429 가 나 긴 기간이 바로 실패한다. 0 이면 간격 없음(시험용).
+     */
+    private int continuationPageDelayMs = 200;
+
+    /**
      * 환율 폴백에 쓸 <b>미국 상장 종목코드</b>.
      *
      * <p>나무 환율의 1순위는 해외 잔고의 당일매매기준환율인데, 그건 <b>계좌와 USD 보유 종목이

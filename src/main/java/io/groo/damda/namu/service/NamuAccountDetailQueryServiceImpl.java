@@ -3,6 +3,7 @@ package io.groo.damda.namu.service;
 import io.groo.core.exception.InvalidValueException;
 import io.groo.damda.common.exception.DeskErrorCode;
 import io.groo.damda.namu.client.NamuApiClient;
+import io.groo.damda.namu.client.NamuRateLimitException;
 import io.groo.damda.namu.client.dto.NamuEnvelope;
 import io.groo.damda.namu.client.dto.NamuListEnvelope;
 import io.groo.damda.namu.client.dto.NamuPagedEnvelope;
@@ -88,7 +89,18 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         String flag = null;
         int max = Math.max(1, namuProperties.getMaxContinuationPages());
         for (int page = 1; ; page++) {
-            NamuApiClient.NamuPage<R> res = namuApiClient.exchangePage(userRowId, path, input, typeRef, cts, flag);
+            NamuApiClient.NamuPage<R> res;
+            try {
+                res = namuApiClient.exchangePage(userRowId, path, input, typeRef, cts, flag);
+            } catch (NamuRateLimitException e) {
+                if (page == 1) {
+                    throw e;
+                }
+                // 모은 데까지 내고 잘렸다고 알린다(429 를 맞은 쪽 이후는 못 읽었다).
+                log.warn("나무 연속조회 {}쪽에서 유량 제한(429) - 모은 {}쪽까지 내고 잘림 표시: path={}, userRowId={}",
+                    page, page - 1, path, userRowId);
+                return new Collected<>(summary, all, true);
+            }
             R body = res.body();
             if (summary == null) {
                 summary = summaryOf.apply(body);
@@ -97,6 +109,13 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
             boolean more = "Y".equalsIgnoreCase(res.ctsFlag()) && res.cts() != null
                 && !res.cts().isBlank() && !res.cts().equals(cts);
             if (!more) {
+                // 헤더 없이 응답코드(00165 · 00218)로만 "다음 쪽이 있다" 고 알리는 API — 따라갈 키가 없다.
+                String code = body.effectiveCode();
+                if (code != null && NamuResponse.CONTINUATION_CODES.contains(code.trim())) {
+                    log.warn("나무 연속조회가 코드({})로만 알려 첫 쪽까지만 읽는다 - 잘림 표시: path={}, userRowId={}",
+                        code.trim(), path, userRowId);
+                    return new Collected<>(summary, all, true);
+                }
                 return new Collected<>(summary, all, false);
             }
             if (page >= max) {
@@ -106,6 +125,20 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
             }
             cts = res.cts();
             flag = res.ctsFlag();
+            pause();
+        }
+    }
+
+    /** 쪽 사이 간격 — 문서: 초당 5회 수준, 0.2초 이상 간격. */
+    private void pause() {
+        int delay = namuProperties.getContinuationPageDelayMs();
+        if (delay <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -189,7 +222,7 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
     }
 
     @Override
-    public List<NamuAccountDetailDto.Right> getRights(Long userRowId, String kind, LocalDate from) {
+    public NamuAccountDetailDto.Rights getRights(Long userRowId, String kind, LocalDate from) {
         boolean held;
         if (KIND_SCHEDULED.equals(kind)) {
             held = false;
@@ -200,14 +233,15 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         }
         String account = namuQueryService.resolveAccountNo(userRowId, null);
         if (account == null) {
-            return List.of();
+            return new NamuAccountDetailDto.Rights(List.of(), false);
         }
         if (!held) {
-            return collect(userRowId, RIGHTS_SCHEDULED_PATH, Map.of("act_no", account), SCHEDULED_TYPE,
-                    r -> (Void) null, NamuListEnvelope::resultOrEmpty).items().stream()
+            var res = collect(userRowId, RIGHTS_SCHEDULED_PATH, Map.of("act_no", account), SCHEDULED_TYPE,
+                r -> (Void) null, NamuListEnvelope::resultOrEmpty);
+            return new NamuAccountDetailDto.Rights(res.items().stream()
                 .map(r -> new NamuAccountDetailDto.Right(blank(r.symbol()), blank(r.name()), blank(r.typeCode()),
                     blank(r.typeName()), isoDate(r.baseDate()), blank(r.quantity()), null, null))
-                .toList();
+                .toList(), res.truncated());
         }
         // 지난 것 — 올해 1월 1일부터(화면이 from 을 안 주면). rit_tp_cd "" 는 전체.
         LocalDate start = from != null ? from : LocalDate.now(clock.withZone(SEOUL)).withDayOfYear(1);
@@ -215,12 +249,13 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         input.put("sta_dt", YMD.format(start));
         input.put("act_no", account);
         input.put("rit_tp_cd", "");
-        return collect(userRowId, RIGHTS_HELD_PATH, input, HELD_TYPE,
-                NamuPagedEnvelope::summary, NamuPagedEnvelope::items).items().stream()
+        var res = collect(userRowId, RIGHTS_HELD_PATH, input, HELD_TYPE,
+            NamuPagedEnvelope::summary, NamuPagedEnvelope::items);
+        return new NamuAccountDetailDto.Rights(res.items().stream()
             // 지난 것은 유형 이름이 없다 — 화면이 typeCode 로 이름을 붙인다.
             .map(r -> new NamuAccountDetailDto.Right(blank(r.symbol()), blank(r.name()), blank(r.typeCode()),
                 null, isoDate(r.baseDate()), blank(r.quantity()), blank(r.amount()), isoDate(r.payDate())))
-            .toList();
+            .toList(), res.truncated());
     }
 
     private static boolean sold(String qty) {

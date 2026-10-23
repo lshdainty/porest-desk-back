@@ -34,7 +34,9 @@ import java.util.Set;
  * "코드가 목록에 있거나 <b>또는</b> 메시지에 완료가 있으면 성공" 이다.
  *
  * <p><b>{@code 00165}·{@code 00218} 과 헷갈리면 안 된다.</b> 그 둘은 연속조회({@code cts})
- * 계속 신호이지 성공 코드가 아니다 — 숫자만 가깝다. 우리는 연속조회를 쓰지 않는다.
+ * 계속 신호이지 성공 코드가 아니다 — 숫자만 가깝다. 블록이 함께 오면 {@link #hasPayload()} 로 성공이지만
+ * "다음 쪽이 있다" 는 뜻이므로, 실현손익 · 권리 조회({@code NamuAccountDetailQueryServiceImpl})는 이 코드를
+ * 보면 <b>잘렸다고 표시</b>한다({@link #CONTINUATION_CODES}). 헤더({@code cts})로 알리는 쪽은 따라간다.
  *
  * <h2>문서 개정(2026-10-15) — 블록 유무가 먼저다</h2>
  *
@@ -59,6 +61,9 @@ public interface NamuResponse {
      * {@code DEFAULT_SUCCESS_CODES} 와 같다.
      */
     Set<String> SUCCESS_CODES = Set.of(SUCCESS, "00166", "00221", "13578");
+
+    /** 헤더 없이 응답코드로만 "연속조회가 있다" 고 알리는 코드(문서: 00165 · 00218). */
+    Set<String> CONTINUATION_CODES = Set.of("00165", "00218");
 
     /** 코드 목록에 없는 미지의 정상코드를 건지는 2차 방어. */
     String SUCCESS_MESSAGE = "완료";

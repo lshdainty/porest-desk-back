@@ -49,6 +49,14 @@ public final class NamuAccountDetailDto {
                         String quantity, String amount, String payDate) {
     }
 
+    /**
+     * 권리 응답 — 연속조회가 최대 쪽 수에서 끊겼거나 코드로만 알리는 연속조회(00165 · 00218)였으면
+     * {@code truncated=true}. 줄이 덜 보일 수 있다는 뜻이다.
+     */
+    @Schema(name = "NamuRights")
+    public record Rights(List<Right> items, boolean truncated) {
+    }
+
     // === 나무 응답 (상류) ===
 
     @JsonIgnoreProperties(ignoreUnknown = true)

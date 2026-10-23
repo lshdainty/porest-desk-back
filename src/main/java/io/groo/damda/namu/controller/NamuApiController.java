@@ -271,7 +271,7 @@ public class NamuApiController {
      * 안 주면 올해 1월 1일). 지난 것은 화면이 고를 때만 부른다.
      */
     @GetMapping("/account/rights")
-    public ApiResponse<List<NamuAccountDetailDto.Right>> getRights(
+    public ApiResponse<NamuAccountDetailDto.Rights> getRights(
             @LoginUser UserPrincipal loginUser,
             @RequestParam(defaultValue = "scheduled") String kind,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from) {
