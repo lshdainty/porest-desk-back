@@ -201,4 +201,39 @@ class TossApiControllerTest {
 
         verify(tossQueryService).getHoldings(1L, 77L, "005930");
     }
+
+    @Test
+    @DisplayName("[13b-0] GET /toss/stocks/{symbol}/investor-trading — 기본 5건")
+    void getInvestorTrading() throws Exception {
+        mockMvc.perform(get("/api/v1/toss/stocks/005930/investor-trading"))
+                .andExpect(status().isOk());
+
+        verify(tossQueryService).getInvestorTrading(1L, "005930", 5);
+    }
+
+    @Test
+    @DisplayName("[13b-0] GET /toss/buying-power — accountSeq·currency 매핑")
+    void getBuyingPower() throws Exception {
+        mockMvc.perform(get("/api/v1/toss/buying-power")
+                        .param("accountSeq", "77").param("currency", "KRW"))
+                .andExpect(status().isOk());
+
+        verify(tossQueryService).getBuyingPower(1L, 77L, "KRW");
+    }
+
+    @Test
+    @DisplayName("[13b-0] GET /toss/commissions — accountSeq 매핑")
+    void getCommissions() throws Exception {
+        mockMvc.perform(get("/api/v1/toss/commissions").param("accountSeq", "77"))
+                .andExpect(status().isOk());
+
+        verify(tossQueryService).getCommissions(1L, 77L);
+    }
+
+    @Test
+    @DisplayName("[13b-0] GET /toss/buying-power — 계좌를 안 주면 400 (보유 조회와 같은 계좌 고르기)")
+    void getBuyingPowerRequiresAccount() throws Exception {
+        mockMvc.perform(get("/api/v1/toss/buying-power").param("currency", "KRW"))
+                .andExpect(status().is4xxClientError());
+    }
 }

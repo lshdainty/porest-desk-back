@@ -109,4 +109,26 @@ public final class TossAccountDto {
             String tax
     ) {
     }
+
+    /**
+     * 매수 가능 금액 ({@code GET /api/v1/buying-power}) — 현금 기반(미수 미발생 기준).
+     * KRW 는 정수(원), USD 는 소수 문자열.
+     */
+    public record BuyingPower(
+            String currency,
+            String cashBuyingPower
+    ) {
+    }
+
+    /**
+     * 시장별 매매 수수료율 ({@code GET /api/v1/commissions}). {@code commissionRate} 는 소수 비율
+     * (예: {@code 0.00015} = 0.015%). 해외는 {@code startDate} 가 null, 무기한이면 {@code endDate} 가 null.
+     */
+    public record Commission(
+            String marketCountry,
+            String commissionRate,
+            String startDate,
+            String endDate
+    ) {
+    }
 }

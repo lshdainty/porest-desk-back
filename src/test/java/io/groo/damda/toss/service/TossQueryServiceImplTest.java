@@ -1,7 +1,10 @@
 package io.groo.damda.toss.service;
 
 import io.groo.core.controller.dto.CursorResponse;
+import io.groo.core.exception.InvalidValueException;
+import io.groo.damda.securities.service.dto.InvestorTradingDay;
 import io.groo.damda.toss.client.TossApiClient;
+import io.groo.damda.toss.dto.TossAccountDto;
 import io.groo.damda.toss.dto.TossIndicatorDto;
 import io.groo.damda.toss.dto.TossMarketDto;
 import io.groo.damda.toss.dto.TossRankingDto;
@@ -17,9 +20,11 @@ import org.springframework.util.MultiValueMap;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -167,6 +172,77 @@ class TossQueryServiceImplTest {
         assertThat(q.getValue().getFirst("interval")).isEqualTo("1d");
         assertThat(q.getValue().getFirst("count")).isEqualTo("30");
         assertThat(q.getValue().getFirst("before")).isEqualTo("b111");
+    }
+
+    // === 13b-0 ===
+
+    @Test
+    @DisplayName("[13b-0 줄 7] 주봉 1w 는 토스가 거절한다 — 상류에 보내지 않는다 (나무 전용)")
+    void getCandles_rejectsWeekly() {
+        assertThatThrownBy(() -> sut.getCandles(USER, "005930", "1w", 100, null, null))
+                .isInstanceOf(InvalidValueException.class);
+
+        verify(client, never()).get(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 5] 투자자별 — 나무와 같은 InvestorTradingDay · 당일 잠정의 개인 null 은 그대로 null · count 상한 100")
+    void getInvestorTrading_mapsToCommonShape() {
+        TossMarketDto.InvestorTradingResponse res = new TossMarketDto.InvestorTradingResponse(null, List.of(
+                new TossMarketDto.InvestorTradingRecord("2026-10-23", null,
+                        new TossMarketDto.InvestorSide("-300"), new TossMarketDto.InvestorSide("100")),
+                new TossMarketDto.InvestorTradingRecord("2026-10-22", new TossMarketDto.InvestorSide("200"),
+                        new TossMarketDto.InvestorSide("-50"), null)));
+        given(client.<TossMarketDto.InvestorTradingResponse>getPath(eq(USER),
+                eq("/api/v1/stocks/{symbol}/investor-trading"), eq(java.util.Map.of("symbol", "005930")), any(), any()))
+                .willReturn(res);
+
+        List<InvestorTradingDay> days = sut.getInvestorTrading(USER, "005930", 500);
+
+        assertThat(days).containsExactly(
+                new InvestorTradingDay("2026-10-23", null, "-300", "100"),
+                new InvestorTradingDay("2026-10-22", "200", "-50", null));
+        ArgumentCaptor<MultiValueMap<String, String>> q = queryCaptor();
+        verify(client).getPath(eq(USER), eq("/api/v1/stocks/{symbol}/investor-trading"), any(), q.capture(), any());
+        assertThat(q.getValue().getFirst("count")).isEqualTo("100");
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 5] 투자자별 — 응답이 비면 빈 목록 · count 를 안 주면 쿼리에 싣지 않는다")
+    void getInvestorTrading_empty() {
+        given(client.<TossMarketDto.InvestorTradingResponse>getPath(eq(USER), any(), any(), any(), any()))
+                .willReturn(null);
+
+        assertThat(sut.getInvestorTrading(USER, "005930", null)).isEmpty();
+        ArgumentCaptor<MultiValueMap<String, String>> q = queryCaptor();
+        verify(client).getPath(eq(USER), any(), any(), q.capture(), any());
+        assertThat(q.getValue().getFirst("count")).isNull();
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 6] 주문 가능 — 본인 계좌 헤더(accountSeq)와 통화를 싣는다")
+    void getBuyingPower() {
+        given(client.<TossAccountDto.BuyingPower>getForUser(eq(USER), eq("/api/v1/buying-power"), any(), eq(77L), any()))
+                .willReturn(new TossAccountDto.BuyingPower("USD", "1234.56"));
+
+        TossAccountDto.BuyingPower bp = sut.getBuyingPower(USER, 77L, "USD");
+
+        assertThat(bp.cashBuyingPower()).isEqualTo("1234.56");
+        ArgumentCaptor<MultiValueMap<String, String>> q = queryCaptor();
+        verify(client).getForUser(eq(USER), eq("/api/v1/buying-power"), q.capture(), eq(77L), any());
+        assertThat(q.getValue().getFirst("currency")).isEqualTo("USD");
+    }
+
+    @Test
+    @DisplayName("[13b-0 줄 7] 수수료율 — 본인 계좌 헤더로 그대로 내린다")
+    void getCommissions() {
+        List<TossAccountDto.Commission> list = List.of(
+                new TossAccountDto.Commission("KR", "0.00015", "2026-01-01", null),
+                new TossAccountDto.Commission("US", "0.0025", null, null));
+        given(client.<List<TossAccountDto.Commission>>getForUser(eq(USER), eq("/api/v1/commissions"), any(), eq(77L), any()))
+                .willReturn(list);
+
+        assertThat(sut.getCommissions(USER, 77L)).isEqualTo(list);
     }
 
     @SuppressWarnings("unchecked")

@@ -4,6 +4,7 @@ import io.groo.core.controller.ApiResponse;
 import io.groo.core.controller.dto.CursorResponse;
 import io.groo.damda.security.annotation.LoginUser;
 import io.groo.damda.security.principal.UserPrincipal;
+import io.groo.damda.securities.service.dto.InvestorTradingDay;
 import io.groo.damda.toss.dto.TossAccountDto;
 import io.groo.damda.toss.dto.TossIndicatorDto;
 import io.groo.damda.toss.dto.TossMarketDto;
@@ -94,6 +95,18 @@ public class TossApiController {
         return ApiResponse.success(tossQueryService.getStockWarnings(loginUser.getRowId(), symbol));
     }
 
+    /**
+     * 국내 종목 투자자별 매매동향(최신순 · 순매수 주) — 나무 {@code /namu/kr/investors} 와 같은 모양.
+     * 당일 잠정 기록의 개인 칸은 null 이다.
+     */
+    @GetMapping("/stocks/{symbol}/investor-trading")
+    public ApiResponse<List<InvestorTradingDay>> getInvestorTrading(
+            @LoginUser UserPrincipal loginUser,
+            @PathVariable String symbol,
+            @RequestParam(required = false, defaultValue = "5") Integer count) {
+        return ApiResponse.success(tossQueryService.getInvestorTrading(loginUser.getRowId(), symbol, count));
+    }
+
     // === Rankings (주식 랭킹) ===
 
     /**
@@ -173,5 +186,22 @@ public class TossApiController {
             @RequestParam Long accountSeq,
             @RequestParam(required = false) String symbol) {
         return ApiResponse.success(tossQueryService.getHoldings(loginUser.getRowId(), accountSeq, symbol));
+    }
+
+    /** 매수 가능 금액(현금 기반) — {@code currency} KRW | USD. 계좌는 보유 조회와 같은 {@code accountSeq}. */
+    @GetMapping("/buying-power")
+    public ApiResponse<TossAccountDto.BuyingPower> getBuyingPower(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam Long accountSeq,
+            @RequestParam String currency) {
+        return ApiResponse.success(tossQueryService.getBuyingPower(loginUser.getRowId(), accountSeq, currency));
+    }
+
+    /** 이 계좌의 시장별 매매 수수료율. */
+    @GetMapping("/commissions")
+    public ApiResponse<List<TossAccountDto.Commission>> getCommissions(
+            @LoginUser UserPrincipal loginUser,
+            @RequestParam Long accountSeq) {
+        return ApiResponse.success(tossQueryService.getCommissions(loginUser.getRowId(), accountSeq));
     }
 }

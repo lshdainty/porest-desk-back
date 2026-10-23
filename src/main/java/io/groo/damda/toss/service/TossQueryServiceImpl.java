@@ -1,6 +1,9 @@
 package io.groo.damda.toss.service;
 
 import io.groo.core.controller.dto.CursorResponse;
+import io.groo.core.exception.InvalidValueException;
+import io.groo.damda.common.exception.DeskErrorCode;
+import io.groo.damda.securities.service.dto.InvestorTradingDay;
 import io.groo.damda.toss.client.TossApiClient;
 import io.groo.damda.toss.client.dto.TossEnvelope;
 import io.groo.damda.toss.dto.TossAccountDto;
@@ -70,6 +73,10 @@ public class TossQueryServiceImpl implements TossQueryService {
 
     @Override
     public CursorResponse<TossMarketDto.Candle> getCandles(Long userRowId, String symbol, String interval, Integer size, String cursor, Boolean adjusted) {
+        // 주봉("1w")은 나무 전용(N1-가 "5년") — 토스 상류에 보내면 알 수 없는 오류가 되므로 먼저 거절한다.
+        if (interval != null && "1w".equalsIgnoreCase(interval.trim())) {
+            throw new InvalidValueException(DeskErrorCode.SECURITIES_INTERVAL_UNSUPPORTED);
+        }
         int pageSize = (size == null || size <= 0) ? TOSS_CANDLE_MAX : Math.min(size, TOSS_CANDLE_MAX);
 
         MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
@@ -213,5 +220,46 @@ public class TossQueryServiceImpl implements TossQueryService {
         // 보유주식은 본인 계좌 → 사용자 개인 토큰 + X-Tossinvest-Account
         return client.getForUser(userRowId, "/api/v1/holdings", q, accountSeq,
                 new ParameterizedTypeReference<TossEnvelope<TossAccountDto.HoldingsOverview>>() {});
+    }
+
+    // === 13b-0 · 투자자별 · 주문 가능 · 수수료 ===
+
+    /** 토스 investor-trading count 상한. */
+    private static final int TOSS_INVESTOR_MAX = 100;
+
+    @Override
+    public List<InvestorTradingDay> getInvestorTrading(Long userRowId, String symbol, Integer count) {
+        MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
+        if (count != null && count > 0) {
+            q.add("count", String.valueOf(Math.min(count, TOSS_INVESTOR_MAX)));
+        }
+        TossMarketDto.InvestorTradingResponse res = client.getPath(userRowId,
+                "/api/v1/stocks/{symbol}/investor-trading", Map.of("symbol", symbol), q,
+                new ParameterizedTypeReference<TossEnvelope<TossMarketDto.InvestorTradingResponse>>() {});
+        if (res == null || res.records() == null) {
+            return List.of();
+        }
+        return res.records().stream()
+                .map(r -> new InvestorTradingDay(r.date(), net(r.individual()), net(r.foreigner()), net(r.institution())))
+                .toList();
+    }
+
+    /** 분류 객체가 null(당일 잠정의 개인)이면 null 그대로. */
+    private static String net(TossMarketDto.InvestorSide side) {
+        return side == null ? null : side.netBuyVolume();
+    }
+
+    @Override
+    public TossAccountDto.BuyingPower getBuyingPower(Long userRowId, Long accountSeq, String currency) {
+        MultiValueMap<String, String> q = new LinkedMultiValueMap<>();
+        q.add("currency", currency);
+        return client.getForUser(userRowId, "/api/v1/buying-power", q, accountSeq,
+                new ParameterizedTypeReference<TossEnvelope<TossAccountDto.BuyingPower>>() {});
+    }
+
+    @Override
+    public List<TossAccountDto.Commission> getCommissions(Long userRowId, Long accountSeq) {
+        return client.getForUser(userRowId, "/api/v1/commissions", null, accountSeq,
+                new ParameterizedTypeReference<TossEnvelope<List<TossAccountDto.Commission>>>() {});
     }
 }
