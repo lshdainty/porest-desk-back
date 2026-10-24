@@ -462,8 +462,8 @@ class BrokerTokenManagerTest {
         }
 
         @Test
-        @DisplayName("나무는 평문 키/시크릿을 매 호출에 함께 싣는다 — applyAuth 재정의")
-        void namuAddsClientHeaders() {
+        @DisplayName("나무는 Bearer 하나만 싣는다 — x-client-* 헤더 없음(2026-10-15 문서 개정)")
+        void namuSendsBearerOnly() {
             UserSecuritiesCredential cred = UserSecuritiesCredential.verified(
                 USER, SecuritiesBroker.NAMU, "keyEnc", "secretEnc", LocalDateTime.now());
             given(credentialRepository.findByUserRowIdAndBrokerAndIsDeletedAndIsVerified(
@@ -474,8 +474,8 @@ class BrokerTokenManagerTest {
             HttpHeaders headers = sut.authHeaders(USER);
 
             assertThat(headers.getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Bearer tok");
-            assertThat(headers.getFirst("x-client-id")).isEqualTo(API_KEY);
-            assertThat(headers.getFirst("x-client-secret")).isEqualTo(API_SECRET);
+            assertThat(headers.getFirst("x-client-id")).isNull();
+            assertThat(headers.getFirst("x-client-secret")).isNull();
         }
     }
 }

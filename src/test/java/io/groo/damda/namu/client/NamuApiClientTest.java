@@ -43,6 +43,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -92,8 +94,6 @@ class NamuApiClientTest {
         given(tokenManagers.of(SecuritiesBroker.NAMU)).willReturn(tokenManager);
         HttpHeaders auth = new HttpHeaders();
         auth.setBearerAuth("tok");
-        auth.set("x-client-id", "KEY");
-        auth.set("x-client-secret", "SECRET");
         given(tokenManager.authHeaders(1L)).willReturn(auth);
         given(tokenManager.invalidateOnUnauthorized(1L)).willReturn(true);
 
@@ -110,6 +110,9 @@ class NamuApiClientTest {
         server.expect(requestTo(BASE + path))
             .andExpect(method(HttpMethod.POST))
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer tok"))
+            .andExpect(headerDoesNotExist("x-client-id"))
+            .andExpect(headerDoesNotExist("x-client-secret"))
             .andRespond(withSuccess(responseJson, MediaType.APPLICATION_JSON));
     }
 

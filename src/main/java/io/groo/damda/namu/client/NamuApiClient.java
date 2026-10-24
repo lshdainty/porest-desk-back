@@ -38,8 +38,8 @@ import java.util.Map;
  *       ({@link NamuResponse#isSuccess()} — 2026-10-15 문서 개정에 맞춰 ① 기대한 블록에 값이 있는지
  *       ② {@code rsp_msg} 가 완료를 뜻하는지 ③ {@code rsp_cd} 는 로그 · 문의용 순서로 본다).
  *       상태코드만 보면 조용히 빈 화면이 된다.</li>
- *   <li><b>인증 헤더가 Bearer 하나가 아니다</b> — 매 호출에 평문 키/시크릿이 함께 간다.
- *       그 구성은 {@code BrokerTokenManager} 가 맡는다.</li>
+ *   <li><b>인증 헤더</b> — 2026-10-15 문서 개정으로 Bearer 하나만 싣는다(평문 키/시크릿 헤더 불필요).
+ *       dev 확인 대기(2026-10-24 기준 미확인). 그 구성은 {@code BrokerTokenManager} 가 맡는다.</li>
  * </ol>
  *
  * <p>업스트림 에러 본문({@code rsp_msg})은 <b>로그에만</b> 남긴다. 사용자에게는 i18n 메시지만 나간다.
