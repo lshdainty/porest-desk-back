@@ -169,7 +169,7 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
         }
         String account = namuQueryService.resolveAccountNo(userRowId, null);
         if (account == null) {
-            return new NamuAccountDetailDto.RealizedPnl(null, null, null, null, "0", false);
+            return new NamuAccountDetailDto.RealizedPnl(null, null, null, null, false);
         }
 
         boolean truncated = false;
@@ -196,7 +196,6 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
 
         String usTotal = null;
         List<NamuAccountDetailDto.UsPnlRow> usRows = null;
-        BigDecimal usOther = BigDecimal.ZERO;
         try {
             Map<String, String> input = new LinkedHashMap<>();
             input.put("act_no", account);
@@ -216,24 +215,10 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
                 .map(r -> new NamuAccountDetailDto.UsPnlRow(isoDate(r.date()), blank(r.sellQuantity()),
                     blank(r.profit()), blank(r.rate())))
                 .toList();
-            // 매도 0 인 줄로 걸러 낸 행의 손익 합. 가설(dev 확인 대기): usTotal(fc_rzt_pls_sum) = 매도한 날 행 + 매수한 날
-            // 제비용 행. 걸러 내면 usTotal 이 행 합보다 작아 보이므로(dev 실측 usTotal 이 행 합의 0.83배) 그 차이를 화면이 "기타" 로 보이게 내려 준다.
-            long droppedCount = 0;
-            for (var r : res.items()) {
-                if (!sold(r.sellQuantity())) {
-                    droppedCount++;
-                    BigDecimal v = NamuQueryServiceImpl.decimal(r.profit());
-                    if (v != null) {
-                        usOther = usOther.add(v);
-                    }
-                }
-            }
-            log.info("나무 실현손익(미국) 매도 0 인 행 제외: userRowId={}, 건수={}", userRowId, droppedCount);
         } catch (RuntimeException e) {
-            usOther = BigDecimal.ZERO;
             log.warn("나무 실현손익(미국) 조회 실패 - 그쪽만 비운다: userRowId={}: {}", userRowId, e.getMessage());
         }
-        return new NamuAccountDetailDto.RealizedPnl(krTotal, krItems, usTotal, usRows, usOther.toPlainString(), truncated);
+        return new NamuAccountDetailDto.RealizedPnl(krTotal, krItems, usTotal, usRows, truncated);
     }
 
     @Override
