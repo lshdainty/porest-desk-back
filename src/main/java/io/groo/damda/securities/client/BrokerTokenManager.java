@@ -8,8 +8,8 @@ import org.springframework.http.HttpHeaders;
  *
  * <p><b>왜 증권사마다 구현을 두는가</b> — 프로토콜이 실제로 다르다. 토스는 폼 바디로
  * {@code client_id}/{@code client_secret} 을 보내고 {@code Bearer} 헤더 하나면 되는데,
- * 나무는 쿼리 파라미터로 {@code appkey}/{@code appsecretkey}/{@code scope=oob} 를 보내고
- * <b>매 호출마다</b> {@code x-client-id}/{@code x-client-secret} 을 Bearer 와 함께 요구한다.
+ * 나무는 쿼리 파라미터로 {@code appkey}/{@code appsecretkey}/{@code scope=oob} 를 보낸다
+ * (조회 헤더는 2026-10-15 문서 개정으로 Bearer 하나 — dev 확인 대기).
  * 하나의 발급기에 분기를 넣으면 한쪽을 고칠 때 다른 쪽이 깨진다.
  *
  * <p><b>확장 방법</b> — {@code AbstractBrokerTokenManager} 를 상속해 {@code issueToken} 하나만
