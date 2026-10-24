@@ -111,6 +111,58 @@ class NamuAccountDetailQueryServiceImplTest {
     }
 
     @Test
+    @DisplayName("미국 usOtherProfit — 매도 0 인 행만 합산한다 (매도 있는 행 제외, 여러 행)")
+    void usOtherProfitSumsUnsoldRows() {
+        respond(up.expect("/krstock/inquiry/v1/tradingPnl"), "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"x\"}");
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), """
+            {"rsp_cd":"00000","rsp_msg":"ok",
+             "Output_0":{"fc_rzt_pls_sum":"1000"},
+             "Output_1":[{"orr_dt":"20261002","sll_qty":"15","fc_rzt_pls":"1200","fc_rzt_pft_rt":"8.2"},
+                         {"orr_dt":"20261001","sll_qty":"0","fc_rzt_pls":"-120.50"},
+                         {"orr_dt":"20260930","sll_qty":"0","fc_rzt_pls":"-79.5"},
+                         {"orr_dt":"20260929","sll_qty":"","fc_rzt_pls":""}]}
+            """);
+
+        NamuAccountDetailDto.RealizedPnl r = sut.getRealizedPnl(USER, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 10, 23));
+
+        assertThat(r.usRows()).hasSize(1);
+        assertThat(r.usOtherProfit()).isEqualTo("-200.00");
+    }
+
+    @Test
+    @DisplayName("미국 usOtherProfit — 걸러진 행이 없으면 0")
+    void usOtherProfitZeroWhenNothingDropped() {
+        respond(up.expect("/krstock/inquiry/v1/tradingPnl"), "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"x\"}");
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), """
+            {"rsp_cd":"00000","rsp_msg":"ok","Output_0":{"fc_rzt_pls_sum":"1200"},
+             "Output_1":[{"orr_dt":"20261002","sll_qty":"15","fc_rzt_pls":"1200","fc_rzt_pft_rt":"8.2"}]}
+            """);
+
+        assertThat(sut.getRealizedPnl(USER, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 10, 23)).usOtherProfit())
+            .isEqualTo("0");
+    }
+
+    @Test
+    @DisplayName("미국 usOtherProfit — 합계 − 행 합 = usOtherProfit (문서 모양 픽스처)")
+    void usOtherProfitEqualsTotalMinusRows() {
+        respond(up.expect("/krstock/inquiry/v1/tradingPnl"), "{\"rsp_cd\":\"13578\",\"rsp_msg\":\"x\"}");
+        respond(up.expect("/gbstock/inquiry/v1/periodPnl"), """
+            {"rsp_cd":"00000","rsp_msg":"ok","Output_0":{"fc_rzt_pls_sum":"830"},
+             "Output_1":[{"orr_dt":"20261002","sll_qty":"10","fc_rzt_pls":"1000"},
+                         {"orr_dt":"20261001","sll_qty":"0","fc_rzt_pls":"-100"},
+                         {"orr_dt":"20260930","sll_qty":"0","fc_rzt_pls":"-70"}]}
+            """);
+
+        NamuAccountDetailDto.RealizedPnl r = sut.getRealizedPnl(USER, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 10, 23));
+
+        java.math.BigDecimal rowsSum = r.usRows().stream()
+            .map(x -> new java.math.BigDecimal(x.profit())).reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+        assertThat(new java.math.BigDecimal(r.usTotal()).subtract(rowsSum))
+            .isEqualByComparingTo(new java.math.BigDecimal(r.usOtherProfit()))
+            .isEqualByComparingTo("-170");
+    }
+
+    @Test
     @DisplayName("한쪽 조회가 실패하면 그쪽만 null — 다른 쪽은 남는다 (미국 실패)")
     void oneSideFails() {
         respond(up.expect("/krstock/inquiry/v1/tradingPnl"),
@@ -150,7 +202,7 @@ class NamuAccountDetailQueryServiceImplTest {
 
         given(namuQueryService.resolveAccountNo(8L, null)).willReturn(null);
         assertThat(sut.getRealizedPnl(8L, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 23)))
-            .isEqualTo(new NamuAccountDetailDto.RealizedPnl(null, null, null, null, false));
+            .isEqualTo(new NamuAccountDetailDto.RealizedPnl(null, null, null, null, "0", false));
     }
 
     @Test
