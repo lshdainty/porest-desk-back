@@ -217,7 +217,7 @@ public class NamuAccountDetailQueryServiceImpl implements NamuAccountDetailQuery
                     blank(r.profit()), blank(r.rate())))
                 .toList();
             // 매도 0 인 줄로 걸러 낸 행의 손익 합. 가설(dev 확인 대기): usTotal(fc_rzt_pls_sum) = 매도한 날 행 + 매수한 날
-            // 제비용 행. 걸러 내면 usTotal 이 행 합보다 커 보이므로(dev 실측 행 합이 0.83배) 화면이 "기타" 로 보이게 내려 준다.
+            // 제비용 행. 걸러 내면 usTotal 이 행 합보다 작아 보이므로(dev 실측 usTotal 이 행 합의 0.83배) 그 차이를 화면이 "기타" 로 보이게 내려 준다.
             long droppedCount = 0;
             for (var r : res.items()) {
                 if (!sold(r.sellQuantity())) {
