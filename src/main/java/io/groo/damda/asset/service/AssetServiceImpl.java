@@ -1056,7 +1056,7 @@ public class AssetServiceImpl implements AssetService {
         for (Asset a : included) {
             // 외화 자산은 원화로 환산해 더한다 — 환산하지 않으면 USD 1,000 잔고가
             // 순자산에 1,000원으로 들어가 합계가 무너진다(원화 자산은 환산율 1이라 그대로).
-            long bal = a.balanceInKrw(totalOf(at, a));
+            long bal = krwOf(at, a);
             totalBalance += bal;
             // 부호가 아니라 <b>유형</b>으로 가른다(QA #21). 부호로 가르면 잔액이 음수인
             // 입출금(마이너스 통장)이 부채로 넘어가, 유형으로 가르는 자산 화면과 총자산이
@@ -1124,8 +1124,9 @@ public class AssetServiceImpl implements AssetService {
             long assets = 0, debt = 0;
             for (Asset a : included) {
                 List<AssetBalanceHistoryService.Split> seq = series.get(a.getRowId());
-                long bal = a.balanceInKrw(
-                    seq == null ? 0L : seq.get(i).total());
+                AssetBalanceHistoryService.Split sp =
+                    seq == null ? AssetBalanceHistoryService.Split.ZERO : seq.get(i);
+                long bal = a.balanceInKrw(sp.cash(), sp.holding());
                 // 요약과 같은 규칙 — 부호로 가른다(선결제 카드가 두 번 깎이지 않게).
                 if (bal < 0) {
                     debt += -bal;
@@ -1189,14 +1190,19 @@ public class AssetServiceImpl implements AssetService {
     private long netWorthOf(List<Asset> included, Map<Long, AssetBalanceHistoryService.Split> balances) {
         long net = 0;
         for (Asset a : included) {
-            net += a.balanceInKrw(totalOf(balances, a));
+            net += krwOf(balances, a);
         }
         return net;
     }
 
-    /** 집계 결과에서 그 자산의 총잔액(예수금 + 평가금액). 이력이 없으면 0. */
-    private static long totalOf(Map<Long, AssetBalanceHistoryService.Split> balances, Asset a) {
-        return balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO).total();
+    /**
+     * 집계 결과에서 그 자산의 원화 환산 잔액 — 요약·지난달·추이가 같은 식을 쓰는 단일 길목.
+     * 예수금은 자산 통화라 환산하고 평가금액은 이미 원화라 그대로 더한다({@link Asset#balanceInKrw(long, long)}).
+     */
+    private static long krwOf(Map<Long, AssetBalanceHistoryService.Split> balances, Asset a) {
+        AssetBalanceHistoryService.Split sp =
+            balances.getOrDefault(a.getRowId(), AssetBalanceHistoryService.Split.ZERO);
+        return a.balanceInKrw(sp.cash(), sp.holding());
     }
 
     private List<Asset> includedAssets(Long userRowId) {
