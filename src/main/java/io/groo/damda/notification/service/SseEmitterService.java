@@ -21,6 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class SseEmitterService {
     static final int MAX_EMITTERS_PER_USER = 5;
+    /** 상한 초과로 밀려날 때 그 연결에 보내는 이벤트 이름. 웹은 받으면 재연결을 멈춘다. */
+    static final String REPLACED_EVENT = "REPLACED";
     private static final long TIMEOUT_MS = 1800000L;
 
     /** 사용자별 연결 목록(오래된 순). 목록은 불변 복사본으로 교체한다(compute 안에서만). */
@@ -50,6 +52,11 @@ public class SseEmitterService {
 
         for (SseEmitter old : evicted) {
             log.info("SSE 상한 초과, 가장 오래된 연결 종료: userRowId={}", userRowId);
+            // 밀려난 탭이 곧바로 다시 붙어 다음 탭을 밀어내는 순환을 막는다 — 다시 잇지 말라고 알리고 닫는다
+            try {
+                old.send(SseEmitter.event().name(REPLACED_EVENT).data("replaced"));
+            } catch (Exception ignored) {
+            }
             try {
                 old.complete();
             } catch (Exception ignored) {
