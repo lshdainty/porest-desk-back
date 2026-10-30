@@ -416,6 +416,91 @@ class NamuApiClientTest {
             .hasMessageNotContaining("internal");
     }
 
+    private static final String QUOTE_PATH = "/krstock/quote/v1/currentPrice";
+
+    private Throwable callQuote() {
+        return catchThrowable(() -> sut.postObject(1L, QUOTE_PATH, Map.of("iem_cd", "005930"), KR_PRICE));
+    }
+
+    private static void assertCode(Throwable t, io.groo.damda.common.exception.DeskErrorCode expected) {
+        assertThat(t).isInstanceOf(ExternalServiceException.class);
+        assertThat(((ExternalServiceException) t).getErrorCode()).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("401 이 재발급 거절로 재시도 없이 끝나면 인증 만료 코드다 — 일시 오류와 구분해 다시 연결을 안내한다")
+    void unauthorizedWithoutRetryIsAuthExpired() {
+        given(tokenManager.invalidateOnUnauthorized(1L)).willReturn(false);
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withUnauthorizedRequest());
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_AUTH_EXPIRED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("401 이 재시도 뒤에도 또 401 이면 인증 만료 코드다")
+    void unauthorizedAfterRetryIsAuthExpired() {
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withUnauthorizedRequest());
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withUnauthorizedRequest());
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_AUTH_EXPIRED);
+        org.mockito.Mockito.verify(tokenManager).invalidateOnUnauthorized(1L);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("403 은 재시도 없이 바로 인증 만료 코드다 — 토큰 캐시도 건드리지 않는다")
+    void forbiddenIsAuthExpired() {
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_AUTH_EXPIRED);
+        org.mockito.Mockito.verify(tokenManager, org.mockito.Mockito.never()).invalidateOnUnauthorized(1L);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("5xx 는 기존 그대로 증권사 API 오류 코드다 — 일시 장애를 만료로 바꾸지 않는다")
+    void serverErrorStaysApiError() {
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withServerError());
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("429 는 기존 그대로 API 오류 코드를 든 NamuRateLimitException 이다")
+    void rateLimitStaysApiError() {
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+        Throwable t = callQuote();
+        assertThat(t).isInstanceOf(NamuRateLimitException.class);
+        assertCode(t, io.groo.damda.common.exception.DeskErrorCode.SECURITIES_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("그 밖의 4xx(400)도 기존 그대로 API 오류 코드다")
+    void otherClientErrorStaysApiError() {
+        server.expect(requestTo(BASE + QUOTE_PATH)).andRespond(withBadRequest());
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("연결 실패·타임아웃(RestClientException)은 기존 그대로 API 오류 코드다")
+    void ioErrorStaysApiError() {
+        server.expect(requestTo(BASE + QUOTE_PATH))
+            .andRespond(request -> { throw new java.io.IOException("timeout"); });
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_API_ERROR);
+    }
+
+    @Test
+    @DisplayName("200 이어도 rsp_cd 실패는 기존 그대로 API 오류 코드다 — 본문 코드의 뜻이 확인되지 않아 만료로 추정하지 않는다")
+    void businessCodeStaysApiError() {
+        expect(QUOTE_PATH, "{\"rsp_cd\":\"40010\",\"rsp_msg\":\"권한이 없습니다.\",\"Output_0\":null}");
+
+        assertCode(callQuote(), io.groo.damda.common.exception.DeskErrorCode.SECURITIES_API_ERROR);
+    }
+
     @Test
     @DisplayName("base URL 이 비면 호출 전에 거절한다")
     void rejectsWhenNotConfigured() {
