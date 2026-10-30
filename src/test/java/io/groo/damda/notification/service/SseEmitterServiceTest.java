@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -288,5 +289,83 @@ class SseEmitterServiceTest {
         assertThat(real.emitterCount(7L)).isEqualTo(2);
         real.sendNotification(7L, info); // 던지지 않는다
         assertThat(real.emitterCount(7L)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("상한 초과로 밀려나는 가장 오래된 연결에 REPLACED 를 보낸 뒤 complete() 한다(순서 고정)")
+    void evictedGetsReplacedEventBeforeComplete() throws IOException {
+        List<SseEmitter> subs = new ArrayList<>();
+        for (int i = 0; i < SseEmitterService.MAX_EMITTERS_PER_USER; i++) {
+            subs.add(service.subscribe(1L));
+        }
+        SseEmitter oldest = subs.get(0);
+        clearInvocations(oldest);
+
+        service.subscribe(1L);
+
+        org.mockito.InOrder order = inOrder(oldest);
+        order.verify(oldest).send(any(SseEmitter.SseEventBuilder.class));
+        order.verify(oldest).complete();
+    }
+
+    @Test
+    @DisplayName("REPLACED 는 밀려나는 연결에만 간다 — 남는 연결 · 새 연결은 추가 전송도 complete 도 없다")
+    void replacedOnlyToEvicted() throws IOException {
+        List<SseEmitter> subs = new ArrayList<>();
+        for (int i = 0; i < SseEmitterService.MAX_EMITTERS_PER_USER; i++) {
+            subs.add(service.subscribe(1L));
+        }
+        SseEmitter other = service.subscribe(2L);
+        subs.forEach(Mockito::clearInvocations);
+        clearInvocations(other);
+
+        SseEmitter fresh = service.subscribe(1L);
+
+        verify(subs.get(0), times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        for (int i = 1; i < subs.size(); i++) {
+            verify(subs.get(i), never()).send(any(SseEmitter.SseEventBuilder.class));
+            verify(subs.get(i), never()).complete();
+        }
+        verify(other, never()).send(any(SseEmitter.SseEventBuilder.class));
+        verify(fresh, times(1)).send(any(SseEmitter.SseEventBuilder.class)); // CONNECT 만
+    }
+
+    @Test
+    @DisplayName("상한 이하에서는 REPLACED 를 보내지 않는다(CONNECT 한 번뿐)")
+    void noReplacedUnderLimit() throws IOException {
+        List<SseEmitter> subs = new ArrayList<>();
+        for (int i = 0; i < SseEmitterService.MAX_EMITTERS_PER_USER; i++) {
+            subs.add(service.subscribe(1L));
+        }
+        subs.forEach(s -> {
+            try {
+                verify(s, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+            } catch (IOException e) {
+                throw new AssertionError(e);
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("밀려나는 연결의 REPLACED 전송이 실패해도 complete 는 불리고 새 구독은 성공한다")
+    void replacedSendFailureStillCompletes() throws IOException {
+        List<SseEmitter> subs = new ArrayList<>();
+        for (int i = 0; i < SseEmitterService.MAX_EMITTERS_PER_USER; i++) {
+            subs.add(service.subscribe(1L));
+        }
+        doThrow(new IllegalStateException("already completed"))
+            .when(subs.get(0)).send(any(SseEmitter.SseEventBuilder.class));
+
+        SseEmitter fresh = service.subscribe(1L);
+
+        verify(subs.get(0)).complete();
+        assertThat(fresh).isNotNull();
+        assertThat(service.emitterCount(1L)).isEqualTo(SseEmitterService.MAX_EMITTERS_PER_USER);
+    }
+
+    @Test
+    @DisplayName("이벤트 이름은 REPLACED 로 고정이다(웹과 맞춘 계약)")
+    void replacedEventNameContract() {
+        assertThat(SseEmitterService.REPLACED_EVENT).isEqualTo("REPLACED");
     }
 }
