@@ -244,6 +244,18 @@ public class Asset extends AuditingFieldsWithIp {
     }
 
     /**
+     * 채널을 나눠 원화로 환산한다 — 합계·순자산·추이가 모두 이 식을 쓴다.
+     *
+     * <p>예수금({@code cash})은 <b>자산 통화</b>라 환산율을 곱하고, 평가금액({@code holding})은
+     * 저장될 때 이미 <b>원화</b>라 그대로 더한다. 둘의 합에 환산율을 곱하면 외화 투자 자산의
+     * 평가금액이 환산율 배로 부푼다(USD 1,300 · 평가 10,000,000원 → 13,000,000,000원).
+     * 예수금이 없거나 평가금액이 없으면 각각 0 이라 투자가 아닌 외화 자산은 종전 식과 같다.
+     */
+    public long balanceInKrw(long cash, long holding) {
+        return balanceInKrw(cash) + holding;
+    }
+
+    /**
      * 증권 종목 1:1 연결 — 종목코드 + 보유수량. 시세 × 수량으로 평가액 실시간 계산.
      *
      * @param marketCode stock_master 기준 시장코드. 확정하지 못했으면 null —
