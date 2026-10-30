@@ -271,6 +271,15 @@ public enum DeskErrorCode implements ErrorCodeProvider {
     /** 모르는 캔들 주기. 지금은 {@code 1m}·{@code 1d} 만 있다. */
     SECURITIES_INTERVAL_UNSUPPORTED("SEC_014", "error.securities.interval.unsupported", HttpStatus.BAD_REQUEST),
 
+    /**
+     * 연결은 돼 있는데 증권사가 호출을 거절했다 — 업스트림 401·403(토큰 만료 · 키 무효 · 권한 회수).
+     * <b>{@code SECURITIES_API_ERROR}(잠깐 안 된다)와 뜻이 다르다</b> — 기다려도 안 풀리고 다시 연결해야 한다.
+     * {@code SECURITIES_CREDENTIAL_REQUIRED}(연결이 없다)와도 다르다.
+     * HTTP 상태를 401 로 두지 않는다: 클라이언트의 401 처리(토큰 갱신 · 로그아웃)를 타면 안 된다 —
+     * 이 401 은 우리 로그인이 아니라 증권사 쪽 인증이다. 502 를 유지해 옛 앱은 일반 오류로 읽는다.
+     */
+    SECURITIES_AUTH_EXPIRED("SEC_015", "error.securities.auth.expired", HttpStatus.BAD_GATEWAY),
+
     // API Token (프로그램용 증권 조회 토큰)
     /** 없는 토큰 · 폐기된 토큰 · 주인이 해지한 토큰. 어느 쪽인지는 밝히지 않는다. */
     API_TOKEN_INVALID("APITOKEN_001", "error.api.token.invalid", HttpStatus.UNAUTHORIZED),

@@ -186,7 +186,7 @@ public class NamuApiClient {
      * {@code cust_no}·{@code acct_no} 가 {@code Caused by:} 줄에 그대로 남는다.
      * 진단에 필요한 것(원본 예외 이름 · 상태코드 · path)은 가린 뒤에도 남는다.
      *
-     * <p><b>429 만 타입을 나눈다</b>({@link NamuRateLimitException}). 다른 실패는 "이번
+     * <p><b>401·403 은 {@code SECURITIES_AUTH_EXPIRED}</b> 로 구분해 클라이언트가 "다시 연결" 을 안내할 수 있게 한다. <b>429 만 타입을 나눈다</b>({@link NamuRateLimitException}). 다른 실패는 "이번
      * 호출이 실패했다" 지만 429 는 "지금 너무 많이 부르고 있다" 라, 호출부가 <b>다시 치지
      * 않기로</b> 결정할 수 있어야 한다. 에러코드는 같으므로 클라이언트에 나가는 응답은 그대로다.
      */
@@ -194,8 +194,13 @@ public class NamuApiClient {
         RestClientException safe = UpstreamErrorLog.redact(e);
         log.error("나무증권 API 오류: path={}, status={}, 원인={}",
             path, e.getStatusCode().value(), safe.getMessage());
-        return e.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value()
-            ? new NamuRateLimitException(safe)
-            : new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
+        int status = e.getStatusCode().value();
+        if (status == HttpStatus.TOO_MANY_REQUESTS.value()) {
+            return new NamuRateLimitException(safe);
+        }
+        // 401(재시도 후에도)·403 은 토큰 만료 · 키 무효 · 권한 회수라 다시 연결해야 한다.
+        boolean authFailure = status == HttpStatus.UNAUTHORIZED.value() || status == HttpStatus.FORBIDDEN.value();
+        return new ExternalServiceException(
+            authFailure ? DeskErrorCode.SECURITIES_AUTH_EXPIRED : DeskErrorCode.SECURITIES_API_ERROR, safe);
     }
 }

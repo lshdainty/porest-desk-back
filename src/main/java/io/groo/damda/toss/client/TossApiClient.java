@@ -15,6 +15,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.MultiValueMap;
@@ -173,7 +174,11 @@ public class TossApiClient {
         RestClientException safe = UpstreamErrorLog.redact(e);
         log.error("토스증권 API 오류: path={}, status={}, {}, 원인={}", path, e.getStatusCode().value(),
                 detail != null ? UpstreamErrorLog.safe(detail) : "(본문 파싱 불가)", safe.getMessage());
-        return new ExternalServiceException(DeskErrorCode.SECURITIES_API_ERROR, safe);
+        // 401(재시도 후에도)·403 은 토큰 만료 · 키 무효 · 권한 회수라 다시 연결해야 한다. 본문 코드와 무관하게 상태가 우선이다.
+        int status = e.getStatusCode().value();
+        boolean authFailure = status == HttpStatus.UNAUTHORIZED.value() || status == HttpStatus.FORBIDDEN.value();
+        return new ExternalServiceException(
+                authFailure ? DeskErrorCode.SECURITIES_AUTH_EXPIRED : DeskErrorCode.SECURITIES_API_ERROR, safe);
     }
 
     /**
